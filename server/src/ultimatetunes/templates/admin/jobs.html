@@ -4,5 +4,6 @@
 {% block title %}{{ _("Downloads") }}{% endblock %}
 {% block content %}
 <h1>{{ _("Downloads") }}</h1>
+<p class="hint">{{ _("Newest first; the list refreshes itself every 5 seconds. A download is tried up to 3 times on its own; Retry queues a failed or cancelled one again with fresh attempts.") }}</p>
 {% include "_jobs_table.html" %}
 {% endblock %}
