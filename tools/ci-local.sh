@@ -15,8 +15,22 @@
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-base=$(git merge-base HEAD origin/master 2>/dev/null || echo origin/master)
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "Refusing to run on a dirty tree: the gates must test the committed HEAD. Commit or stash first." >&2
+  exit 2
+fi
+git fetch -q origin master || { echo "cannot fetch origin/master" >&2; exit 2; }
+base=$(git merge-base HEAD origin/master) || { echo "no merge base with origin/master" >&2; exit 2; }
+on_master=false
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/master)" ]] && on_master=true
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/ut-ci-local.XXXXXX")
+pg_name="ut-ci-local-pg-$$"
+compose_project="ut-ci-local-$$"
+cleanup() {
+  docker stop "$pg_name" >/dev/null 2>&1 || true
+  docker compose -p "$compose_project" -f server/compose.test.yaml down -v >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
 declare -a results=()
 fail=0
 
@@ -39,13 +53,17 @@ run() { # name, command...
 }
 
 # --- which groups ---------------------------------------------------------------------------
+known=(secrets store-texts server contracts android docker)
 groups=(secrets store-texts)
-if [[ $# -gt 0 && "$1" != --all ]]; then
+if [[ "${1:-}" == --all ]] || { [[ $# -eq 0 ]] && $on_master; }; then
+  groups=("${known[@]}")   # like a push to master in ci.yml: everything
+elif [[ $# -gt 0 ]]; then
+  for g in "$@"; do
+    [[ " ${known[*]} " == *" $g "* ]] || { echo "unknown gate group: $g (known: ${known[*]})" >&2; exit 2; }
+  done
   groups=("$@")
-elif [[ "${1:-}" == --all ]]; then
-  groups+=(server contracts android docker)
 else
-  changed=$( { git diff --name-only "$base"...HEAD; git diff --name-only; } | sort -u)
+  changed=$(git diff --no-renames --name-only "$base"...HEAD)
   shared='^(\.github/|VERSION$|tools/|\.claude/|\.gitleaks)'
   if grep -qE "^(server/|contracts/|\.dockerignore$)|$shared" <<<"$changed"; then
     groups+=(server contracts docker)
@@ -58,14 +76,26 @@ echo "Gates: ${groups[*]}  (base $(git rev-parse --short "$base"))"
 
 # --- gates ----------------------------------------------------------------------------------
 secrets() {
-  # The commits this branch adds (like CI on a PR); the whole history on master.
-  local range="--log-opts=$base..HEAD"
-  [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$base")" ]] && range=""
-  docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git /repo --redact --exit-code 1 $range
+  # The commits this branch adds (like CI on a PR); the whole of master's history on master.
+  # Worktrees keep their git data in the main checkout's common dir: mount it at the same path,
+  # or gitleaks sees no repository and "passes" after scanning nothing.
+  local range="$base..HEAD" common out expected
+  $on_master && range="HEAD"
+  common=$(cd "$(git rev-parse --git-common-dir)" && pwd)
+  expected=$(git rev-list --count "$range")
+  out=$(docker run --rm -v "$PWD:$PWD:ro" -v "$common:$common:ro" -w "$PWD" "$GITLEAKS_IMAGE" \
+    git "$PWD" --redact --exit-code 1 "--log-opts=$range" 2>&1)
+  local rc=$?
+  printf '%s\n' "$out"
+  (( rc == 0 )) || return $rc
+  if (( expected > 0 )) && ! grep -qE "[1-9][0-9]* commits scanned" <<<"$out"; then
+    echo "gitleaks scanned no commits but $expected were expected" >&2
+    return 1
+  fi
 }
 
 store_texts() {
-  tools/tests/run.sh
+  tools/tests/run.sh || return 1
   if [[ "$(git branch --show-current)" == release/* ]]; then
     tools/check-store-texts.sh --release
   else
@@ -73,18 +103,22 @@ store_texts() {
   fi
 }
 
-server() { (cd server && uv sync --locked && make check); }
+server() {
+  # The tagging golden tests skip without ffmpeg; CI installs it, so require it here too.
+  command -v ffmpeg >/dev/null || { echo "ffmpeg is required (the tagging golden tests need it)" >&2; return 1; }
+  (cd server && uv sync --locked && make check)
+}
 
 contracts() {
-  local port name rc
+  local port rc ready=false
   port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
-  name="ut-ci-local-pg-$$"
-  docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ultimatetunes \
+  docker run -d --rm --name "$pg_name" -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ultimatetunes \
     -p "127.0.0.1:$port:5432" "$POSTGRES_IMAGE" >/dev/null || return 1
-  for _ in $(seq 60); do docker exec "$name" pg_isready -U postgres -q && break; sleep 1; done
-  (cd server && UT_TEST_POSTGRES_URL="postgresql://postgres:ci@127.0.0.1:$port/ultimatetunes" make contracts)
+  for _ in $(seq 60); do docker exec "$pg_name" pg_isready -U postgres -q && { ready=true; break; }; sleep 1; done
+  $ready || { echo "PostgreSQL did not become ready in 60 s" >&2; docker stop "$pg_name" >/dev/null; return 1; }
+  (cd server && uv sync --locked && UT_TEST_POSTGRES_URL="postgresql://postgres:ci@127.0.0.1:$port/ultimatetunes" make contracts)
   rc=$?
-  docker stop "$name" >/dev/null
+  docker stop "$pg_name" >/dev/null
   return $rc
 }
 
@@ -94,9 +128,9 @@ android() {
 }
 
 docker_gate() {
-  local tag="ultimatetunes-server:ci-local" project="ut-ci-local-$$" rc
+  local tag="ultimatetunes-server:ci-local" project="$compose_project" rc
   docker build -f server/Dockerfile -t "$tag" . || return 1
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/" \
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" \
     "$TRIVY_IMAGE" image --quiet --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$tag" || return 1
   docker compose -p "$project" -f server/compose.test.yaml up -d --build --wait || {
     docker compose -p "$project" -f server/compose.test.yaml down -v; return 1; }
@@ -115,6 +149,7 @@ want android && run android android
 want docker && run docker docker_gate
 
 echo
+(( ${#results[@]} > 0 )) || { echo "No gate ran." >&2; exit 2; }
 printf '%s\n' "${results[@]}"
 if (( fail )); then echo "Local CI: FAILED"; else echo "Local CI: green"; rm -rf "$log_dir"; fi
 exit $fail
