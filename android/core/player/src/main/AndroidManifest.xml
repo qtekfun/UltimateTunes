@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Playback (PLAN T17), merged into the app's manifest. Every permission here serves playback or
+  offline downloads only; nothing contacts any host but the user's server.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Playback and downloads keep running with the app in the background. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Playback and download progress notifications (Android 13+, RF-13). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Pending downloads and the periodic offline sync survive a reboot (persisted jobs). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <!--
+          Exported without a permission on purpose: the system UI, Bluetooth and headsets control
+          playback through it (the MediaSessionService contract). Untrusted apps cannot change the
+          queue (PlayerAssembly.sessionCallback).
+        -->
+        <service
+            android:name="com.qtekfun.ultimatetunes.core.player.session.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.qtekfun.ultimatetunes.core.player.offline.OfflineDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name="com.qtekfun.ultimatetunes.core.player.offline.OfflineSyncJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <service
+            android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+    </application>
+
+</manifest>

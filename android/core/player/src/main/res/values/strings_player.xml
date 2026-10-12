@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Strings of the playback and download services (:core:player). The app's player strings live in
+  the app module's strings_player.xml.
+-->
+<resources>
+    <string name="player_downloads_channel">Downloads</string>
+    <string name="player_downloads_channel_description">Progress of the music kept on this phone</string>
+</resources>
