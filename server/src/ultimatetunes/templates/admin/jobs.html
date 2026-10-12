@@ -1,0 +1,8 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Downloads") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Downloads") }}</h1>
+{% include "_jobs_table.html" %}
+{% endblock %}

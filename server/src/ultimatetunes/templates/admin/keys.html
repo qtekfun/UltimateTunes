@@ -1,0 +1,55 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("API keys") }}{% endblock %}
+{% block content %}
+<h1>{{ _("API keys") }}</h1>
+{% if created %}
+<div class="card">
+  <h2>{{ _("New key for %(name)s", name=created.name) }}</h2>
+  <p><strong>{{ _("Copy it or scan the code now: it is shown only once.") }}</strong></p>
+  {{ created.qr }}
+  <p>{{ _("Server address") }}: <span class="secret">{{ created.server_url }}</span></p>
+  <p>{{ _("API key") }}: <span class="secret">{{ created.secret }}</span></p>
+</div>
+{% endif %}
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("User") }}</th><th>{{ _("Device") }}</th><th>{{ _("Prefix") }}</th><th>{{ _("Created") }}</th><th>{{ _("Last use") }}</th><th>{{ _("Status") }}</th><th></th></tr></thead>
+  <tbody>
+  {% for key in keys %}
+  <tr>
+    <td>{{ names[key.user_id] }}</td>
+    <td>{{ key.name }}</td>
+    <td><code>{{ key.prefix }}</code></td>
+    <td class="muted">{{ key.created_at }}</td>
+    <td class="muted">{% if key.last_used_at %}{{ key.last_used_at }} ({{ key.last_used_ip or "?" }}){% else %}{{ _("never") }}{% endif %}</td>
+    <td>{% if key.revoked_at %}<span class="bad">{{ _("Revoked") }}</span>{% else %}<span class="ok">{{ _("Active") }}</span>{% endif %}</td>
+    <td>
+      {% if not key.revoked_at %}
+      <form class="inline" method="post" action="/admin/keys/{{ key.id }}/revoke">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="danger" type="submit">{{ _("Revoke") }}</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">{{ _("No keys yet.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="card">
+  <h2>{{ _("New key (with a QR code for the app)") }}</h2>
+  <form class="stack" method="post" action="/admin/keys">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("User") }}
+      <select name="user_id">{% for user in users %}<option value="{{ user.id }}">{{ user.username }}</option>{% endfor %}</select>
+    </label>
+    <label>{{ _("Device name") }}<input name="name" required maxlength="100" autocomplete="off"></label>
+    <label>{{ _("Server address the app will use") }}<input name="server_url" type="url" required maxlength="120" value="{{ server_url }}" placeholder="https://music.example.ts.net"></label>
+    <button type="submit">{{ _("Create key") }}</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}yt-dlp{% endblock %}
+{% block content %}
+<h1>yt-dlp</h1>
+<div class="card">
+  <form class="inline" method="post" action="/admin/ytdlp/update">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">{{ _("Update yt-dlp now") }}</button>
+  </form>
+  <form class="inline" method="post" action="/admin/ytdlp/canary">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="secondary" type="submit">{{ _("Run the canary now") }}</button>
+  </form>
+  {% include "_breaker.html" %}
+</div>
+<h2>{{ _("Workers") }}</h2>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("Worker") }}</th><th>{{ _("Version") }}</th><th>yt-dlp</th><th>{{ _("Last report") }}</th></tr></thead>
+  <tbody>
+  {% for worker in workers %}
+  <tr><td><code>{{ worker.worker_id }}</code></td><td>{{ worker.version or "-" }}</td><td>{{ worker.ytdlp_version or "-" }}</td><td class="muted">{{ worker.last_seen_at }}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">{{ _("No worker has reported yet.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>{{ _("Canary runs") }}</h2>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("When") }}</th><th>{{ _("Source") }}</th><th>{{ _("Result") }}</th><th>yt-dlp</th><th>{{ _("Message") }}</th></tr></thead>
+  <tbody>
+  {% for run in canaries %}
+  <tr><td class="muted">{{ run.ran_at }}</td><td>{{ run.source }}</td><td class="{{ 'ok' if run.ok else 'bad' }}">{{ _("OK") if run.ok else _("Failed") }}</td><td>{{ run.ytdlp_version or "-" }}</td><td>{{ run.message or "" }}</td></tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">{{ _("none yet") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>{{ _("Commands") }}</h2>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("Command") }}</th><th>{{ _("Requested") }}</th><th>{{ _("Delivered") }}</th></tr></thead>
+  <tbody>
+  {% for command in commands %}
+  <tr><td><code>{{ command.command }}</code></td><td class="muted">{{ command.created_at }}</td><td class="muted">{% if command.delivered_at %}{{ command.delivered_at }} → {{ command.delivered_to }}{% else %}{{ _("waiting") }}{% endif %}</td></tr>
+  {% else %}
+  <tr><td colspan="3" class="muted">{{ _("Nothing here.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
