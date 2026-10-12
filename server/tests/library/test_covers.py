@@ -3,6 +3,7 @@
 """`getCoverArt`: library images, external thumbnails (host rules, size, cache), HEAD."""
 
 import dataclasses
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,16 @@ from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.errors import NotFound
 from ultimatetunes.library.covers import MAX_EXTERNAL_BYTES, CoverCache, check_url
 from ultimatetunes.search.catalog import Thumbnail
+from ultimatetunes.search.service import search_settings
+
+
+@pytest.fixture
+def fresh_search_settings() -> Iterator[None]:
+    """`search_settings()` is cached: read the test's environment, then forget it."""
+    search_settings.cache_clear()
+    yield
+    search_settings.cache_clear()
+
 
 THUMB = "https://i.ytimg.com/vi/Qx7Lm2pZ0aB/hqdefault.jpg"
 ALBUM_THUMB = "https://i.ytimg.com/vi/Fk2Lp9QwXa1/hqdefault.jpg"
@@ -312,3 +323,27 @@ def test_cover_cache_ttl_and_size_cap(tmp_path: Path) -> None:
     cache.put("yt:c", b"new", "image/gif")
     assert cache.get("yt:c") == (b"new", "image/gif")
     assert len([p for p in (tmp_path / "covers").iterdir() if p.name.startswith(".")]) == 0
+
+
+@respx.mock
+def test_uncached_external_covers_spend_the_callers_catalog_budget(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch, fresh_search_settings: None
+) -> None:
+    monkeypatch.setenv("UT_CATALOG_USER_BURST", "2")
+    monkeypatch.setenv("UT_CATALOG_USER_RATE_PER_S", "0.001")
+    search_settings.cache_clear()
+    route = respx.get(url__regex=r"https://i\.ytimg\.com/vi/.*").mock(
+        return_value=httpx.Response(200, content=JPEG, headers={"Content-Type": "image/jpeg"})
+    )
+    assert cover(lib, "yt:Qx7Lm2pZ0aB").status_code == 200
+    assert cover(lib, "yt:Fk2Lp9QwXa1").status_code == 200
+    refused = cover(lib, "yt:Rb8Tn3ZcYv0")
+    assert refused.status_code == 429
+    assert int(refused.headers["retry-after"]) > 0
+    assert route.call_count == 2
+    # Cached covers cost nothing, and another user has a budget of its own.
+    assert cover(lib, "yt:Qx7Lm2pZ0aB").status_code == 200
+    other = lib.client.get(
+        "/rest/getCoverArt", params={"apiKey": "utk_bob", "f": "json", "id": "yt:Rb8Tn3ZcYv0"}
+    )
+    assert other.status_code == 200

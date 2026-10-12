@@ -3,6 +3,7 @@
 """Liveness and readiness probes (Docker healthcheck now, Kubernetes probes later)."""
 
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Request, Response, status
 
 from ultimatetunes.core.clock import Clock
 from ultimatetunes.core.forwarded import via_untrusted_proxy
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.netaddr import LOOPBACK, IpNetwork, in_networks
 from ultimatetunes.db import DatabaseError, migrate
 from ultimatetunes.db.driver import connect_sqlite
@@ -46,7 +48,8 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     body: dict[str, object] = {"status": "ok" if ready else "unavailable"}
     if _may_see_detail(request):
-        body["checks"] = checks
+        # Not a readiness condition: the api serves the library while downloads wait.
+        body["checks"] = {**checks, "downloads": _check_downloads(request.app.state.settings)}
     return body
 
 
@@ -94,6 +97,18 @@ def _check_database(settings: Settings) -> str:
         log.warning("readiness: database check failed: %s", exc)
         return "error"
     return "ok" if not todo else "migrations pending"
+
+
+def _check_downloads(settings: Settings) -> str:
+    """`paused (low disk space)` below `UT_MIN_FREE_BYTES` on /music or /staging (jobs/gate.py)."""
+    minimum = DownloadLimits().min_free_bytes
+    try:
+        low = any(
+            shutil.disk_usage(d).free < minimum for d in (settings.music_dir, settings.staging_dir)
+        )
+    except OSError:
+        low = True
+    return "paused (low disk space)" if low else "ok"
 
 
 def _check_writable(directory: Path) -> str:

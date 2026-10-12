@@ -39,6 +39,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import Response
 
 from ultimatetunes.core.authn import Principal
+from ultimatetunes.core.caller import set_caller
 from ultimatetunes.core.services import Services, services
 from ultimatetunes.errors import (
     InternalError,
@@ -189,6 +190,8 @@ async def _dispatch(endpoint: Endpoint, request: Request) -> Response:
             principal = await run_in_threadpool(
                 svc.authenticator.authenticate_subsonic, params, _client_ip(request)
             )
+        # Catalog lookups of this request are charged to its user (core/caller.py).
+        set_caller(principal.user_id if principal is not None else None)
         ctx = SubsonicRequest(request, params, fmt, svc, principal)
         if iscoroutinefunction(endpoint.handler):
             result = await cast(

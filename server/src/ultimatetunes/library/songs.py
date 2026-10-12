@@ -12,7 +12,12 @@
   add): every id resolves to a library track; a `yt:` id without one is materialized as a
   `pending` track with its alias (`ids.resolve.materialize_song`) and its download job is
   requested in the same transaction (`JobQueue.enqueue_in`), also for a pending track kept
-  by its library UUID. Every id is checked before anything is written.
+  by its library UUID. Every id is checked before anything is written. At most
+  `keep_download_cap()` of the ids may need a download (a `yt:` id without a track, or a
+  pending track): one request cannot queue (or look up) more than that, whatever `MAX_IDS`
+  allows for songs already in the library. The cap never exceeds the per-user catalog burst
+  (`UT_CATALOG_USER_BURST`), so a full keep request fits in one budget. The download limits of
+  jobs/gate.py apply too.
 """
 
 import asyncio
@@ -29,15 +34,23 @@ from ultimatetunes.library.render import Obj, pending_child, placeholder_child
 from ultimatetunes.library.repository import LibraryRepository
 from ultimatetunes.search.catalog import CatalogTrack
 from ultimatetunes.search.render import external_child, library_child
+from ultimatetunes.search.service import search_settings
 
 if TYPE_CHECKING:
     from ultimatetunes.core.services import Services
 
 # Most ids one request may carry (contracts/errors.md, PayloadTooLarge).
 MAX_IDS = 1000
+# Most ids of one "keep" request that may start a download (abuse limits), at most the
+# per-user catalog burst (`keep_download_cap`).
+MAX_KEEP_DOWNLOADS = 50
 # Catalog lookups of unknown `yt:` items per request, and how many run at once.
 MAX_LOOKUPS = 100
 LOOKUP_CONCURRENCY = 4
+
+
+def keep_download_cap() -> int:
+    return min(MAX_KEEP_DOWNLOADS, int(search_settings().catalog_user_burst))
 
 
 def check_count(ids: Sequence[str]) -> None:
@@ -166,6 +179,10 @@ async def keep(services: "Services", user_id: str, raw_ids: Sequence[str]) -> li
     _parse_songs(raw_ids)
     resolved = await run_in_threadpool(_resolve_keep, services, raw_ids)
     missing = list(dict.fromkeys(r.payload for r in resolved.values() if isinstance(r, VirtualId)))
+    pending = {r.id for r in resolved.values() if isinstance(r, TrackRef) and r.status == "pending"}
+    cap = keep_download_cap()
+    if len(missing) + len(pending) > cap:
+        raise PayloadTooLarge(f"At most {cap} songs that are not in the library yet per request")
     # Every external song must exist in the catalog before anything is written.
     records = await asyncio.gather(*(services.catalog.track(v) for v in missing))
     refs = await run_in_threadpool(

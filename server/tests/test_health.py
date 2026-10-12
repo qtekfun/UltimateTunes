@@ -43,8 +43,29 @@ def test_readyz_ok_when_everything_is_ready(settings: Settings) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "checks": {"database": "ok", "music": "ok", "staging": "ok"},
+        "checks": {"database": "ok", "music": "ok", "staging": "ok", "downloads": "ok"},
     }
+
+
+def test_readyz_shows_downloads_paused_for_low_disk_without_failing(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UT_MIN_FREE_BYTES", str(1 << 62))
+    response = client(migrated(settings)).get("/readyz")
+    assert response.status_code == 200
+    assert response.json()["checks"]["downloads"] == "paused (low disk space)"
+
+
+def test_readyz_counts_an_unreadable_disk_as_low(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(_path: object) -> object:
+        raise OSError("gone")
+
+    migrated(settings)
+    monkeypatch.setattr("ultimatetunes.health.shutil.disk_usage", broken)
+    response = client(settings).get("/readyz")
+    assert response.json()["checks"]["downloads"] == "paused (low disk space)"
 
 
 def test_readyz_fails_without_database(settings: Settings) -> None:
