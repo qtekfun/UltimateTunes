@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -167,6 +169,8 @@ private fun MainLayout(
     val hasTrack = player.current != null
     Box(Modifier.fillMaxSize()) {
         Scaffold(
+            // Under the open full player, TalkBack must not reach the hidden tabs and mini player.
+            modifier = if (hasTrack && expanded) Modifier.clearAndSetSemantics {} else Modifier,
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbar) },
@@ -198,6 +202,7 @@ private fun MainLayout(
                 state = player,
                 actions = actions,
                 onCollapse = { onExpandedChange(false) },
+                shown = transition.targetState == EnterExitState.Visible,
                 lyrics = lyrics
             )
         }

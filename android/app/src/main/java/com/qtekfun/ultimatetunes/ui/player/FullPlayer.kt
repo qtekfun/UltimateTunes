@@ -3,10 +3,8 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,7 +48,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -90,9 +87,6 @@ const val PLAYER_SCRUBBER_TAG = "player.scrubber"
 
 private const val MILLIS_PER_SECOND = 1000L
 
-/** Downward drag that closes the full player. */
-private val CollapseThreshold = 120.dp
-
 /** How much of the blurred artwork shows through the colours. */
 private const val BLURRED_ARTWORK_ALPHA = 0.45f
 
@@ -101,8 +95,9 @@ private const val PAUSED_ARTWORK_SCALE = 0.84f
 
 /**
  * The full player (SPEC §5): big artwork, colours from the artwork over its blurred copy,
- * scrubber, controls and the queue sheet. [artworkModifier] decorates the big artwork.
- * Dragging down moves it with the finger and, past a threshold, closes it, as [onCollapse] does.
+ * scrubber, controls and the queue sheet. Dragging down moves it with the finger and, past a
+ * threshold or with a fast flick, closes it, as [onCollapse] does. [shown] is false while it
+ * slides away; showing it again puts it back in place.
  */
 @Composable
 fun FullPlayer(
@@ -110,7 +105,7 @@ fun FullPlayer(
     actions: PlayerActions,
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
-    artworkModifier: Modifier = Modifier,
+    shown: Boolean = true,
     lyrics: LyricsHooks = LyricsHooks()
 ) {
     val track = state.current ?: return
@@ -121,31 +116,14 @@ fun FullPlayer(
     val onShowLyrics by rememberUpdatedState(lyrics.onShow)
     LaunchedEffect(track.id, showLyrics) { if (showLyrics) onShowLyrics(track.id) }
     val collapse by rememberUpdatedState(onCollapse)
-    val threshold = with(LocalDensity.current) { CollapseThreshold.toPx() }
-    // The player follows the finger down; past the threshold it closes, otherwise it springs back.
-    val drag = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
+    val drag = rememberCollapseDrag(shown)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .graphicsLayer { translationY = drag.value }
+            .graphicsLayer { translationY = drag.offset.value }
             .background(Brush.verticalGradient(listOf(colors.top, colors.bottom)))
-            .pointerInput(threshold) {
-                detectVerticalDragGestures(
-                    onDragEnd = {
-                        if (drag.value > threshold) {
-                            collapse()
-                        } else {
-                            scope.launch { drag.animateTo(0f) }
-                        }
-                    },
-                    onDragCancel = { scope.launch { drag.animateTo(0f) } }
-                ) { change, dragAmount ->
-                    change.consume()
-                    scope.launch { drag.snapTo((drag.value + dragAmount).coerceAtLeast(0f)) }
-                }
-            }
+            .collapseOnDrag(drag) { collapse() }
             .testTag(FULL_PLAYER_TAG)
     ) {
         BlurredBackground(track.coverUrl, colors.bottom)
@@ -160,8 +138,7 @@ fun FullPlayer(
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onShowQueue = { showQueue = true },
                     onMore = trackMenu
-                ),
-                artworkModifier = artworkModifier
+                )
             )
         }
     }
@@ -189,8 +166,7 @@ private fun PlayerContent(
     actions: PlayerActions,
     onCollapse: () -> Unit,
     panels: PlayerPanels,
-    modifier: Modifier = Modifier,
-    artworkModifier: Modifier = Modifier
+    modifier: Modifier = Modifier
 ) {
     val track = state.current ?: return
     Column(
@@ -221,7 +197,6 @@ private fun PlayerContent(
         } else {
             BigArtwork(
                 state = state,
-                artworkModifier = artworkModifier,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -263,7 +238,7 @@ private fun BlurredBackground(coverUrl: String?, bottom: Color) {
 
 /** The big artwork, a little smaller while paused. */
 @Composable
-private fun BigArtwork(state: PlayerUiState, modifier: Modifier, artworkModifier: Modifier) {
+private fun BigArtwork(state: PlayerUiState, modifier: Modifier) {
     val track = state.current ?: return
     val scale by animateFloatAsState(
         targetValue = if (state.isPlaying) 1f else PAUSED_ARTWORK_SCALE,
@@ -277,7 +252,7 @@ private fun BigArtwork(state: PlayerUiState, modifier: Modifier, artworkModifier
             url = track.coverUrl,
             placeholderKey = track.id.value,
             shape = Dimens.PlayerArtworkShape,
-            modifier = artworkModifier
+            modifier = Modifier
                 .aspectRatio(1f, matchHeightConstraintsFirst = true)
                 .graphicsLayer {
                     scaleX = scale
