@@ -108,9 +108,10 @@ def add_user(db: Database, user_id: str, name: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_pause(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Imports pause between catalog searches; not in tests (see test_runner for the pause)."""
-    monkeypatch.setenv("UT_IMPORT_SEARCH_INTERVAL_S", "0")
+def import_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake clock never refills the shared import bucket: give tests a large burst
+    (test_runner checks the waiting with a small one)."""
+    monkeypatch.setenv("UT_IMPORT_CATALOG_BURST", "1000000")
 
 
 @pytest.fixture

@@ -8,8 +8,10 @@ from ultimatetunes.settings import AreaSettings
 
 
 class ImportSettings(AreaSettings):
-    # Pause after each YouTube Music search of an import. The catalog's own limit (2 req/s,
-    # SPEC §11, T03b) is shared with interactive search; pacing imports keeps room for it.
-    import_search_interval_s: float = Field(default=1.0, ge=0, le=10)
+    # Catalog calls of ALL imports together (one shared `RateLimiter` bucket, every api
+    # process). The catalog's own limit (2 req/s, burst 6; SPEC §11, T03b) is shared with
+    # interactive search: imports take at most this share and leave the rest to search.
+    import_catalog_rate_per_s: float = Field(default=0.5, gt=0, le=2)
+    import_catalog_burst: float = Field(default=1.0, ge=1)
     # Imports one user may have running at once (`conflict` beyond).
     import_max_active_per_user: int = Field(default=3, ge=1, le=20)

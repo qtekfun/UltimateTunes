@@ -8,26 +8,37 @@ stores the import (file imports with all their items) and schedules `run` as a r
 background task; `run` goes through the shared `InFlight` registry under `import:<id>`, so one
 process never runs the same import twice, and the work is its own task (a client that goes away
 does not cancel it). Work is resumable: each item is recorded as soon as it is decided, and a
-rerun only looks at the items still `pending`. An import whose runner died (api restart) is
-resumed when its owner next reads it (`resume_stale`): still active, not running here, and not
-touched for `STALE_AFTER_S`. With several api replicas (phase 5) two replicas could resume the
-same stale import at once; that is harmless (every step is idempotent) but wasteful, and a
-lease column would settle it then.
+rerun only looks at the items still `pending`. An import whose run stopped is resumed when its
+owner next reads it (`routes._resume`): still active, not running here, and not touched for
+`STALE_AFTER_S`. With several api replicas (phase 5) two replicas could resume the same stale
+import at once; that is harmless (every step is idempotent) but wasteful, and a lease column
+would settle it then.
+
+A run stops early, leaving the import active and the current item `pending`, when:
+- YouTube Music is unavailable or throttling (`UpstreamUnavailable`, `RetryLater`): the next
+  resume tries again, instead of failing items for a passing outage;
+- the api shuts down (SIGTERM): uvicorn waits for running requests, background tasks included,
+  for its graceful-shutdown timeout and then cancels them; a cancelled run is logged and the
+  import is resumed after the restart. (The api's lifespan is coordinator-owned and has no task
+  group; nothing is lost by cancelling, since all progress is already in the database.)
+
+Load: every catalog call of every import first takes a token from one shared `RateLimiter`
+bucket (`import:catalog`, `UT_IMPORT_CATALOG_RATE_PER_S`), waiting for it when there is none,
+so imports together never use more than their share of the catalog's 2 req/s and interactive
+search keeps the rest. Resumed YouTube Music imports (track lookups) are paced the same way.
 
 States: `queued` → `reading` (YouTube Music URL: read the playlist) → `matching` → `done` (the
-user playlist exists) or `failed` (the playlist could not be read). Per item: `matched` (the
-song is requested: pending track, `yt:` alias and download job), `not_found`, or `failed` (the
-catalog failed for that item; the import goes on).
+user playlist exists) or `failed` (the playlist does not exist, or a bug). Per item: `matched`
+(the song is requested: pending track, `yt:` alias and download job), `not_found`, or `failed`
+(the catalog refused that item for good).
 
 Requesting a match uses `ids.resolve.materialize_song` in its own transaction and then
 `JobQueue.enqueue` (idempotent, one job per track) before the item is recorded, so a crash in
-between leaves the item `pending` and a resume repeats both steps harmlessly. Searches are
-paced (`UT_IMPORT_SEARCH_INTERVAL_S`) so a long import leaves catalog budget to interactive
-search.
+between leaves the item `pending` and a resume repeats both steps harmlessly.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -35,8 +46,9 @@ import anyio
 from starlette.concurrency import run_in_threadpool
 
 from ultimatetunes.core.clock import Clock, format_ts
+from ultimatetunes.core.ratelimit import Limit, RateLimiter
 from ultimatetunes.db.database import Database
-from ultimatetunes.errors import NotFound, TunesError, spec_for
+from ultimatetunes.errors import NotFound, RetryLater, TunesError, UpstreamUnavailable, spec_for
 from ultimatetunes.ids.resolve import materialize_song
 from ultimatetunes.ids.uuid7 import new_id
 from ultimatetunes.imports.files import SourceItem
@@ -53,7 +65,14 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 STALE_AFTER_S = 120
+BUCKET = "import:catalog"
 _KEY = "import:"
+# Errors that mean "YouTube Music cannot answer now": pause the run, retry on resume.
+_PASSING = (UpstreamUnavailable, RetryLater)
+
+
+class _Paused(Exception):  # noqa: N818 - a signal, not an error
+    """The catalog is unavailable: stop this run, leave the rest pending."""
 
 
 class ImportRunner:
@@ -65,14 +84,17 @@ class ImportRunner:
         catalog: MusicCatalog,
         jobs: JobQueue,
         inflight: "InFlight",
+        limiter: RateLimiter,
         settings: ImportSettings | None = None,
     ) -> None:
-        self._settings = settings or ImportSettings()
+        settings = settings or ImportSettings()
+        self._limit = Limit(settings.import_catalog_rate_per_s, settings.import_catalog_burst)
         self._db = db
         self._clock = clock
         self._catalog = catalog
         self._jobs = jobs
         self._inflight = inflight
+        self._limiter = limiter
 
     @classmethod
     def of(cls, services: "Services") -> "ImportRunner":
@@ -82,7 +104,7 @@ class ImportRunner:
             catalog=services.catalog,
             jobs=services.jobs,
             inflight=services.inflight,
-            settings=ImportSettings(),
+            limiter=services.rate_limiter,
         )
 
     def _now(self) -> str:
@@ -99,7 +121,7 @@ class ImportRunner:
         return self._inflight.running(_KEY + import_id)
 
     async def run(self, import_id: str) -> None:
-        """Runs (or resumes) the import; returns once it is `done` or `failed`."""
+        """Runs (or resumes) the import until it ends or pauses."""
         await self._inflight.run(_KEY + import_id, lambda: self._guarded(import_id))
 
     def stale(self, active: list[tuple[str, str]]) -> list[str]:
@@ -107,9 +129,26 @@ class ImportRunner:
         cutoff = format_ts(self._clock.now() - timedelta(seconds=STALE_AFTER_S))
         return [i for i, updated in active if updated <= cutoff and not self.running(i)]
 
+    async def _catalog_call[T](self, call: Callable[[], Awaitable[T]]) -> T:
+        """One catalog call under the shared import budget; passing outages pause the run."""
+        while True:
+            decision = await run_in_threadpool(self._limiter.hit, BUCKET, self._limit)
+            if decision.allowed:
+                break
+            await anyio.sleep(decision.retry_after_s)
+        try:
+            return await call()
+        except _PASSING as exc:
+            raise _Paused(exc.message) from exc
+
     async def _guarded(self, import_id: str) -> None:
         try:
             await self._run(import_id)
+        except _Paused as paused:
+            log.info("import %s paused: %s", import_id, paused)
+        except anyio.get_cancelled_exc_class():
+            log.info("import %s stopped by shutdown; it resumes later", import_id)
+            raise
         except Exception as exc:  # the import must end, whatever broke
             log.exception("import %s failed", import_id)
             code = spec_for(exc).problem_code if isinstance(exc, TunesError) else None
@@ -137,16 +176,14 @@ class ImportRunner:
     async def _read(self, row: ImportRow) -> dict[str, CatalogTrack] | None:
         """Reads a YouTube Music playlist into items; None when the import failed."""
         await self._write(lambda r: r.set_state(row.id, "reading", self._now()))
+        playlist_id = str(row.source_playlist_id)
         try:
-            playlist = await self._catalog.playlist(str(row.source_playlist_id))
-        except TunesError as exc:
+            playlist = await self._catalog_call(lambda: self._catalog.playlist(playlist_id))
+        except NotFound:
             message = (
                 "The playlist was not found on YouTube Music (private playlists cannot be read)"
-                if isinstance(exc, NotFound)
-                else exc.message
             )
-            code = spec_for(exc).problem_code or "internal_error"
-            await self._write(lambda r: r.fail(row.id, code, message, self._now()))
+            await self._write(lambda r: r.fail(row.id, "not_found", message, self._now()))
             return None
         items = [
             SourceItem(
@@ -170,7 +207,10 @@ class ImportRunner:
 
     async def _find(self, item: SourceItem, known: dict[str, CatalogTrack]) -> Match | None:
         if item.video_id is not None:
-            track = known.get(item.video_id) or await self._catalog.track(item.video_id)
+            video_id = item.video_id
+            track = known.get(video_id)
+            if track is None:
+                track = await self._catalog_call(lambda: self._catalog.track(video_id))
             return Match(track, 1.0)
         found = best_match(item, await self._search(query_for(item)))
         if found is None and core_title(item.title) != item.title:
@@ -178,11 +218,7 @@ class ImportRunner:
         return found
 
     async def _search(self, query: str) -> list[CatalogTrack]:
-        try:
-            return await self._catalog.search_songs(query, SEARCH_LIMIT)
-        finally:
-            if self._settings.import_search_interval_s > 0:
-                await anyio.sleep(self._settings.import_search_interval_s)
+        return await self._catalog_call(lambda: self._catalog.search_songs(query, SEARCH_LIMIT))
 
     async def _match(self, row: ImportRow, item: ItemRow, known: dict[str, CatalogTrack]) -> None:
         position = item.position
@@ -190,6 +226,8 @@ class ImportRunner:
             found = await self._find(item.source(), known)
         except NotFound:
             found = None
+        except _Paused:
+            raise
         except TunesError as exc:
             message = exc.message
             await self._write(
