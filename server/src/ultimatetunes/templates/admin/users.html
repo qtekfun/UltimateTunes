@@ -1,0 +1,55 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Users") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Users") }}</h1>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("Username") }}</th><th>{{ _("Role") }}</th><th>{{ _("Status") }}</th><th>{{ _("Last sign-in") }}</th><th>{{ _("Actions") }}</th></tr></thead>
+  <tbody>
+  {% for user in users %}
+  <tr>
+    <td>{{ user.username }}</td>
+    <td>{{ _("Administrator") if user.role == "admin" else _("User") }}</td>
+    <td>{% if user.is_disabled %}<span class="bad">{{ _("Disabled") }}</span>{% else %}<span class="ok">{{ _("Active") }}</span>{% endif %}</td>
+    <td class="muted">{{ user.last_login_at or "-" }}</td>
+    <td>
+      {% if user.id != admin.user.id %}
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="{{ 'enable' if user.is_disabled else 'disable' }}">
+        <button class="secondary" type="submit">{{ _("Enable") if user.is_disabled else _("Disable") }}</button>
+      </form>
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="role">
+        <input type="hidden" name="role" value="{{ 'user' if user.role == 'admin' else 'admin' }}">
+        <button class="secondary" type="submit">{{ _("Make user") if user.role == "admin" else _("Make administrator") }}</button>
+      </form>
+      {% endif %}
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="password">
+        <input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="{{ _("New password") }}" aria-label="{{ _("New password") }}" required>
+        <button class="secondary" type="submit">{{ _("Set password") }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="card">
+  <h2>{{ _("New user") }}</h2>
+  <form class="stack" method="post" action="/admin/users">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Username") }}<input name="username" required maxlength="64" autocomplete="off"></label>
+    <label>{{ _("Password (12 characters or more)") }}<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
+    <label>{{ _("Role") }}
+      <select name="role"><option value="user">{{ _("User") }}</option><option value="admin">{{ _("Administrator") }}</option></select>
+    </label>
+    <button type="submit">{{ _("Create user") }}</button>
+  </form>
+</div>
+{% endblock %}
