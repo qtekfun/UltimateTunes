@@ -18,4 +18,6 @@ dependencies {
     // api: the app's playback package (T17) binds a MediaController to the session service.
     api(libs.media3.session)
     implementation(libs.media3.datasource.okhttp)
+    // Brings the client and pins OkHttp to the app's version (media3-datasource-okhttp asks for 4.x).
+    implementation(project(":core:api"))
 }
