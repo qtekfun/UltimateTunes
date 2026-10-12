@@ -5,7 +5,7 @@
 Migrations are portable SQL (SQLite and PostgreSQL, through `db.driver`). Each file runs in its
 own transaction and is recorded in `schema_migrations`; applied files are never run again. The
 api never migrates: `ultimatetunes migrate` does (a Kubernetes Job later), and `/readyz` checks
-the result.
+the result. It ends by refreshing the planner statistics (`Connection.optimize`).
 """
 
 import re
@@ -85,6 +85,8 @@ def migrate(conn: Connection, directory: Path, clock: Clock | None = None) -> li
                 (migration.version, migration.name, format_ts(clock.now())),
             )
         applied.append(migration)
+    # New tables and indexes need planner statistics (issue #54); cheap when nothing changed.
+    conn.optimize()
     return applied
 
 
