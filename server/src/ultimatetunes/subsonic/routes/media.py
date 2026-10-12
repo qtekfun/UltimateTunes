@@ -97,7 +97,7 @@ async def _serve(req: SubsonicRequest, *, download: bool) -> Response:
 async def get_cover_art(req: SubsonicRequest) -> Response:
     raw = req.require("id")
     image = await Covers(req.services, library_settings()).image(raw, req.user.user_id)
-    headers = {"Cache-Control": COVER_CACHE_CONTROL}
+    headers = {"Cache-Control": COVER_CACHE_CONTROL, "X-Content-Type-Options": "nosniff"}
     if image.data is not None:
         return Response(image.data, media_type=image.content_type, headers=headers)
     return file_response(

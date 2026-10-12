@@ -20,7 +20,6 @@ rule is error 70; a network failure is `UpstreamUnavailable`. `size` is ignored 
 import contextlib
 import hashlib
 import os
-import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -68,7 +67,16 @@ IMAGE_TYPES = {
     "webp": "image/webp",
     "gif": "image/gif",
 }
-_SUBTYPE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,31}$")
+# The only image types served (never SVG or anything a browser could run), by cache suffix.
+SERVED_TYPES = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+_ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
+
+
+def served_type(content_type: str) -> str | None:
+    """The canonical served type of `content_type`, or None when it is not served."""
+    lowered = content_type.split(";", maxsplit=1)[0].strip().lower()
+    lowered = _ALIASES.get(lowered, lowered)
+    return lowered if lowered in SERVED_TYPES.values() else None
 
 
 @dataclass(frozen=True)
@@ -101,7 +109,7 @@ def _file(store: LibraryStore, path: str | None) -> Image | None:
     if not path:
         return None
     content_type = _image_type(path)
-    if content_type is None:
+    if content_type is None or served_type(content_type) is None:
         return None
     try:
         if not store.exists(path):
@@ -154,9 +162,10 @@ def embedded(store: LibraryStore, path: str) -> Image | None:
     data, mime = found
     if not data or len(data) > MAX_EMBEDDED_BYTES:
         return None
-    if not mime.startswith("image/"):
-        mime = "image/jpeg"
-    return Image(mime, data=data)
+    served = served_type(mime)
+    if served is None:
+        return None
+    return Image(served, data=data)
 
 
 def _first_song_path(conn: Connection, album_id: str) -> str | None:
@@ -277,9 +286,8 @@ async def fetch(url: str, timeout_s: float) -> tuple[bytes, str]:
         ):
             if response.status_code != 200:  # noqa: PLR2004
                 raise not_found()
-            content_type = response.headers.get("content-type", "").split(";")[0].strip()
-            content_type = content_type.lower()
-            if not content_type.startswith("image/"):
+            content_type = served_type(response.headers.get("content-type", "")) or ""
+            if not content_type:
                 raise not_found()
             declared = response.headers.get("content-length")
             if declared is not None and declared.isdigit() and int(declared) > MAX_EXTERNAL_BYTES:
@@ -308,33 +316,32 @@ class CoverCache:
     def _stem(self, key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
-    def _entries(self, key: str) -> list[Path]:
-        if not self.directory.is_dir():
-            return []
+    def _candidates(self, key: str) -> list[tuple[Path, str]]:
+        """The few possible files of `key` (one per served type): no directory listing."""
         stem = self._stem(key)
-        return [p for p in self.directory.iterdir() if p.name.startswith(stem + ".")]
+        return [(self.directory / f"{stem}.{suffix}", ct) for suffix, ct in SERVED_TYPES.items()]
 
     def get(self, key: str) -> tuple[bytes, str] | None:
         now = self._clock.now().timestamp()
-        for path in self._entries(key):
+        for path, content_type in self._candidates(key):
             try:
                 if now - path.stat().st_mtime > self._ttl_s:
                     continue
                 data = path.read_bytes()
             except OSError:
                 continue
-            subtype = path.name.split(".", 1)[1]
-            return data, f"image/{subtype}"
+            return data, content_type
         return None
 
     def put(self, key: str, data: bytes, content_type: str) -> None:
-        subtype = content_type.split("/", 1)[1] if "/" in content_type else ""
-        if not _SUBTYPE.match(subtype):
-            subtype = "jpeg"
+        served = served_type(content_type)
+        if served is None:
+            return
+        suffix = served.split("/", 1)[1]
         self.directory.mkdir(parents=True, exist_ok=True)
-        for old in self._entries(key):
+        for old, _ in self._candidates(key):
             old.unlink(missing_ok=True)
-        target = self.directory / f"{self._stem(key)}.{subtype}"
+        target = self.directory / f"{self._stem(key)}.{suffix}"
         tmp = self.directory / f".{target.name}.{secrets.token_hex(4)}.tmp"
         tmp.write_bytes(data)
         moment = self._clock.now().timestamp()

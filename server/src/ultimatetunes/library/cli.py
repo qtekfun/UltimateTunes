@@ -3,7 +3,9 @@
 """Commands of the library area (`commands.AREAS`). Owner: PLAN T05.
 
 `ultimatetunes scan-library [--full]` registers the audio files of `/music` (`library.scan`):
-new and changed files by default, every file with `--full`. Run `ultimatetunes migrate` first.
+new and changed files by default, every file with `--full`. A file is "changed" when its size
+changed: after editing tags in place without changing the size, run it with `--full`. Run
+`ultimatetunes migrate` first.
 """
 
 import sys

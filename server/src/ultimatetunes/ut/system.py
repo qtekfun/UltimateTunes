@@ -4,12 +4,14 @@
 
 The Android Connect screen calls it first to check the URL, so it needs no API key and says
 nothing about the library or its users. Capabilities follow the admin's switches
-(`UT_EXTERNAL_SEARCH`, `UT_RADIO`); the app hides what is false.
+(`UT_EXTERNAL_SEARCH`, `UT_RADIO`) and what is installed (`streamingWhileDownloading`:
+a real `PendingStreams`); the app hides what is false.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from ultimatetunes import __version__
+from ultimatetunes.library.stream import NotStreamingYet
 from ultimatetunes.radio.service import radio_settings
 from ultimatetunes.search.service import search_settings
 from ultimatetunes.subsonic.envelope import API_VERSION, SERVER_TYPE
@@ -19,7 +21,8 @@ public_router = APIRouter()
 
 
 @public_router.get("/ut/v1/server")
-def get_server_info() -> dict[str, object]:
+def get_server_info(request: Request) -> dict[str, object]:
+    streams = getattr(request.app.state, "pending_streams", None)
     return {
         "name": SERVER_TYPE,
         "version": __version__,
@@ -31,6 +34,8 @@ def get_server_info() -> dict[str, object]:
             "lyrics": True,
             "youtubeMusicImport": True,
             "fileImport": True,
-            "streamingWhileDownloading": True,
+            # True once streaming while downloading (PLAN T16) replaced the library's default.
+            "streamingWhileDownloading": streams is not None
+            and not isinstance(streams, NotStreamingYet),
         },
     }

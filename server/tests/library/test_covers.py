@@ -45,6 +45,16 @@ def test_album_cover_from_the_folder(lib: Harness) -> None:
     assert head.status_code == 200
     assert head.content == b""
     assert head.headers["content-length"] == str(len(JPEG))
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_svg_files_are_never_served(lib: Harness) -> None:
+    album = lib.ids()["Harbour Lights"]
+    (lib.music / "evil.svg").write_text("<svg onload=alert(1)/>", encoding="utf-8")
+    with lib.services.db.transaction() as conn:
+        conn.execute("UPDATE albums SET cover_path = 'evil.svg' WHERE id = ?", (album,))
+    # The stored SVG is ignored; the folder JPEG is served instead.
+    assert cover(lib, f"al-{album}").content == JPEG
 
 
 def test_album_cover_embedded_in_the_first_song(lib: Harness) -> None:
@@ -187,7 +197,8 @@ def test_archived_song_shows_its_album_cover(lib: Harness) -> None:
         (404, {"Content-Type": "image/jpeg"}, b""),
         (200, {"Content-Type": "text/html"}, b"<html>"),
         (200, {"Content-Type": "image/jpeg", "Content-Length": str(MAX_EXTERNAL_BYTES + 1)}, b"x"),
-        (200, {"Content-Type": "image/jpeg"}, b"x" * (MAX_EXTERNAL_BYTES + 1)),
+        (200, {"Content-Type": "image/svg+xml"}, b"<svg/>"),
+        (200, {"Content-Type": "image/x-icon"}, b"ico"),
     ],
 )
 @respx.mock
@@ -197,6 +208,44 @@ def test_external_thumbnail_rules(
     respx.get(THUMB).mock(return_value=httpx.Response(status, headers=headers, content=body))
     assert code(cover(lib, "yt:Qx7Lm2pZ0aB")) == 70
     assert not (lib.services.settings.data_dir / "covers").exists()
+
+
+def _chunks(total: int, size: int = 64 * 1024) -> Any:
+    async def body() -> Any:
+        sent = 0
+        while sent < total:
+            chunk = min(size, total - sent)
+            sent += chunk
+            yield b"x" * chunk
+
+    return body()
+
+
+@respx.mock
+def test_streamed_body_over_the_cap_without_content_length(lib: Harness) -> None:
+    # A chunked answer (no Content-Length): only the count while streaming can stop it.
+    route = respx.get(THUMB).mock(
+        return_value=httpx.Response(
+            200, headers={"Content-Type": "image/jpeg"}, stream=_chunks(MAX_EXTERNAL_BYTES + 1)
+        )
+    )
+    assert code(cover(lib, "yt:Qx7Lm2pZ0aB")) == 70
+    answer = route.calls.last.response
+    assert "content-length" not in answer.headers
+    assert not (lib.services.settings.data_dir / "covers").exists()
+
+
+@respx.mock
+def test_streamed_body_at_the_cap_is_served(lib: Harness) -> None:
+    respx.get(THUMB).mock(
+        return_value=httpx.Response(
+            200, headers={"Content-Type": "image/png"}, stream=_chunks(MAX_EXTERNAL_BYTES)
+        )
+    )
+    r = cover(lib, "yt:Qx7Lm2pZ0aB")
+    assert r.status_code == 200
+    assert len(r.content) == MAX_EXTERNAL_BYTES
+    assert r.headers["x-content-type-options"] == "nosniff"
 
 
 @respx.mock
@@ -249,7 +298,9 @@ def test_cover_cache_ttl_and_size_cap(tmp_path: Path) -> None:
     cache.put("yt:a", b"x" * 10, "image/png")
     assert cache.get("yt:a") == (b"x" * 10, "image/png")
     clock.advance(10)
-    cache.put("yt:b", b"y" * 10, "image/weird type")
+    cache.put("yt:svg", b"<svg/>", "image/svg+xml")
+    assert cache.get("yt:svg") is None
+    cache.put("yt:b", b"y" * 10, "image/jpg; q=1")
     assert cache.get("yt:b") == (b"y" * 10, "image/jpeg")
     clock.advance(10)
     cache.put("yt:c", b"z" * 10, "image/webp")

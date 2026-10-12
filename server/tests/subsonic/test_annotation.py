@@ -179,3 +179,22 @@ def test_scrobble_errors(lib: Harness, params: dict[str, object], expected: int)
     resolved = {k: (lib.ids()["Brasas"] if v == "SONG" else v) for k, v in params.items()}
     assert lib.error("scrobble", **resolved) == expected
     assert lib.one("SELECT COUNT(*) FROM play_history") == 0
+
+
+def test_xml(lib: Harness) -> None:
+    ids = lib.ids()
+    star = lib.rest("star", fmt="xml", id=ids["Brasas"], albumId=ids["Harbour Lights"])
+    assert star.headers["content-type"] == "application/xml; charset=utf-8"
+    assert 'status="ok"' in star.text
+    lib.ok("star", id="yt:Qx7Lm2pZ0aB")
+    scrobble = lib.rest("scrobble", fmt="xml", id=ids["Brasas"], time="1000")
+    assert 'status="ok"' in scrobble.text
+    xml = lib.rest("getStarred2", fmt="xml").text
+    assert "<starred2>" in xml
+    assert xml.count("<song ") == 2
+    assert f'<song id="{ids["Brasas"]}"' in xml
+    assert '<song id="yt:Qx7Lm2pZ0aB"' in xml
+    assert f'<album id="{ids["Harbour Lights"]}"' in xml
+    assert "<replayGain/>" in xml
+    assert 'playCount="1"' in xml
+    assert lib.rest("star", fmt="xml", id="nope").text.count('<error code="70"') == 1

@@ -81,6 +81,18 @@ def test_server_info(lib: Harness) -> None:
     }
     assert body["capabilities"]["externalSearch"] is True
     assert body["capabilities"]["radio"] is True
+    # Streaming while downloading is only announced once PLAN T16 installs it.
+    assert body["capabilities"]["streamingWhileDownloading"] is False
+
+
+def test_server_info_announces_installed_streaming(lib: Harness) -> None:
+    class Streams:
+        async def serve(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError
+
+    lib.client.app.state.pending_streams = Streams()  # type: ignore[attr-defined]
+    caps = lib.client.get("/ut/v1/server").json()["capabilities"]
+    assert caps["streamingWhileDownloading"] is True
 
 
 def test_server_info_follows_the_switches(lib: Harness, monkeypatch: pytest.MonkeyPatch) -> None:

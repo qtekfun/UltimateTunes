@@ -8,7 +8,10 @@ through `LibraryStore` (never a path built outside it) and registered in its own
 transaction: its artist (by MusicBrainz id, else by normalised name), its album (by
 MusicBrainz release id, else by album artist and normalised name) and the track (by path,
 `ready`). A file whose path is known and whose size did not change is left alone, unless the
-scan is `full`. The scan never deletes anything: a track whose file disappeared stays until
+scan is `full` (`ultimatetunes scan-library --full`: needed after a tag edit that kept the
+file size, since no modification time is stored). A path reserved by a download job that is still
+running (`jobs.library_path`) is left to the archive flow, so the scan never races its move
+and complete. The scan never deletes anything: a track whose file disappeared stays until
 an admin removes it (counted as `missing`).
 
 Tags are read from Vorbis comments (FLAC, Opus, Ogg), ID3 (MP3) and MP4 atoms, using the
@@ -123,9 +126,16 @@ class AudioInfo:
     channels: int | None = None
 
 
+# A path reserved by a download job that has not ended yet (register → move → complete).
+_RESERVED = (
+    "SELECT 1 FROM jobs WHERE library_path = ? AND state IN ('queued', 'downloading', 'tagging')"
+)
+
+
 @dataclass
 class ScanResult:
     added: int = 0
+    reserved: int = 0
     updated: int = 0
     unchanged: int = 0
     skipped: int = 0
@@ -359,9 +369,12 @@ class LibraryScanner:
         return sum(1 for row in rows if str(row["path"]) not in seen)
 
     def register(self, path: str, fmt: str, *, full: bool = False) -> str:
-        """Registers one file; returns `added`, `updated` or `unchanged`."""
+        """Registers one file; returns `added`, `updated`, `unchanged` or `reserved` (a
+        download job holds the path: the archive flow registers it, PLAN T09)."""
         size = self._store.size(path)
         with self._db.read() as conn:
+            if conn.execute(_RESERVED, (path,)).fetchone() is not None:
+                return "reserved"
             row = conn.execute(
                 "SELECT id, size_bytes FROM tracks WHERE path = ?", (path,)
             ).fetchone()

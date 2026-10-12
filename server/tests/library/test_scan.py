@@ -298,3 +298,28 @@ def test_cli_scan(settings: Settings, clock: FakeClock, tmp_path: Path) -> None:
     assert registry.get("scan-library").run is cli.run_scan
     with contextlib.suppress(StopIteration):
         next(harness)
+
+
+@pytest.mark.parametrize(("state", "registered"), [("tagging", False), ("ready", True)])
+def test_scan_leaves_paths_reserved_by_running_jobs(
+    lib: Harness, state: str, registered: bool
+) -> None:
+    rel = "Neon Harbor/Static Bloom/01 - Static Bloom.opus"
+    write_opus(lib.music / rel, {"title": "Static Bloom", "artist": "Neon Harbor"})
+    now = "2026-10-12T08:00:00.000Z"
+    with lib.services.db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO tracks (id, status, title, title_norm, artist_name, yt_video_id,"
+            " created_at, updated_at) VALUES ('0199d6a2-4c1e-7b3a-9f10-2a6c8e01c0f1', 'pending',"
+            " 'Static Bloom', 'static bloom', 'Neon Harbor', 'Hm3Vx8Nq2Lp', ?, ?)",
+            (now, now),
+        )
+        conn.execute(
+            "INSERT INTO jobs (id, kind, track_id, yt_video_id, state, library_path, created_at,"
+            " updated_at) VALUES ('0199d6a2-4c1e-7b3a-9f10-2a6c8e01d0f1', 'download',"
+            " '0199d6a2-4c1e-7b3a-9f10-2a6c8e01c0f1', 'Hm3Vx8Nq2Lp', ?, ?, ?, ?)",
+            (state, rel, now, now),
+        )
+    result = scanner(lib).scan()
+    assert result.reserved == (0 if registered else 1)
+    assert (lib.one("SELECT COUNT(*) FROM tracks WHERE path = ?", (rel,)) == 1) is registered
