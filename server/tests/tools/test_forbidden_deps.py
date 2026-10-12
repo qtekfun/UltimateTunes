@@ -27,6 +27,11 @@ LOCK = Path(__file__).parents[2] / "uv.lock"
         "newrelic",
         "bugsnag",
         "rollbar",
+        "logfire",
+        "amplitude-analytics",
+        "honeybadger",
+        "elastic-apm",
+        "scout-apm",
     ],
 )
 def test_forbidden_packages_are_flagged(name: str) -> None:

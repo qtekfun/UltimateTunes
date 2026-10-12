@@ -28,6 +28,11 @@ FORBIDDEN = (
     "newrelic*",
     "bugsnag*",
     "rollbar*",
+    "logfire*",
+    "amplitude*",
+    "honeybadger*",
+    "elastic-apm",
+    "scout-apm",
 )
 
 # Allowed although they look related, with the reason.
