@@ -31,6 +31,10 @@ class WorkerSettings(AreaSettings):
     lease_s: int = Field(default=60, ge=15, le=300)
     # Wait before claiming again when the api is unreachable or did not say (`Retry-After`).
     poll_interval_s: float = Field(default=2.0, gt=0, le=60)
+    # Long poll (issue #55): an idle claim asks the api to hold it this long and answer as
+    # soon as a job is queued; 0 turns it off (poll every `Retry-After` seconds instead).
+    # Under the 10 s Docker stop grace period, though a stop also abandons the claim at once.
+    claim_wait_s: int = Field(default=8, ge=0, le=30)
     # Timeout of one call to the api, and how often an idempotent call is retried after a
     # transport error or a 5xx before the worker gives up on it.
     api_timeout_s: float = Field(default=10.0, gt=0, le=120)

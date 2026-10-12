@@ -30,6 +30,13 @@ log = logging.getLogger(__name__)
 # How long a SQLite connection waits for the write lock before failing.
 SQLITE_BUSY_TIMEOUT_MS = 5000
 
+# `PRAGMA optimize` checking every table, not only the ones this connection used, and running
+# ANALYZE (bit 0x02) where statistics are missing or stale. SQLite >= 3.46 (the image ships
+# 3.46); older versions ignore the 0x10000 bit. Without statistics the planner picks
+# low-selectivity indexes (e.g. `ix_tracks_status`) and browse queries get O(albums x tracks)
+# (issue #54).
+SQLITE_OPTIMIZE = "PRAGMA optimize=0x10002"
+
 
 class DatabaseError(Exception):
     """Any driver error, translated so callers never import a driver module."""
@@ -70,6 +77,12 @@ class Connection(Protocol):
         ...
 
     def table_exists(self, name: str) -> bool: ...
+
+    def optimize(self, *, wait_ms: int | None = None) -> None:
+        """Refreshes the query planner statistics of the tables that need it (SQLite
+        `PRAGMA optimize`, PostgreSQL `ANALYZE`). Writes statistics: writer connections only.
+        `wait_ms` bounds the wait for another writer (SQLite), e.g. while shutting down."""
+        ...
 
     def close(self) -> None: ...
 
@@ -124,6 +137,16 @@ class SqliteConnection:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
         ).fetchone()
         return found is not None
+
+    def optimize(self, *, wait_ms: int | None = None) -> None:
+        if wait_ms is None:
+            self.execute(SQLITE_OPTIMIZE)
+            return
+        self.execute(f"PRAGMA busy_timeout={int(wait_ms)}")
+        try:
+            self.execute(SQLITE_OPTIMIZE)
+        finally:
+            self.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
 
     def close(self) -> None:
         self.raw.close()
@@ -217,6 +240,9 @@ class PostgresConnection:
             (name,),
         ).fetchone()
         return found is not None
+
+    def optimize(self, *, wait_ms: int | None = None) -> None:
+        self.execute("ANALYZE")
 
     def close(self) -> None:
         self.raw.close()
