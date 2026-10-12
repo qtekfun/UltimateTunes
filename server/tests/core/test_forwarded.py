@@ -9,10 +9,13 @@ from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from ultimatetunes.core.forwarded import (
+    TRUSTED_NETWORKS_STATE,
     UNKNOWN_CLIENT,
     ClientAddress,
     client_from_chain,
+    from_trusted_network,
     resolve,
+    trusted_origin,
     via_untrusted_proxy,
 )
 from ultimatetunes.core.netaddr import in_networks, parse_ip, parse_networks
@@ -113,3 +116,40 @@ def test_address_helpers() -> None:
     assert in_networks("::ffff:127.0.0.1", PROXIES)
     assert not in_networks("::1", PROXIES)
     assert not in_networks(None, PROXIES)
+
+
+LAN = parse_networks("192.168.0.0/16, 10.0.0.0/8")
+WORKER = parse_networks("10.213.44.0/24")
+
+
+@pytest.mark.parametrize(
+    ("request_scope", "trusted"),
+    [
+        (scope("192.168.1.5"), True),
+        (scope("203.0.113.9"), False),
+        (scope(None), False),
+        # The worker's network is private, yet never trusted.
+        (scope("10.213.44.3"), False),
+        (scope("10.1.2.3"), True),
+        (resolve(scope("192.168.1.5", ("X-Forwarded-For", "192.168.1.6")), ()), False),
+        (scope("192.168.1.5", ("Tailscale-Funnel-Request", "?1")), False),
+    ],
+)
+def test_from_trusted_network(request_scope: Scope, trusted: bool) -> None:
+    assert from_trusted_network(request_scope, LAN, WORKER) is trusted
+
+
+def test_trusted_origin_needs_configured_networks() -> None:
+    class State:
+        pass
+
+    holder = type("Holder", (), {"state": State()})()
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        request = Request({**scope, "app": holder})
+        await JSONResponse({"trusted": trusted_origin(request)})(scope, receive, send)
+
+    client = TestClient(app, client=("192.168.1.5", 1))
+    assert client.get("/").json() == {"trusted": False}
+    setattr(holder.state, TRUSTED_NETWORKS_STATE, (LAN, WORKER))
+    assert client.get("/").json() == {"trusted": True}

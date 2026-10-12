@@ -46,7 +46,7 @@ from ultimatetunes.worker.ytdlp import YtDlpDownloader
 from ultimatetunes.worker.ytdlp_runtime import UpdateError, UpdateResult
 
 pytestmark = pytest.mark.anyio
-TOKEN = "worker-token-for-tests"
+TOKEN = "worker-token-for-tests-0123456789abcdef"
 VIDEO = "Rb8Tn3ZcYv0"
 Handler = Callable[[int, FrameType | None], None]
 

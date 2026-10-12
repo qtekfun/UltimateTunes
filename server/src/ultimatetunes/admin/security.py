@@ -9,8 +9,11 @@ In order, for every request under `/admin`:
    `UT_TRUSTED_PROXIES`); a request with forwarding headers from any other peer, or a Tailscale
    Funnel request, is refused too: behind an unconfigured proxy every caller looks local.
    The worker's network (`UT_WORKER_NETWORKS`) is refused even though it is private.
-   This is also the mitigation for the per-username lockout of T04 (SPEC §11): a stranger
-   cannot reach the login form to lock an admin out.
+   The rule is `core.forwarded.from_trusted_network`. Strangers can still try passwords on the
+   public `POST /ut/v1/keys`, so the per-username lockout of T04 keeps **two counters**
+   (`AuthService.verify_password`): failures from outside these networks lock only logins from
+   outside; the panel's login form (always inside) has its own counter, which only failures
+   from inside move. A stranger cannot lock an admin out of the panel.
 2. **Session**: a cookie signed with itsdangerous (`HttpOnly`, `Secure`, `SameSite=Strict`,
    `Path=/admin`), stateless so any api replica can check it. It holds the user id, an expiry
    from the injected clock, the CSRF token and a fingerprint of the password hash and of the
@@ -39,7 +42,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ultimatetunes.admin.settings import IpNetwork
 from ultimatetunes.core.clock import Clock
-from ultimatetunes.core.forwarded import via_untrusted_proxy
+from ultimatetunes.core.forwarded import from_trusted_network
 from ultimatetunes.core.netaddr import in_networks
 
 SESSION_COOKIE = "ut_admin_session"
@@ -50,8 +53,6 @@ CSRF_HEADER = "x-csrf-token"
 LOGIN_TTL_S = 15 * 60
 # Forms of the panel are small; anything bigger is refused before parsing.
 MAX_BODY_BYTES = 64 * 1024
-# Set by Tailscale Funnel on public requests: the panel is never served through Funnel.
-FUNNEL_HEADER = "tailscale-funnel-request"
 
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -111,14 +112,8 @@ class AdminGate:
             return
         if admin:
             request = Request(scope)
-            host = request.client.host if request.client else None
             refusal: Response | None = None
-            if (
-                not client_allowed(host, self._networks)
-                or client_allowed(host, self._denied)
-                or via_untrusted_proxy(scope)
-                or FUNNEL_HEADER in request.headers
-            ):
+            if not from_trusted_network(scope, self._networks, self._denied):
                 refusal = PlainTextResponse("Forbidden", status_code=403)
             elif _too_big(request):
                 refusal = PlainTextResponse("Payload too large", status_code=413)

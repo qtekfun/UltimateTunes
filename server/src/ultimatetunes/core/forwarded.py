@@ -16,10 +16,16 @@ log) reads `scope["client"]`, so this is the one place that decides it:
   (`tailscale serve`/Funnel or Caddy before `UT_TRUSTED_PROXIES` is set, where every caller
   looks local), so `/admin` refuses it and `/readyz` answers without detail. Failing closed is
   the default; setting `UT_TRUSTED_PROXIES` is how a proxied deployment opts in.
+
+`from_trusted_network` is the one rule for "this request comes from the admin's own networks"
+(LAN/Tailscale): the `/admin` allowlist and the separate per-user login lockout of
+`AuthService.verify_password` (callers inside get their own counter, so strangers cannot lock
+an admin out of LAN/Tailscale logins) both use it.
 """
 
 from collections.abc import Iterable
 
+from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ultimatetunes.core.netaddr import IpNetwork, in_networks, parse_ip
@@ -38,10 +44,42 @@ FORWARDING_HEADERS = frozenset(
     }
 )
 MAX_HOPS = 32
+# Set by Tailscale Funnel on public requests: never from a trusted network.
+FUNNEL_HEADER = "tailscale-funnel-request"
+# `app.state` attribute: `(networks, denied)` of `from_trusted_network` (the admin allowlist and
+# the worker's networks, set by the admin area). Unset: no request comes from a trusted network.
+TRUSTED_NETWORKS_STATE = "trusted_networks"
 
 
 def via_untrusted_proxy(scope: Scope) -> bool:
     return bool(scope.get(VIA_UNTRUSTED_PROXY, False))
+
+
+def from_trusted_network(
+    scope: Scope, networks: tuple[IpNetwork, ...], denied: tuple[IpNetwork, ...] = ()
+) -> bool:
+    """The resolved client is inside `networks`, outside `denied`, and the request came neither
+    through an untrusted proxy nor through Tailscale Funnel."""
+    peer = scope.get("client")
+    host = peer[0] if peer else None
+    headers: list[tuple[bytes, bytes]] = scope.get("headers", [])
+    return (
+        in_networks(host, networks)
+        and not in_networks(host, denied)
+        and not via_untrusted_proxy(scope)
+        and not any(name.lower() == FUNNEL_HEADER.encode() for name, _ in headers)
+    )
+
+
+def trusted_origin(conn: HTTPConnection) -> bool:
+    """`from_trusted_network` with the networks the app keeps in `TRUSTED_NETWORKS_STATE`."""
+    configured: tuple[tuple[IpNetwork, ...], tuple[IpNetwork, ...]] | None = getattr(
+        conn.app.state, TRUSTED_NETWORKS_STATE, None
+    )
+    if configured is None:
+        return False
+    networks, denied = configured
+    return from_trusted_network(conn.scope, networks, denied)
 
 
 def client_from_chain(hops: list[str], proxies: tuple[IpNetwork, ...]) -> str:

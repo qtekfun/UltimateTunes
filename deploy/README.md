@@ -11,6 +11,67 @@ SPDX-License-Identifier: GPL-3.0-or-later
 |---|---|
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
 | `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` LAN/Tailscale-only. |
+| `traefik/` | The same with Traefik v3 + Authelia: static config (`traefik.yml`), routers and middlewares (`dynamic/ultimatetunes.yml`), Traefik's stack with a pinned `proxy` network (`compose.traefik.yaml`) and an overlay for `server/compose.yaml` with the labels variant (`compose.labels.yaml`). |
+
+## Exposing UltimateTunes
+
+1. **Tailscale only is the recommended setup.** `tailscale serve` (`tailscale/README.md`) gives HTTPS inside your tailnet and nothing is reachable from the Internet. Never Tailscale Funnel.
+2. **Public access only through Caddy** (`caddy/Caddyfile`) or **Traefik** (`traefik/`, below) on the host, with the per-IP rate limits of the `caddy-ratelimit` module enabled (commented out in the example; it needs a custom Caddy build). Caddy is what gives you TLS, a request-header timeout (`read_header`), per-IP request limits and a body cap at the edge; uvicorn has no header timeout of its own.
+3. **Never port-forward 8044** (or 8045) on your router, and never publish `UT_BIND` on a public address: the api must not face the Internet directly.
+4. **Never put a tunnel or another proxy in front of Caddy** (Cloudflare Tunnel, ngrok, an SSH forward, Funnel). Caddy would see the tunnel's local address as every client: the `/admin` rule and every per-IP limit would treat the Internet as your LAN.
+5. **Fresh secrets with `server/compose.yaml`**: `openssl rand -hex 32 > secrets/worker_token` and the same for `secrets/admin_session_secret` (the worker token needs 32+ characters). Never reuse the test stack's token (`server/compose.test.yaml`, public on purpose) or any key or password you used while testing: **revoke every API key** created on a test stack or while trying things out (panel → Keys) and change test passwords before going public.
+6. **Narrow the admin networks: required before any public exposure.** The default `UT_ADMIN_ALLOWED_NETWORKS` (loopback, every RFC 1918 and ULA range, link-local, Tailscale) is meant for a LAN/Tailscale-only setup. Before opening anything to the Internet, set it to your tailnet and your LAN's /24, for example `UT_ADMIN_ALLOWED_NETWORKS=127.0.0.1/32,::1/128,100.64.0.0/10,fd7a:115c:a1e0::/48,192.168.1.0/24`. **Never include the Docker bridge ranges (`172.16.0.0/12`)**: other containers on the host live there, and so does the gateway that Docker's userland proxy connects from. Give Caddy the same ranges (`UT_ADMIN_LAN_RANGES`, `UT_ADMIN_TAILNET_RANGES`), or Traefik's `ut-lan-only`.
+7. **Firewall the worker** (below) and remove the bootstrap password after the first start (below).
+8. Walk the checklist in `SECURITY.md`.
+
+### Limits of the api itself
+
+The listeners close idle keep-alive connections after `UT_KEEPALIVE_TIMEOUT_S` (5 s), refuse with 503 past `UT_LIMIT_CONCURRENCY` open connections (128; the internal listener `UT_INTERNAL_LIMIT_CONCURRENCY`, 32), queue `UT_BACKLOG` (256) pending connections and refuse request heads over `UT_MAX_HEADER_BYTES` (16 KiB). Bodies: 4 MiB api-wide (`UT_MAX_BODY_BYTES`), 1 MiB for OpenSubsonic form posts and 16 KiB for `POST /ut/v1/keys`. OpenSubsonic form bodies may carry the API key themselves (`formPost`), so they are read before the key is checked; the 1 MiB cap times the concurrency limit bounds that memory, and Caddy's `request_body` caps them at the edge. `server/compose.yaml` also caps the containers (`mem_limit`, `cpus`, open files, PIDs).
+
+### Firewall: the worker reaches the Internet only
+
+The worker runs yt-dlp, which executes extractor code paths on content from the Internet. Its way out is the `egress` network (bridge interface `ut-egress`, subnet `UT_EGRESS_SUBNET`, default `10.213.45.0/24`), and it needs nothing on your LAN. The api already refuses `/admin` to that subnet (`UT_WORKER_NETWORKS`), but block it on the host too, so a compromised worker cannot reach the host's own services (Caddy, a LAN-published `UT_BIND`, SSH) nor your LAN, tailnet or other containers:
+
+```sh
+# New connections from the worker to the host itself:
+sudo iptables -I INPUT -i ut-egress -m conntrack --ctstate NEW -j DROP
+# ...and to private networks (forwarded traffic; Docker's DOCKER-USER chain):
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16; do
+  sudo iptables -I DOCKER-USER -i ut-egress -d "$net" -j DROP
+done
+# If your DNS resolver is on the LAN (e.g. the router 192.168.1.1), allow it, inserted last
+# so it comes first:
+sudo iptables -I DOCKER-USER -i ut-egress -d 192.168.1.1 -p udp --dport 53 -j ACCEPT
+```
+
+With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`, `fd7a:115c:a1e0::/48`). On firewalld or nftables hosts, write the equivalent rules (zone `docker`, or a table hooked before Docker's). Persist them with your distribution's tool. Check from the worker: `docker compose exec worker python -c "import urllib.request; urllib.request.urlopen('http://192.168.1.1', timeout=3)"` must time out, while downloads keep working.
+
+### Bootstrap admin password
+
+`UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.
+
+## Traefik + Authelia
+
+`deploy/traefik/` is the Traefik v3 version of the Caddy example, for homelabs that already run Traefik with Authelia. Pinned to `traefik:v3.6.25` by digest (`compose.traefik.yaml`). Checked by running that image offline on these files: `/readyz`, `/internal/*`, `/healthz` and any other path answer 404; paths with encoded reserved characters are refused (`encodedCharacters`, e.g. `%3B` → 400); `/admin` and `POST /ut/v1/keys` from outside the LAN ranges answer 403; `/rest/*`, `/ut/v1/*` and `/` reach the api.
+
+- **Routers** (`dynamic/ultimatetunes.yml`, or the same as labels in `compose.labels.yaml`; use one of the two):
+  - `/admin`: `ipAllowList` (your LAN /24 and tailnet), then Authelia `forwardAuth`, then the api's own allowlist and admin login. Give it a `two_factor` rule in Authelia's `access_control`:
+    ```yaml
+    access_control:
+      rules:
+        - domain: music.example.org
+          resources: ['^/admin([/?].*)?$']
+          policy: two_factor
+        - domain: music.example.org
+          policy: bypass   # /rest, /ut/v1 and / authenticate with API keys
+    ```
+  - `/rest/*`, `/ut/v1/*`, `/`: **no Authelia**. OpenSubsonic clients and the app authenticate with API keys; a `forwardAuth` login redirect would break all of them. They get `rateLimit` (per client IP), `inFlightReq` and secure headers (HSTS); requests that are not GET/HEAD also get `buffering` with `maxRequestBodyBytes` 2 MB. Traefik's buffering also holds back the whole response, so it is never put on GET (audio streams) nor on `/admin` (the api caps panel bodies at 64 KiB). Bodies over 1 MiB spill to disk, so Traefik's read-only container gets a `/tmp` tmpfs.
+  - `POST /ut/v1/keys` (the password login): LAN/Tailscale only, through the same `ipAllowList`. Devices then get their key at home from the panel's QR code (Keys → new key). This removes the password-guessing surface, and with it the lockout of audit M1, at the edge. Remove `ut-lan-only` from that router if you want password logins from anywhere; the api still rate-limits them and locks out per IP and per username.
+  - Nothing routes `/internal` or `/readyz`: Traefik answers 404. The host's healthcheck uses `127.0.0.1:8044/readyz`.
+- **Entrypoint** (`traefik.yml`): `transport.respondingTimeouts` with `readTimeout: 30s` (slowloris; the whole request must arrive in time), `idleTimeout: 120s` and `writeTimeout: 0s` (streams last minutes). `forwardedHeaders.trustedIPs` stays empty: Traefik is the edge and rewrites every client's `X-Forwarded-*`. Add an upstream there only if it really sits in front of Traefik, for example Cloudflare's proxy ranges. In that case also set `ipStrategy: {depth: 1}` on `ut-ratelimit` and `ut-lan-only`, so they key on the client Cloudflare saw. Never a tunnel on the same host (`cloudflared`, ngrok, an SSH forward): it connects from a local address.
+- **The client address** (`UT_TRUSTED_PROXIES`): Traefik's own stack pins the `proxy` network (`UT_PROXY_SUBNET`, default `10.213.46.0/24`) and Traefik's address on it (`UT_TRAEFIK_ADDRESS`, `10.213.46.2`). The overlay puts the api on `proxy` under the alias `ultimatetunes-api`; the worker never joins it. It sets `UT_TRUSTED_PROXIES=10.213.46.2/32` and adds the `proxy` subnet to `UT_WORKER_NETWORKS`, so other homelab containers on `proxy` never get `/admin`. Traefik sends `X-Forwarded-For: <client>`. The api believes it only because the TCP peer is exactly `10.213.46.2`, reads it from the right, and uses that address for its admin allowlist, its per-IP limits and lockout, and the audit log. A forged `X-Forwarded-For` from the Internet never survives: Traefik drops it at the entrypoint. A container that is not Traefik gains nothing by sending one: it is not a trusted proxy.
+- **Client addresses at Traefik.** Traefik's `ipAllowList` and `rateLimit`, and through `X-Forwarded-For` the api's own limits, see the real client only if Docker keeps the source address on the published ports 80/443. Docker does for IPv4 traffic it can DNAT. Whenever **Docker's userland proxy** answers instead, every such client shows up with the same address, the proxy's gateway (`172.x.0.1` or similar). The common case is IPv6 clients reaching a host whose `proxy` network has no IPv6. All of those clients then **share one rate-limit bucket and one lockout counter**: one abusive client locks out or slows down the others. If that gateway is inside an allowlist, they all pass it. Fix it by enabling IPv6 on the `proxy` network (`enable_ipv6: true` with an IPv6 subnet, and IPv6 enabled in the Docker daemon), or by running Traefik with `network_mode: host`. Check Traefik's access log: client addresses must be the real ones.
+- Start: `docker compose -f compose.traefik.yaml up -d` in `deploy/traefik/`, then the server with `docker compose -f compose.yaml -f ../deploy/traefik/compose.labels.yaml up -d`. Remove `ports:` from the api (or keep `127.0.0.1:8044` for the host's own checks).
 
 ## The two listeners
 
@@ -33,13 +94,13 @@ docker network inspect ultimatetunes_default --format '{{(index .IPAM.Config 0).
 UT_TRUSTED_PROXIES=172.18.0.1/32
 ```
 
-Use the single gateway address (`/32`), not the whole `172.16.0.0/12`: other containers on that network could then claim any client address. Check it from a tailnet device: `/admin` opens, and `https://<host>/readyz` shows the `checks` detail only from the tailnet or LAN.
+Use the single gateway address (`/32`), not the whole `172.16.0.0/12`: other containers on that network could then claim any client address. Check it from a tailnet device: `/admin` opens, and `https://<host>/readyz` (through `tailscale serve`; the Caddy example does not route `/readyz` at all) shows the `checks` detail only from the tailnet or LAN.
 
 The per-IP authentication limit and lockout (T04), the audit log and `/readyz` use the same resolved address, so without this setting every client behind the proxy would also share one rate-limit bucket.
 
 ## Hardening already in `server/compose.yaml`
 
-Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port, sharing only the pinned `internal` network with the api (`UT_INTERNAL_SUBNET`, default `10.213.44.0/24`; change it if it overlaps one of your networks), from which `/admin` is refused.
+Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, memory, CPU and open-file limits, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port, sharing only the pinned `internal` network with the api (`UT_INTERNAL_SUBNET`, default `10.213.44.0/24`) and leaving through its own pinned `egress` network (`UT_EGRESS_SUBNET`, default `10.213.45.0/24`); change either if it overlaps one of your networks. `/admin` and the `/readyz` detail are refused to both subnets (`UT_WORKER_NETWORKS`). A new database file is created owner-only (0600).
 
 ## Backups of `/data` (and a restore test)
 
