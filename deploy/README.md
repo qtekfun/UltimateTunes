@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 **Examples only.** The project deploys nothing and publishes nothing; these files show how the author's homelab (or yours) can put the server behind HTTPS. Start from `server/compose.yaml`, which publishes the api on `127.0.0.1:8044` only. Read `SECURITY.md` before exposing anything to the Internet.
 
+The container layout, networks and every connection in and out are described in [`docs/architecture.md`](../docs/architecture.md).
+
 | File | What |
 |---|---|
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
