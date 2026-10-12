@@ -40,7 +40,7 @@ from ultimatetunes.ids.resolve import tracks_for_videos
 from ultimatetunes.ids.virtual import CoverId, parse_cover_id
 from ultimatetunes.library.settings import LibrarySettings
 from ultimatetunes.search.guard import charge_caller, user_limit
-from ultimatetunes.search.settings import SearchSettings
+from ultimatetunes.search.service import search_settings
 
 if TYPE_CHECKING:
     from ultimatetunes.core.services import Services
@@ -420,7 +420,7 @@ class Covers:
             return Image(cached[1], data=cached[0])
         url = url or await self._thumbnail_url(cover)
         # The image itself is one more upstream request made for this user (search/guard.py).
-        await charge_caller(self._services.rate_limiter, user_limit(SearchSettings()))
+        await charge_caller(self._services.rate_limiter, user_limit(search_settings()))
         data, content_type = await fetch(url, self._settings.cover_fetch_timeout_s)
         await run_in_threadpool(self.cache.put, key, data, content_type)
         return Image(content_type, data=data)

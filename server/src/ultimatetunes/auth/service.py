@@ -29,8 +29,9 @@ Rate limit and lockout (`core.ratelimit`):
 - Password checks also take a token from `auth:login:<ip>`.
 - IPv6 clients are counted by their /64 (`throttle.client_key`), at most
   `auth_argon2_concurrency` Argon2 verifications run at once (`throttle.Argon2Slots`), and a
-  global failure budget per minute (`auth:global`) locks password checks and unknown keys for
-  everyone while it is exceeded (auth/throttle.py).
+  global failure budget per minute (`auth:global`) locks password checks and unknown keys while
+  it is exceeded (auth/throttle.py). Password checks from the admin's own networks (`trusted`:
+  the admin panel, behind its allowlist) are neither refused by it nor counted in it.
 
 Secrets (keys, passwords, hashes) never reach a log line, an audit entry or an error message.
 """
@@ -226,6 +227,7 @@ class AuthService:
         owner = self._owner(key)
         if owner is None or (username is not None and owner.username != username):
             self._refuse_locked(self._ip_bucket(client_ip))
+            self._refuse_global(trusted=False)
             self._fail(invalid, client_ip)
         if owner.revoked_at is not None or owner.is_disabled:
             # A real key, revoked or of a disabled user: a stale device, not a guess. Refused
@@ -261,13 +263,18 @@ class AuthService:
         return f"auth:user:{username}"
 
     def _refuse_locked(self, *buckets: str) -> None:
-        for bucket in (*buckets, GLOBAL_LOCK):
+        for bucket in buckets:
             decision = self._limiter.locked(bucket)
             if not decision.allowed:
                 raise RateLimited(decision.retry_after_s)
 
     def _fail(
-        self, error: TunesError, client_ip: str | None, username: str | None = None
+        self,
+        error: TunesError,
+        client_ip: str | None,
+        username: str | None = None,
+        *,
+        trusted: bool = False,
     ) -> NoReturn:
         """Counts the failure (per IP, and per username for passwords), then raises `error`.
         Locking a bucket is logged and audited."""
@@ -282,8 +289,15 @@ class AuthService:
                 _, kind, target = bucket.split(":", 2)
                 log.warning("auth lockout of %s %s for %d s", kind, target, decision.retry_after_s)
                 self._audit(None, client_ip, AuditEvent("auth.lockout", kind, target))
-        self._count_global_failure(client_ip)
+        if not trusted:
+            self._count_global_failure(client_ip)
         raise error
+
+    def _refuse_global(self, *, trusted: bool) -> None:
+        """429 while the global failure budget is locked, except for the admin's own networks
+        (module doc): strangers can never lock an admin out of LAN/Tailscale logins."""
+        if not trusted:
+            self._refuse_locked(GLOBAL_LOCK)
 
     def _count_global_failure(self, client_ip: str | None) -> None:
         """One failure of the global budget; past it, `auth:global` is locked (module doc)."""
@@ -305,13 +319,18 @@ class AuthService:
 
     # ------------------------------------------------------------------ passwords
 
-    def verify_password(self, username: str, password: str, client_ip: str | None) -> User:
+    def verify_password(
+        self, username: str, password: str, client_ip: str | None, *, trusted: bool = False
+    ) -> User:
         """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
-        and unknown user give the same `AuthenticationFailed` in the same time."""
+        and unknown user give the same `AuthenticationFailed` in the same time. `trusted`: the
+        request comes from the admin's own networks (the `/admin` allowlist): exempt from the
+        global failure budget, and not counted in it."""
         if not client_ip:
             raise Forbidden("Password checks need the client address")
         name = normalize_username(username)
         self._refuse_locked(self._ip_bucket(client_ip), self._user_bucket(name))
+        self._refuse_global(trusted=trusted)
         limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
         decision = self._limiter.hit(f"auth:login:{client_key(client_ip)}", limit)
         if not decision.allowed:
@@ -319,9 +338,9 @@ class AuthService:
         with self._db.read() as conn:
             user = UserRepository(conn).by_username(name)
         if not self._password_matches(user, password) or user is None:
-            self._fail(AuthenticationFailed(), client_ip, name)
+            self._fail(AuthenticationFailed(), client_ip, name, trusted=trusted)
         if user.is_disabled:
-            self._fail(AccountDisabled(), client_ip, name)
+            self._fail(AccountDisabled(), client_ip, name, trusted=trusted)
         self._limiter.record_success(self._ip_bucket(client_ip))
         self._limiter.record_success(self._user_bucket(name))
         new_hash = (
@@ -471,23 +490,26 @@ class AuthService:
         log.info("api key %s created for user %s", key.id, user_id)
         return CreatedKey(key, secret)
 
-    def create_key_with_password(
+    def create_key_with_password(  # noqa: PLR0913 - the fields of the request and its origin
         self,
         username: str,
         password: str,
         name: str,
         client_ip: str | None,
         presented_key: str | None = None,
+        *,
+        trusted: bool = False,
     ) -> CreatedKey:
         """`POST /ut/v1/keys`: username and password, no key needed. A key sent along must be
-        valid and belong to the same user (`conflicting_auth` otherwise)."""
+        valid and belong to the same user (`conflicting_auth` otherwise). `trusted`: as in
+        `verify_password`."""
         check_key_name(name)
         presenter = (
             None
             if presented_key is None
             else self._by_key(presented_key, client_ip, InvalidApiKey())
         )
-        user = self.verify_password(username, password, client_ip)
+        user = self.verify_password(username, password, client_ip, trusted=trusted)
         if presenter is not None and presenter.user_id != user.id:
             raise ConflictingAuth()
         actor = Principal(user.id, user.username, _role(user.role))

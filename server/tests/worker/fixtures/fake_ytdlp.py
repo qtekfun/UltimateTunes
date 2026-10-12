@@ -55,6 +55,23 @@ def fail(message: str, code: int = 1) -> NoReturn:
     raise SystemExit(code)
 
 
+def skipped_on_limits(args: list[str], video: str, duration: float, size: int | None) -> bool:
+    """The abuse limits, as yt-dlp applies them: a skipped video exits 0 and only says why on
+    its screen output, which `--print` silences unless `--no-quiet` is given."""
+    screen = "--no-quiet" in args
+    max_duration = float(arg_after(args, "--match-filter", "duration<="))
+    max_bytes = int(arg_after(args, "--max-filesize"))
+    if duration > max_duration:
+        if screen:
+            out(f"[download] {video} does not pass filter (duration<={max_duration:g}), skipping")
+        return True
+    if size is not None and size > max_bytes:
+        if screen:
+            out(f"[download] File is larger than max-filesize ({size} bytes > {max_bytes} bytes)")
+        return True
+    return False
+
+
 def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
     if args == ["--version"]:
         out("2026.08.19")
@@ -74,15 +91,11 @@ def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
         time.sleep(60)
     if video.startswith("Ladder") and clients == "default":
         fail(f"{video}: Requested format is not available")
-    # The abuse limits, as yt-dlp applies them: a skipped video exits 0 without a word (the
-    # screen is quiet because of `--print`).
     duration = 4000.0 if video == "TooLongVid1" else 2.5
-    max_duration = float(arg_after(args, "--match-filter", "duration<="))
-    max_bytes = int(arg_after(args, "--max-filesize"))
-    if duration > max_duration:
-        return
     audio = AUDIO * 8 if video in ("HugeFile001", "GrowsHuge01") else AUDIO
-    if video == "HugeFile001" and len(audio) > max_bytes:
+    if skipped_on_limits(args, video, duration, len(audio) if video == "HugeFile001" else None):
+        return
+    if video == "SilentExit1":
         return
     fmt, ext = ("140", "m4a") if video == "M4aAudio001" else ("251", "webm")
     if video == "MkvFormat01":

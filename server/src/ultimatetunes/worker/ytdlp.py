@@ -13,9 +13,11 @@
   before any byte was reported. Deno is the only JS runtime, with no remote components.
 - Abuse limits (core/limits.py): `--match-filter "duration<=N"` (`UT_MAX_TRACK_DURATION_S`;
   an unknown duration, e.g. a live stream, does not pass) and `--max-filesize`
-  (`UT_MAX_DOWNLOAD_BYTES`). yt-dlp skips such a video quietly (exit 0, no file): that is
-  `video_unavailable`, not retried. A download whose size is unknown up front and grows past
-  the limit is stopped by the worker itself.
+  (`UT_MAX_DOWNLOAD_BYTES`). yt-dlp skips such a video with exit 0 and no file, saying so only
+  on its screen output, so `--no-quiet` keeps that output on (`--print` would silence it):
+  a skip it reports (`SKIP_MARKERS`) is `video_unavailable`, not retried; exit 0 without a file
+  and without such a line stays a retryable `internal_error`. A download whose size is unknown
+  up front and grows past the limit is stopped by the worker itself.
 - The subprocess gets a minimal environment (no secrets) and is killed when the job is
   cancelled, the lease is lost or the timeout runs out.
 """
@@ -72,6 +74,8 @@ CONTAINERS: dict[str, tuple[str, bool]] = {
     "m4a": ("audio/mp4", False),
 }
 MAX_LINE = 64 * 1024
+# What yt-dlp prints when a limit makes it skip the video (match filter, max-filesize).
+SKIP_MARKERS = ("does not pass filter", "larger than max-filesize")
 KEEP_LOG_LINES = 40
 EXIT_USAGE = 2
 _URL = re.compile(r"https?://\S+")
@@ -110,6 +114,7 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
         "-S",
         str(zipapp),
         "--ignore-config",
+        "--no-quiet",
         "--no-plugin-dirs",
         "--no-cache-dir",
         "--no-playlist",
@@ -350,6 +355,7 @@ class _Run:
     result: ResultLine | None = None
     errors: deque[str] = field(default_factory=lambda: deque(maxlen=KEEP_LOG_LINES))
     failure: Exception | None = None
+    skipped: str | None = None
 
     def relative(self, absolute: str) -> str:
         """The staging-relative path of a file yt-dlp wrote: directly inside `out_dir`."""
@@ -486,6 +492,9 @@ class YtDlpDownloader:
             elif line.startswith("ERROR:"):
                 run.errors.append(line)
                 log.info("yt-dlp: %s", redact(line))
+            elif any(marker in line for marker in SKIP_MARKERS):
+                run.skipped = redact(line)
+                log.info("yt-dlp: %s", run.skipped)
             elif line:
                 log.debug("yt-dlp: %s", redact(line))
 
@@ -528,17 +537,14 @@ class YtDlpDownloader:
 
     async def _finish(self, run: _Run) -> DownloadResult:
         result = run.result
-        if result is None and run.reported:
-            raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "yt-dlp reported no file")
-        if result is None:
-            # yt-dlp exited 0 before downloading anything: it skipped the video on a limit
-            # (match filter or max-filesize; it says so only on the screen, which `--print`
-            # keeps quiet).
+        if result is None and run.skipped is not None:
             raise DownloadError(
                 WorkerErrorCode.VIDEO_UNAVAILABLE,
                 "yt-dlp skipped the video: longer or larger than this server allows",
                 retryable=False,
             )
+        if result is None:
+            raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "yt-dlp reported no file")
         content_type, progressive = _container(result.ext)
         final = run.relative(result.filepath)
         if run.final_path is not None and final != run.final_path:

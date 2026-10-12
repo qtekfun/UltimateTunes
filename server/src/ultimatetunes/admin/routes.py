@@ -346,7 +346,8 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
         return _login_page(request, error="Wrong username or password.", status=400)
     ip = client_ip(request)
     try:
-        user = st.auth.verify_password(username, password, ip)
+        # The panel only answers its allowlist (AdminGate): a trusted origin.
+        user = st.auth.verify_password(username, password, ip, trusted=True)
     except RateLimited:
         return _login_page(request, error="Too many attempts. Wait and try again.", status=429)
     except (AuthenticationFailed, AccountDisabled, Forbidden, InvalidParameter):

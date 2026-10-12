@@ -94,6 +94,8 @@ def test_the_command_line_is_a_list_with_the_id_after_double_dash(tmp_path: Path
     assert pairs["--match-filter"] == "duration<=1200"
     assert pairs["--max-filesize"] == "50000000"
     assert args.index("--match-filter") < args.index("--")
+    # The screen output stays on, so a skip on a limit can be told apart from a bug.
+    assert "--no-quiet" in args
     for flag in ("--ignore-config", "--no-remote-components", "--no-js-runtimes", "--newline"):
         assert flag in args
 
@@ -351,6 +353,12 @@ async def test_a_video_skipped_on_a_limit_fails_for_good(
     assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.VIDEO_UNAVAILABLE, False)
     assert "larger than this server allows" in caught.value.message
     assert recorder.reports == []
+
+
+async def test_a_silent_exit_without_a_file_is_retried(staging: LocalStagingStore) -> None:
+    with pytest.raises(DownloadError) as caught:
+        await limited(staging).download("SilentExit1", JOB_DIR, Recorder())
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.INTERNAL_ERROR, True)
 
 
 async def test_a_download_growing_past_the_size_limit_is_stopped(

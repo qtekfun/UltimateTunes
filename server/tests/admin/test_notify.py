@@ -25,9 +25,11 @@ from ultimatetunes.admin.notify import (
 )
 from ultimatetunes.admin.repository import AdminRepository
 from ultimatetunes.core.clock import FakeClock, format_ts
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.services import Services
 from ultimatetunes.db import Database
 from ultimatetunes.errors import InvalidParameter
+from ultimatetunes.jobs.gate import DownloadGate
 
 NTFY = "https://ntfy.example.net/ut-alerts-1234"
 
@@ -251,3 +253,30 @@ def test_notifications_page(
     assert "notify.update" in audit
     assert "ntfy.example.net" in audit
     assert "ut-alerts-1234" not in audit
+
+
+def test_compose_says_when_downloads_paused_for_disk_space() -> None:
+    message = compose([], [], "2026-10-12T08:00:00.000Z")
+    assert message is not None
+    assert "Downloads paused since 2026-10-12T08:00:00.000Z" in message.body
+
+
+def test_sweep_reports_a_low_disk_pause_once(services: Services, clock: FakeClock) -> None:
+    transport = RecordingTransport()
+    sweep = NotificationSweep(services.db, clock, Sender(transport))
+    save_target(services.db, clock, Target("ntfy", NTFY))
+    _run(sweep.run_once())
+    clock.advance(5)
+    gate = DownloadGate(DownloadLimits(min_free_bytes=10), clock, (Full(),))  # type: ignore[arg-type]
+    with services.db.transaction() as conn:
+        assert gate.note_space(conn) is False
+    clock.advance(5)
+    assert _run(sweep.run_once()) is True
+    assert "Downloads paused since" in transport.requests[-1].content.decode()
+    clock.advance(5)
+    assert _run(sweep.run_once()) is False
+
+
+class Full:
+    def free_bytes(self) -> int:
+        return 0

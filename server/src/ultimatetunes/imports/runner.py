@@ -41,7 +41,10 @@ one job per track) in one transaction before the item is recorded, so a crash in
 the item `pending` and a resume repeats both steps harmlessly. The download limits
 (jobs/gate.py) apply to the import's owner: a song the server refuses for good (too long) fails
 its item and nothing is written for it; a refusal for now (`RetryLater`: the owner's queue or
-daily allowance is full, or disk space is low) pauses the run like a passing outage.
+daily allowance is full, or disk space is low) pauses the run without counting a pause, and
+the import is not resumed before the refusal's `Retry-After` (a `TtlCache` entry
+`import:wait:<id>`, shared by every replica): an import over a quota waits, it never fails
+items for it.
 
 Catalog calls of an import are never charged to a user's catalog budget (`core.caller`): the
 shared `import:catalog` bucket paces them.
@@ -70,6 +73,7 @@ from ultimatetunes.jobs.queue import PRIORITY_IMPORT, JobQueue
 from ultimatetunes.search.catalog import CatalogParseError, CatalogTrack, MusicCatalog
 
 if TYPE_CHECKING:
+    from ultimatetunes.core.cache import TtlCache
     from ultimatetunes.core.inflight import InFlight
     from ultimatetunes.core.services import Services
 
@@ -78,6 +82,7 @@ log = logging.getLogger(__name__)
 STALE_AFTER_S = 120
 BUCKET = "import:catalog"
 _KEY = "import:"
+WAIT_KEY = "import:wait:"
 MAX_PAUSES = 5
 # Errors that mean "YouTube Music cannot answer now": pause the run, retry on resume.
 _PASSING = (UpstreamUnavailable, RetryLater)
@@ -99,6 +104,7 @@ class ImportRunner:
         inflight: "InFlight",
         limiter: RateLimiter,
         settings: ImportSettings | None = None,
+        cache: "TtlCache | None" = None,
     ) -> None:
         settings = settings or ImportSettings()
         self._limit = Limit(settings.import_catalog_rate_per_s, settings.import_catalog_burst)
@@ -108,6 +114,8 @@ class ImportRunner:
         self._jobs = jobs
         self._inflight = inflight
         self._limiter = limiter
+        # Where a run waiting on the download limits says until when (module doc).
+        self._cache = cache
 
     @classmethod
     def of(cls, services: "Services") -> "ImportRunner":
@@ -118,6 +126,7 @@ class ImportRunner:
             jobs=services.jobs,
             inflight=services.inflight,
             limiter=services.rate_limiter,
+            cache=services.cache,
         )
 
     def _now(self) -> str:
@@ -141,7 +150,19 @@ class ImportRunner:
     def stale(self, active: list[tuple[str, str]]) -> list[str]:
         """Of (id, updated_at) pairs of active imports, those to resume now."""
         cutoff = format_ts(self._clock.now() - timedelta(seconds=STALE_AFTER_S))
-        return [i for i, updated in active if updated <= cutoff and not self.running(i)]
+        return [
+            i
+            for i, updated in active
+            if updated <= cutoff and not self.running(i) and not self.waiting(i)
+        ]
+
+    def waiting(self, import_id: str) -> bool:
+        """The import waits for the download limits (module doc)."""
+        return self._cache is not None and self._cache.get(WAIT_KEY + import_id) is not None
+
+    def _wait(self, import_id: str, seconds: int) -> None:
+        if self._cache is not None:
+            self._cache.set(WAIT_KEY + import_id, "1", seconds)
 
     async def _catalog_call[T](self, call: Callable[[], Awaitable[T]]) -> T:
         """One catalog call under the shared import budget; passing outages pause the run."""
@@ -176,6 +197,9 @@ class ImportRunner:
     async def _run(self, import_id: str) -> None:
         row = await self._write(lambda r: r.get(import_id))
         if row is None or row.state in TERMINAL:
+            return
+        if await run_in_threadpool(self.waiting, import_id):
+            log.info("import %s waits for the download limits", import_id)
             return
         known: dict[str, CatalogTrack] = {}
         if row.source == "ytmusic" and row.state in ("queued", "reading"):
@@ -277,16 +301,9 @@ class ImportRunner:
         try:
             track_id = await self._request(row.user_id, found.track)
         except RetryLater as exc:
-            pauses = await self._write(lambda r: r.pause_item(row.id, position, self._now()))
-            if pauses < MAX_PAUSES:
-                raise _Paused(exc.message) from exc
-            message = exc.message
-            await self._write(
-                lambda r: r.record_item(
-                    row.id, position, state="failed", now=self._now(), error=message
-                )
-            )
-            return
+            # The download limits: wait, without counting a pause (module doc).
+            await run_in_threadpool(self._wait, row.id, exc.retry_after_s)
+            raise _Paused(exc.message) from exc
         except TunesError as exc:
             message = exc.message
             await self._write(

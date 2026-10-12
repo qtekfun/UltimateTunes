@@ -460,15 +460,20 @@ class SqliteJobQueue:
         marks = ", ".join("?" for _ in kinds)
         with self._db.transaction() as conn:
             self._expire(conn, now)
-            if self._gate is not None and not self._gate.has_space():
-                # Low disk space: queued jobs wait (abuse limits, `UT_MIN_FREE_BYTES`).
-                return None
+            # Abuse limits (jobs/gate.py): nothing while space is low, and no job of a user
+            # over the daily bytes.
+            limit_sql: str = ""
+            limit_params: tuple[object, ...] = ()
+            if self._gate is not None:
+                if not self._gate.note_space(conn):
+                    return None
+                limit_sql, limit_params = self._gate.claimable_sql()
             for _ in range(CLAIM_TRIES):
                 row = conn.execute(
                     f"SELECT id FROM jobs WHERE state = 'queued' AND kind IN ({marks})"  # noqa: S608  # nosec B608
-                    " AND (not_before IS NULL OR not_before <= ?)"
+                    f" AND (not_before IS NULL OR not_before <= ?){limit_sql}"
                     " ORDER BY priority DESC, created_at ASC, id ASC LIMIT 1",
-                    (*kinds, now),
+                    (*kinds, now, *limit_params),
                 ).fetchone()
                 if row is None:
                     return None
@@ -556,6 +561,10 @@ class SqliteJobQueue:
             # taken the job since it was read; then nothing is written and the lease is lost.
             if updated != 1:
                 raise LeaseLost()
+            if self._gate is not None:
+                # The new bytes of this attempt go to the requester's daily count.
+                delta = report.bytes_downloaded - (job.bytes_downloaded or 0)
+                self._gate.charge(conn, job_id, delta)
         return Lease(lease_id, expires, _heartbeat_s(lease_s), bool(job.cancel_requested))
 
     def release(  # noqa: PLR0913 - keyword-only fields of a release

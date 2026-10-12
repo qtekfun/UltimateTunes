@@ -4,12 +4,19 @@
 
 import pytest
 
+from tests.jobs.test_queue import report
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.db import Database
 from ultimatetunes.errors import InvalidParameter, RateLimited
-from ultimatetunes.jobs.gate import RETRY_BYTES_S, RETRY_QUEUED_S, RETRY_SPACE_S, DownloadGate
-from ultimatetunes.jobs.queue import PRIORITY_KEEP, SqliteJobQueue
+from ultimatetunes.jobs.gate import (
+    LOW_DISK_KEY,
+    RETRY_BYTES_S,
+    RETRY_QUEUED_S,
+    RETRY_SPACE_S,
+    DownloadGate,
+)
+from ultimatetunes.jobs.queue import PRIORITY_KEEP, Claimed, SqliteJobQueue
 
 GIB = 1024**3
 ALICE = "0199d6a2-0000-7000-8000-00000000a11c"
@@ -132,18 +139,32 @@ def low(request: pytest.FixtureRequest, music: Disk, staging: Disk) -> Disk:
 
 
 def test_low_disk_space_refuses_new_downloads_and_claims(
-    db: Database, clock: FakeClock, queue: SqliteJobQueue, low: Disk
+    db: Database,
+    clock: FakeClock,
+    queue: SqliteJobQueue,
+    low: Disk,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     keep(queue, add_track(db, clock, 1))
-    disk = low
-    disk.free = 2 * GIB - 1
+    low.free = 2 * GIB - 1
     with pytest.raises(RateLimited) as refused:
         keep(queue, add_track(db, clock, 2))
     assert refused.value.retry_after_s == RETRY_SPACE_S
     assert queue.claim("w1", lease_s=60) is None
-    disk.free = 2 * GIB
+    assert queue.claim("w1", lease_s=60) is None
+    # The state is recorded once (for the notifications and /readyz) and logged once each way.
+    with db.read() as conn:
+        since = conn.execute("SELECT value FROM settings WHERE key = ?", (LOW_DISK_KEY,)).scalar()
+    assert since == format_ts(clock.now())
+    assert caplog.text.count("downloads paused") == 1
+    low.free = 2 * GIB
     claimed = queue.claim("w1", lease_s=60)
     assert claimed is not None
+    queue.claim("w1", lease_s=60)
+    assert caplog.text.count("downloads resumed") == 1
+    with db.read() as conn:
+        gone = conn.execute("SELECT value FROM settings WHERE key = ?", (LOW_DISK_KEY,)).scalar()
+    assert gone is None
 
 
 def test_a_store_that_cannot_say_counts_as_full(
@@ -184,33 +205,99 @@ def test_queued_and_running_jobs_per_user_are_capped(
     keep(queue, tracks[5])
 
 
+def download(queue: SqliteJobQueue, *sizes: int) -> Claimed:
+    """Claims the next job and reports these downloaded byte counts."""
+    claimed = queue.claim("w1", lease_s=60)
+    assert claimed is not None
+    for size in sizes:
+        queue.progress(
+            claimed.job.id, claimed.lease.lease_id, report(claimed, bytes_downloaded=size)
+        )
+    return claimed
+
+
+def usage(db: Database, user: str) -> int:
+    with db.read() as conn:
+        found = conn.execute(
+            "SELECT SUM(bytes) FROM download_usage WHERE user_id = ?", (user,)
+        ).scalar()
+    return int(str(found or 0))
+
+
+def test_downloaded_bytes_are_charged_as_they_arrive(
+    db: Database, clock: FakeClock, queue: SqliteJobQueue
+) -> None:
+    keep(queue, add_track(db, clock, 1))
+    claimed = download(queue, 1000, 4000, 3000)
+    assert usage(db, ALICE) == 4000
+    # A retried attempt adds to the count instead of starting again.
+    queue.fail(
+        claimed.job.id,
+        claimed.lease.lease_id,
+        error_code="network_error",
+        retryable=True,
+        message="x",
+    )
+    clock.advance(3600)
+    download(queue, 2500)
+    assert usage(db, ALICE) == 6500
+    # Bytes of a job without a requester are charged to nobody.
+    keep(queue, add_track(db, clock, 2), user=None)
+    clock.advance(3600)
+    queue.expire_leases()
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE jobs SET state = 'failed', lease_id = NULL WHERE requested_by = ?", (ALICE,)
+        )
+    download(queue, 500)
+    assert usage(db, ALICE) == 6500
+
+
 def test_daily_download_bytes_per_user_are_capped(
     db: Database, clock: FakeClock, queue: SqliteJobQueue
 ) -> None:
-    first = keep(queue, add_track(db, clock, 1))
-    with db.transaction() as conn:
-        conn.execute(
-            "UPDATE jobs SET state = 'ready', bytes_downloaded = 10000, updated_at = ?"
-            " WHERE id = ?",
-            (format_ts(clock.now()), first),
-        )
-    second = add_track(db, clock, 2)
+    keep(queue, add_track(db, clock, 1))
+    clock.advance(1)
+    queued = keep(queue, add_track(db, clock, 2))
+    first = download(queue, 10_000)
+    queue.fail(
+        first.job.id,
+        first.lease.lease_id,
+        error_code="video_unavailable",
+        retryable=False,
+        message="x",
+    )
     with pytest.raises(RateLimited) as refused:
-        keep(queue, second)
+        keep(queue, add_track(db, clock, 3))
     assert refused.value.retry_after_s == RETRY_BYTES_S
-    keep(queue, second, user=BOB)
-    # The window is the last 24 hours.
-    clock.advance(24 * 3600 + 1)
-    keep(queue, add_track(db, clock, 3))
+    # A job queued before the allowance ran out is not claimed either; others' jobs are.
+    assert queue.claim("w2", lease_s=60) is None
+    keep(queue, add_track(db, clock, 4), user=BOB)
+    bobs = queue.claim("w2", lease_s=60)
+    assert bobs is not None
+    assert bobs.job.track_id == "t4"
+    # The window is the last 24 hours (hour rows), and old rows are dropped later.
+    clock.advance(24 * 3600)
+    claimed = queue.claim("w3", lease_s=60)
+    assert claimed is not None
+    assert claimed.job.id == queued
+    queue.progress(claimed.job.id, claimed.lease.lease_id, report(claimed, bytes_downloaded=10))
+    clock.advance(48 * 3600)
+    gate = queue._gate
+    assert gate is not None
+    with db.transaction() as conn:
+        gate.charge(conn, claimed.job.id, 20)
+        gate.charge(conn, claimed.job.id, 0)
+    # The rows older than 48 hours (the first 10 000 bytes) are gone.
+    assert usage(db, ALICE) == 30
 
 
-def test_a_requeue_is_checked_and_charged_to_the_new_requester(
+def test_a_requeue_is_checked_and_new_bytes_go_to_the_new_requester(
     db: Database, clock: FakeClock, queue: SqliteJobQueue
 ) -> None:
     track = add_track(db, clock, 1)
     job_id = keep(queue, track)
-    claimed = queue.claim("w1", lease_s=60)
-    assert claimed is not None
+    claimed = download(queue, 3000)
     queue.fail(
         job_id, claimed.lease.lease_id, error_code="video_unavailable", retryable=False, message="x"
     )
@@ -227,6 +314,9 @@ def test_a_requeue_is_checked_and_charged_to_the_new_requester(
     with db.read() as conn:
         owner = conn.execute("SELECT requested_by FROM jobs WHERE id = ?", (job_id,)).scalar()
     assert owner == BOB
+    download(queue, 1000)
+    # Alice keeps what was downloaded for her; Bob pays only for his attempt.
+    assert (usage(db, ALICE), usage(db, BOB)) == (3000, 1000)
 
 
 def test_without_a_gate_nothing_is_checked(db: Database, clock: FakeClock) -> None:

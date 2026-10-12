@@ -18,6 +18,7 @@ from ultimatetunes.imports import render
 from ultimatetunes.imports.files import SourceItem
 from ultimatetunes.imports.repository import ImportRepository, ImportRow, TrackRow
 from ultimatetunes.imports.runner import MAX_PAUSES, ImportRunner
+from ultimatetunes.jobs.gate import RETRY_SPACE_S
 from ultimatetunes.search.catalog import (
     CatalogParseError,
     CatalogThrottled,
@@ -372,8 +373,8 @@ async def test_a_song_too_long_to_download_fails_only_its_item(
     assert [r["requested_by"] for r in requested] == [USER]
 
 
-async def test_low_disk_space_pauses_the_import_until_a_resume(
-    services: Services, monkeypatch: pytest.MonkeyPatch
+async def test_low_disk_space_pauses_the_import_until_its_retry_after(
+    services: Services, catalog: FixtureCatalog, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     items = (SourceItem("Glass Orchard", ("The Paper Lanterns",), video_id="Rb8Tn3ZcYv0"),)
     import_id = new_import(
@@ -382,17 +383,29 @@ async def test_low_disk_space_pauses_the_import_until_a_resume(
     runner = ImportRunner.of(services)
     free = [0]
     monkeypatch.setattr(services.library, "free_bytes", lambda: free[0])
-    for _ in range(MAX_PAUSES - 1):
-        await runner.run(import_id)
-        body = report(services, import_id)
-        assert (body["state"], body["items"][0]["state"]) == ("matching", "pending")
+    await runner.run(import_id)
+    body = report(services, import_id)
+    assert (body["state"], body["items"][0]["state"]) == ("matching", "pending")
+    # Not counted as a pause, and no resume (nor a direct run) before the Retry-After.
+    assert load(services, import_id).pauses == 0
+    with services.db.read() as conn:
+        assert conn.execute("SELECT pauses FROM import_items").scalar() == 0
+    assert runner.waiting(import_id)
+    clock.advance(RETRY_SPACE_S - 1)
+    assert runner.stale([(import_id, "2000-01-01T00:00:00.000Z")]) == []
     free[0] = 1 << 40
+    calls = len(catalog.calls)
+    await runner.run(import_id)
+    assert len(catalog.calls) == calls
+    assert report(services, import_id)["items"][0]["state"] == "pending"
+    clock.advance(1)
+    assert runner.stale([(import_id, "2000-01-01T00:00:00.000Z")]) == [import_id]
     await runner.run(import_id)
     assert report(services, import_id)["items"][0]["state"] == "matched"
 
 
-async def test_an_import_kept_waiting_by_the_limits_fails_the_item(
-    services: Services, monkeypatch: pytest.MonkeyPatch
+async def test_an_import_over_the_limits_never_fails_items_for_it(
+    services: Services, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     items = (SourceItem("Glass Orchard", ("The Paper Lanterns",), video_id="Rb8Tn3ZcYv0"),)
     import_id = new_import(
@@ -400,11 +413,24 @@ async def test_an_import_kept_waiting_by_the_limits_fails_the_item(
     )
     monkeypatch.setattr(services.staging, "free_bytes", lambda: 0)
     runner = ImportRunner.of(services)
-    for _ in range(MAX_PAUSES):
+    for _ in range(MAX_PAUSES * 2):
         await runner.run(import_id)
+        clock.advance(RETRY_SPACE_S)
     body = report(services, import_id)
-    assert (body["state"], body["items"][0]["state"]) == ("done", "failed")
-    assert body["items"][0]["error"] == "The server is low on disk space"
+    assert (body["state"], body["items"][0]["state"]) == ("matching", "pending")
+
+
+def test_without_a_cache_nothing_waits(services: Services) -> None:
+    runner = ImportRunner(
+        db=services.db,
+        clock=services.clock,
+        catalog=services.catalog,
+        jobs=services.jobs,
+        inflight=services.inflight,
+        limiter=services.rate_limiter,
+    )
+    runner._wait("x", 60)
+    assert not runner.waiting("x")
 
 
 async def test_import_lookups_are_not_charged_to_a_user(
