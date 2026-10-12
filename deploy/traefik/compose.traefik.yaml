@@ -8,8 +8,10 @@
 
 services:
   traefik:
-    image: traefik:v3.3.6
+    image: traefik:v3.6.25@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
     read_only: true
+    # Writable scratch space: the buffering middleware spills bodies over 1 MiB to disk.
+    tmpfs: [/tmp]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]

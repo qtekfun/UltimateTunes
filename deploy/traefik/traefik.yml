@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# EXAMPLE ONLY: Traefik v3 static configuration for UltimateTunes behind Traefik + Authelia
+# EXAMPLE ONLY: Traefik v3.6 static configuration for UltimateTunes behind Traefik + Authelia
 # (deploy/README.md, "Traefik + Authelia"). Nothing here is deployed by the project.
 # Mount it as /etc/traefik/traefik.yml and the dynamic/ directory as /etc/traefik/dynamic.
 
@@ -18,6 +18,19 @@ entryPoints:
     http:
       tls:
         certResolver: letsencrypt
+      # Request heads up to 16 KiB (the api refuses more anyway).
+      maxHeaderBytes: 16384
+      # Refuse encoded reserved characters in the path (%2F, %5C, %00, %3B, %25, %3F, %23):
+      # no route of the api needs them, and they are how a proxy and a backend end up seeing
+      # two different paths (split view, e.g. /admin%2F..).
+      encodedCharacters:
+        allowEncodedSlash: false
+        allowEncodedBackSlash: false
+        allowEncodedNullCharacter: false
+        allowEncodedSemicolon: false
+        allowEncodedPercent: false
+        allowEncodedQuestionMark: false
+        allowEncodedHash: false
     transport:
       respondingTimeouts:
         # Slow clients (slowloris): the whole request (head and body) must arrive within

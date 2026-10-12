@@ -9,6 +9,7 @@ dev-only for now: CI applies the migrations on it, and PLAN T25 makes it a runti
 """
 
 import contextlib
+import logging
 import os
 import re
 import sqlite3
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 Dialect = Literal["sqlite", "postgresql"]
 Row = Mapping[str, object]
 Params = Sequence[object]
+
+log = logging.getLogger(__name__)
 
 # How long a SQLite connection waits for the write lock before failing.
 SQLITE_BUSY_TIMEOUT_MS = 5000
@@ -126,15 +129,32 @@ class SqliteConnection:
         self.raw.close()
 
 
+def _owner_only(path: Path) -> None:
+    """Tightens the database and its `-wal`/`-shm` files to 0600 when group or others have any
+    access. Logs once per tightening (afterwards the mode is right); a file this process may not
+    chmod is logged and left as is."""
+    for target in (path, path.with_name(path.name + "-wal"), path.with_name(path.name + "-shm")):
+        try:
+            mode = target.stat().st_mode & 0o777
+            if mode & 0o077:
+                target.chmod(0o600)
+                log.warning("database file %s was mode %o; now 0600", target.name, mode)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            log.warning("could not make database file %s owner-only: %s", target.name, exc)
+
+
 def connect_sqlite(path: Path, *, read_only: bool = False) -> SqliteConnection:
     """Opens a SQLite database: WAL, foreign keys on, a busy timeout. Read-only connections
-    never create the file (used by `/readyz`). A new database file is created owner-only
-    (0600; SQLite gives its `-wal` and `-shm` files the same mode): it holds password and key
-    hashes."""
+    never create the file (used by `/readyz`). The database file is kept owner-only (0600;
+    SQLite gives its `-wal` and `-shm` files the same mode): it holds password and key hashes.
+    A new file is created so, and an existing one that is more open is tightened (logged)."""
     if not read_only:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with contextlib.suppress(FileExistsError):
             os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        _owner_only(path)
     target = f"file:{path}?mode=ro" if read_only else str(path)
     try:
         raw = sqlite3.connect(target, uri=read_only, isolation_level=None, check_same_thread=False)

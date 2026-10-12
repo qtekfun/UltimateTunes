@@ -15,7 +15,9 @@ http:
       entryPoints: [websecure]
       rule: "Host(`music.example.org`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
       priority: 300
-      middlewares: [ut-lan-only, authelia, ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
+      # No `ut-body-limit`: buffering would also hold back the panel's responses; the api caps
+      # panel bodies at 64 KiB itself.
+      middlewares: [ut-lan-only, authelia, ut-headers, ut-inflight, ut-ratelimit]
       service: ut-api
 
     # Password login (`POST /ut/v1/keys`, the only password endpoint outside the panel): only
