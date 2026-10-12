@@ -192,7 +192,7 @@ jobs:
   secrets:
     needs: changes
     # Always run (also if `changes` fails), except for a title-only edit that skipped it.
-    if: always() && needs.changes.result != 'skipped' && needs.changes.result != 'cancelled'
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -221,7 +221,7 @@ jobs:
   store-texts:
     needs: changes
     # Always run (also if `changes` fails), except for a title-only edit that skipped it.
-    if: always() && needs.changes.result != 'skipped' && needs.changes.result != 'cancelled'
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     # Store text limits on every PR; on a release PR (branch release/*), also requires the
     # en-US and es-ES changelogs for the versionCode of VERSION. See RELEASING.md.
     runs-on: ubuntu-latest
