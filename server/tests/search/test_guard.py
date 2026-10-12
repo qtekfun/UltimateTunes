@@ -3,16 +3,18 @@
 """`GuardedCatalog`: cache, negative cache, single flight, rate limit, retry, circuit breaker."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 import pytest
 
 from ultimatetunes.core.cache import SqliteTtlCache
+from ultimatetunes.core.caller import ANONYMOUS, current_bucket, set_caller, unmetered
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.inflight import MemoryInFlight
 from ultimatetunes.core.ratelimit import SqliteRateLimiter
 from ultimatetunes.db import Database
-from ultimatetunes.errors import TunesError
+from ultimatetunes.errors import RateLimited, TunesError
 from ultimatetunes.search.catalog import (
     CatalogClientError,
     CatalogNotFound,
@@ -239,3 +241,96 @@ def test_jitter_range() -> None:
     values = {_jitter() for _ in range(200)}
     assert all(0.5 <= v <= 1.5 for v in values)
     assert len(values) > 1
+
+
+# ---------------------------------------------------------------- per-user catalog budget
+# Each test body runs in a task of its own, so the caller it sets never leaks into other tests.
+
+
+def budget(db: Database, clock: FakeClock, burst: float = 2) -> Harness:
+    return Harness(db, clock, catalog_user_rate_per_s=0.01, catalog_user_burst=burst)
+
+
+async def isolated(body: Callable[[], Coroutine[Any, Any, None]]) -> None:
+    await asyncio.create_task(body())
+
+
+async def test_every_uncached_lookup_is_charged_to_its_caller(
+    db: Database, clock: FakeClock
+) -> None:
+    h = budget(db, clock)
+
+    async def body() -> None:
+        set_caller("user-a")
+        await h.catalog.track("Fk2Lp9QwXa1")
+        await h.catalog.album("MPREb_Hn2Vq8Lr5Tz")
+        with pytest.raises(RateLimited) as refused:
+            await h.catalog.artist("UCq8XbV1r0LwZ5mN3tYp7kQe")
+        assert refused.value.retry_after_s > 0
+        assert inner_calls(h, "artist") == 0
+        # Cached answers cost nothing (the album filled `track:` entries too).
+        await h.catalog.track("Fk2Lp9QwXa1")
+        await h.catalog.track("Hm3Vx8Nq2Lp")
+        await h.catalog.album("MPREb_Hn2Vq8Lr5Tz")
+        # A cached not-found costs nothing either.
+        set_caller("user-b")
+        with pytest.raises(CatalogNotFound):
+            await h.catalog.track("NoSuchVid00")
+        set_caller("user-a")
+        with pytest.raises(CatalogNotFound):
+            await h.catalog.track("NoSuchVid00")
+        # Another user has a budget of its own.
+        set_caller("user-b")
+        await h.catalog.radio("Fk2Lp9QwXa1", 5)
+        with pytest.raises(RateLimited):
+            await h.catalog.playlist(PLAYLIST_ID)
+
+    await isolated(body)
+
+
+async def test_anonymous_callers_share_one_bucket(db: Database, clock: FakeClock) -> None:
+    h = budget(db, clock, burst=1)
+
+    async def body() -> None:
+        assert current_bucket() == ANONYMOUS
+        await h.catalog.track("Fk2Lp9QwXa1")
+        set_caller(None)
+        assert current_bucket() == ANONYMOUS
+        with pytest.raises(RateLimited):
+            await h.catalog.track("Rb8Tn3ZcYv0")
+        set_caller("user-a")
+        await h.catalog.track("Rb8Tn3ZcYv0")
+
+    await isolated(body)
+
+
+async def test_searches_and_unmetered_work_are_not_charged(db: Database, clock: FakeClock) -> None:
+    h = budget(db, clock, burst=1)
+
+    async def body() -> None:
+        set_caller("user-a")
+        for query in ("lantern", "harbor", "static"):
+            await h.catalog.search_songs(query, 5)
+            await h.catalog.search_albums(query, 5)
+            await h.catalog.search_artists(query, 5)
+        with unmetered():
+            assert current_bucket() is None
+            await h.catalog.album("MPREb_k3Vd9QmT2xL")
+            await h.catalog.album("MPREb_Hn2Vq8Lr5Tz")
+        assert current_bucket() == "user-a"
+        await h.catalog.artist("UCq8XbV1r0LwZ5mN3tYp7kQe")
+
+    await isolated(body)
+
+
+async def test_the_caller_does_not_leak_into_other_tasks() -> None:
+    seen: list[str | None] = []
+
+    async def request(user: str) -> None:
+        set_caller(user)
+        await asyncio.sleep(0)
+        seen.append(current_bucket())
+
+    await asyncio.gather(request("a"), request("b"))
+    assert sorted(b or "" for b in seen) == ["a", "b"]
+    assert current_bucket() == ANONYMOUS

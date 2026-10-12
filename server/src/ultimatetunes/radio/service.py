@@ -14,8 +14,10 @@ Every song of the watch playlist is mapped like search results: a video archived
 library (`ready`) becomes the library song and its library id; a `pending` or `failed` one
 keeps its `yt:` id and carries that state. A song appears once (several videos may alias one
 track), and a song seed is never repeated among the items. Nothing is materialized: listing
-a radio is not a "keep" action. Catalog failures surface as `TunesError`s (not found,
-upstream unavailable); the catalog serves at most `guard.RADIO_SIZE` songs per seed.
+a radio is not a "keep" action. Songs the server would refuse to download (longer than
+`UT_MAX_TRACK_DURATION_S`, core/limits.py) are left out unless they are already archived.
+Catalog failures surface as `TunesError`s (not found, upstream unavailable); the catalog
+serves at most `guard.RADIO_SIZE` songs per seed.
 """
 
 from collections.abc import Mapping, Sequence
@@ -25,6 +27,7 @@ from typing import TYPE_CHECKING, cast
 
 from starlette.concurrency import run_in_threadpool
 
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.db.database import Database
 from ultimatetunes.db.driver import Connection
 from ultimatetunes.errors import FeatureDisabled, InvalidId, NotFound
@@ -119,10 +122,17 @@ def _song(track: CatalogTrack, ref: TrackRef | None, library: dict[str, LibraryS
 
 
 class RadioService:
-    def __init__(self, db: Database, catalog: MusicCatalog, settings: RadioSettings) -> None:
+    def __init__(
+        self,
+        db: Database,
+        catalog: MusicCatalog,
+        settings: RadioSettings,
+        limits: DownloadLimits | None = None,
+    ) -> None:
         self._db = db
         self._catalog = catalog
         self._settings = settings
+        self._limits = limits or DownloadLimits()
 
     @classmethod
     def of(cls, services: "Services") -> "RadioService":
@@ -209,6 +219,9 @@ class RadioService:
             if track.video_id == seed.video_id:
                 continue
             ref = refs.get(track.video_id)
+            archived = ref is not None and ref.status == "ready"
+            if not archived and self._limits.too_long(track.duration_s):
+                continue
             key = ref.id if ref is not None else song_id(track.video_id)
             if key in seen:
                 continue

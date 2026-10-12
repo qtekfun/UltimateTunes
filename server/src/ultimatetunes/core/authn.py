@@ -20,6 +20,8 @@ from typing import Literal, Protocol
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
+from ultimatetunes.core.caller import set_caller
+
 Role = Literal["admin", "user"]
 
 
@@ -60,4 +62,6 @@ async def current_principal(request: Request) -> Principal:
         request.query_params.get("apiKey"),
         request.client.host if request.client else None,
     )
+    # Catalog lookups of this request are charged to its user (core/caller.py).
+    set_caller(principal.user_id)
     return principal

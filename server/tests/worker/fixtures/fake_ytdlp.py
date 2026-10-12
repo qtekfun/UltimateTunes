@@ -55,7 +55,24 @@ def fail(message: str, code: int = 1) -> NoReturn:
     raise SystemExit(code)
 
 
-def main(args: list[str]) -> None:
+def skipped_on_limits(args: list[str], video: str, duration: float, size: int | None) -> bool:
+    """The abuse limits, as yt-dlp applies them: a skipped video exits 0 and only says why on
+    its screen output, which `--print` silences unless `--no-quiet` is given."""
+    screen = "--no-quiet" in args
+    max_duration = float(arg_after(args, "--match-filter", "duration<="))
+    max_bytes = int(arg_after(args, "--max-filesize"))
+    if duration > max_duration:
+        if screen:
+            out(f"[download] {video} does not pass filter (duration<={max_duration:g}), skipping")
+        return True
+    if size is not None and size > max_bytes:
+        if screen:
+            out(f"[download] File is larger than max-filesize ({size} bytes > {max_bytes} bytes)")
+        return True
+    return False
+
+
+def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
     if args == ["--version"]:
         out("2026.08.19")
         return
@@ -74,6 +91,12 @@ def main(args: list[str]) -> None:
         time.sleep(60)
     if video.startswith("Ladder") and clients == "default":
         fail(f"{video}: Requested format is not available")
+    duration = 4000.0 if video == "TooLongVid1" else 2.5
+    audio = AUDIO * 8 if video in ("HugeFile001", "GrowsHuge01") else AUDIO
+    if skipped_on_limits(args, video, duration, len(audio) if video == "HugeFile001" else None):
+        return
+    if video == "SilentExit1":
+        return
     fmt, ext = ("140", "m4a") if video == "M4aAudio001" else ("251", "webm")
     if video == "MkvFormat01":
         ext = "mkv"
@@ -83,18 +106,18 @@ def main(args: list[str]) -> None:
         final = out_dir / ".."
     if video == "EscapeDir01":
         part = out_dir.parent / "elsewhere.part"
-    total = None if video == "NoSizeKnown" else len(AUDIO)
-    step = len(AUDIO) // 4
-    with part.open("wb") as audio:
-        for done in range(step, len(AUDIO) + 1, step):
-            audio.write(AUDIO[done - step : done])
-            audio.flush()
+    total = None if video in ("NoSizeKnown", "GrowsHuge01") else len(audio)
+    step = len(audio) // 4
+    with part.open("wb") as file:
+        for done in range(step, len(audio) + 1, step):
+            file.write(audio[done - step : done])
+            file.flush()
             emit_progress("downloading", done, total, part=part, final=final, fmt=fmt, ext=ext)
             if video == "DiesMidway1":
                 fail(f"{video}: HTTP Error 403: Forbidden")
             time.sleep(0.01)
     part.rename(final)
-    emit_progress("finished", len(AUDIO), total, part=final, final=final, fmt=fmt, ext=ext)
+    emit_progress("finished", len(audio), total, part=final, final=final, fmt=fmt, ext=ext)
     if video == "NoResultL01":
         return
     result = {
@@ -103,7 +126,7 @@ def main(args: list[str]) -> None:
         "ext": ext,
         "acodec": "opus",
         "filesize": total,
-        "duration": 2.5,
+        "duration": duration,
         "filepath": str(final),
     }
     out("UTF " + json.dumps(result))

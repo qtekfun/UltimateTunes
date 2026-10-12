@@ -12,11 +12,13 @@ from fastapi.testclient import TestClient
 from tests.search.conftest import LANTERNS, LIGHTHOUSE, LOW_TIDE, seed_library
 from tests.search.test_routes import MIGRATIONS, Ana, schema_validator
 from ultimatetunes.app import create_app
+from ultimatetunes.core.caller import current_bucket
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import build_services
 from ultimatetunes.db import migrate
 from ultimatetunes.errors import UpstreamUnavailable
 from ultimatetunes.radio.service import radio_settings
+from ultimatetunes.search.catalog import CatalogTrack
 from ultimatetunes.search.fake import FakeMusicCatalog
 from ultimatetunes.settings import Settings
 
@@ -237,3 +239,19 @@ def test_listen_now(client: TestClient) -> None:
     LISTEN_NOW.validate(body)
     assert [s["id"] for s in body["mostPlayed"]] == [LIGHTHOUSE]
     assert [s["seedId"] for s in body["favouriteRadios"]] == [LIGHTHOUSE]
+
+
+def test_ut_catalog_lookups_are_charged_to_the_caller(
+    client: TestClient, catalog: FakeMusicCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str | None] = []
+    real = catalog.radio
+
+    async def radio(video_id: str, limit: int) -> list[CatalogTrack]:
+        seen.append(current_bucket())
+        return await real(video_id, limit)
+
+    monkeypatch.setattr(catalog, "radio", radio)
+    assert client.get("/ut/v1/radio", params={"seed": "yt:Qx7Lm2pZ0aB"}).status_code == 200
+    assert similar(client, id="yt:Qx7Lm2pZ0aB")["status"] == "ok"
+    assert seen == [Ana.principal.user_id, Ana.principal.user_id]

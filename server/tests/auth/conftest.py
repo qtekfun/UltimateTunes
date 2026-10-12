@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fixtures of the auth tests: a migrated database, a fast Argon2id hasher, users and keys."""
 
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,8 +18,9 @@ from ultimatetunes.core.ratelimit import SqliteRateLimiter
 from ultimatetunes.db import Database, migrate
 from ultimatetunes.settings import Settings
 
-ADMIN_PASSWORD = "correct horse battery staple"
-USER_PASSWORD = "another long passphrase"
+# Made at runtime (12+ characters for the policy): no credential-looking literal in the tests.
+ADMIN_PASSWORD = secrets.token_urlsafe(16)
+USER_PASSWORD = secrets.token_urlsafe(16)
 IP = "192.0.2.10"
 
 

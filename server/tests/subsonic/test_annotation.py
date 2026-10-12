@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Stars and scrobbles: per user, keep actions on `yt:` ids, validation before writes."""
 
+from dataclasses import replace
+
 import pytest
 
 from tests.library.harness import ANA, BOB, Harness
 from tests.subsonic.test_browse import NOW, ORCHARD, pending_orchard
+from ultimatetunes.core.caller import current_bucket
 from ultimatetunes.errors import UpstreamUnavailable
+from ultimatetunes.search.catalog import CatalogTrack
 
 
 def starred(lib: Harness, key: str = "utk_ana") -> dict[str, list[str]]:
@@ -222,3 +226,79 @@ def test_materialize_and_enqueue_are_one_transaction(
     assert lib.one("SELECT COUNT(*) FROM tracks WHERE status = 'pending'") == 0
     assert lib.one("SELECT COUNT(*) FROM track_aliases") == 0
     assert lib.one("SELECT COUNT(*) FROM starred_tracks") == 0
+
+
+# ---------------------------------------------------------------- abuse limits
+
+
+def make_long(lib: Harness, video_id: str, seconds: int) -> None:
+    lib.catalog.tracks[video_id] = replace(lib.catalog.tracks[video_id], duration_s=seconds)
+
+
+def test_a_song_too_long_to_download_is_refused_before_anything_is_written(lib: Harness) -> None:
+    make_long(lib, "Qx7Lm2pZ0aB", 1801)
+    assert lib.error("star", id="yt:Qx7Lm2pZ0aB") == 0
+    assert lib.one("SELECT COUNT(*) FROM tracks WHERE yt_video_id = 'Qx7Lm2pZ0aB'") == 0
+    assert jobs(lib) == []
+    assert starred(lib)["song"] == []
+    make_long(lib, "Qx7Lm2pZ0aB", 1800)
+    lib.ok("star", id="yt:Qx7Lm2pZ0aB")
+    assert jobs(lib) == [("Qx7Lm2pZ0aB", "queued", 30)]
+
+
+def test_one_keep_request_starts_a_bounded_number_of_downloads(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ultimatetunes.library import songs  # noqa: PLC0415
+
+    monkeypatch.setattr(songs, "MAX_KEEP_DOWNLOADS", 2)
+    lib.catalog.calls.clear()
+    externals = ["yt:Qx7Lm2pZ0aB", "yt:Fk2Lp9QwXa1", "yt:Hm3Vx8Nq2Lp"]
+    assert lib.error("star", id=externals) == 0
+    # Refused before any catalog lookup or write.
+    assert lib.catalog.calls == []
+    assert jobs(lib) == []
+    # Songs already in the library do not count.
+    ids = lib.ids()
+    lib.ok("star", id=[*externals[:2], ids["Brasas"], ids["Tidewater"]])
+    assert len(jobs(lib)) == 2
+
+
+def test_low_disk_space_answers_429_and_writes_nothing(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lib.services.staging, "free_bytes", lambda: 0)
+    r = lib.rest("star", id="yt:Qx7Lm2pZ0aB")
+    assert r.status_code == 429
+    assert int(r.headers["retry-after"]) > 0
+    assert lib.one("SELECT COUNT(*) FROM tracks WHERE yt_video_id = 'Qx7Lm2pZ0aB'") == 0
+
+
+def test_catalog_lookups_are_charged_to_the_authenticated_user(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str | None] = []
+    real = lib.catalog.track
+
+    async def track(video_id: str) -> CatalogTrack:
+        seen.append(current_bucket())
+        return await real(video_id)
+
+    monkeypatch.setattr(lib.catalog, "track", track)
+    lib.ok("star", id="yt:Qx7Lm2pZ0aB", key="utk_bob")
+    lib.ok("star", id="yt:Fk2Lp9QwXa1")
+    assert seen == [BOB.user_id, ANA.user_id]
+
+
+def test_the_keep_cap_never_exceeds_the_catalog_burst(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ultimatetunes.search.service import search_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_CATALOG_USER_BURST", "1")
+    search_settings.cache_clear()
+    try:
+        assert lib.error("star", id=["yt:Qx7Lm2pZ0aB", "yt:Fk2Lp9QwXa1"]) == 0
+        lib.ok("star", id="yt:Qx7Lm2pZ0aB")
+    finally:
+        search_settings.cache_clear()
