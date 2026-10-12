@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
+
+  # Daily, because yt-dlp and ytmusicapi follow YouTube's changes; they get their own PRs.
+  - package-ecosystem: uv
+    directory: /server
+    schedule:
+      interval: daily
+    groups:
+      python:
+        patterns: ["*"]
+        exclude-patterns: ["yt-dlp", "ytmusicapi"]
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

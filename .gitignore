@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Android / Gradle
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+*.jks
+*.keystore
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+server/reports/
+# Runtime data and secrets
+.env
+*.db
+*.db-wal
+*.db-shm
+/data/
+/music/
+/server/data/
+/server/music/
+/server/staging/
+/staging/
+# Spikes (reports are committed under docs/spikes/, code is not)
+/spikes/
+# Misc
+.DS_Store
+.claude/settings.local.json

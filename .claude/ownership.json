@@ -1,0 +1,37 @@
+{
+  "_comment": "SPDX-License-Identifier: GPL-3.0-or-later. Paths each PLAN task may write on its feat/tNN-* branch (fnmatch globs, relative to the repo root). Enforced by .claude/hooks/guard-files.py. Coordinator branches (chore/*, contracts/*, release/*, integrate/*, fix/*) are not restricted by this file.",
+  "always": [
+    "server/tests/fixtures/*",
+    "docs/notes/*"
+  ],
+  "tasks": {
+    "t00": ["*"],
+    "t01": ["*"],
+    "t02": ["*"],
+    "t03a": ["docs/spikes/T03a*", "spikes/t03a/*"],
+    "t03b": ["docs/spikes/T03b*", "spikes/t03b/*"],
+    "t03c": ["docs/spikes/T03c*", "spikes/t03c/*"],
+    "t03d": ["docs/spikes/T03d*", "spikes/t03d/*"],
+    "t04": ["server/src/ultimatetunes/auth/*", "server/tests/auth/*", "contracts/db/migrations/01??_*"],
+    "t05": ["server/src/ultimatetunes/library/*", "server/src/ultimatetunes/subsonic/routes/system.py", "server/src/ultimatetunes/subsonic/routes/browse.py", "server/src/ultimatetunes/subsonic/routes/media.py", "server/tests/library/*", "server/tests/subsonic/*", "contracts/db/migrations/01??_*"],
+    "t06": ["server/src/ultimatetunes/search/*", "server/src/ultimatetunes/ids/*", "server/src/ultimatetunes/subsonic/routes/search.py", "server/tests/search/*", "server/tests/ids/*", "contracts/db/migrations/02??_*"],
+    "t07": ["server/src/ultimatetunes/radio/*", "server/tests/radio/*", "contracts/db/migrations/02??_*"],
+    "t08": ["server/src/ultimatetunes/worker/*", "server/src/ultimatetunes/jobs/*", "server/tests/worker/*", "server/tests/jobs/*", "contracts/db/migrations/03??_*"],
+    "t09": ["server/src/ultimatetunes/tagging/*", "server/src/ultimatetunes/paths/*", "server/tests/tagging/*", "server/tests/paths/*", "contracts/db/migrations/03??_*"],
+    "t10": ["server/src/ultimatetunes/lyrics/*", "server/src/ultimatetunes/subsonic/routes/lyrics.py", "server/tests/lyrics/*", "contracts/db/migrations/04??_*"],
+    "t11": ["server/src/ultimatetunes/imports/*", "server/tests/imports/*", "contracts/db/migrations/04??_*"],
+    "t12": ["android/app/src/main/java/com/qtekfun/ultimatetunes/ui/*", "android/app/src/main/res/*", "android/app/src/test/java/com/qtekfun/ultimatetunes/ui/*", "android/app/src/androidTest/java/com/qtekfun/ultimatetunes/ui/*"],
+    "t13": ["android/app/src/main/java/com/qtekfun/ultimatetunes/ui/*", "android/app/src/main/res/*", "android/app/src/test/java/com/qtekfun/ultimatetunes/ui/*", "android/app/src/androidTest/java/com/qtekfun/ultimatetunes/ui/*"],
+    "t14": [".github/workflows/release.yml", ".github/workflows/nightly.yml", "tools/*", "RELEASING.md", "fastlane/*"],
+    "t15": ["server/src/ultimatetunes/admin/*", "server/src/ultimatetunes/templates/admin/*", "server/src/ultimatetunes/static/admin/*", "server/tests/admin/*", "contracts/db/migrations/05??_*"],
+    "t16": ["server/src/ultimatetunes/streaming/*", "server/tests/streaming/*", "contracts/db/migrations/06??_*"],
+    "t17": ["android/core/player/*", "android/app/src/main/java/com/qtekfun/ultimatetunes/playback/*", "android/app/src/main/res/values/strings_player.xml", "android/app/src/main/res/values-es/strings_player.xml", "android/app/src/test/java/com/qtekfun/ultimatetunes/playback/*", "android/app/src/androidTest/java/com/qtekfun/ultimatetunes/playback/*"],
+    "t18": ["android/app/src/main/java/com/qtekfun/ultimatetunes/*", "android/app/src/main/res/*", "android/app/src/test/*", "android/app/src/androidTest/*", "android/core/player/*"],
+    "t19": ["server/tests/contract/*", "docs/compat.md", ".github/workflows/nightly.yml"],
+    "t20": ["*"],
+    "t21": ["*"],
+    "t22": ["*"],
+    "t23": ["*"],
+    "t24": ["*"]
+  }
+}

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,toml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{kt,kts}]
+ktlint_code_style = android_studio
+# Composables are PascalCase by Compose API guidelines.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[*.py]
+indent_size = 4
+
+[{Makefile,*.mk}]
+indent_style = tab
