@@ -1,0 +1,80 @@
+{
+    "query": "lanterns",
+    "artists": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "name": "The Paper Lanterns",
+            "coverArt": "ar-0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "isExternal": false
+        },
+        {
+            "id": "ytartist:UCh5Kp2Wq7Zt3Lm9Xv1Nb4Rs",
+            "name": "Copper Coast",
+            "coverArt": "ytartist:UCh5Kp2Wq7Zt3Lm9Xv1Nb4Rs",
+            "isExternal": true
+        }
+    ],
+    "albums": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "name": "Harbour Lights",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "year": 2023,
+            "songCount": 10,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false
+        },
+        {
+            "id": "ytalbum:MPREb_k3Vd9QmT2xL",
+            "name": "Lanterns at Dusk",
+            "artist": "The Paper Lanterns",
+            "artistId": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+            "year": 2024,
+            "songCount": 9,
+            "coverArt": "ytalbum:MPREb_k3Vd9QmT2xL",
+            "isExternal": true
+        }
+    ],
+    "tracks": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+            "title": "Lighthouse Keeper",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 214,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
+            "title": "Tidewater",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 187,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "yt:Qx7Lm2pZ0aB",
+            "title": "Paper Moons (Live)",
+            "artist": "The Paper Lanterns",
+            "artistId": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+            "album": "Lanterns at Dusk",
+            "albumId": "ytalbum:MPREb_k3Vd9QmT2xL",
+            "durationSec": 262,
+            "year": null,
+            "coverArt": "yt:Qx7Lm2pZ0aB",
+            "isExternal": true,
+            "libraryState": null
+        }
+    ]
+}

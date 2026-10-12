@@ -23,6 +23,7 @@ dev = [
   "bandit>=1.8",
   "httpx>=0.28",
   "mypy>=1.15",
+  "openapi-spec-validator>=0.7",
   "pip-audit>=2.8",
   # PostgreSQL driver for the portable-migration check in CI (approved 2026-10-12, T00);
   # runtime use comes in PLAN phase 5.
@@ -30,6 +31,7 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "ruff>=0.9",
+  "schemathesis>=4.0",
 ]
 
 [build-system]

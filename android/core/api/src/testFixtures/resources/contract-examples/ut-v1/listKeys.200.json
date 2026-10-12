@@ -1,0 +1,22 @@
+{
+    "keys": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01f001",
+            "name": "Pixel 9",
+            "prefix": "utk_EXAMPLEe",
+            "createdAt": "2026-10-01T17:20:00.000Z",
+            "lastUsedAt": "2026-10-12T08:15:30.123Z",
+            "revokedAt": null,
+            "current": true
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01f002",
+            "name": "Old tablet",
+            "prefix": "utk_3fT9aQ1z",
+            "createdAt": "2026-09-14T09:02:11.000Z",
+            "lastUsedAt": "2026-09-30T21:44:05.000Z",
+            "revokedAt": "2026-10-01T17:21:40.000Z",
+            "current": false
+        }
+    ]
+}

@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#internal_error",
+    "title": "Internal error",
+    "status": 500,
+    "detail": "Correlation id 7f3a9c2e",
+    "code": "internal_error",
+    "instance": "/ut/v1/…"
+}

@@ -96,6 +96,9 @@ fun KoverReportFilter.generatedAndUiCode() {
         "*_HiltModules*",
         "*_Factory",
         "*_Factory$*",
+        // Dagger factories of @Provides methods (`ClockModule_ClockFactory`) and their holders
+        "*Module_*Factory",
+        "*Factory\$InstanceHolder",
         "*_MembersInjector",
         // Room
         "*_Impl",
@@ -183,6 +186,8 @@ dependencies {
     kspAndroidTest(libs.hilt.compiler)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // The contract-backed fake server (FakeTunesServer) for view-model and UI-logic tests.
+    testImplementation(testFixtures(project(":core:api")))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.mockk)

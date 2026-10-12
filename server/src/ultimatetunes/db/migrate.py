@@ -2,15 +2,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Applies the plain SQL migrations of `contracts/db/migrations` in order.
 
-Migrations are portable SQL (SQLite and PostgreSQL). Each file runs in its own transaction and
-is recorded in `schema_migrations`; applied files are never run again. The api never migrates:
-`ultimatetunes migrate` does (a Kubernetes Job later), and `/readyz` checks the result.
+Migrations are portable SQL (SQLite and PostgreSQL, through `db.driver`). Each file runs in its
+own transaction and is recorded in `schema_migrations`; applied files are never run again. The
+api never migrates: `ultimatetunes migrate` does (a Kubernetes Job later), and `/readyz` checks
+the result.
 """
 
 import re
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+from ultimatetunes.core.clock import Clock, SystemClock, format_ts
+from ultimatetunes.db.driver import Connection, SqliteConnection, connect_sqlite
 
 _NAME = re.compile(r"^(?P<version>\d{4})_[a-z0-9_]+\.sql$")
 
@@ -40,56 +43,47 @@ def discover(directory: Path) -> list[Migration]:
     return migrations
 
 
-def _ensure_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations ("
-        " version INTEGER PRIMARY KEY,"
-        " name TEXT NOT NULL,"
-        " applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-    )
+def _ensure_table(conn: Connection) -> None:
+    if not conn.table_exists("schema_migrations"):
+        conn.execute(
+            "CREATE TABLE schema_migrations ("
+            " version INTEGER NOT NULL PRIMARY KEY,"
+            " name TEXT NOT NULL,"
+            " applied_at TEXT NOT NULL)"
+        )
 
 
-def applied_versions(conn: sqlite3.Connection) -> set[int]:
+def applied_versions(conn: Connection) -> set[int]:
     """Versions already applied; read-only, so `/readyz` can call it on a read-only connection."""
-    exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
-    ).fetchone()
-    if exists is None:
+    if not conn.table_exists("schema_migrations"):
         return set()
-    return {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+    rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
+    return {int(str(row["version"])) for row in rows}
 
 
-def pending(conn: sqlite3.Connection, directory: Path) -> list[Migration]:
+def pending(conn: Connection, directory: Path) -> list[Migration]:
     done = applied_versions(conn)
     return [m for m in discover(directory) if m.version not in done]
 
 
-def connect(database: Path) -> sqlite3.Connection:
-    """SQLite connection in WAL mode, autocommit off only inside explicit transactions."""
-    database.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(database, isolation_level=None)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def connect(database: Path) -> SqliteConnection:
+    """SQLite connection for the migrator (WAL, foreign keys on). See `db.driver`."""
+    return connect_sqlite(database)
 
 
-def migrate(conn: sqlite3.Connection, directory: Path) -> list[Migration]:
+def migrate(conn: Connection, directory: Path, clock: Clock | None = None) -> list[Migration]:
     """Applies every pending migration, one transaction each. Returns what was applied."""
+    clock = clock or SystemClock()
     _ensure_table(conn)
     applied: list[Migration] = []
     for migration in pending(conn, directory):
-        conn.execute("BEGIN")
-        try:
+        with conn.transaction():
             for statement in split_statements(migration.sql):
                 conn.execute(statement)
             conn.execute(
-                "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
-                (migration.version, migration.name),
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                (migration.version, migration.name, format_ts(clock.now())),
             )
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
-        conn.execute("COMMIT")
         applied.append(migration)
     return applied
 

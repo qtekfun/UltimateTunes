@@ -1,0 +1,33 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "lyricsList": {
+            "structuredLyrics": [
+                {
+                    "displayArtist": "The Paper Lanterns",
+                    "displayTitle": "Lighthouse Keeper",
+                    "lang": "und",
+                    "synced": true,
+                    "line": [
+                        {
+                            "start": 0,
+                            "value": "Salt on the window, the night coming in"
+                        },
+                        {
+                            "start": 4210,
+                            "value": "I keep the light for the ships that never were"
+                        },
+                        {
+                            "start": 9875,
+                            "value": "Turning and turning, the harbour asleep"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,165 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "playlist": {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001",
+            "name": "Sunday Morning",
+            "comment": "Slow songs for slow mornings",
+            "owner": "alice",
+            "public": false,
+            "songCount": 3,
+            "duration": 663,
+            "created": "2026-10-05T10:00:00.000Z",
+            "changed": "2026-10-11T22:13:09.000Z",
+            "coverArt": "pl-0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001",
+            "readonly": false,
+            "entry": [
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "isDir": false,
+                    "title": "Lighthouse Keeper",
+                    "album": "Harbour Lights",
+                    "artist": "The Paper Lanterns",
+                    "track": 1,
+                    "year": 2023,
+                    "genre": "Indie Pop",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "size": 3489211,
+                    "contentType": "audio/ogg",
+                    "suffix": "opus",
+                    "duration": 214,
+                    "bitRate": 128,
+                    "samplingRate": 48000,
+                    "channelCount": 2,
+                    "path": "The Paper Lanterns/Harbour Lights/01 - Lighthouse Keeper.opus",
+                    "playCount": 14,
+                    "discNumber": 1,
+                    "created": "2026-09-30T18:04:11.204Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01",
+                    "genres": [
+                        {
+                            "name": "Indie Pop"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayArtist": "The Paper Lanterns",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayAlbumArtist": "The Paper Lanterns",
+                    "replayGain": {
+                        "trackGain": -7.12,
+                        "trackPeak": 0.988,
+                        "albumGain": -6.85,
+                        "albumPeak": 0.998
+                    },
+                    "played": "2026-10-11T19:22:03.000Z",
+                    "starred": "2026-10-02T08:00:00.000Z"
+                },
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "isDir": false,
+                    "title": "Brasas",
+                    "album": "Salt & Ember",
+                    "artist": "Marisol Vega",
+                    "track": 3,
+                    "year": 2025,
+                    "genre": "Latin Pop",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "size": 3264530,
+                    "contentType": "audio/mp4",
+                    "suffix": "m4a",
+                    "duration": 201,
+                    "bitRate": 129,
+                    "samplingRate": 44100,
+                    "channelCount": 2,
+                    "path": "Marisol Vega/Salt & Ember/03 - Brasas.m4a",
+                    "playCount": 3,
+                    "discNumber": 1,
+                    "created": "2026-10-03T09:12:45.880Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "",
+                    "genres": [
+                        {
+                            "name": "Latin Pop"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayArtist": "Marisol Vega",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayAlbumArtist": "Marisol Vega",
+                    "replayGain": {
+                        "trackGain": -8.91,
+                        "trackPeak": 1.0
+                    },
+                    "played": "2026-10-12T07:58:14.000Z"
+                },
+                {
+                    "id": "yt:Rb4Tn8wKx1c",
+                    "parent": "ytalbum:MPREb_W2pZ7nQx4Ld",
+                    "isDir": false,
+                    "title": "Copper Fields",
+                    "album": "Copper Fields",
+                    "artist": "Marisol Vega",
+                    "coverArt": "yt:Rb4Tn8wKx1c",
+                    "duration": 198,
+                    "albumId": "ytalbum:MPREb_W2pZ7nQx4Ld",
+                    "artistId": "ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "",
+                    "genres": [],
+                    "artists": [
+                        {
+                            "id": "ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayArtist": "Marisol Vega",
+                    "albumArtists": [
+                        {
+                            "id": "ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayAlbumArtist": "Marisol Vega",
+                    "replayGain": {}
+                }
+            ]
+        }
+    }
+}

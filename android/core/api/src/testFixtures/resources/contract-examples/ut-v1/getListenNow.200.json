@@ -1,0 +1,105 @@
+{
+    "recentlyPlayed": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "name": "Salt & Ember",
+            "artist": "Marisol Vega",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+            "year": 2025,
+            "songCount": 12,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "isExternal": false
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "name": "Harbour Lights",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "year": 2023,
+            "songCount": 10,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false
+        }
+    ],
+    "recentlyAdded": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003",
+            "name": "Low Orbit",
+            "artist": "Northbound Static",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+            "year": 2021,
+            "songCount": 8,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003",
+            "isExternal": false
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "name": "Salt & Ember",
+            "artist": "Marisol Vega",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+            "year": 2025,
+            "songCount": 12,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "isExternal": false
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "name": "Harbour Lights",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "year": 2023,
+            "songCount": 10,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false
+        }
+    ],
+    "mostPlayed": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+            "title": "Lighthouse Keeper",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 214,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
+            "title": "Tidewater",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 187,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003",
+            "title": "Brasas",
+            "artist": "Marisol Vega",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+            "album": "Salt & Ember",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "durationSec": 201,
+            "year": 2025,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+            "isExternal": false,
+            "libraryState": "ready"
+        }
+    ],
+    "favouriteRadios": [
+        {
+            "seedId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+            "title": "Lighthouse Keeper Radio",
+            "subtitle": "The Paper Lanterns",
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001"
+        }
+    ]
+}
