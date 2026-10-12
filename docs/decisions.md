@@ -15,7 +15,7 @@ The author asked to keep going overnight, release when appropriate, decide doubt
 - Decision: the coordinator prepares the release PR (`VERSION`, `CHANGELOG.md`, store changelogs) so `master` becomes release-ready; the author enables `Release` and pushes the tag (`git tag vX.Y.Z && git push origin vX.Y.Z`) when they want it published.
 
 ## D2. Cloudflare Tunnel is a supported edge, under conditions
-- The audit said "never put a tunnel in front of the proxy" because tunnel traffic arrives from a private address. The author's homelab uses cloudflared → Traefik.
+- The audit said "never put a tunnel in front of the proxy" because tunnel traffic arrives from a private address. A common homelab setup is cloudflared → Traefik.
 - Decision: supported when cloudflared and Traefik have pinned addresses on their network, Traefik trusts `X-Forwarded-For` only from cloudflared, the api's `UT_TRUSTED_PROXIES` lists exactly those two /32s, and `UT_ADMIN_ALLOWED_NETWORKS` excludes the Docker and tunnel ranges. An unpinned or untrusted tunnel stays unsupported. Documented in `deploy/traefik-cloudflared/` and `docs/architecture.md`.
 
 ## D3. Stale comments fixed as docs-only coordinator changes
