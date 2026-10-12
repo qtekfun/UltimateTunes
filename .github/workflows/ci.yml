@@ -151,10 +151,22 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # fetch-depth 0 fetches every branch, and gitleaks' default (`git log --all`) would scan them
+      # all: one finding on any open branch would fail every PR. A PR scans its own commits
+      # (base..head); a push to master scans master's whole history.
       - name: gitleaks
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          if [[ -n "$BASE_SHA" ]]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          else
+            range="HEAD"
+          fi
+          echo "Scanning $range"
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            git /repo --redact --verbose --exit-code 1
+            git /repo --log-opts="$range" --redact --verbose --exit-code 1
 
   store-texts:
     # Store text limits on every PR; on a release PR (branch release/*), also requires the

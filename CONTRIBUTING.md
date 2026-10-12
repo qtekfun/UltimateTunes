@@ -38,3 +38,13 @@ Thanks for helping! A few rules keep UltimateTunes free, safe and easy to review
 ## Dependencies
 
 Dependabot keeps versions up to date; do not bump them by hand. Regenerate `server/uv.lock` with `uv lock` and `android/gradle/verification-metadata.xml` from a clean Gradle home.
+
+Android Lint runs with warnings as errors, including its network-backed version checks (`NewerVersionAvailable`, `AndroidGradlePluginVersion`, `GradleDependency`). When a new Gradle, AGP, Kotlin or library release comes out, `./gradlew check` can start failing on a branch nobody changed. That is expected: the matching Dependabot PR fixes it, so merge (or rebase onto) that PR. Do not disable these checks or add them to a baseline.
+
+## Quality gates
+
+`make -C server check` and `./gradlew check` run the same gates as CI:
+
+- Coverage ≥ 85 % overall, and 100 % lines and branches on the critical areas. Server: `server/tools/critical_coverage.py` (patterns in `CRITICAL`). Android: `criticalPackages` in `android/app/build.gradle.kts` (`koverVerifyCritical`). An area with no code yet passes and is enforced from its first file.
+- Forbidden dependencies. Server: `server/tools/forbidden_deps.py` reads every package in `uv.lock`. Android: `checkForbiddenDependencies` walks the shipped and test runtime classpaths of every module.
+- In CI only: gitleaks over the PR's commits, Trivy on the image, and the Conventional Commit PR title.
