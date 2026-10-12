@@ -50,6 +50,22 @@ With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`,
 
 `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.
 
+## Notifications with ntfy
+
+The panel (`/admin/notifications`) sends failed downloads, failed canary runs and low-disk pauses to an ntfy topic or a webhook, over **https** only and never to the server's own network. The URL must not carry a user or password. If your ntfy server requires login (`auth-default-access: deny-all`), give the api credentials through the environment; the panel never takes them, because the server has no encryption library to keep them safe in its database. It only shows whether they are set.
+
+1. On the ntfy server, create a user for UltimateTunes and let it write to the topic only:
+   ```sh
+   ntfy user add ultimatetunes
+   ntfy access ultimatetunes ut-alerts write-only
+   ntfy token add ultimatetunes        # prints tk_...
+   ```
+2. Put the token in `./secrets/notify_token` (one line, mode 0600) and uncomment the `notify_token` secret in `server/compose.yaml`, both under the api's `secrets:` and at the end of the file. An env var (`UT_NOTIFY_TOKEN`) also works and wins over the secret, but shows in `docker inspect`.
+   Without tokens, `UT_NOTIFY_USERNAME` + `UT_NOTIFY_PASSWORD` (Docker secrets `ut_notify_username`, `ut_notify_password`) send HTTP Basic instead. Set the token or the user and password, not both: the api refuses to start otherwise.
+3. Restart the api, set the target in the panel to `https://ntfy.example.com/ut-alerts` (kind `ntfy`) and press "Send a test notification". "ntfy rejected the credentials" means a 401 or 403: a wrong token, or a user without write access to the topic.
+
+The credentials go as one `Authorization` header (Bearer for the token, Basic for the user) on the request to that URL only; redirects are never followed, and they never appear in the logs, the audit log, `/readyz` or error pages. A webhook target gets the same header.
+
 ## Traefik + Authelia
 
 `deploy/traefik/` is the Traefik v3 version of the Caddy example, for homelabs that already run Traefik with Authelia. Pinned to `traefik:v3.6.25` by digest (`compose.traefik.yaml`). Checked by running that image offline on these files: `/readyz`, `/internal/*`, `/healthz` and any other path answer 404; paths with encoded reserved characters are refused (`encodedCharacters`, e.g. `%3B` → 400); `/admin` and `POST /ut/v1/keys` from outside the LAN ranges answer 403; `/rest/*`, `/ut/v1/*` and `/` reach the api.
