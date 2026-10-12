@@ -70,7 +70,7 @@ paths:
                   radio: true
                   lyrics: true
                   youtubeMusicImport: true
-                  spotifyImport: false
+                  fileImport: true
                   streamingWhileDownloading: true
         '429':
           $ref: '#/components/responses/RateLimited'
@@ -670,8 +670,10 @@ paths:
       tags:
       - imports
       summary: Import a playlist
-      description: RF-08. Reads the playlist, matches each track on YouTube Music, requests the matches and creates
-        a user playlist. Runs in the background. Poll `GET /ut/v1/imports/{importId}`.
+      description: RF-08. Reads the playlist (a YouTube Music / YouTube URL as JSON, or an uploaded file as
+        multipart), matches each track on YouTube Music, requests the matches and creates a user playlist. Runs
+        in the background. Poll `GET /ut/v1/imports/{importId}`. Files are at most 1 MiB and 5000 rows, UTF-8
+        (a BOM is accepted); larger files get `payload_too_large`, unreadable ones `invalid_parameter`.
       requestBody:
         required: true
         content:
@@ -681,6 +683,12 @@ paths:
             example:
               url: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
               name: Road Trip 2026
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateFileImport'
+            encoding:
+              file:
+                contentType: text/csv, application/json, text/plain
       responses:
         '202':
           description: Accepted.
@@ -1289,7 +1297,7 @@ components:
           - radio
           - lyrics
           - youtubeMusicImport
-          - spotifyImport
+          - fileImport
           - streamingWhileDownloading
           properties:
             externalSearch:
@@ -1300,9 +1308,10 @@ components:
               type: boolean
             youtubeMusicImport:
               type: boolean
-            spotifyImport:
+            fileImport:
               type: boolean
-              description: True only when the admin configured Spotify credentials (RF-08).
+              description: Playlist import from an uploaded file (generic CSV, Exportify CSV, Spotify data-export
+                JSON) is available (RF-08, SPEC §11 T03d).
             streamingWhileDownloading:
               type: boolean
     Me:
@@ -1526,12 +1535,34 @@ components:
           format: uri
           maxLength: 2048
           description: 'Playlist URL. Allowed hosts: `music.youtube.com`, `www.youtube.com`, `youtube.com`, `m.youtube.com`
-            (with `list=`), and `open.spotify.com` (`/playlist/<id>`) when `spotifyImport` is enabled. Anything
-            else: `unsupported_url`.'
+            (with `list=`). Anything else, Spotify URLs included (v1 imports Spotify playlists from files): `unsupported_url`.'
         name:
           type: string
           maxLength: 200
           description: 'Name of the resulting playlist (default: the source playlist''s name).'
+    CreateFileImport:
+      type: object
+      required:
+      - file
+      - format
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The exported playlist, at most 1 MiB and 5000 rows, UTF-8.
+        format:
+          type: string
+          enum:
+          - csv
+          - exportify_csv
+          - spotify_json
+          description: '`csv`: generic CSV with a header row and the columns `title`, `artist` (several joined
+            with `;`), and optional `album`, `duration` (seconds or m:ss) and `isrc`. `exportify_csv`: the CSV
+            Exportify writes. `spotify_json`: a playlist file from Spotify''s "Download your data" export.'
+        name:
+          type: string
+          maxLength: 200
+          description: 'Name of the resulting playlist (default: the name in the file, else the file name).'
     ImportItem:
       type: object
       required:
@@ -1601,9 +1632,14 @@ components:
           type: string
           enum:
           - ytmusic
-          - spotify
+          - csv
+          - exportify_csv
+          - spotify_json
         sourceUrl:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: The playlist URL for `ytmusic`; null for file imports.
         name:
           type:
           - string

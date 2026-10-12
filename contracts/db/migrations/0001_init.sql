@@ -311,9 +311,10 @@ CREATE TABLE lyrics (
 CREATE TABLE imports (
     id TEXT NOT NULL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    source TEXT NOT NULL CHECK (source IN ('ytmusic', 'spotify')),
-    source_url TEXT NOT NULL,
-    source_playlist_id TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('ytmusic', 'csv', 'exportify_csv', 'spotify_json')),
+    -- URL and playlist id only for `ytmusic`; file imports (SPEC §11, T03d) have neither.
+    source_url TEXT,
+    source_playlist_id TEXT,
     name TEXT,
     state TEXT NOT NULL CHECK (state IN ('queued', 'reading', 'matching', 'done', 'failed')),
     total_items INTEGER NOT NULL DEFAULT 0,

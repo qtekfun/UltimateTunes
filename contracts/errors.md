@@ -38,11 +38,11 @@ The envelope format follows `f` (`json` or `xml`, default `xml`). Binary endpoin
 | `Forbidden` | Authenticated but not allowed (someone else's playlist, admin-only action) | 50 | 403 | `forbidden` |
 | `NotFound` | No such artist, album, song, playlist, key, import, job, lyrics | 70 | 404 | `not_found` |
 | `Conflict` | The request clashes with the current state (e.g. another track already at `libraryPath`). Repeating an idempotent action, such as revoking a key twice, is not a conflict | 0 | 409 | `conflict` |
-| `FeatureDisabled` | Feature switched off in config (Spotify import without credentials) | 0 | 409 | `feature_disabled` |
+| `FeatureDisabled` | Feature switched off in config (e.g. external search or radio disabled by the admin) | 0 | 409 | `feature_disabled` |
 | `UnsupportedUrl` | Import URL host not on the allowlist, or not a playlist URL | 0 | 400 | `unsupported_url` |
 | `PayloadTooLarge` | Body or parameter list over the limit (e.g. more than 1,000 ids) | 0 | 413 | `payload_too_large` |
 | `RateLimited` | Rate limit or temporary lockout (per IP, per key) | 0 (HTTP 429) | 429 | `rate_limited` |
-| `UpstreamUnavailable` | YouTube Music, MusicBrainz, LRCLIB or Spotify failed or timed out | 0 | 502 | `upstream_unavailable` |
+| `UpstreamUnavailable` | YouTube Music, MusicBrainz, Cover Art Archive or LRCLIB failed or timed out | 0 | 502 | `upstream_unavailable` |
 | `DownloadFailed` | The download job of the requested track failed for good | 0 | 502 | `download_failed` |
 | `NotImplemented` | Router stub (T02) or a feature not built yet | 0 (HTTP 501) | 501 | `not_implemented` |
 | `InternalError` | Anything unexpected | 0 | 500 | `internal_error` |
