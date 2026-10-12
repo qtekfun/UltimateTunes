@@ -31,14 +31,19 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ultimatetunes.admin.security import SessionCodec
 from ultimatetunes.core.clock import Clock
+from ultimatetunes.imports.upload import MAX_BODY_BYTES as UPLOAD_MAX_BODY_BYTES
 
 PREFIX = "/web"
 HOME = "/"
 SESSION_COOKIE = "ut_web_session"
 LOGIN_COOKIE = "ut_web_login"
+# The language chosen in Settings ("en" or "es"); absent: the browser's.
+LANG_COOKIE = "ut_web_lang"
+LANG_TTL_S = 365 * 24 * 3600
 # Per-user counter in the `settings` table; part of every web session's fingerprint.
 EPOCH_KEY = "web.session_epoch."
 MAX_BODY_BYTES = 64 * 1024
+UPLOAD_PATH = PREFIX + "/imports/file"
 
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
@@ -111,13 +116,18 @@ class WebGate:
         await self._app(scope, receive, send_with_headers)
 
 
+def body_cap(path: str) -> int:
+    """Forms are small; a playlist file upload may be as large as `POST /ut/v1/imports` takes."""
+    return UPLOAD_MAX_BODY_BYTES if path == UPLOAD_PATH else MAX_BODY_BYTES
+
+
 def too_big(request: Request) -> bool:
     length = request.headers.get("content-length")
     if length is None:
         # Browsers send forms with a length; a chunked body is refused rather than read unbounded.
         return "transfer-encoding" in request.headers
     try:
-        return int(length) > MAX_BODY_BYTES
+        return int(length) > body_cap(request.url.path)
     except ValueError:
         return True
 

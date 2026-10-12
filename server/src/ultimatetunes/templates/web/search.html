@@ -1,20 +1,34 @@
 {# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
 {% extends layout %}
-{% from "_macros.html" import album_grid, artist_list, song_list with context %}
+{% from "_macros.html" import album_grid, artist_list, song_list, empty with context %}
 {% block title %}{{ _("Search") }}{% endblock %}
 {% block content %}
-<h1 class="large">{{ _("Search") }}</h1>
+<h1 class="large" tabindex="-1">{{ _("Search") }}</h1>
 <form class="search" method="get" action="/web/search" role="search">
-  <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="{{ _("Artists, albums, songs") }}" aria-label="{{ _("Search") }}" autofocus>
+  <input id="search-input" type="search" name="q" value="{{ q }}" maxlength="200" placeholder="{{ _("Artists, albums, songs") }}" aria-label="{{ _("Search") }}" autocomplete="off" autofocus>
   <button class="primary" type="submit">{{ _("Search") }}</button>
 </form>
 {% if q %}
-{% if songs %}<section><h2>{{ _("Songs") }}</h2>{{ song_list(songs) }}</section>{% endif %}
-{% if albums %}<section><h2>{{ _("Albums") }}</h2>{{ album_grid(albums) }}</section>{% endif %}
-{% if artists %}<section><h2>{{ _("Artists") }}</h2>{{ artist_list(artists) }}</section>{% endif %}
-{% if not (songs or albums or artists) %}<p class="empty">{{ _("No results for “%(query)s”.", query=q) }}</p>{% endif %}
+{% if lib_songs or lib_albums or lib_artists %}
+<section class="source" aria-labelledby="h-lib">
+  <h2 id="h-lib">{{ _("In your library") }}</h2>
+  {% if lib_songs %}<h3>{{ _("Songs") }}</h3>{{ song_list(lib_songs) }}{% endif %}
+  {% if lib_albums %}<h3>{{ _("Albums") }}</h3>{{ album_grid(lib_albums) }}{% endif %}
+  {% if lib_artists %}<h3>{{ _("Artists") }}</h3>{{ artist_list(lib_artists) }}{% endif %}
+</section>
+{% endif %}
+{% if yt_songs or yt_albums or yt_artists %}
+<section class="source" aria-labelledby="h-yt">
+  <h2 id="h-yt">{{ _("YouTube Music") }}</h2>
+  <p class="muted hint">{{ _("Not in your library yet: the first play fetches it") }}</p>
+  {% if yt_songs %}<h3>{{ _("Songs") }}</h3>{{ song_list(yt_songs) }}{% endif %}
+  {% if yt_albums %}<h3>{{ _("Albums") }}</h3>{{ album_grid(yt_albums) }}{% endif %}
+  {% if yt_artists %}<h3>{{ _("Artists") }}</h3>{{ artist_list(yt_artists) }}{% endif %}
+</section>
+{% endif %}
+{% if not found %}{{ empty(_("No results for “%(query)s”.", query=q)) }}{% endif %}
 {% else %}
-<p class="empty">{{ _("Search your library and YouTube Music. Songs that are not in your library yet are fetched the first time you play them.") }}</p>
+{{ empty(_("Search your library and YouTube Music. Songs that are not in your library yet are fetched the first time you play them.")) }}
 {% endif %}
 {% endblock %}

@@ -1,17 +1,14 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The web player: the home page `/`, and under `/web` its pages, the player's JSON calls,
-media and sign-in.
+"""The web player's core: shared state, sessions and CSRF, error answers, rendering, static
+files and sign-in/sign-out. The routes are in `pages.py`, `actions.py`, `api.py`,
+`account.py` and `importing.py`.
 
-- `/` is the player for browsers: Listen Now with a session, else the sign-in form.
-
+- `/` (`pages.home`) is the player for browsers: Listen Now with a session, else the sign-in
+  form. Everything else lives under `/web`.
 - Pages are server-rendered Jinja. Navigation is HTMX (`hx-boost`): a request with `HX-Request`
   gets only the page's content, which replaces `#content`, so the player bar and its `<audio>`
   element outside it keep playing across pages; full loads get the whole shell.
-- `/web/api/*` (radio, lyrics, first-play status, scrobble) answer JSON to `player.js`.
-- `/web/stream/{id}` and `/web/cover/{id}` are the OpenSubsonic `stream` and `getCoverArt`
-  handlers (HTTP Range, streaming while downloading, the cover service) behind the session
-  cookie: no API key in any URL.
 - Every handler depends on `current_listener` (session, then the per-user request rate) and
   every state change on `posted` (session, then CSRF). Data goes through `backend.Backend`, the
   OpenSubsonic handlers called as the signed-in user.
@@ -28,9 +25,8 @@ from importlib import resources
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Request
 from fastapi.routing import APIRoute
-from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
@@ -58,14 +54,12 @@ from ultimatetunes.errors import (
     TunesError,
     spec_for,
 )
-from ultimatetunes.ids.virtual import parse_kind
-from ultimatetunes.jobs import tracks
-from ultimatetunes.web import backend
 from ultimatetunes.web.backend import Backend
 from ultimatetunes.web.i18n import translator
 from ultimatetunes.web.security import (
     EPOCH_KEY,
     HOME,
+    LANG_COOKIE,
     LOGIN_COOKIE,
     PREFIX,
     SESSION_COOKIE,
@@ -84,20 +78,22 @@ STATIC_FILES = {
     "blank.svg": ("web", "image/svg+xml"),
     # The panel's vendored copy (static/admin/htmx.min.js.license): one file, two users.
     "htmx.min.js": ("admin", "text/javascript"),
+    "theme.js": ("web", "text/javascript"),
 }
 ItemId = Annotated[str, Path(alias="id", min_length=1, max_length=80)]
-PAGE_SIZE = 60
-MAX_OFFSET = 100_000
-MAX_QUERY = 200
 MAX_NAME = 200
-RADIO_SIZE = 50
-JSON_DATA = "application/json"
-SEARCH_COUNTS = {"artistCount": "8", "albumCount": "12", "songCount": "30"}
 LIBRARY_TABS = (
     ("/web/library", "Albums"),
     ("/web/library/artists", "Artists"),
     ("/web/library/playlists", "Playlists"),
     ("/web/library/favourites", "Favourites"),
+)
+# The sections of the navigation: (path, label, icon template).
+SECTIONS = (
+    ("/", "Listen Now", "_icon_listen.html"),
+    ("/web/radio", "Radio", "_icon_radio.html"),
+    ("/web/library", "Library", "_icon_library.html"),
+    ("/web/search", "Search", "_icon_search.html"),
 )
 MESSAGES = {
     "signin": "Your session has ended. Sign in again.",
@@ -318,14 +314,18 @@ class WebRoute(APIRoute):
 
 
 router = APIRouter(route_class=WebRoute)
-# `/` is always served (the sign-in form, Listen Now, or the plain page when turned off).
-home_router = APIRouter(route_class=WebRoute)
 
 
 # ---------------------------------------------------------------------- rendering
 
 
 def lang_of(request: Request) -> Lang:
+    """The language chosen in Settings (a cookie), else the browser's (`Accept-Language`)."""
+    chosen = request.cookies.get(LANG_COOKIE)
+    if chosen == "es":
+        return "es"
+    if chosen == "en":
+        return "en"
     return negotiate(request.headers.get("accept-language"))
 
 
@@ -351,13 +351,14 @@ def page(  # noqa: PLR0913 - the parts of one rendered page
         "layout": "_partial.html" if partial else "base.html",
         "error": _(error) if error else None,
         "library_tabs": LIBRARY_TABS,
+        "sections": SECTIONS,
     }
     values.update(context or {})
     html = state(request).templates.render(template, values)
     return HTMLResponse(html, status_code=status, headers={"Vary": "HX-Request"})
 
 
-def _go(request: Request, location: str) -> Response:
+def go(request: Request, location: str) -> Response:
     """After a state change: HTMX swaps the target page in; plain forms follow a redirect."""
     if request.headers.get("hx-request"):
         return Response(status_code=200, headers={"HX-Location": json.dumps(_hx(location))})
@@ -368,9 +369,10 @@ def _hx(location: str) -> dict[str, str]:
     return {"path": location, "target": "#content"}
 
 
-async def _data(
+async def data(
     request: Request, listener: Listener, endpoint: str, /, **params: Any
 ) -> dict[str, Any]:
+    """The payload of an OpenSubsonic endpoint called as `listener` (`backend.Backend`)."""
     return await state(request).backend.data(request, listener.principal, endpoint, params)
 
 
@@ -392,10 +394,10 @@ def static(name: str) -> Response:
 
 @router.get(PREFIX + "/login", include_in_schema=False)
 def login_form(request: Request) -> Response:
-    return _login_page(request)
+    return login_page(request)
 
 
-def _login_page(request: Request, *, error: str | None = None, status: int = 200) -> Response:
+def login_page(request: Request, *, error: str | None = None, status: int = 200) -> Response:
     cookie, token = state(request).codec.new_login_token()
     response = page(
         request, "login.html", {"login_token": token}, listener=None, status=status, error=error
@@ -416,17 +418,17 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
     ) or not st.codec.check_login_token(
         request.cookies.get(LOGIN_COOKIE), token if isinstance(token, str) else None
     ):
-        return _login_page(request, error=MESSAGES["csrf"], status=403)
+        return login_page(request, error=MESSAGES["csrf"], status=403)
     username, password = form.get("username"), form.get("password")
     if not isinstance(username, str) or not isinstance(password, str) or not password:
-        return _login_page(request, error=MESSAGES["credentials"], status=400)
+        return login_page(request, error=MESSAGES["credentials"], status=400)
     ip = client_ip(request)
     try:
         user = st.auth.verify_password(username, password, ip, trusted=trusted_origin(request))
     except RateLimited:
-        return _login_page(request, error=MESSAGES["attempts"], status=429)
+        return login_page(request, error=MESSAGES["attempts"], status=429)
     except (AuthenticationFailed, AccountDisabled, Forbidden, InvalidParameter):
-        return _login_page(request, error=MESSAGES["credentials"], status=401)
+        return login_page(request, error=MESSAGES["credentials"], status=401)
     with st.services.db.transaction() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
         audit(conn, st.services.clock, actor_id=user.id, ip=ip, action="web.login")
@@ -455,259 +457,10 @@ def logout(request: Request, post: PostedDep) -> Response:
     return response
 
 
-# ---------------------------------------------------------------------- pages
-
-
-@home_router.get(HOME, include_in_schema=False)
-async def home(request: Request) -> Response:
-    """The home page of the server: Listen Now with a session, else the sign-in form. With
-    the web player turned off, a page that only says the server runs."""
-    if not state(request).settings.web_enabled:
-        return page(request, "landing.html", listener=None)
-    try:
-        me = await run_in_threadpool(current_listener, request)
-    except SignInRequired:
-        if request.headers.get("hx-request"):
-            return Response(status_code=200, headers={"HX-Redirect": HOME})
-        return _login_page(request)
-    return await listen_now(request, me)
-
-
-@router.get(PREFIX, include_in_schema=False)
-async def listen_now(request: Request, me: ListenerDep) -> Response:
-    recent = await _data(request, me, "getAlbumList2", type="recent", size="12")
-    newest = await _data(request, me, "getAlbumList2", type="newest", size="18")
-    context = {
-        "recent": [backend.album(a) for a in backend.items(recent["albumList2"], "album")],
-        "newest": [backend.album(a) for a in backend.items(newest["albumList2"], "album")],
-    }
-    return page(request, "listen.html", context, listener=me)
-
-
-@router.get(PREFIX + "/", include_in_schema=False)
-def slash() -> Response:
-    return RedirectResponse(PREFIX, status_code=308)
-
-
-@router.get(PREFIX + "/library", include_in_schema=False)
-async def library_albums(
-    request: Request,
-    me: ListenerDep,
-    offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
-) -> Response:
-    found = await _data(
-        request,
-        me,
-        "getAlbumList2",
-        type="alphabeticalByName",
-        size=str(PAGE_SIZE + 1),
-        offset=str(offset),
-    )
-    albums = [backend.album(a) for a in backend.items(found["albumList2"], "album")]
-    context = {
-        "albums": albums[:PAGE_SIZE],
-        "next_offset": offset + PAGE_SIZE if len(albums) > PAGE_SIZE else None,
-        "prev_offset": max(offset - PAGE_SIZE, 0) if offset else None,
-    }
-    return page(request, "library_albums.html", context, listener=me)
-
-
-@router.get(PREFIX + "/library/artists", include_in_schema=False)
-async def library_artists(request: Request, me: ListenerDep) -> Response:
-    found = await _data(request, me, "getArtists")
-    groups = [
-        {
-            "name": str(group.get("name", "")),
-            "artists": [backend.artist(a) for a in backend.items(group, "artist")],
-        }
-        for group in backend.items(found["artists"], "index")
-    ]
-    return page(request, "library_artists.html", {"groups": groups}, listener=me)
-
-
-@router.get(PREFIX + "/library/playlists", include_in_schema=False)
-async def library_playlists(request: Request, me: ListenerDep) -> Response:
-    found = await _data(request, me, "getPlaylists")
-    playlists = [backend.playlist(p) for p in backend.items(found["playlists"], "playlist")]
-    return page(request, "library_playlists.html", {"playlists": playlists}, listener=me)
-
-
-@router.get(PREFIX + "/library/favourites", include_in_schema=False)
-async def library_favourites(request: Request, me: ListenerDep) -> Response:
-    found = (await _data(request, me, "getStarred2"))["starred2"]
-    context = {
-        "artists": [backend.artist(a) for a in backend.items(found, "artist")],
-        "albums": [backend.album(a) for a in backend.items(found, "album")],
-        "songs": [backend.song(s) for s in backend.items(found, "song")],
-    }
-    return page(request, "library_favourites.html", context, listener=me)
-
-
-@router.get(PREFIX + "/search", include_in_schema=False)
-async def search(
-    request: Request,
-    me: ListenerDep,
-    q: Annotated[str, Query(max_length=MAX_QUERY)] = "",
-) -> Response:
-    query = q.strip()
-    context: dict[str, object] = {"q": query, "artists": [], "albums": [], "songs": []}
-    if query:
-        found = (await _data(request, me, "search3", query=query, **SEARCH_COUNTS))["searchResult3"]
-        context["artists"] = [backend.artist(a) for a in backend.items(found, "artist")]
-        context["albums"] = [backend.album(a) for a in backend.items(found, "album")]
-        context["songs"] = [backend.song(s) for s in backend.items(found, "song")]
-    return page(request, "search.html", context, listener=me)
-
-
-@router.get(PREFIX + "/album/{id}", include_in_schema=False)
-async def album_page(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    found = (await _data(request, me, "getAlbum", id=item_id))["album"]
-    context = {
-        "album": backend.album(found),
-        "songs": [backend.song(s) for s in backend.items(found, "song")],
-    }
-    return page(request, "album.html", context, listener=me)
-
-
-@router.get(PREFIX + "/artist/{id}", include_in_schema=False)
-async def artist_page(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    found = (await _data(request, me, "getArtist", id=item_id))["artist"]
-    context = {
-        "artist": backend.artist(found),
-        "albums": [backend.album(a) for a in backend.items(found, "album")],
-    }
-    return page(request, "artist.html", context, listener=me)
-
-
-@router.get(PREFIX + "/playlist/{id}", include_in_schema=False)
-async def playlist_page(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    found = (await _data(request, me, "getPlaylist", id=item_id))["playlist"]
-    context = {
-        "playlist": backend.playlist(found),
-        "songs": [backend.song(s) for s in backend.items(found, "entry")],
-    }
-    return page(request, "playlist.html", context, listener=me)
-
-
-@router.get(PREFIX + "/add/{id}", include_in_schema=False)
-async def add_page(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    """Add a song to one of the caller's own playlists (or to a new one)."""
-    parse_kind(item_id, "song")
-    song = (await _data(request, me, "getSong", id=item_id))["song"]
-    found = await _data(request, me, "getPlaylists")
-    playlists = [backend.playlist(p) for p in backend.items(found["playlists"], "playlist")]
-    context = {"song": backend.song(song), "playlists": [p for p in playlists if not p["readonly"]]}
-    return page(request, "add.html", context, listener=me)
-
-
-# ---------------------------------------------------------------------- changes
-
-
-def _name(post: Posted) -> str:
-    name = post.get("name").strip()
-    if not name or len(name) > MAX_NAME:
-        raise InvalidParameter(f"The name needs 1 to {MAX_NAME} characters")
-    return name
-
-
-@router.post(PREFIX + "/playlists", include_in_schema=False)
-async def create_playlist(request: Request, post: PostedDep) -> Response:
-    songs = [post.get("song")] if post.get("song") else []
-    created = await _data(request, post.listener, "createPlaylist", name=_name(post), songId=songs)
-    playlist_id = str(created["playlist"]["id"])
-    return _go(request, f"{PREFIX}/playlist/{path_id(playlist_id)}")
-
-
-@router.post(PREFIX + "/playlists/{id}/add", include_in_schema=False)
-async def add_to_playlist(request: Request, post: PostedDep, item_id: ItemId) -> Response:
-    song = post.get("song")
-    if not song:
-        raise InvalidParameter("Choose a song")
-    await _data(request, post.listener, "updatePlaylist", playlistId=item_id, songIdToAdd=song)
-    return _go(request, f"{PREFIX}/playlist/{path_id(item_id)}")
-
-
-@router.post(PREFIX + "/playlists/{id}/remove", include_in_schema=False)
-async def remove_from_playlist(request: Request, post: PostedDep, item_id: ItemId) -> Response:
-    index = post.get("index")
-    await _data(
-        request, post.listener, "updatePlaylist", playlistId=item_id, songIndexToRemove=index
-    )
-    return _go(request, f"{PREFIX}/playlist/{path_id(item_id)}")
-
-
-@router.post(PREFIX + "/playlists/{id}/delete", include_in_schema=False)
-async def delete_playlist(request: Request, post: PostedDep, item_id: ItemId) -> Response:
-    await _data(request, post.listener, "deletePlaylist", id=item_id)
-    return _go(request, f"{PREFIX}/library/playlists")
-
-
-_STAR_PARAM = {"song": "id", "album": "albumId", "artist": "artistId"}
-
-
-@router.post(PREFIX + "/star", include_in_schema=False)
-async def star(request: Request, post: PostedDep) -> Response:
-    """Stars (`on=1`) or unstars (`on=0`) a song, album or artist; answers the new button."""
-    kind, item_id, on = post.get("kind"), post.get("id"), post.get("on") == "1"
-    param = _STAR_PARAM.get(kind)
-    if param is None or not item_id or len(item_id) > 80:  # noqa: PLR2004
-        raise InvalidParameter("Invalid star request")
-    await _data(request, post.listener, "star" if on else "unstar", **{param: item_id})
-    context = {"kind": kind, "item_id": item_id, "on": on}
-    return page(request, "_star.html", context, listener=post.listener)
-
-
-# ---------------------------------------------------------------------- player calls (JSON)
-
-
-@router.get(PREFIX + "/api/radio/{id}", include_in_schema=False)
-async def radio(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    found = await _data(request, me, "getSimilarSongs2", id=item_id, count=str(RADIO_SIZE))
-    songs = [backend.song(s) for s in backend.items(found["similarSongs2"], "song")]
-    return JSONResponse({"songs": songs})
-
-
-@router.get(PREFIX + "/api/lyrics/{id}", include_in_schema=False)
-async def lyrics(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    found = await _data(request, me, "getLyricsBySongId", id=item_id)
-    structured = backend.items(found["lyricsList"], "structuredLyrics")
-    return JSONResponse(backend.lyrics(structured))
-
-
-@router.get(PREFIX + "/api/status/{id}", include_in_schema=False)
-async def track_status(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    """The first-play state of a song, as `GET /ut/v1/tracks/{id}/status`."""
-    parse_kind(item_id, "song")
-    found = await run_in_threadpool(tracks.status, state(request).services, item_id)
-    return JSONResponse(found.to_json())
-
-
-@router.post(PREFIX + "/api/scrobble", include_in_schema=False)
-async def scrobble(request: Request, post: PostedDep) -> Response:
-    """`submission=false` when a song starts ("now playing"), `true` once it counts as played."""
-    item_id = post.get("id")
-    submission = "false" if post.get("submission") == "false" else "true"
-    await _data(request, post.listener, "scrobble", id=item_id, submission=submission)
-    return Response(status_code=204)
-
-
-# ---------------------------------------------------------------------- media
-
-
-async def _media(request: Request, me: Listener, name: str, item_id: str) -> Response:
-    response = await state(request).backend.media(request, me.principal, name, {"id": item_id})
-    if request.method != "HEAD":
-        return response
-    head = Response(status_code=response.status_code)
-    head.raw_headers = list(response.raw_headers)
-    return head
-
-
-@router.api_route(PREFIX + "/stream/{id}", methods=["GET", "HEAD"], include_in_schema=False)
-async def stream(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    return await _media(request, me, "stream", item_id)
-
-
-@router.api_route(PREFIX + "/cover/{id}", methods=["GET", "HEAD"], include_in_schema=False)
-async def cover(request: Request, me: ListenerDep, item_id: ItemId) -> Response:
-    return await _media(request, me, "getCoverArt", item_id)
+def new_session_cookie(response: Response, request: Request, user: User) -> None:
+    """Signs `user` in on this browser (after the login form, or a new password)."""
+    st = state(request)
+    with st.services.db.read() as conn:
+        epoch = session_epoch(AdminRepository(conn), user.id)
+    cookie, _session = st.codec.new_session(user.id, user.password_hash, epoch)
+    set_cookie(response, SESSION_COOKIE, cookie, st.codec.ttl_s)

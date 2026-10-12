@@ -17,7 +17,7 @@ from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.services import Services
-from ultimatetunes.web import backend, routes
+from ultimatetunes.web import account, actions, api, backend, importing, pages, routes
 from ultimatetunes.web.security import WebGate, WebSessionCodec
 from ultimatetunes.web.settings import WebSettings
 
@@ -46,7 +46,8 @@ def install(
         templates=routes.Templates(),
         backend=backend.Backend(services, backend.endpoints()),
     )
-    app.include_router(routes.home_router)
+    app.include_router(pages.home_router)
     if settings.web_enabled:
-        app.include_router(routes.router)
+        for module in (routes, pages, actions, api, account, importing):
+            app.include_router(module.router)
     app.add_middleware(WebGate, enabled=settings.web_enabled)

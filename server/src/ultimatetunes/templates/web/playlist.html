@@ -1,29 +1,40 @@
 {# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
 {% extends layout %}
-{% from "_macros.html" import song_list, play_buttons with context %}
+{% from "_macros.html" import song_list, play_buttons, empty with context %}
 {% block title %}{{ playlist.name }}{% endblock %}
 {% block content %}
 <header class="hero">
   <img class="art hero-art" src="{{ cover(playlist.cover) }}" alt="" width="300" height="300">
-  <div>
-    <h1>{{ playlist.name }}</h1>
+  <div class="hero-text">
+    <p class="kicker">{{ _("Playlist") }}</p>
+    <h1 tabindex="-1">{{ playlist.name }}</h1>
     <p class="hero-artist">{{ playlist.owner }}</p>
     <p class="muted">{{ _("%(count)s songs", count=songs|length) }} · {{ playlist.duration|duration }}</p>
     <div class="hero-actions">
       {{ play_buttons() }}
       {% if not playlist.readonly %}
-      <form method="post" action="/web/playlists/{{ playlist.id|path_id }}/delete">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button class="secondary danger" type="submit">{{ _("Delete playlist") }}</button>
-      </form>
+      <details class="menu">
+        <summary class="button secondary">{{ _("Edit") }}</summary>
+        <div class="menu-items wide">
+          <form method="post" hx-push-url="false" action="/web/playlists/{{ playlist.id|path_id }}/rename" class="stack">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <label>{{ _("Name") }}<input name="name" required maxlength="200" value="{{ playlist.name }}"></label>
+            <button class="primary" type="submit">{{ _("Rename") }}</button>
+          </form>
+          <form method="post" hx-push-url="false" action="/web/playlists/{{ playlist.id|path_id }}/delete">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="danger" type="submit">{{ _("Delete playlist") }}</button>
+          </form>
+        </div>
+      </details>
       {% endif %}
     </div>
   </div>
 </header>
 {% if songs %}
-{{ song_list(songs, editable=None if playlist.readonly else playlist.id) }}
+{{ song_list(songs, editable=None if playlist.readonly else playlist.id, label=playlist.name) }}
 {% else %}
-<p class="empty">{{ _("This playlist is empty. Add songs from their menu (···).") }}</p>
+{{ empty(_("This playlist is empty. Add songs from their menu (···).")) }}
 {% endif %}
 {% endblock %}

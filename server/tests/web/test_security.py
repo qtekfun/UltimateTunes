@@ -30,6 +30,10 @@ PAGES = [
     f"/web/artist/{UNKNOWN}",
     f"/web/playlist/{UNKNOWN}",
     "/web/add/yt:Fk2Lp9QwXa1",
+    "/web/radio",
+    "/web/settings",
+    "/web/imports",
+    f"/web/imports/{UNKNOWN}",
 ]
 CALLS = [
     "/web/api/radio/yt:Fk2Lp9QwXa1",
@@ -37,6 +41,7 @@ CALLS = [
     "/web/api/status/yt:Fk2Lp9QwXa1",
     "/web/stream/yt:Fk2Lp9QwXa1",
     "/web/cover/yt:Fk2Lp9QwXa1",
+    "/web/api/states?id=yt:Fk2Lp9QwXa1",
 ]
 POSTS = [
     "/web/logout",
@@ -46,6 +51,14 @@ POSTS = [
     f"/web/playlists/{UNKNOWN}/remove",
     f"/web/playlists/{UNKNOWN}/delete",
     "/web/api/scrobble",
+    "/web/api/request/yt:Fk2Lp9QwXa1",
+    f"/web/playlists/{UNKNOWN}/rename",
+    f"/web/playlists/{UNKNOWN}/move",
+    "/web/settings/language",
+    "/web/settings/password",
+    f"/web/settings/keys/{UNKNOWN}/revoke",
+    "/web/imports/url",
+    "/web/imports/file",
 ]
 
 
@@ -323,3 +336,20 @@ def test_turned_off_the_home_page_only_says_the_server_runs(
         assert 'href="/admin"' in r.text
         assert "<form" not in r.text
         assert r.headers["content-security-policy"] == CSP
+
+
+def test_every_web_route_is_covered_by_the_lists_above(client: TestClient) -> None:
+    """A new route must be added to PAGES, CALLS or POSTS (and so be tested without a
+    session)."""
+    listed = {p.split("?", 1)[0] for p in PAGES + CALLS + POSTS}
+    shapes = {_shape(p) for p in listed}
+    public = {"/", "/web/login", "/web/static/{name}", "/web/", "/web/logout"}
+    for route in client.app.routes:  # type: ignore[attr-defined]
+        path = getattr(route, "path", "")
+        if (path == "/" or path.startswith("/web")) and path not in public:
+            assert _shape(path) in shapes, path
+
+
+def _shape(path: str) -> str:
+    parts = path.strip("/").split("/")
+    return "/".join("{}" if (p.startswith("{") or "-" in p or ":" in p) else p for p in parts)

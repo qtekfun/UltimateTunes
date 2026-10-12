@@ -1,17 +1,17 @@
 {# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
 {% extends layout %}
-{% from "_macros.html" import artist_list with context %}
+{% from "_macros.html" import artist_list, empty with context %}
 {% block title %}{{ _("Artists") }}{% endblock %}
 {% block content %}
-<h1 class="large">{{ _("Library") }}</h1>
+<h1 class="large" tabindex="-1">{{ _("Library") }}</h1>
 {% include "_library_tabs.html" %}
 {% for group in groups %}
-<section>
+<section aria-label="{{ group.name }}">
   <h2 class="letter">{{ group.name }}</h2>
   {{ artist_list(group.artists) }}
 </section>
 {% else %}
-<p class="empty">{{ _("No artists yet.") }}</p>
+{{ empty(_("No artists yet.")) }}
 {% endfor %}
 {% endblock %}

@@ -43,7 +43,7 @@ def test_htmx_navigation_gets_only_the_content(client: TestClient, ana: str) -> 
 def test_slash_redirects(client: TestClient, ana: str) -> None:
     r = client.get("/web/")
     assert r.status_code == 308
-    assert r.headers["location"] == "/web"
+    assert r.headers["location"] == "/"
 
 
 def test_library_tabs(client: TestClient, ana: str, services: Services) -> None:
@@ -139,7 +139,7 @@ def test_text_from_the_library_is_escaped(client: TestClient, ana: str, services
 def test_languages(client: TestClient, ana: str, language: str | None, expected: str) -> None:
     headers = {"Accept-Language": language} if language else {}
     r = client.get("/web", headers=headers)
-    assert f'<h1 class="large">{expected}</h1>' in r.text
+    assert f'<h1 class="large" tabindex="-1">{expected}</h1>' in r.text
     assert f'lang="{"es" if language and language.startswith("es") else "en"}"' in r.text
 
 

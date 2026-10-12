@@ -23,6 +23,7 @@ from starlette.responses import Response
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.caller import set_caller
 from ultimatetunes.core.services import Services
+from ultimatetunes.jobs import tracks
 from ultimatetunes.subsonic.router import Handler, HandlerResult, SubsonicRequest
 from ultimatetunes.subsonic.routes import ROUTERS
 
@@ -103,6 +104,7 @@ def song(child: Mapping[str, Any]) -> View:
         "duration": _int(child.get("duration")),
         "starred": bool(child.get("starred")),
         "external": is_external(item_id),
+        "state": None,
     }
 
 
@@ -165,3 +167,43 @@ def lyrics(structured: Sequence[Mapping[str, Any]]) -> View:
         for line in items(chosen, "line")
     ]
     return {"synced": synced, "lines": lines}
+
+
+def track(item: Mapping[str, Any]) -> View:
+    """A song of `/ut/v1` (`TrackItem`, from Listen Now) as the song view."""
+    item_id = _text(item.get("id"))
+    external = bool(item.get("isExternal"))
+    return {
+        "id": item_id,
+        "title": _text(item.get("title")),
+        "artist": _text(item.get("artist")),
+        "artistId": _opt(item.get("artistId")),
+        "album": _opt(item.get("album")),
+        "albumId": _opt(item.get("albumId")),
+        "cover": _opt(item.get("coverArt")),
+        "duration": _int(item.get("durationSec")),
+        "starred": False,
+        "external": external,
+        "state": _opt(item.get("libraryState")) if external else None,
+    }
+
+
+def station(item: Mapping[str, Any]) -> View:
+    """A favourite radio of Listen Now (`seedId`, `title`, `subtitle`, `coverArt`)."""
+    return {
+        "seed": _text(item.get("seedId")),
+        "title": _text(item.get("title")),
+        "subtitle": _text(item.get("subtitle")),
+        "cover": _opt(item.get("coverArt")),
+    }
+
+
+def download_states(services: Services, ids: Sequence[str]) -> dict[str, View]:
+    """The download state of each `yt:` song among `ids` (`GET /ut/v1/tracks/{id}/status`)."""
+    found: dict[str, View] = {}
+    for item_id in dict.fromkeys(ids):
+        if not item_id.startswith("yt:"):
+            continue
+        status = tracks.status(services, item_id)
+        found[item_id] = {"state": status.state, "progress": status.progress}
+    return found

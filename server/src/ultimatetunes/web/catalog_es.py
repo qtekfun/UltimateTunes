@@ -87,6 +87,128 @@ ES: dict[str, str] = {
     "Admin panel": "Panel de administración",
     "UltimateTunes server is running.": "El servidor de UltimateTunes está funcionando.",
     "Version %(version)s": "Versión %(version)s",
+    # Settings, imports, the player and the now-playing view.
+    "%(matched)s of %(total)s found": "%(matched)s de %(total)s encontradas",
+    "12 characters or more. Changing it signs out your other devices and browsers.": (
+        "12 caracteres o más. Al cambiarla se cierra la sesión en tus otros dispositivos y "
+        "navegadores."
+    ),
+    "A CSV with title and artist columns, an Exportify CSV, or Spotify's JSON export."
+    " Up to 1 MiB.": (
+        "Un CSV con columnas de título y artista, un CSV de Exportify o la exportación JSON de "
+        "Spotify. Hasta 1 MiB."
+    ),
+    "Account": "Cuenta",
+    "Actions": "Acciones",
+    "Add songs to your favourites and a station for each one appears here. You can also start a "
+    "radio from any song's menu (···).": (
+        "Añade canciones a tus favoritos y aquí aparecerá una emisora por cada una. También "
+        "puedes crear una emisora desde el menú (···) de cualquier canción."
+    ),
+    "Album": "Álbum",
+    "Appearance": "Apariencia",
+    "Artist": "Artista",
+    "Artist radio": "Emisoras de artistas",
+    "CSV (title, artist)": "CSV (título, artista)",
+    "Change password": "Cambiar la contraseña",
+    "Close now playing": "Cerrar la reproducción",
+    "Create and add": "Crear y añadir",
+    "Created": "Creada",
+    "Current password": "Contraseña actual",
+    "Dark": "Oscuro",
+    "Devices and API keys": "Dispositivos y claves de API",
+    "Done": "Terminada",
+    "Download failed": "Descarga fallida",
+    "Download requested.": "Descarga solicitada.",
+    "Download to the library": "Descargar a la biblioteca",
+    "Downloading": "Descargando",
+    "Drag songs to reorder them, or use the arrows.": (
+        "Arrastra las canciones para reordenarlas o usa las flechas."
+    ),
+    "Edit": "Editar",
+    "English": "English",
+    "Español": "Español",
+    "Exportify CSV": "CSV de Exportify",
+    "Failed": "Fallida",
+    "File": "Archivo",
+    "Finding the songs": "Buscando las canciones",
+    "Format": "Formato",
+    "Found": "Encontrada",
+    "From YouTube Music or YouTube": "Desde YouTube Music o YouTube",
+    "From a file": "Desde un archivo",
+    "Import": "Importar",
+    "Import a playlist": "Importar una lista",
+    "Imported playlist": "Lista importada",
+    "In your library": "En tu biblioteca",
+    "Kept in this browser only.": "Se guarda solo en este navegador.",
+    "Key revoked.": "Clave revocada.",
+    "Keyboard shortcuts": "Atajos de teclado",
+    "Language": "Idioma",
+    "Language saved.": "Idioma guardado.",
+    "Last used": "Último uso",
+    "Light": "Claro",
+    "Loading lyrics…": "Cargando la letra…",
+    "More for %(title)s": "Más opciones de %(title)s",
+    "Most played": "Lo más escuchado",
+    "Move down": "Bajar",
+    "Move up": "Subir",
+    "Name": "Nombre",
+    "Name (optional)": "Nombre (opcional)",
+    "Never": "Nunca",
+    "New password": "Contraseña nueva",
+    "No API keys.": "No hay claves de API.",
+    "No imports yet.": "Todavía no hay importaciones.",
+    "Not downloaded": "Sin descargar",
+    "Not found": "No encontrada",
+    "Now playing": "Reproduciendo",
+    "Open now playing": "Abrir la reproducción",
+    "Open the playlist": "Abrir la lista",
+    "Pages": "Páginas",
+    "Password changed. Other devices were signed out.": (
+        "Contraseña cambiada. Se ha cerrado la sesión en los otros dispositivos."
+    ),
+    "Pending": "Pendiente",
+    "Play %(title)s": "Reproducir %(title)s",
+    "Playlist": "Lista",
+    "Playlist link": "Enlace de la lista",
+    "Previous or next song": "Canción anterior o siguiente",
+    "Progress": "Progreso",
+    "Queued": "En cola",
+    "Radio": "Radio",
+    "Reading the playlist": "Leyendo la lista",
+    "Rename": "Renombrar",
+    "Repeat the new password": "Repite la contraseña nueva",
+    "Repeat: all": "Repetir: todo",
+    "Repeat: off": "Repetir: no",
+    "Repeat: one": "Repetir: una",
+    "Revoke": "Revocar",
+    "Revoke %(name)s": "Revocar %(name)s",
+    "Same as the browser": "Como el navegador",
+    "Same as the system": "Como el sistema",
+    "Save language": "Guardar el idioma",
+    "Seek 5 seconds": "Avanzar o retroceder 5 segundos",
+    "Settings": "Ajustes",
+    "Shuffle the queue": "Mezclar la cola",
+    "Signed in as %(name)s.": "Sesión iniciada como %(name)s.",
+    "Skip to content": "Saltar al contenido",
+    "Space": "Espacio",
+    "Spotify JSON": "JSON de Spotify",
+    "The app and other music players use these keys. Create new ones in the app or ask an "
+    "administrator.": (
+        "La app y otros reproductores usan estas claves. Crea nuevas en la app o pídeselas a un "
+        "administrador."
+    ),
+    "The current password is wrong.": "La contraseña actual no es correcta.",
+    "The new password needs 12 to 1024 characters.": (
+        "La contraseña nueva necesita de 12 a 1024 caracteres."
+    ),
+    "The new passwords do not match.": "Las contraseñas nuevas no coinciden.",
+    "Theme": "Tema",
+    "This album has no songs.": "Este álbum no tiene canciones.",
+    "Waiting to start": "Esperando para empezar",
+    "YouTube Music": "YouTube Music",
+    "Your imports": "Tus importaciones",
+    "Your stations": "Tus emisoras",
     # Messages of the code (`routes.MESSAGES`).
     "Your session has ended. Sign in again.": "Tu sesión ha terminado. Vuelve a entrar.",
     "The form expired or came from another site. Reload and retry.": (
