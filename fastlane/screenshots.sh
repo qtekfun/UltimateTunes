@@ -5,7 +5,7 @@
 # Takes the store and README screenshots (PLAN T23) on a connected phone: runs ScreenshotsTest
 # (the app against the debug demo server: invented artists and covers only), then copies the
 # pictures into fastlane/metadata/android/<locale>/images/phoneScreenshots/ and docs/images/.
-# Install first, without uninstalling anything:
+# Needs ImageMagick (`magick`) on the computer. Install first, without uninstalling anything:
 #   (cd android && ./gradlew installDebug installDebugAndroidTest)
 # ANDROID_SERIAL picks the device. Android 13+ (per-app language and theme).
 set -euo pipefail
@@ -28,12 +28,17 @@ for locale in en-US es-ES; do
   dest="$root/fastlane/metadata/android/$locale/images/phoneScreenshots"
   mkdir -p "$dest"
   rm -f "$dest"/*.png
-  cp "$tmp/screenshots/$locale"/*.png "$dest/"
+  # Stores want plain 24-bit RGB: the captures are opaque, so dropping alpha changes nothing.
+  for shot in "$tmp/screenshots/$locale"/*.png; do
+    magick "$shot" -background white -alpha remove -alpha off -strip \
+      -define png:color-type=2 "$dest/$(basename "$shot")"
+  done
 done
 
 # A few for the README, smaller.
 mkdir -p "$root/docs/images"
 for shot in 01_listen_now_light 05_album_light 13_player_dark 14_lyrics_dark; do
-  magick "$tmp/screenshots/en-US/$shot.png" -resize 540x -strip "$root/docs/images/${shot#*_}.png"
+  magick "$tmp/screenshots/en-US/$shot.png" -resize 540x -background white -alpha remove \
+    -alpha off -strip -define png:color-type=2 "$root/docs/images/${shot#*_}.png"
 done
 echo "Screenshots in fastlane/metadata/android/*/images/phoneScreenshots and docs/images"

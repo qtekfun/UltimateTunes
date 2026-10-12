@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Your own music streaming service, on your own hardware. Search for any song and it plays at once; from then on it lives in **your** library, tagged with proper metadata and cover art.
 
 - **Server** (Docker): speaks the [OpenSubsonic](https://opensubsonic.netlify.app/) API, keeps a tagged library, and fetches from YouTube Music whatever it does not have yet, streaming it while it downloads.
-- **Android app**: an Apple Music-style player that caches every song it plays to save mobile data, with offline downloads, synced lyrics, radio and playlist import.
+- **Android app**: the player for your own server, which caches every song it plays to save mobile data, with offline downloads, synced lyrics, radio and playlist import.
 - Works with other OpenSubsonic apps that search on the server.
 - Multi-user, one revocable key per device, admin panel. Free software, no ads, no tracking.
 
