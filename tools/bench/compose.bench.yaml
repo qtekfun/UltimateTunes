@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Override of server/compose.test.yaml for the measurements (PLAN T21, docs/measurements.md):
+# its own host port and image tag, so it can run next to another test stack on 8044.
+#   docker compose -p ut-bench -f server/compose.test.yaml -f tools/bench/compose.bench.yaml up --build --wait
+# UT_FAKE_YOUTUBE (default true) selects the fake catalog and downloader; the idle-RAM run of
+# the real configuration sets it to false and sends no request: the canary (a real download) and
+# the yt-dlp self-update stay off unless asked for (UT_CANARY_ENABLED, UT_YTDLP_AUTO_UPDATE).
+
+x-env: &bench-env
+  UT_LOG_LEVEL: INFO
+  UT_FAKE_YOUTUBE: ${UT_FAKE_YOUTUBE:-true}
+  UT_WORKER_TOKEN: test-stack-worker-token-not-a-secret
+  UT_EXTERNAL_SEARCH: ${UT_EXTERNAL_SEARCH:-true}
+  UT_CANARY_ENABLED: ${UT_CANARY_ENABLED:-false}
+  UT_YTDLP_AUTO_UPDATE: ${UT_YTDLP_AUTO_UPDATE:-false}
+
+services:
+  migrate:
+    image: ultimatetunes-server:bench
+    environment: *bench-env
+  api:
+    image: ultimatetunes-server:bench
+    ports: !override ["127.0.0.1:${UT_BENCH_PORT:-18044}:8044"]
+    environment: *bench-env
+  worker:
+    image: ultimatetunes-server:bench
+    environment: *bench-env

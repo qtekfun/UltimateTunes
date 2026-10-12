@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Third file on top of server/compose.test.yaml and tools/bench/compose.bench.yaml (PLAN T21):
+# the worker runs tools/bench/throttled_worker.py (the production loop with a throttled fake
+# download of a generated tone) instead of `ultimatetunes worker`. Paths are relative to
+# server/ (the first compose file). Set UT_BENCH_AUDIO_DIR to the folder of tone.opus
+# (docs/measurements.md, Rerunning); tools/bench/first_byte.sh then measures.
+# `:z` relabels the bind mounts for SELinux hosts (Fedora); it is a no-op elsewhere.
+
+services:
+  worker:
+    entrypoint: ["python", "/bench/throttled_worker.py"]
+    command: []
+    environment:
+      UT_FAKE_YOUTUBE: "true"
+      UT_BENCH_AUDIO: /bench-audio/tone.opus
+      UT_BENCH_DURATION_MS: ${UT_BENCH_DURATION_MS:-240000}
+      UT_BENCH_FIRST_BYTE_S: ${UT_BENCH_FIRST_BYTE_S:-1.8}
+      UT_BENCH_RATE_KBPS: ${UT_BENCH_RATE_KBPS:-8000}
+    volumes:
+      - ../tools/bench:/bench:ro,z
+      - ${UT_BENCH_AUDIO_DIR:?set UT_BENCH_AUDIO_DIR}:/bench-audio:ro,z

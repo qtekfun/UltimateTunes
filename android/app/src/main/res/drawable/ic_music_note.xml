@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPDX-FileCopyrightText: Google LLC
-  SPDX-License-Identifier: Apache-2.0
-  Path data of a Material icon (https://github.com/google/material-design-icons).
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
 -->
+<!-- The app's note (the logo, the launcher icon and the artwork placeholder): an eighth note with
+     a tilted oval head and a curved flag. ic_launcher_foreground uses the same path. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -13,5 +14,5 @@
     android:viewportHeight="24">
     <path
         android:fillColor="@android:color/white"
-        android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+        android:pathData="M14.88,15.6A4.3,3.15 -24 1,1 7.02,19.1A4.3,3.15 -24 1,1 14.88,15.6ZM13.1,3.6Q13.1,3 13.7,3H15.05V16.4H13.1ZM15.05,3C15.25,5.6 17.65,6.6 18.65,8.4C19.55,10 19.25,12.2 18.25,13.6C18.55,11.2 17.25,9.6 15.05,9.2Z" />
 </vector>

@@ -24,6 +24,7 @@ class MemoryTree : DocumentTree {
     var failWritesAfter: Int? = null
     var failDelete = false
     var failRename = false
+    val deleted = mutableListOf<String>()
 
     /** Paths of the files, `a/b/c`, with their size. */
     val files: Map<String, Int>
@@ -42,17 +43,25 @@ class MemoryTree : DocumentTree {
         var folder = "root"
         val names = path.split('/')
         names.dropLast(1).forEach { name ->
-            folder = child(folder, name)?.id ?: create(folder, name, isFolder = true)
+            folder = named(folder, name)?.id ?: create(folder, name, isFolder = true)
         }
         docs.getValue(create(folder, names.last(), isFolder = false)).bytes = bytes
     }
 
     override fun root(): String = "root"
 
-    override fun child(folder: String, name: String): DocumentTree.Entry? =
-        docs.entries.firstOrNull { it.value.parent == folder && it.value.name == name }?.let {
-            DocumentTree.Entry(it.key, name, it.value.isFolder, it.value.bytes.size.toLong())
+    override fun children(folder: String): List<DocumentTree.Entry> =
+        docs.entries.filter { it.value.parent == folder }.map {
+            DocumentTree.Entry(
+                it.key,
+                it.value.name,
+                it.value.isFolder,
+                it.value.bytes.size.toLong()
+            )
         }
+
+    private fun named(folder: String, name: String): DocumentTree.Entry? =
+        children(folder).firstOrNull { it.name == name }
 
     override fun create(folder: String, name: String, isFolder: Boolean): String {
         val id = "doc-${next++}"
@@ -86,17 +95,18 @@ class MemoryTree : DocumentTree {
 
     override fun delete(document: String) {
         if (failDelete) throw IOException("cannot delete")
+        deleted += docs.getValue(document).name
         docs.remove(document)
     }
 
     /** Like a real provider: a taken name gets " (1)". */
     private fun unique(folder: String, name: String): String {
-        if (child(folder, name) == null) return name
+        if (children(folder).none { it.name == name }) return name
         val base = name.substringBeforeLast('.')
         val ext = name.substringAfterLast('.', "")
         return generateSequence(1) { it + 1 }
             .map { if (ext.isEmpty()) "$base ($it)" else "$base ($it).$ext" }
-            .first { child(folder, it) == null }
+            .first { candidate -> children(folder).none { it.name == candidate } }
     }
 }
 
@@ -210,5 +220,77 @@ class DocumentTreeTargetTest {
 
         assertThrows(IOException::class.java) { write() }
         assertEquals(mapOf("Artist" to 1), tree.files)
+    }
+
+    @Test
+    fun `folders are found without case, like phone storage does`() {
+        tree.put("artist/ALBUM/cover.jpg", ByteArray(5))
+
+        assertEquals(WriteOutcome.WRITTEN, write())
+
+        assertEquals(
+            setOf("artist/ALBUM/cover.jpg", "artist/ALBUM/01 - Song.opus"),
+            tree.files.keys
+        )
+        assertEquals(2, tree.docs.values.count { it.isFolder && it.parent != null })
+    }
+
+    @Test
+    fun `an exact folder name wins over one that differs only in case`() {
+        tree.put("artist/Album/a.txt", ByteArray(1))
+        tree.put("Artist/Album/b.txt", ByteArray(1))
+
+        write()
+
+        assertTrue("Artist/Album/01 - Song.opus" in tree.files.keys)
+    }
+
+    @Test
+    fun `a file that differs only in case is the same file`() {
+        tree.put("Artist/Album/01 - SONG.opus", ByteArray(100))
+        assertEquals(WriteOutcome.ALREADY_EXPORTED, write())
+
+        val other = MemoryTree().apply { put("Artist/Album/01 - SONG.opus", ByteArray(7)) }
+        assertEquals(
+            WriteOutcome.NAME_TAKEN,
+            DocumentTreeTarget(other).write(path, 100, ByteArrayInputStream(bytes))
+        )
+        assertEquals(mapOf("Artist/Album/01 - SONG.opus" to 7), other.files)
+    }
+
+    @Test
+    fun `temporary files an interrupted export left are removed, nobody else's`() {
+        val stale = ".ut-export-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0.part"
+        tree.put(stale, ByteArray(3))
+        tree.put("Artist/Album/$stale", ByteArray(3))
+        tree.put("Other/$stale", ByteArray(3))
+        tree.put("Artist/Album/.ut-export-notes.part", ByteArray(2))
+        tree.put("Artist/Album/ut-export-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0.part", ByteArray(2))
+
+        assertEquals(WriteOutcome.WRITTEN, write())
+
+        assertEquals(
+            setOf(
+                "Other/$stale",
+                "Artist/Album/.ut-export-notes.part",
+                "Artist/Album/ut-export-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0.part",
+                "Artist/Album/01 - Song.opus"
+            ),
+            tree.files.keys
+        )
+    }
+
+    @Test
+    fun `a folder is swept once per export, and a sweep that fails does not stop it`() {
+        val stale = ".ut-export-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0.part"
+        tree.put("Artist/Album/$stale", ByteArray(3))
+        tree.failDelete = true
+        assertEquals(WriteOutcome.WRITTEN, write())
+        tree.failDelete = false
+
+        target.write(listOf("Artist", "Album", "02 - Other.opus"), 100, ByteArrayInputStream(bytes))
+
+        assertTrue("Artist/Album/$stale" in tree.files.keys)
+        assertEquals(emptyList<String>(), tree.deleted)
     }
 }
