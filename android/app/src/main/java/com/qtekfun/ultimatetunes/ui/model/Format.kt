@@ -20,3 +20,12 @@ fun formatDuration(seconds: Int): String {
         String.format(Locale.ROOT, "%d:%02d", minutes, secs)
     }
 }
+
+/**
+ * [seconds] as whole minutes for a total ("12 songs, 43 minutes"): rounded to the nearest minute,
+ * and at least one for anything that plays at all, so a 2:58 single reads "3 minutes".
+ */
+fun totalMinutes(seconds: Int): Int {
+    if (seconds <= 0) return 0
+    return ((seconds + SECONDS_PER_MINUTE / 2) / SECONDS_PER_MINUTE).coerceAtLeast(1)
+}

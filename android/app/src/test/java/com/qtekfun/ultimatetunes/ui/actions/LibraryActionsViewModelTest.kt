@@ -3,7 +3,6 @@
 
 package com.qtekfun.ultimatetunes.ui.actions
 
-import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.export.ExportReport
@@ -15,13 +14,13 @@ import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.tile
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -46,7 +45,7 @@ class LibraryActionsViewModelTest {
 
     @AfterEach
     fun tearDown() {
-        created.forEach { it.viewModelScope.cancel() }
+        created.forEach { it.closeForTest() }
         server.close()
     }
 
@@ -68,10 +67,19 @@ class LibraryActionsViewModelTest {
         val star = server.takeRequest()
         assertEquals("/rest/star", star.url.encodedPath)
         assertEquals("song-3", star.url.queryParameter("id"))
+        assertEquals(
+            ActionEvent.FavouriteChanged(added = true),
+            viewModel.state.awaitFirst { it.event != null }.event
+        )
+        viewModel.dismissEvent()
 
         viewModel.toggleFavourite(tile(3))
         assertFalse(SongId("song-3") in viewModel.state.value.favourites)
         assertEquals("/rest/unstar", server.takeRequest().url.encodedPath)
+        assertEquals(
+            ActionEvent.FavouriteChanged(added = false),
+            viewModel.state.awaitFirst { it.event != null }.event
+        )
     }
 
     @Test

@@ -42,6 +42,9 @@ sealed interface ActionEvent {
 
     data object DownloadRemoved : ActionEvent
 
+    /** A song was starred ([added]) or unstarred. */
+    data class FavouriteChanged(val added: Boolean) : ActionEvent
+
     data class ExportStarted(val count: Int) : ActionEvent
 
     /** Another export is still running; this one did not start. */
@@ -130,6 +133,8 @@ class LibraryActionsViewModel @Inject constructor(
             if (result is TunesResult.Failure) {
                 setFavourite(track.id, !favourite)
                 fail(result)
+            } else {
+                event(ActionEvent.FavouriteChanged(added = favourite))
             }
         }
     }

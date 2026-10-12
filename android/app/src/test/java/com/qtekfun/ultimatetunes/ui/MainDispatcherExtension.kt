@@ -3,6 +3,8 @@
 
 package com.qtekfun.ultimatetunes.ui
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
@@ -13,10 +15,14 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.extension.AfterEachCallback
 import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.ExtensionContext
@@ -56,4 +62,18 @@ suspend fun <T : Any> Flow<T>.awaitFirst(predicate: (T) -> Boolean): T {
         cancelAndIgnoreRemainingEvents()
     }
     return checkNotNull(found)
+}
+
+/** How long a closing view model may take to finish its coroutines. */
+private const val CLOSE_TIMEOUT_MS = 5_000L
+
+/**
+ * Cancels this view model's coroutines and **waits** until they have all finished. Call it in
+ * `@AfterEach`, before [MainDispatcherExtension] resets Main: an HTTP answer arriving on an OkHttp
+ * thread while the scope is being cancelled resumes its coroutine there, and that coroutine's
+ * completion still dispatches to Main. Without the wait it could reach Main after the reset and
+ * fail the *next* test with an uncaught `CompletionHandlerException`.
+ */
+fun ViewModel.closeForTest() = runBlocking {
+    withTimeout(CLOSE_TIMEOUT_MS) { viewModelScope.coroutineContext.job.cancelAndJoin() }
 }

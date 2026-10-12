@@ -19,8 +19,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +53,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
 import com.qtekfun.ultimatetunes.ui.designsystem.TextInputDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
+import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.PlaylistTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -109,12 +108,12 @@ fun PlaylistScreen(
 ) {
     val content = (state.content as? LoadState.Ready)?.value
     var dialog by rememberSaveable { mutableStateOf<PlaylistDialog?>(null) }
-    val snackbar = remember { SnackbarHostState() }
-    MessageEffect(state.message, snackbar, actions.messageShown)
+    val snackbar = rememberScreenSnackbar()
+    MessageEffect(state.message, snackbar.state, actions.messageShown)
     LargeTitleScaffold(
         title = content?.playlist?.name.orEmpty(),
         onBack = navigator.back,
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = snackbar.host,
         actions = {
             if (content != null) {
                 PlaylistMenu(
@@ -294,8 +293,8 @@ private fun PlaylistHeader(playlist: PlaylistContent, isOffline: Boolean, naviga
             placeholderKey = playlist.playlist.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .widthIn(max = 280.dp)
                 .fillMaxWidth(fraction = 0.66f)
+                .widthIn(max = 280.dp)
                 .aspectRatio(1f)
         )
         playlist.comment?.takeIf { it.isNotBlank() }?.let {
