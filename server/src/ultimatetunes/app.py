@@ -63,13 +63,13 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
 
 
 async def _tunes_error(request: Request, exc: Exception) -> Response:
-    assert isinstance(exc, TunesError)  # noqa: S101 - registered for TunesError only
-    return problem_response(exc, request.url.path)
+    error = exc if isinstance(exc, TunesError) else InternalError()
+    return problem_response(error, request.url.path)
 
 
 async def _validation_error(request: Request, exc: Exception) -> Response:
-    assert isinstance(exc, RequestValidationError)  # noqa: S101
-    fields = sorted({".".join(str(p) for p in e.get("loc", ())) for e in exc.errors()})
+    problems = exc.errors() if isinstance(exc, RequestValidationError) else []
+    fields = sorted({".".join(str(p) for p in e.get("loc", ())) for e in problems})
     return problem_response(InvalidParameter(f"Invalid: {', '.join(fields)}"), request.url.path)
 
 

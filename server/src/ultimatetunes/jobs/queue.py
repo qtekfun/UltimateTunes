@@ -98,12 +98,12 @@ _COLUMNS = (
 
 class _Jobs(Repository):
     def by_id(self, job_id: str) -> Job | None:
-        return self.one(Job, f"SELECT {_COLUMNS} FROM jobs WHERE id = ?", (job_id,))  # noqa: S608
+        return self.one(Job, f"SELECT {_COLUMNS} FROM jobs WHERE id = ?", (job_id,))  # noqa: S608  # nosec B608
 
     def by_track(self, kind: str, track_id: str) -> Job | None:
         return self.one(
             Job,
-            f"SELECT {_COLUMNS} FROM jobs WHERE kind = ? AND track_id = ?",  # noqa: S608
+            f"SELECT {_COLUMNS} FROM jobs WHERE kind = ? AND track_id = ?",  # noqa: S608  # nosec B608
             (kind, track_id),
         )
 
@@ -181,7 +181,7 @@ class SqliteJobQueue:
         with self._db.transaction() as conn:
             self._expire(conn, now)
             row = conn.execute(
-                f"SELECT id FROM jobs WHERE state = 'queued' AND kind IN ({marks})"  # noqa: S608
+                f"SELECT id FROM jobs WHERE state = 'queued' AND kind IN ({marks})"  # noqa: S608  # nosec B608
                 " AND (not_before IS NULL OR not_before <= ?)"
                 " ORDER BY priority DESC, created_at ASC, id ASC LIMIT 1",
                 (*kinds, now),
