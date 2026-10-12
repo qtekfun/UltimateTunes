@@ -79,10 +79,10 @@ def test_vendored_htmx_matches_its_record() -> None:
 
 
 def test_templates_and_styles_load_nothing_from_outside() -> None:
-    for path in [*TEMPLATES.glob("*.html"), STATIC / "admin.css"]:
+    for path in [*TEMPLATES.glob("*.html"), STATIC / "admin.css", STATIC / "admin.js"]:
         text = path.read_text(encoding="utf-8")
         for attribute in re.findall(r'(?:src|href|action|hx-get|hx-post)="([^"]*)"', text):
-            assert attribute.startswith(("/", "{{")) or attribute == "", (path.name, attribute)
+            assert attribute.startswith(("/", "{{", "#")) or attribute == "", (path.name, attribute)
         assert "@import" not in text
         assert "url(" not in text
         assert "<script>" not in text
@@ -94,7 +94,10 @@ def test_pages_reference_only_local_assets(
     client: TestClient, admin_csrf: str, people: People
 ) -> None:
     page = client.get("/admin/users").text
-    assert re.findall(r'<script[^>]*src="([^"]+)"', page) == ["/admin/static/htmx.min.js"]
+    assert re.findall(r'<script[^>]*src="([^"]+)"', page) == [
+        "/admin/static/htmx.min.js",
+        "/admin/static/admin.js",
+    ]
     assert re.findall(r'<link[^>]*href="([^"]+)"', page) == ["/admin/static/admin.css"]
     assert "//" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', page))
     assert "script-src 'self'" in CSP
@@ -106,6 +109,10 @@ def test_static_files(client: TestClient) -> None:
     assert js.status_code == 200
     assert js.headers["content-type"].startswith("text/javascript")
     assert js.content == (STATIC / "htmx.min.js").read_bytes()
+    confirm = client.get("/admin/static/admin.js")
+    assert confirm.headers["content-type"].startswith("text/javascript")
+    assert "data-confirm" in confirm.text
+    assert "eval(" not in confirm.text
     css = client.get("/admin/static/admin.css")
     assert css.headers["content-type"].startswith("text/css")
     for name in ("htmx.min.js.license", "../admin/routes.py", "nope.js"):

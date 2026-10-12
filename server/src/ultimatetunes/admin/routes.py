@@ -14,7 +14,7 @@ with the page and an error message. Users, keys and the audit log go through T04
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import resources
 from typing import Annotated
 from urllib.parse import quote, urlsplit
@@ -30,6 +30,7 @@ from ultimatetunes.admin import notify, qr
 from ultimatetunes.admin.i18n import Lang, negotiate, translator
 from ultimatetunes.admin.repository import (
     JOB_STATES,
+    PAGE_SIZE,
     WORKER_COMMANDS,
     AdminRepository,
     audit,
@@ -52,6 +53,8 @@ from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.forwarded import trusted_origin
+from ultimatetunes.core.limits import DownloadLimits
+from ultimatetunes.core.ratelimit import Limit
 from ultimatetunes.core.services import Services
 from ultimatetunes.errors import (
     AccountDisabled,
@@ -63,13 +66,25 @@ from ultimatetunes.errors import (
     RateLimited,
     TunesError,
 )
+from ultimatetunes.jobs.gate import LOW_DISK_KEY, window_start
 from ultimatetunes.jobs.queue import PRIORITY_KEEP
+from ultimatetunes.search import guard
+from ultimatetunes.search import service as search_service
 from ultimatetunes.search.guard import GuardedCatalog
+from ultimatetunes.search.settings import SearchSettings
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-STATIC_FILES = {"htmx.min.js": "text/javascript", "admin.css": "text/css"}
+STATIC_FILES = {
+    "htmx.min.js": "text/javascript",
+    "admin.js": "text/javascript",
+    "admin.css": "text/css",
+}
+# Highest `?page=` a list accepts (50 rows each).
+MAX_PAGE = 1000
+# A budget at or below this share of its burst is shown as under pressure.
+LOW_BUDGET = 0.2
 MAX_SERVER_URL = 120
 # Same length and alphabet as a real key (contracts/ids.md): sizes the QR before a key exists.
 _SIZING_KEY = "utk_" + "A" * 43
@@ -84,6 +99,7 @@ DONE = {
     "job_retried": "Download queued again.",
     "job_cancelled": "Cancel requested.",
     "track_deleted": "Track deleted.",
+    "track_reviewed": "Marked as reviewed.",
     "album_deleted": "Album deleted.",
     "files_left": "Deleted, but some files could not be removed from disk (see the logs).",
     "command_queued": "Command queued: the next worker report picks it up.",
@@ -112,6 +128,9 @@ class AdminState:
     settings: AdminSettings
     templates: "Templates"
     sender: notify.Sender
+    # Shown next to each user's usage, and in the overview (read once, like every setting).
+    limits: DownloadLimits = field(default_factory=DownloadLimits)
+    search: SearchSettings = field(default_factory=SearchSettings)
 
 
 class Templates:
@@ -267,6 +286,38 @@ def back(path: str, done: str) -> RedirectResponse:
     return RedirectResponse(f"{path}?done={done}", status_code=303)
 
 
+@dataclass(frozen=True)
+class Pager:
+    """One page of a long list: `?page=N` (1-based), `PAGE_SIZE` rows, one extra row read to
+    know whether a next page exists."""
+
+    number: int
+    has_next: bool
+    # The other query parameters of the list (filters), kept by the page links.
+    query: str = ""
+
+    @staticmethod
+    def wanted(request: Request) -> int:
+        raw = request.query_params.get("page", "1")
+        # ASCII digits only ("²" is a digit to `isdigit`), and short enough to never be huge.
+        valid = raw.isascii() and raw.isdigit() and len(raw) <= len(str(MAX_PAGE))
+        number = int(raw) if valid else 1
+        return min(max(number, 1), MAX_PAGE)
+
+    def href(self, number: int) -> str:
+        return "?" + "&".join(p for p in (self.query, f"page={number}") if p)
+
+
+def offset(number: int) -> int:
+    """First row of page `number`."""
+    return (number - 1) * PAGE_SIZE
+
+
+def paged[T](rows: list[T], number: int, query: str = "") -> tuple[list[T], Pager]:
+    """`rows` read with `PAGE_SIZE + 1` as limit: the page's rows and its pager."""
+    return rows[:PAGE_SIZE], Pager(number, len(rows) > PAGE_SIZE, query)
+
+
 def error_status(error: TunesError) -> int:
     if isinstance(error, NotFound):
         return 404
@@ -387,20 +438,58 @@ async def dashboard(request: Request, admin: AdminDep) -> Response:
     st = state(request)
 
     def read() -> dict[str, object]:
-        with st.services.db.read() as conn:
+        services = st.services
+        with services.db.read() as conn:
             repo = AdminRepository(conn)
             canaries = repo.canary_runs(1)
-            return {
+            usage = repo.user_usage(window_start(services.clock.now()))
+            context: dict[str, object] = {
                 "jobs": repo.job_counts(),
                 "stats": repo.stats(),
                 "canary": canaries[0] if canaries else None,
                 "workers": repo.workers(),
                 "users": len(st.auth.list_users()),
+                "low_disk_since": repo.setting(LOW_DISK_KEY),
+                "bytes_24h": sum(u.bytes_24h for u in usage.values()),
             }
+        context["disks"] = disks(services, st.limits)
+        context["limits"] = st.limits
+        context["ytm_tokens"] = services.rate_limiter.peek(guard.BUCKET, ytm_limit(st.search))
+        context["ytm_burst"] = st.search.ytm_burst
+        return context
 
     context = await run_in_threadpool(read)
     context["breaker"] = await breaker(st.services)
     return page(request, "dashboard.html", context, admin=admin)
+
+
+@dataclass(frozen=True)
+class Disk:
+    name: str
+    free_bytes: int | None
+    total_bytes: int | None
+    low: bool
+
+
+def disks(services: Services, limits: DownloadLimits) -> list[Disk]:
+    """Free space of `/music` and `/staging` against `UT_MIN_FREE_BYTES` (unknown: low)."""
+    found: list[Disk] = []
+    for name, store in (("/music", services.library), ("/staging", services.staging)):
+        try:
+            usage = store.usage()
+        except OSError:
+            found.append(Disk(name, None, None, low=True))
+            continue
+        found.append(
+            Disk(
+                name, usage.free_bytes, usage.total_bytes, usage.free_bytes < limits.min_free_bytes
+            )
+        )
+    return found
+
+
+def ytm_limit(settings: SearchSettings) -> Limit:
+    return Limit(settings.ytm_rate_per_s, settings.ytm_burst)
 
 
 async def breaker(services: Services) -> object:
@@ -411,11 +500,42 @@ async def breaker(services: Services) -> object:
 # ---------------------------------------------------------------------- users
 
 
+@dataclass(frozen=True)
+class Budget:
+    """Tokens left of a per-user bucket, and whether that is low (`LOW_BUDGET`)."""
+
+    left: int
+    burst: int
+
+    @property
+    def low(self) -> bool:
+        return self.left <= self.burst * LOW_BUDGET
+
+
 def _users_page(
     request: Request, admin: Admin, *, error: str | None = None, status: int = 200
 ) -> Response:
-    users = state(request).auth.list_users()
-    return page(request, "users.html", {"users": users}, admin=admin, error=error, status=status)
+    st = state(request)
+    services = st.services
+    users = st.auth.list_users()
+    with services.db.read() as conn:
+        usage = AdminRepository(conn).user_usage(window_start(services.clock.now()))
+    catalog_limit = guard.user_limit(st.search)
+    search_limit = Limit(st.search.search_user_rate_per_s, st.search.search_user_burst)
+    limiter = services.rate_limiter
+
+    def budget(key: str, limit: Limit) -> Budget:
+        return Budget(int(limiter.peek(key, limit)), int(limit.burst))
+
+    budgets = {
+        u.id: (
+            budget(guard.USER_BUCKET + u.id, catalog_limit),
+            budget(search_service.USER_BUCKET + u.id, search_limit),
+        )
+        for u in users
+    }
+    context = {"users": users, "usage": usage, "budgets": budgets, "limits": st.limits}
+    return page(request, "users.html", context, admin=admin, error=error, status=status)
 
 
 @router.get("/admin/users", include_in_schema=False)
@@ -578,10 +698,17 @@ def _job_filter(request: Request) -> str | None:
 
 def _jobs_context(request: Request) -> dict[str, object]:
     wanted = _job_filter(request)
+    number = Pager.wanted(request)
     with state(request).services.db.read() as conn:
         repo = AdminRepository(conn)
+        rows, pager = paged(
+            repo.jobs(wanted, PAGE_SIZE + 1, offset(number)),
+            number,
+            f"state={wanted}" if wanted else "",
+        )
         return {
-            "jobs": repo.jobs(wanted),
+            "jobs": rows,
+            "pager": pager,
             "counts": repo.job_counts(),
             "states": JOB_STATES,
             "wanted": wanted,
@@ -674,11 +801,19 @@ def _library_page(
 ) -> Response:
     services = state(request).services
     query = request.query_params.get("q", "").strip()[:100]
+    number = Pager.wanted(request)
     with services.db.read() as conn:
         repo = AdminRepository(conn)
+        review, pager = paged(
+            repo.needs_review(PAGE_SIZE + 1, offset(number)),
+            number,
+            f"q={quote(query)}" if query else "",
+        )
         context: dict[str, object] = {
             "stats": repo.stats(),
-            "review": repo.needs_review(),
+            "review": review,
+            "pager": pager,
+            "low_disk_since": repo.setting(LOW_DISK_KEY),
             "query": query,
             "albums": repo.find_albums(query) if query else [],
             "tracks": repo.find_tracks(query) if query else [],
@@ -739,6 +874,27 @@ def delete_library_item(request: Request, kind: str, item_id: str, post: PostedD
     return back("/admin/library", "track_deleted" if kind == "tracks" else "album_deleted")
 
 
+@router.post("/admin/library/tracks/{item_id}/reviewed", include_in_schema=False)
+def mark_reviewed(request: Request, item_id: str, post: PostedDep) -> Response:
+    """The admin checked a `needs_review` track (weak MusicBrainz match) and keeps its tags."""
+    services = state(request).services
+    try:
+        with services.db.transaction() as conn:
+            AdminRepository(conn).mark_reviewed(item_id, format_ts(services.clock.now()))
+            audit(
+                conn,
+                services.clock,
+                actor_id=post.admin.user.id,
+                ip=post.admin.ip,
+                action="track.review",
+                target_type="track",
+                target_id=item_id,
+            )
+    except TunesError as exc:
+        return _library_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return back("/admin/library", "track_reviewed")
+
+
 # ---------------------------------------------------------------------- yt-dlp and canary
 
 
@@ -792,10 +948,36 @@ def worker_command(request: Request, command: str, post: PostedDep) -> Response:
 
 @router.get("/admin/audit", include_in_schema=False)
 def audit_page(request: Request, admin: AdminDep) -> Response:
-    auth = state(request).auth
-    names = {u.id: u.username for u in auth.list_users()}
-    entries = [(entry, detail_text(entry.detail)) for entry in auth.recent_audit(200)]
-    return page(request, "audit.html", {"entries": entries, "names": names}, admin=admin)
+    """Newest first, 50 per page, filtered by action and by who did it."""
+    st = state(request)
+    users = st.auth.list_users()
+    names = {u.id: u.username for u in users}
+    number = Pager.wanted(request)
+    with st.services.db.read() as conn:
+        repo = AdminRepository(conn)
+        actions = repo.audit_actions()
+        action = request.query_params.get("action", "")
+        action = action if action in actions else ""
+        actor = request.query_params.get("actor", "")
+        actor = actor if actor in names else ""
+        query = "&".join(
+            f"{k}={quote(v, safe='')}" for k, v in (("action", action), ("actor", actor)) if v
+        )
+        rows, pager = paged(
+            repo.audit_entries(action or None, actor or None, PAGE_SIZE + 1, offset(number)),
+            number,
+            query,
+        )
+    context = {
+        "entries": [(entry, detail_text(entry.detail)) for entry in rows],
+        "names": names,
+        "users": users,
+        "actions": actions,
+        "action": action,
+        "actor": actor,
+        "pager": pager,
+    }
+    return page(request, "audit.html", context, admin=admin)
 
 
 # ---------------------------------------------------------------------- notifications

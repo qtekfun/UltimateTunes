@@ -1,23 +1,24 @@
 {# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
-{# Polled by HTMX: the whole block replaces itself every 5 seconds. #}
-<div id="jobs" hx-get="/admin/jobs/table{% if wanted %}?state={{ wanted }}{% endif %}" hx-trigger="every 5s" hx-swap="outerHTML">
-<p>
+{# Polled by HTMX: the whole block replaces itself every 5 seconds (same filter and page). #}
+<div id="jobs" hx-get="/admin/jobs/table{{ pager.href(pager.number) }}" hx-trigger="every 5s" hx-swap="outerHTML">
+<nav class="filters" aria-label="{{ _("Filter by state") }}">
   <a href="/admin/jobs"{% if not wanted %} aria-current="page"{% endif %}>{{ _("All") }}</a>
-  {% for name in states %} · <a href="/admin/jobs?state={{ name }}"{% if wanted == name %} aria-current="page"{% endif %}>{{ _(name) }} ({{ counts[name] }})</a>{% endfor %}
-</p>
+  {% for name in states %}<a href="/admin/jobs?state={{ name }}"{% if wanted == name %} aria-current="page"{% endif %}>{{ _(name) }} ({{ counts[name] }})</a>{% endfor %}
+</nav>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("Song") }}</th><th>{{ _("State") }}</th><th>{{ _("Progress") }}</th><th>{{ _("Attempts") }}</th><th>{{ _("Updated") }}</th><th>{{ _("Error") }}</th><th></th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Song") }}</th><th scope="col">{{ _("State") }}</th><th scope="col">{{ _("Progress") }}</th><th scope="col">{{ _("Attempts") }}</th><th scope="col">{{ _("Requested by") }}</th><th scope="col">{{ _("Updated") }}</th><th scope="col">{{ _("Error") }}</th><th scope="col"><span class="muted">{{ _("Actions") }}</span></th></tr></thead>
   <tbody>
   {% for job in jobs %}
   <tr>
-    <td>{{ job.artist_name }} – {{ job.title }}<br><code class="muted">{{ job.yt_video_id }}</code></td>
-    <td>{{ _(job.state) }}{% if job.cancel_requested %} <span class="muted">({{ _("cancel requested") }})</span>{% endif %}</td>
-    <td>{{ (job.progress * 100) | round | int }} %</td>
-    <td>{{ job.attempts }}/{{ job.max_attempts }}</td>
-    <td class="muted">{{ job.updated_at }}</td>
-    <td>{% if job.error_code %}<code>{{ job.error_code }}</code> {{ job.error_message or "" }}{% endif %}</td>
+    <td data-label="{{ _("Song") }}">{{ job.artist_name }} – {{ job.title }}<br><code class="muted">{{ job.yt_video_id }}</code></td>
+    <td data-label="{{ _("State") }}"><span class="{{ 'bad' if job.state == 'failed' else ('ok' if job.state == 'ready' else '') }}">{{ _(job.state) }}</span>{% if job.cancel_requested %} <span class="muted">({{ _("cancel requested") }})</span>{% endif %}</td>
+    <td data-label="{{ _("Progress") }}">{{ (job.progress * 100) | round | int }} %</td>
+    <td data-label="{{ _("Attempts") }}">{{ job.attempts }}/{{ job.max_attempts }}</td>
+    <td data-label="{{ _("Requested by") }}">{{ job.requested_by_name or "-" }}</td>
+    <td data-label="{{ _("Updated") }}" class="muted">{{ job.updated_at }}</td>
+    <td data-label="{{ _("Error") }}">{% if job.error_code %}<code>{{ job.error_code }}</code> {{ job.error_message or "" }}{% endif %}</td>
     <td>
       {% if job.state in ("failed", "cancelled") %}
       <form class="inline" method="post" action="/admin/jobs/{{ job.id }}/retry">
@@ -25,7 +26,7 @@
         <button class="secondary" type="submit">{{ _("Retry") }}</button>
       </form>
       {% elif job.state in ("queued", "downloading", "tagging") and not job.cancel_requested %}
-      <form class="inline" method="post" action="/admin/jobs/{{ job.id }}/cancel">
+      <form class="inline" method="post" action="/admin/jobs/{{ job.id }}/cancel" data-confirm="{{ _("Cancel the download of %(title)s?", title=job.title) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="danger" type="submit">{{ _("Cancel") }}</button>
       </form>
@@ -33,9 +34,10 @@
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="7" class="muted">{{ _("Nothing here.") }}</td></tr>
+  <tr><td colspan="8" class="muted">{{ _("No downloads here.") if not wanted else _("No downloads in this state.") }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+{% include "_pager.html" %}
 </div>
