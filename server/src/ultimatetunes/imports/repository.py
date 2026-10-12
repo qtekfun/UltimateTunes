@@ -243,23 +243,23 @@ class ImportRepository(Repository):
             (import_id, import_id, now, import_id),
         )
 
-    def finish(self, import_id: str, playlist_id: str, now: str) -> None:
-        """Creates the user playlist from the matched items, in source order, and ends the
-        import as `done`. Call it inside one transaction."""
-        row = self.get(import_id)
-        if row is None or row.state in TERMINAL:
-            return
+    def finish(self, import_id: str, playlist_id: str, now: str) -> bool:
+        """Ends an active import as `done` and creates its user playlist from the matched
+        items, in source order. Call it inside one transaction. The state change is a
+        conditional update checked by row count, so two runs (or a run and a `fail`) never
+        create two playlists; False when the import was not active."""
+        ended = self.run(
+            "UPDATE imports SET state = 'done', updated_at = ?, finished_at = ?"
+            " WHERE id = ? AND state IN ('queued', 'reading', 'matching')",
+            (now, now, import_id),
+        )
+        row = self.get(import_id) if ended == 1 else None
+        if row is None:
+            return False
         self.run(
             "INSERT INTO playlists (id, owner_id, name, comment, is_public, created_at,"
             " updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
-            (
-                playlist_id,
-                row.user_id,
-                row.name or DEFAULT_PLAYLIST_NAME,
-                "Imported",
-                now,
-                now,
-            ),
+            (playlist_id, row.user_id, row.name or DEFAULT_PLAYLIST_NAME, "Imported", now, now),
         )
         tracks = self.conn.execute(
             "SELECT track_id FROM import_items WHERE import_id = ? AND state = 'matched'"
@@ -272,18 +272,18 @@ class ImportRepository(Repository):
                 " VALUES (?, ?, ?, ?)",
                 (playlist_id, position, track["track_id"], now),
             )
-        self.run(
-            "UPDATE imports SET state = 'done', playlist_id = ?, updated_at = ?,"
-            " finished_at = ? WHERE id = ?",
-            (playlist_id, now, now, import_id),
-        )
+        self.run("UPDATE imports SET playlist_id = ? WHERE id = ?", (playlist_id, import_id))
+        return True
 
-    def fail(self, import_id: str, code: str, message: str, now: str) -> None:
-        self.run(
+    def fail(self, import_id: str, code: str, message: str, now: str) -> bool:
+        """Ends an active import as `failed`; never touches one that already ended."""
+        failed = self.run(
             "UPDATE imports SET state = 'failed', error_code = ?, error_message = ?,"
-            " updated_at = ?, finished_at = ? WHERE id = ?",
+            " updated_at = ?, finished_at = ? WHERE id = ?"
+            " AND state IN ('queued', 'reading', 'matching')",
             (code, message, now, now, import_id),
         )
+        return failed == 1
 
     def _fetch(self, track_ids: Sequence[str]) -> dict[str, TrackRow]:
         found: dict[str, TrackRow] = {}
