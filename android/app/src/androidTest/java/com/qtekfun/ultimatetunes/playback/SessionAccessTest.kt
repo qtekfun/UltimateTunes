@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.playback
 
 import android.os.Bundle
+import android.os.Process
 import androidx.annotation.OptIn
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -21,7 +22,8 @@ import org.junit.Test
 
 /**
  * Who may change the queue of the playback session (PLAN T17): the app and controllers the system
- * trusts may; any other app may only control playback, so it cannot make the server download.
+ * trusts may; any other app gets Media3's restricted command set without the queue commands, so it
+ * cannot make the server download.
  */
 @OptIn(UnstableApi::class)
 @HiltAndroidTest
@@ -43,7 +45,10 @@ class SessionAccessTest {
     @Test
     fun onlyTheAppAndTrustedControllersCanChangeTheQueue() {
         val other = commandsFor("org.example.other", trusted = false)
-        assertTrue(other.contains(Player.COMMAND_PLAY_PAUSE))
+        assertFalse(other.contains(Player.COMMAND_SET_MEDIA_ITEM))
+        // Claiming the app's package name from another uid does not help.
+        val impostor = commandsFor(context.packageName, trusted = false, uid = Process.myUid() + 1)
+        assertFalse(impostor.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
         assertFalse(other.contains(Player.COMMAND_SET_MEDIA_ITEM))
         assertFalse(other.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
 
@@ -55,7 +60,11 @@ class SessionAccessTest {
         assertTrue(system.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
     }
 
-    private fun commandsFor(packageName: String, trusted: Boolean): Player.Commands {
+    private fun commandsFor(
+        packageName: String,
+        trusted: Boolean,
+        uid: Int = Process.myUid()
+    ): Player.Commands {
         lateinit var commands: Player.Commands
         instrumentation.runOnMainSync {
             val player = assembly.newPlayer()
@@ -63,7 +72,7 @@ class SessionAccessTest {
             val controller = MediaSession.ControllerInfo.createTestOnlyControllerInfo(
                 packageName,
                 0,
-                0,
+                uid,
                 0,
                 0,
                 trusted,

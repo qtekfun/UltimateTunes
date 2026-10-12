@@ -6,6 +6,7 @@
 package com.qtekfun.ultimatetunes.core.player.session
 
 import android.content.Context
+import android.os.Process
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -89,8 +90,9 @@ class PlayerAssembly @Inject constructor(
 
     /**
      * Resolves the stream URL of every item a controller adds (see [MediaItems.resolve]). Only the
-     * app itself and controllers Media3 marks as trusted may change the queue; any other app may
-     * control playback but not queue songs, so it cannot make the server download anything.
+     * app itself and controllers Media3 marks as trusted may change the queue; any other app gets
+     * Media3's restricted (untrusted) command set without the queue commands, so it cannot make
+     * the server download anything.
      * "Trusted" means the system (notification, Bluetooth, headsets), apps holding
      * MEDIA_CONTENT_CONTROL **and enabled notification-listener apps**: the user granted those
      * access to every notification, so they also count as trusted here.
@@ -100,17 +102,17 @@ class PlayerAssembly @Inject constructor(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
-            val ours = controller.packageName == context.packageName || controller.isTrusted
-            if (ours) {
-                return MediaSession.ConnectionResult.AcceptedResultBuilder(
-                    session,
-                    controller
-                ).build()
+            // The app itself: same package and same uid (a package name alone can be claimed).
+            val app = controller.packageName == context.packageName &&
+                controller.uid == Process.myUid()
+            val commands = if (app || controller.isTrusted) {
+                MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+            } else {
+                MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_PLAYER_COMMANDS
+                    .buildUpon()
+                    .removeAll(Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_CHANGE_MEDIA_ITEMS)
+                    .build()
             }
-            val commands = MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_PLAYER_COMMANDS
-                .buildUpon()
-                .removeAll(Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_CHANGE_MEDIA_ITEMS)
-                .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(commands)
                 .build()
