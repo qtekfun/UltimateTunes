@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.admin.conftest import People, login, session_for
+from tests.auth.conftest import ADMIN_PASSWORD
 from ultimatetunes.admin.routes import SESSION_EPOCH_KEY
 from ultimatetunes.admin.security import SESSION_COOKIE
 from ultimatetunes.core.services import Services
@@ -144,3 +145,23 @@ def test_the_worker_network_never_reaches_the_panel(
         assert from_worker.get("/admin/login").status_code == 403
     with panel(app, ("172.30.45.3", 40000)) as from_lan:
         assert from_lan.get("/admin/login").status_code == 200
+
+
+def test_strangers_on_the_public_key_endpoint_cannot_lock_the_admin_out(
+    app_factory: Callable[[], FastAPI], services: Services, people: People
+) -> None:
+    """Audit M1: `POST /ut/v1/keys` is public; its wrong passwords move the outside counter
+    only, so the panel's login (LAN/Tailscale) keeps working."""
+    services.settings = services.settings.model_copy(update={"trusted_proxies": "172.16.0.0/12"})
+    with panel(app_factory(), DOCKER_GATEWAY) as client:
+        outside = {"X-Forwarded-For": "203.0.113.9"}
+        body = {"username": "alice", "password": "a wrong guess", "name": "Laptop"}
+        codes = [
+            client.post("/ut/v1/keys", json=body, headers=outside).status_code for _ in range(4)
+        ]
+        assert codes == [401, 401, 401, 429]
+        client.headers["X-Forwarded-For"] = "192.168.1.5"
+        login(client)
+        # From inside, the public endpoint uses the inside counter too.
+        body["password"] = ADMIN_PASSWORD
+        assert client.post("/ut/v1/keys", json=body).status_code == 201
