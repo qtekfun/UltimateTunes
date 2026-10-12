@@ -54,8 +54,8 @@ run() { # name, command...
 }
 
 # --- which groups ---------------------------------------------------------------------------
-known=(secrets store-texts server contracts android docker)
-groups=(secrets store-texts)
+known=(pr-title secrets store-texts server contracts android docker)
+groups=(pr-title secrets store-texts)
 if [[ "${1:-}" == --all ]] || { [[ $# -eq 0 ]] && $on_master; }; then
   groups=("${known[@]}")   # like a push to master in ci.yml: everything
 elif [[ $# -gt 0 ]]; then
@@ -76,6 +76,17 @@ fi
 echo "Gates: ${groups[*]}  (base $(git rev-parse --short "$base"))"
 
 # --- gates ----------------------------------------------------------------------------------
+pr_title() {
+  # Same rule as .github/workflows/pr-title.yml (squash merges make the title the commit).
+  local title
+  title=$(gh pr view --json title --jq .title 2>/dev/null) || { echo "no PR for this branch: title not checked"; return 0; }
+  echo "PR title: $title"
+  if ! grep -qE '^(feat|fix|perf|refactor|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: [A-Za-z].+[^.]$' <<<"$title"; then
+    echo "not a Conventional Commit title (type(scope)?: Subject, no trailing period)" >&2
+    return 1
+  fi
+}
+
 secrets() {
   # The commits this branch adds (like CI on a PR); the whole of master's history on master.
   # Worktrees keep their git data in the main checkout's common dir: mount it at the same path,
@@ -142,6 +153,7 @@ docker_gate() {
   return $rc
 }
 
+want pr-title && run pr-title pr_title
 want secrets && run secrets secrets
 want store-texts && run store-texts store_texts
 want server && run server server

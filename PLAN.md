@@ -67,7 +67,7 @@ Rules: one task per branch `feat/tNN-<slug>`, its gates green before the PR (`ma
 - [x] **T13 [F] Android Library, Search, Playlists, Lyrics view, Import and Settings screens** (UI + view models, fake server). *Verification:* view-model tests with Turbine; UI tests of search → result → album.
   - *Result:* add-to-playlist, context menus and starring from rows moved to T18.
 - [x] **T14 [I] Release pipeline**: validate `release.yml` with a `v0.0.1-rc.1` dry run on a fork branch or with the author: signed APK, SHA-256, GHCR multi-arch image with `X.Y.Z` and `latest` tags (rc → no `latest`), `nightly.yml` skeleton, `tools/check-store-texts.sh`. *Verification:* a pre-release exists with APK and image (deleted afterwards if the author wants).
-  - *Result:* pipeline verified with dry runs; publishing paused — no spending, homelab only (no `v0.0.1-rc.1` pre-release).
+  - *Result:* pipeline verified with dry runs; publishing paused — no spending, homelab only (no `v0.0.1-rc.1` pre-release; release PR #32 was merged, so `VERSION` on master is already `0.0.1-rc.1`).
 - [x] **T15 [L] Admin panel** (starts when T04 is merged): sessions, CSRF, network allowlist, users, keys (with QR for the app), downloads queue, library (space, `needs_review`, delete), yt-dlp status/update, audit log, notifications (ntfy/webhook), en/es. *Verification:* every admin route has a 403 test for non-admins and a CSRF test; HTMX vendored (no external request from the panel).
 - [x] **Checkpoint 1** — report.
   - *Result:* reached 2026-10-12: T04–T15 merged; GitHub Actions disabled, merges gated by `tools/ci-local.sh` + independent review (SPEC §11).

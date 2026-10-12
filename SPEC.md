@@ -123,6 +123,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Android: API key stored encrypted with the Android Keystore; cleartext traffic forbidden in release (debug allows the emulator host only); no secrets in logs.
 
 ## 8. Quality and CI
+(GitHub Actions are disabled and publishing is paused — the same gates run locally with `tools/ci-local.sh`, and releases are local; see §11, coordinator decisions in Wave 1.)
 - CI on every PR: server (ruff, mypy, pytest with coverage, bandit, pip-audit), contracts (OpenAPI validation, migrations apply, schemathesis against the app), Android (`./gradlew check assembleDebug`), Docker (build, Trivy scan, `compose.test.yaml` smoke), gitleaks, store texts, PR title.
 - Nightly: pip-audit, Android instrumented tests on an emulator against the test compose stack. The canary (real ytmusicapi search, radio, album and playlist read + yt-dlp download of one fixed Creative Commons track) runs **scheduled on the server** (api for ytmusicapi, worker for the download; reported in the admin panel); on GitHub it is manual only, because runner IPs get YouTube's bot wall (T03c).
 - Release on tag: signed APK + multi-arch (amd64, arm64) image on GHCR, GitHub Release with notes, APK SHA-256. Updates on the phone through Obtainium.
@@ -200,6 +201,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken in Wave 1 — T04 users, keys and auth (#22, 2026-10-12)
 - A stale or revoked key, or a key of a disabled user, does not count towards the IP lockout.
 - Password checks need the client IP: a proxy in front of the api must forward it.
+- OpenSubsonic auth errors carry `helpUrl` pointing to the README `#api-keys` section.
 
 ### Taken in Wave 1 — T05 library and browsing (#35, 2026-10-12)
 - `unstar` of a `yt:` id never materializes (overrides the contract text: removing a star must not start a download).
@@ -272,7 +274,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken in Wave 1 — T15 admin panel (#38, 2026-10-12)
 - Admin sessions are stateless itsdangerous-signed cookies with a password-hash fingerprint, expiry from the injected clock and the CSRF token inside; login uses a signed double-submit token.
 - Default admin allowlist: loopback, RFC 1918, link-local, IPv6 ULA, Tailscale `100.64.0.0/10` and `fd7a:115c:a1e0::/48`; anything else gets 403 first.
-- Notification target (ntfy or webhook, https, no credentials, never loopback/link-local) and the sweep cursor live in the `settings` table; the cursor moves by compare-and-set, so one replica sends.
+- Notification target (ntfy or webhook, https, no credentials, never loopback, link-local, unspecified, multicast or `localhost`, checked on save and on every send) and the sweep cursor live in the `settings` table; the cursor moves by compare-and-set, so one replica sends.
 - QR: own encoder (byte mode, level M, versions 1–10), payload per `contracts/ids.md`, server URL https only and ≤ 120 characters.
 - Library deletes: rows first, files best effort; refused while a lease is held.
 
@@ -286,6 +288,6 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken by the coordinator in Wave 1 (2026-10-12)
 - **GitHub Actions are disabled**: the author wants no spending and everything lives on the homelab. The workflows stay in the repo.
-- A merge needs `tools/ci-local.sh` green on the PR branch merged with master, plus the independent review without blocking findings.
+- A merge needs `tools/ci-local.sh` green on the PR branch merged with master (it includes the Conventional Commit PR-title check, same rule as `pr-title.yml`), plus the independent review without blocking findings.
 - No publishing to GHCR or GitHub Releases and no release tags until the author decides otherwise; releases are built locally (RELEASING.md).
 - Open option: self-hosted GitHub Actions runners on the homelab.

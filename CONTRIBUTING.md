@@ -19,7 +19,7 @@ Thanks for helping! A few rules keep UltimateTunes free, safe and easy to review
 
 1. One task or fix per branch (`feat/tNN-…`, `fix/…`) from `master`; changes land only through pull requests with green checks, squash-merged. GitHub Actions are disabled for now, so "green checks" means `tools/ci-local.sh` green on the branch merged with master, plus the independent review.
 2. The **PR title** is a [Conventional Commit](https://www.conventionalcommits.org): it becomes the squash commit.
-3. Before pushing: `make -C server check` and/or `cd android && ./gradlew check`; before merging, `tools/ci-local.sh` on a clean tree (`--all`, or the groups you touched).
+3. Before pushing: `make -C server check` and/or `cd android && ./gradlew check`; before merging, `tools/ci-local.sh` on a clean tree with no arguments (it picks the groups from the diff and always runs the PR title, secrets and store-text gates) or `--all`.
 4. `VERSION` and `CHANGELOG.md` change only in a release PR: see RELEASING.md.
 5. Contracts (`contracts/`) change in their own PR, before the code that needs them.
 
@@ -47,4 +47,4 @@ Android Lint runs with warnings as errors, including its network-backed version 
 
 - Coverage ≥ 85 % overall, and 100 % lines and branches on the critical areas. Server: `server/tools/critical_coverage.py` (patterns in `CRITICAL`). Android: `criticalPackages` in `android/app/build.gradle.kts` (`koverVerifyCritical`). An area with no code yet passes and is enforced from its first file. A critical file missing from the coverage report fails, and so does a coverage exclusion (`# pragma: no cover`, `# pragma: no branch`) inside one: critical code is covered by tests, never excluded.
 - Forbidden dependencies. Server: `server/tools/forbidden_deps.py` reads every package in `uv.lock`. Android: `checkForbiddenDependencies` walks the shipped and test runtime classpaths of every module.
-- In CI (`tools/ci-local.sh` groups `secrets` and `docker`): gitleaks over the branch's commits, Trivy on the image. The Conventional Commit PR title is checked by review while GitHub Actions are disabled.
+- In CI (`tools/ci-local.sh` groups `secrets` and `docker`): gitleaks over the branch's commits, Trivy on the image. The Conventional Commit PR title is checked by `tools/ci-local.sh` (group `pr-title`, same rule as `pr-title.yml`).

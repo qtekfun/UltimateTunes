@@ -77,7 +77,7 @@ Android (from `android/`):
 - UI tests on the author's phone **without uninstalling**: `./gradlew installDebug installDebugAndroidTest` + `adb shell am instrument -w com.qtekfun.ultimatetunes.test/com.qtekfun.ultimatetunes.HiltTestRunner`. **Never** `connectedDebugAndroidTest` on the author's phone.
 
 Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the worktree and branch for a PLAN task).
-- Local CI (GitHub Actions are disabled; SPEC §11): `tools/ci-local.sh` runs the same gates as `ci.yml` for what changed against `origin/master`; `--all` for every gate, or name groups (`secrets`, `store-texts`, `server`, `contracts`, `android`, `docker`). Needs a clean tree (it tests the committed HEAD).
+- Local CI (GitHub Actions are disabled; SPEC §11): `tools/ci-local.sh` runs the same gates as `ci.yml` for what changed against `origin/master`; `--all` for every gate, or name groups (`pr-title`, `secrets`, `store-texts`, `server`, `contracts`, `android`, `docker`). With no arguments it always runs the PR-title (Conventional Commit, via `gh`), secrets and store-text gates. Needs a clean tree (it tests the committed HEAD).
 
 ## Quality and tests
 - A task is done only when `make -C server check` and/or `./gradlew check` (whatever it touched) are green, and local CI (`tools/ci-local.sh`) is green on the branch merged with master (while GitHub Actions are disabled).
