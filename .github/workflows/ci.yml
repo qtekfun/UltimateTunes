@@ -33,6 +33,10 @@ jobs:
         with:
           working-directory: server
 
+      # ffmpeg for the tagging golden tests (remux, ReplayGain; PLAN T09).
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Install
         run: uv sync --locked
 
