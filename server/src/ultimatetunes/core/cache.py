@@ -5,8 +5,9 @@
 The v1 implementation is `SqliteTtlCache` on the `cache_entries` table: disk over RAM, so a
 large search or catalog cache costs no memory (the author's footprint target, SPEC §6).
 `MemoryTtlCache` is the fake for tests. Values are application-encoded text; `get_json` and
-`set_json` cover the common case. Expired entries are ignored on read and removed by
-`purge_expired()` (call it periodically).
+`set_json` cover the common case. Expired entries are ignored on read; the api's housekeeping
+(`core/housekeeping.py`) calls `purge_expired()` and then `trim()` with the size caps
+(`UT_CACHE_MAX_ENTRIES`, `UT_CACHE_MAX_BYTES`), so the cache cannot fill `/data` (T22).
 """
 
 import json
@@ -28,6 +29,12 @@ class TtlCache(Protocol):
         """Removes expired entries and returns how many."""
         ...
 
+    def trim(self, max_entries: int, max_bytes: int) -> int:
+        """Removes the oldest entries (by creation) until at most `max_entries` remain and
+        their values add up to at most `max_bytes` (UTF-8 bytes in the fake, characters in
+        SQL, which is close enough for a cap). Returns how many were removed."""
+        ...
+
 
 def get_json(cache: TtlCache, key: str) -> object | None:
     raw = cache.get(key)
@@ -41,6 +48,9 @@ def set_json(cache: TtlCache, key: str, value: object, ttl_s: float) -> None:
 def _check_ttl(ttl_s: float) -> None:
     if ttl_s <= 0:
         raise ValueError("ttl must be positive")
+
+
+_DELETE_BATCH = 500
 
 
 class SqliteTtlCache:
@@ -78,12 +88,48 @@ class SqliteTtlCache:
         with self._db.transaction() as conn:
             return conn.execute("DELETE FROM cache_entries WHERE expires_at <= ?", (now,)).rowcount
 
+    def trim(self, max_entries: int, max_bytes: int) -> int:
+        removed = 0
+        with self._db.transaction() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(value)), 0) AS size FROM cache_entries"
+            ).fetchone()
+            count, size = (_int(row["n"]), _int(row["size"])) if row is not None else (0, 0)
+            while count > max_entries or size > max_bytes:
+                oldest = conn.execute(
+                    "SELECT key, LENGTH(value) AS size FROM cache_entries"
+                    " ORDER BY created_at, key LIMIT ?",
+                    (_DELETE_BATCH,),
+                ).fetchall()
+                doomed: list[str] = []
+                for entry in oldest:
+                    if count <= max_entries and size <= max_bytes:
+                        break
+                    doomed.append(str(entry["key"]))
+                    count -= 1
+                    size -= _int(entry["size"])
+                if not doomed:  # pragma: no cover - the counts above say rows exist
+                    break
+                # Only "?" placeholders are formatted in; the keys travel as parameters.
+                marks = ", ".join("?" * len(doomed))
+                conn.execute(
+                    f"DELETE FROM cache_entries WHERE key IN ({marks})",  # noqa: S608  # nosec B608
+                    tuple(doomed),
+                )
+                removed += len(doomed)
+        return removed
+
+
+def _int(value: object) -> int:
+    return int(str(value)) if value is not None else 0
+
 
 class MemoryTtlCache:
     """In-memory fake with the same semantics, for tests."""
 
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
+        # Insertion order is creation order (a `set` moves the key to the end).
         self._entries: dict[str, tuple[str, float]] = {}
 
     def get(self, key: str) -> str | None:
@@ -94,6 +140,7 @@ class MemoryTtlCache:
 
     def set(self, key: str, value: str, ttl_s: float) -> None:
         _check_ttl(ttl_s)
+        self._entries.pop(key, None)
         self._entries[key] = (value, self._clock.monotonic() + ttl_s)
 
     def delete(self, key: str) -> None:
@@ -105,3 +152,12 @@ class MemoryTtlCache:
         for key in expired:
             del self._entries[key]
         return len(expired)
+
+    def trim(self, max_entries: int, max_bytes: int) -> int:
+        size = sum(len(value.encode()) for value, _ in self._entries.values())
+        removed = 0
+        while self._entries and (len(self._entries) > max_entries or size > max_bytes):
+            key = next(iter(self._entries))
+            size -= len(self._entries.pop(key)[0].encode())
+            removed += 1
+        return removed

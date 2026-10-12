@@ -50,6 +50,7 @@ from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.repository import User
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.authn import Principal
+from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.services import Services
 from ultimatetunes.errors import (
     AccountDisabled,
@@ -73,6 +74,8 @@ MAX_SERVER_URL = 120
 # Same length and alphabet as a real key (contracts/ids.md): sizes the QR before a key exists.
 _SIZING_KEY = "utk_" + "A" * 43
 QR_SCHEME = "ultimatetunes://connect"
+# Per-user counter in the `settings` table; part of every session's fingerprint.
+SESSION_EPOCH_KEY = "admin.session_epoch."
 # Fixed confirmation messages of `?done=`: nothing from the query string is ever echoed.
 DONE = {
     "user_created": "User created.",
@@ -174,6 +177,15 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def session_epoch(repo: AdminRepository, user_id: str) -> int:
+    """The user's admin session epoch (0 until the first logout)."""
+    raw = repo.setting(SESSION_EPOCH_KEY + user_id)
+    try:
+        return int(raw) if raw is not None else 0
+    except ValueError:
+        return 0
+
+
 def lang_of(request: Request) -> Lang:
     return negotiate(request.headers.get("accept-language"))
 
@@ -188,7 +200,11 @@ def current_admin(request: Request) -> Admin:
         user = st.auth.get_user(session.user_id)
     except NotFound as exc:
         raise LoginRequired from exc
-    if user.is_disabled or st.codec.fingerprint(user.password_hash) != session.fingerprint:
+    if user.is_disabled:
+        raise LoginRequired
+    with st.services.db.read() as conn:
+        epoch = session_epoch(AdminRepository(conn), user.id)
+    if st.codec.fingerprint(user.password_hash, epoch) != session.fingerprint:
         raise LoginRequired
     if user.role != "admin":
         raise NotAdmin
@@ -337,9 +353,10 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
         return _login_page(request, error="Wrong username or password.", status=401)
     if user.role != "admin":
         return _forbidden(request, "This account is not an administrator.")
-    cookie, _session = st.codec.new_session(user.id, user.password_hash)
     with st.services.db.transaction() as conn:
+        epoch = session_epoch(AdminRepository(conn), user.id)
         audit(conn, st.services.clock, actor_id=user.id, ip=ip, action="admin.login")
+    cookie, _session = st.codec.new_session(user.id, user.password_hash, epoch)
     response = RedirectResponse("/admin", status_code=303)
     set_cookie(response, SESSION_COOKIE, cookie, st.codec.ttl_s)
     clear_cookie(response, LOGIN_COOKIE)
@@ -349,14 +366,15 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
 @router.post("/admin/logout", include_in_schema=False)
 def logout(request: Request, post: PostedDep) -> Response:
     st = state(request)
+    user_id = post.admin.user.id
     with st.services.db.transaction() as conn:
-        audit(
-            conn,
-            st.services.clock,
-            actor_id=post.admin.user.id,
-            ip=post.admin.ip,
-            action="admin.logout",
+        # Ends every session of this admin, copied cookies included (SECURITY.md, T22).
+        repo = AdminRepository(conn)
+        epoch = session_epoch(repo, user_id) + 1
+        repo.put_setting(
+            SESSION_EPOCH_KEY + user_id, str(epoch), format_ts(st.services.clock.now())
         )
+        audit(conn, st.services.clock, actor_id=user_id, ip=post.admin.ip, action="admin.logout")
     response = RedirectResponse("/admin/login", status_code=303)
     clear_cookie(response, SESSION_COOKIE)
     return response

@@ -7,12 +7,14 @@ own (`api`, `migrate`); areas register theirs in their own `cli.py` (e.g. `worke
 """
 
 import argparse
+import asyncio
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 import uvicorn
 
-from ultimatetunes import __version__
+from ultimatetunes import __version__, listeners
 from ultimatetunes.commands import CommandRegistry, build_registry, no_args
 from ultimatetunes.db import migrate as migrations
 from ultimatetunes.logging import configure_logging
@@ -22,18 +24,36 @@ log = logging.getLogger("ultimatetunes")
 
 
 def run_api(settings: Settings) -> int:
-    """Serves the api. uvicorn stops gracefully on SIGTERM within the shutdown timeout."""
+    """Serves the api on its two listeners (`listeners.py`): clients on `UT_PORT`, the internal
+    worker API on `UT_INTERNAL_PORT`. uvicorn stops gracefully on SIGTERM within the shutdown
+    timeout."""
     from ultimatetunes.app import create_app  # noqa: PLC0415 - only the api role needs FastAPI
 
-    uvicorn.run(
-        create_app(settings),
+    if settings.internal_port == settings.port:
+        raise SystemExit("UT_INTERNAL_PORT must differ from UT_PORT")
+    app = create_app(settings)
+    common: dict[str, Any] = {
+        "log_config": None,
+        # Client addresses behind a proxy come from `core/forwarded.py` (UT_TRUSTED_PROXIES).
+        "proxy_headers": False,
+        "server_header": False,
+        "timeout_graceful_shutdown": settings.shutdown_timeout_s,
+    }
+    client = uvicorn.Config(
+        listeners.Listener(app, internal=False),
         host=settings.host,
         port=settings.port,
-        log_config=None,
-        proxy_headers=False,
-        server_header=False,
-        timeout_graceful_shutdown=settings.shutdown_timeout_s,
+        lifespan="on",
+        **common,
     )
+    internal = uvicorn.Config(
+        listeners.Listener(app, internal=True),
+        host=settings.internal_bind,
+        port=settings.internal_port,
+        lifespan="off",
+        **common,
+    )
+    asyncio.run(listeners.serve(client, internal))
     return 0
 
 
@@ -48,7 +68,11 @@ def run_migrate(settings: Settings) -> int:
 
 
 def register(registry: CommandRegistry) -> None:
-    registry.add("api", no_args(run_api), help="Serve the api (OpenSubsonic, /ut/v1, internal)")
+    registry.add(
+        "api",
+        no_args(run_api),
+        help="Serve the api (OpenSubsonic, /ut/v1, admin; internal API on its own port)",
+    )
     registry.add("migrate", no_args(run_migrate), help="Apply the database migrations")
 
 

@@ -17,13 +17,13 @@ Secrets come from env vars or Docker secrets, never from the database.
   notifications (the target itself is set in the panel).
 """
 
-import ipaddress
-
 from pydantic import Field, SecretStr, field_validator
 
+from ultimatetunes.core import netaddr
+from ultimatetunes.core.netaddr import IpNetwork
 from ultimatetunes.settings import AreaSettings
 
-IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+__all__ = ["DEFAULT_ALLOWED_NETWORKS", "AdminSettings", "IpNetwork", "parse_networks"]
 
 # Loopback, RFC 1918, link-local and IPv6 ULA (LAN), and Tailscale (100.64.0.0/10 and its ULA).
 DEFAULT_ALLOWED_NETWORKS = (
@@ -34,9 +34,7 @@ MIN_SECRET_LENGTH = 32
 
 
 def parse_networks(text: str) -> tuple[IpNetwork, ...]:
-    networks = tuple(
-        ipaddress.ip_network(part.strip(), strict=False) for part in text.split(",") if part.strip()
-    )
+    networks = netaddr.parse_networks(text)
     if not networks:
         raise ValueError("at least one network is needed")
     return networks

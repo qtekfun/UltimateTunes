@@ -65,9 +65,11 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     UT_HOST=0.0.0.0 \
     UT_PORT=8044 \
+    UT_INTERNAL_PORT=8045 \
     UT_MIGRATIONS_DIR=/app/migrations \
     DENO_NO_UPDATE_CHECK=1
 USER 10001:10001
-EXPOSE 8044
+# 8044: clients. 8045: the internal worker API (never publish it).
+EXPOSE 8044 8045
 ENTRYPOINT ["ultimatetunes"]
 CMD ["api"]

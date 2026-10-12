@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# ZAP baseline scan (PLAN T22) of the compose test stack (fake YouTube, nothing persistent).
+# Manual only: GitHub Actions are disabled for now (SPEC section 11) and the same scan runs
+# locally with tools/zap-baseline.sh, which this job just calls.
+name: ZAP baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan the test stack
+        run: tools/zap-baseline.sh "$RUNNER_TEMP/zap"
+
+      - name: Summary
+        if: always()
+        run: cat "$RUNNER_TEMP"/zap/*.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zap-baseline
+          path: ${{ runner.temp }}/zap/
+          retention-days: 14

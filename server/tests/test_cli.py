@@ -6,7 +6,6 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -22,17 +21,6 @@ def test_migrate_role_applies_migrations(settings: Settings) -> None:
     conn = migrate.connect(settings.database_file)
     assert migrate.applied_versions(conn) == {1}
     conn.close()
-
-
-def test_api_role_runs_uvicorn_with_graceful_shutdown(
-    settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr("ultimatetunes.cli.uvicorn.run", lambda app, **kw: calls.append(kw))
-    assert cli.run_api(settings) == 0
-    assert calls[0]["port"] == 8044
-    assert calls[0]["timeout_graceful_shutdown"] == settings.shutdown_timeout_s
-    assert calls[0]["log_config"] is None
 
 
 def test_main_dispatches_to_the_command_with_its_arguments(

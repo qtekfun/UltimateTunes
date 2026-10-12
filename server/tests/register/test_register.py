@@ -4,7 +4,8 @@
 merge, conflicts and adoption, album state, artist/album reuse, ReplayGain updates."""
 
 import hashlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -326,6 +327,33 @@ async def test_the_staging_file_must_match(api: Api) -> None:
     assert (r.status_code, r.json()["code"]) == (409, "conflict")
 
 
+async def test_the_api_hashes_the_staging_file_itself(api: Api) -> None:
+    """A worker cannot make the api adopt a file it does not own by reporting that file's
+    hash: the hash must be the staging file's (SECURITY.md, T22)."""
+    c = claim(api)
+    unowned = b"OggS" + b"\x02" * 100  # same size as the staged audio
+    with api.services.library.open_write(PATH) as out:
+        out.write(unowned)
+    lying = body(c)
+    lying["file"]["sha256"] = hashlib.sha256(unowned).hexdigest()
+    r = await api.register(lying)
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+    assert "sha256" in r.json()["detail"]
+    with api.services.library.open_read(PATH) as kept:
+        assert kept.read() == unowned
+
+
+async def test_an_unreadable_staging_file_is_a_conflict(api: Api) -> None:
+    c = claim(api)
+    staged = api.services.staging.local_path(f"{c.staging_dir}/archive.opus")
+    staged.chmod(0)
+    try:
+        r = await api.register(body(c))
+    finally:
+        staged.chmod(0o600)
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+
+
 async def test_artists_and_albums_are_reused(api: Api) -> None:
     c = claim(api)
     first = (await api.register(body(c))).json()
@@ -536,11 +564,11 @@ async def test_a_unique_race_is_retried_once(
     real = Registrar._register
     left = {"n": failures}
 
-    def racing(self: Registrar, *args: Any) -> Any:
+    def racing(self: Registrar, *args: Any, **kwargs: Any) -> Any:
         if left["n"]:
             left["n"] -= 1
             raise IntegrityError("UNIQUE constraint failed: jobs.library_path")
-        return real(self, *args)
+        return real(self, *args, **kwargs)
 
     monkeypatch.setattr(Registrar, "_register", racing)
     c = claim(api)
@@ -560,3 +588,74 @@ async def test_replay_gain_of_a_missing_library_file_is_not_found(api: Api) -> N
     }
     r = await api.replay_gain("t0", put)
     assert (r.status_code, r.json()["code"]) == (404, "not_found")
+
+
+async def test_the_staging_file_is_hashed_once_outside_the_write_transaction(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T22: the hash is computed before `BEGIN IMMEDIATE` and reused by the retry."""
+    import ultimatetunes.library.register as register_module  # noqa: PLC0415
+
+    real_hash, real_register = register_module.file_sha256, Registrar._register
+    real_transaction = api.services.db.transaction
+    seen: list[bool] = []
+    left = {"n": 1}
+    writing = {"now": False}
+
+    @contextmanager
+    def transaction() -> Iterator[Any]:
+        with real_transaction() as conn:
+            writing["now"] = True
+            try:
+                yield conn
+            finally:
+                writing["now"] = False
+
+    def hashing(store: Any, rel: str) -> str:
+        seen.append(writing["now"])
+        return real_hash(store, rel)
+
+    monkeypatch.setattr(api.services.db, "transaction", transaction)
+
+    def racing(self: Registrar, *args: Any, **kwargs: Any) -> Any:
+        if left["n"]:
+            left["n"] -= 1
+            raise IntegrityError("UNIQUE constraint failed: jobs.library_path")
+        return real_register(self, *args, **kwargs)
+
+    monkeypatch.setattr(register_module, "file_sha256", hashing)
+    monkeypatch.setattr(Registrar, "_register", racing)
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == 200
+    assert seen == [False]  # once, for the staging file (nothing at the library path yet)
+
+
+async def test_a_staging_file_changed_after_hashing_is_refused(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Registrar._staged_sha256
+    c = claim(api)
+
+    def then_truncate(self: Registrar, *args: Any) -> str:
+        digest = real(self, *args)
+        with api.services.staging.open_write(f"{c.staging_dir}/archive.opus") as out:
+            out.write(b"short")
+        return digest
+
+    monkeypatch.setattr(Registrar, "_staged_sha256", then_truncate)
+    r = await api.register(body(c))
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+
+
+async def test_a_bad_lease_is_refused_before_reading_the_file(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ultimatetunes.library.register as register_module  # noqa: PLC0415
+
+    def never(*_args: Any) -> str:  # pragma: no cover - must not run
+        raise AssertionError("hashed a file for a stale lease")
+
+    monkeypatch.setattr(register_module, "file_sha256", never)
+    c = claim(api)
+    r = await api.register(body(c) | {"leaseId": "stale"})
+    assert (r.status_code, r.json()["code"]) == (409, "lease_lost")
