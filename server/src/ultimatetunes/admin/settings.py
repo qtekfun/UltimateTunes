@@ -10,7 +10,9 @@ Secrets come from env vars or Docker secrets, never from the database.
 - `UT_ADMIN_SESSION_TTL_S`: lifetime of a session (default 8 hours).
 - `UT_ADMIN_ALLOWED_NETWORKS`: comma-separated CIDRs allowed to reach `/admin` (default:
   loopback, private LAN ranges, link-local and Tailscale). Anything else gets 403 before any
-  other check. `0.0.0.0/0,::/0` opts in to access from anywhere (SPEC §7).
+  other check. `0.0.0.0/0,::/0` opts in to access from anywhere (SPEC §7). The default is safe
+  but broad; a deployment narrows it to its tailnet and its LAN's /24, leaving the Docker bridge
+  ranges out (deploy/README.md, "Exposing UltimateTunes").
 - `UT_ADMIN_PUBLIC_URL`: the server address the app should use, prefilled in the QR form of a
   new key (default: the address the browser used).
 - `UT_ADMIN_NOTIFY_INTERVAL_S`: how often failed downloads and canary runs are checked for
