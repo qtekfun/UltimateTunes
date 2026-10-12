@@ -1,0 +1,14 @@
+[
+  {"category": "Albums", "resultType": "album", "title": "Lanterns at Dusk", "type": "Album",
+   "browseId": "MPREb_k3Vd9QmT2xL", "playlistId": "OLAK5uy_fakeLanternsAtDusk0123456789abcdef",
+   "year": "2024", "duration": null, "isExplicit": false,
+   "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}],
+   "thumbnails": [{"url": "https://yt3.googleusercontent.com/fakeDusk=w120-h120-l90-rj", "width": 120, "height": 120}]},
+  {"category": "Albums", "resultType": "album", "title": "Static Bloom", "type": "EP",
+   "browseId": "MPREb_Hn2Vq8Lr5Tz", "playlistId": "OLAK5uy_fakeStaticBloom0123456789abcdefgh",
+   "year": "2025", "duration": null, "isExplicit": false,
+   "artists": [{"name": "Neon Harbor", "id": "UCn4HbR7oQ2sLx9TzV0eWm3K"}],
+   "thumbnails": [{"url": "https://lh3.googleusercontent.com/fakeBloom=s120", "width": 120, "height": 120}]},
+  {"category": "Albums", "resultType": "album", "title": "Missing browse id", "browseId": null,
+   "artists": [], "thumbnails": []}
+]
