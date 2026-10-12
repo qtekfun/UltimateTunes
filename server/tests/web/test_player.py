@@ -55,6 +55,28 @@ def test_head_of_an_external_song_starts_nothing(
         assert conn.execute("SELECT COUNT(*) FROM jobs").scalar() == 0
 
 
+def test_head_of_a_pending_library_song_starts_nothing(
+    client: TestClient, ana: str, services: Services
+) -> None:
+    """Audit I6: a HEAD never queues a download, for a `yt:` id or a pending track (starred,
+    say) alike; only a GET does."""
+    pending = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c0aa"
+    with services.db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO tracks (id, status, title, title_norm, artist_name, yt_video_id,"
+            " created_at, updated_at) VALUES (?, 'pending', 'P', 'p', 'A', 'Fk2Lp9QwXa2',"
+            " '2026-10-12T08:00:00.000Z', '2026-10-12T08:00:00.000Z')",
+            (pending,),
+        )
+    for _ in range(3):
+        r = client.head(f"/web/stream/{pending}")
+        assert r.status_code == 200
+        assert r.content == b""
+        assert r.headers["cache-control"] == "no-store"
+    with services.db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM jobs").scalar() == 0
+
+
 def test_stream_of_an_unknown_song(client: TestClient, ana: str) -> None:
     r = client.get("/web/stream/0199d6a2-4c1e-7b3a-9f10-2a6c8e01ffff")
     assert r.status_code == 404
