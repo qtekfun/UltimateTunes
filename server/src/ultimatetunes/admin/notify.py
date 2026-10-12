@@ -64,6 +64,8 @@ KEY_URL = "admin.notify.url"
 KEY_CURSOR = "admin.notify.cursor"
 MAX_URL_LENGTH = 2048
 TIMEOUT_S = 10.0
+# Every exception httpx raises (`InvalidURL` and friends are not `HTTPError`s).
+HTTPX_ERRORS = (httpx.HTTPError, httpx.InvalidURL, httpx.StreamError, httpx.CookieConflict)
 # At most this many items are listed in one message (the count is always exact).
 MAX_LISTED = 10
 
@@ -148,6 +150,12 @@ def check_url(url: str) -> str:
         raise InvalidParameter("The URL must not contain a user or password")
     if any(c in cleaned for c in " \t\r\n"):
         raise InvalidParameter("The URL must not contain spaces")
+    try:
+        port = parts.port
+    except ValueError:
+        port = 0
+    if port == 0:
+        raise InvalidParameter("The URL has an invalid port")
     if _own_host(parts.hostname):
         raise InvalidParameter("Notifications cannot go to this server's own network")
     return cleaned
@@ -299,7 +307,7 @@ class Sender:
                 transport=self._transport, timeout=TIMEOUT_S, follow_redirects=False
             ) as client:
                 response = await client.post(url, headers=headers, **request)  # type: ignore[arg-type]
-        except httpx.HTTPError as exc:
+        except HTTPX_ERRORS as exc:
             log.warning("notification to %s failed: %s", target.host, type(exc).__name__)
             return "failed"
         if response.is_success:

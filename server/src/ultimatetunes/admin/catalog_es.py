@@ -239,6 +239,7 @@ ES: dict[str, str] = {
     "The URL must start with https://": "La URL debe empezar por https://",
     "The URL must not contain a user or password": "La URL no puede llevar usuario ni contraseña",
     "The URL must not contain spaces": "La URL no puede llevar espacios",
+    "The URL has an invalid port": "La URL tiene un puerto no válido",
     "Unknown notification kind": "Tipo de notificación desconocido",
     # Errors of T04's AuthService shown in the panel
     "That username is taken": "Ese nombre de usuario ya existe",

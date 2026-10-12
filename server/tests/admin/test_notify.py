@@ -56,6 +56,11 @@ NTFY = "https://ntfy.example.net/ut-alerts-1234"
         "https://0.0.0.0/x",
         "https://224.0.0.1/x",
         "https://[::ffff:127.0.0.1]/x",
+        "https://ntfy.example.net:99999/x",
+        "https://ntfy.example.net:65536/x",
+        "https://ntfy.example.net:abc/x",
+        "https://ntfy.example.net:0/x",
+        "https://ntfy.example.net:-1/x",
     ],
 )
 def test_only_plain_https_urls(url: str) -> None:
@@ -65,6 +70,7 @@ def test_only_plain_https_urls(url: str) -> None:
 
 def test_check_url_and_kind() -> None:
     assert check_url(f"  {NTFY} ") == NTFY
+    assert check_url("https://ntfy.example.net:65535/x") == "https://ntfy.example.net:65535/x"
     # A self-hosted ntfy on the LAN is fine.
     assert check_url("https://192.168.1.30/alerts") == "https://192.168.1.30/alerts"
     assert notify.check_kind("webhook") == "webhook"
@@ -341,3 +347,41 @@ def test_sweep_reports_a_low_disk_pause_once(services: Services, clock: FakeCloc
 class Full:
     def free_bytes(self) -> int:
         return 0
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.InvalidURL("bad"),
+        httpx.ReadTimeout("slow"),
+        httpx.StreamConsumed(),
+        httpx.CookieConflict("two"),
+    ],
+)
+def test_every_httpx_error_is_a_failed_delivery(
+    error: Exception, caplog: pytest.LogCaptureFixture
+) -> None:
+    class Raising(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            raise error
+
+    sender = Sender(Raising(), public_dns)
+    assert _run(sender.deliver(Target("ntfy", NTFY), Message("t", "b"))) == "failed"
+    assert type(error).__name__ in caplog.text
+
+
+def test_a_stored_url_with_a_bad_port_is_refused_at_send(caplog: pytest.LogCaptureFixture) -> None:
+    transport = RecordingTransport()
+    target = Target("ntfy", "https://ntfy.example.net:99999/x")
+    assert _run(Sender(transport, public_dns).deliver(target, Message("t", "b"))) == "failed"
+    assert transport.requests == []
+    assert "InvalidParameter" in caplog.text
+
+
+def test_the_panel_refuses_a_bad_port(client: TestClient, admin_csrf: str) -> None:
+    bad = client.post(
+        "/admin/notifications",
+        data={"csrf": admin_csrf, "kind": "ntfy", "url": "https://ntfy.example.net:99999/x"},
+    )
+    assert bad.status_code == 400
+    assert "invalid port" in bad.text
