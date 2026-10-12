@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Strings of the features wired in PLAN T18: player extras, song menus, playlists, offline,
+  export to the phone, notifications.
+-->
+<resources>
+    <!-- Player -->
+    <string name="player_start_radio">Start radio from this song</string>
+    <string name="player_first_play_progress">Getting this song from YouTube Music… %1$d %%</string>
+    <string name="player_first_play_failed">This song could not be downloaded.</string>
+    <string name="player_issue_network">No connection to the server.</string>
+    <string name="player_issue_not_available">This song is not available right now.</string>
+    <string name="player_issue_unplayable">This song cannot be played.</string>
+
+    <!-- Song menu (long press) -->
+    <string name="menu_actions_for">More for %1$s</string>
+    <string name="menu_play_next">Play Next</string>
+    <string name="menu_play_last">Play Last</string>
+    <string name="menu_add_to_playlist">Add to Playlist…</string>
+    <string name="menu_download">Download</string>
+    <string name="menu_remove_download">Remove Download</string>
+    <string name="menu_export">Export to Phone</string>
+    <string name="menu_go_to_album">Go to Album</string>
+    <string name="menu_go_to_artist">Go to Artist</string>
+    <string name="menu_start_station">Start Station</string>
+
+    <!-- Add to playlist -->
+    <string name="picker_title">Add to Playlist</string>
+    <string name="picker_new">New Playlist…</string>
+    <string name="picker_empty">You have no playlists yet.</string>
+
+    <!-- Results of actions -->
+    <plurals name="event_added_to_playlist">
+        <item quantity="one">Added %1$d song to “%2$s”</item>
+        <item quantity="other">Added %1$d songs to “%2$s”</item>
+    </plurals>
+    <string name="event_downloading">Downloading for offline listening</string>
+    <string name="event_download_removed">Download removed</string>
+    <plurals name="event_export_started">
+        <item quantity="one">Exporting %1$d song…</item>
+        <item quantity="other">Exporting %1$d songs…</item>
+    </plurals>
+
+    <!-- Offline albums and playlists -->
+    <string name="collection_keep_offline">Keep Offline</string>
+    <string name="collection_stop_offline">Stop Keeping Offline</string>
+    <string name="collection_offline">Kept offline: new songs download automatically</string>
+
+    <!-- Export to the phone -->
+    <string name="export_report_title">Export Finished</string>
+    <plurals name="export_report_copied">
+        <item quantity="one">%1$d song copied to your folder.</item>
+        <item quantity="other">%1$d songs copied to your folder.</item>
+    </plurals>
+    <string name="export_report_skipped">Skipped:</string>
+    <string name="export_skipped_item">%1$s (%2$s)</string>
+    <string name="export_skip_not_in_library">not in library yet</string>
+    <string name="export_skip_not_on_phone">not fully on this phone</string>
+    <string name="export_skip_unknown_format">unknown format</string>
+    <string name="export_skip_already_in_folder">another file has its name in the folder</string>
+    <string name="event_export_busy">Another export is still running. Try again when it finishes.</string>
+    <string name="export_skip_write_failed">could not be written</string>
+    <string name="export_running_banner">Exporting %1$d of %2$d…</string>
+    <string name="downloads_export_all">Export All</string>
+    <string name="ok">OK</string>
+
+    <!-- Settings -->
+    <string name="settings_export">Export to Phone</string>
+    <string name="settings_export_help">Exported songs are copied, in their original format with their tags, to a folder you choose: Artist/Album/Song.</string>
+    <string name="settings_export_folder">Folder</string>
+    <string name="settings_export_folder_none">Not chosen yet</string>
+    <string name="settings_export_folder_change">Choose Folder</string>
+
+    <!-- Import -->
+    <string name="import_all_disabled">Your server has playlist import turned off.</string>
+
+    <!-- Notifications (Android 13+) -->
+    <string name="notifications_title">Allow notifications?</string>
+    <string name="notifications_rationale">UltimateTunes uses notifications only for what is playing and for the progress of downloads and exports to this phone.</string>
+    <string name="notifications_allow">Allow</string>
+    <string name="notifications_not_now">Not now</string>
+</resources>

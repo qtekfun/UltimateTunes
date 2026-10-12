@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.actions.CollectionMenuItems
+import com.qtekfun.ultimatetunes.ui.actions.OfflineNote
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ConfirmDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
@@ -79,7 +81,8 @@ fun PlaylistRoute(
             rename = viewModel::rename,
             delete = viewModel::delete,
             removeAt = viewModel::removeAt,
-            messageShown = viewModel::dismissMessage
+            messageShown = viewModel::dismissMessage,
+            toggleOffline = viewModel::toggleOffline
         )
     )
 }
@@ -90,7 +93,8 @@ data class PlaylistActions(
     val rename: (String) -> Unit = {},
     val delete: () -> Unit = {},
     val removeAt: (Int) -> Unit = {},
-    val messageShown: () -> Unit = {}
+    val messageShown: () -> Unit = {},
+    val toggleOffline: () -> Unit = {}
 )
 
 private enum class PlaylistDialog { RENAME, DELETE }
@@ -112,8 +116,11 @@ fun PlaylistScreen(
         onBack = navigator.back,
         snackbarHost = { SnackbarHost(snackbar) },
         actions = {
-            if (content != null && !content.readonly) {
+            if (content != null) {
                 PlaylistMenu(
+                    content = content,
+                    isOffline = state.isOffline,
+                    actions = actions,
                     onRename = { dialog = PlaylistDialog.RENAME },
                     onDelete = { dialog = PlaylistDialog.DELETE }
                 )
@@ -129,8 +136,11 @@ fun PlaylistScreen(
         ) {
             when (val load = state.content) {
                 LoadState.Loading -> item { LoadingState() }
+
                 is LoadState.Failed -> item { ErrorState(load.error, actions.retry) }
-                is LoadState.Ready -> playlistContent(load.value, navigator, actions)
+
+                is LoadState.Ready ->
+                    playlistContent(load.value, state.isOffline, navigator, actions)
             }
         }
     }
@@ -175,10 +185,11 @@ private fun PlaylistDialogs(
 
 private fun LazyListScope.playlistContent(
     playlist: PlaylistContent,
+    isOffline: Boolean,
     navigator: Navigator,
     actions: PlaylistActions
 ) {
-    item { PlaylistHeader(playlist, navigator) }
+    item { PlaylistHeader(playlist, isOffline, navigator) }
     if (playlist.tracks.isEmpty()) {
         item {
             MessageState(
@@ -213,7 +224,13 @@ private fun RemoveButton(track: TrackTile, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun PlaylistMenu(onRename: () -> Unit, onDelete: () -> Unit) {
+private fun PlaylistMenu(
+    content: PlaylistContent,
+    isOffline: Boolean,
+    actions: PlaylistActions,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
     var open by remember { mutableStateOf(false) }
     IconButton(onClick = { open = true }, modifier = Modifier.testTag(PLAYLIST_MENU_TAG)) {
         Icon(
@@ -223,38 +240,50 @@ private fun PlaylistMenu(onRename: () -> Unit, onDelete: () -> Unit) {
         )
     }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.playlist_rename)) },
-            leadingIcon = { Icon(painterResource(R.drawable.ic_edit), contentDescription = null) },
-            onClick = {
-                open = false
-                onRename()
-            }
+        CollectionMenuItems(
+            tracks = content.tracks,
+            isOffline = isOffline,
+            onToggleOffline = actions.toggleOffline,
+            close = { open = false }
         )
-        DropdownMenuItem(
-            text = {
-                Text(
-                    stringResource(R.string.playlist_delete),
-                    color = MaterialTheme.colorScheme.error
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    painterResource(R.drawable.ic_delete),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            onClick = {
-                open = false
-                onDelete()
-            }
-        )
+        if (!content.readonly) EditItems(onRename, onDelete, close = { open = false })
     }
 }
 
+/** Rename and delete, for the user's own playlists. */
 @Composable
-private fun PlaylistHeader(playlist: PlaylistContent, navigator: Navigator) {
+private fun EditItems(onRename: () -> Unit, onDelete: () -> Unit, close: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(stringResource(R.string.playlist_rename)) },
+        leadingIcon = { Icon(painterResource(R.drawable.ic_edit), contentDescription = null) },
+        onClick = {
+            close()
+            onRename()
+        }
+    )
+    DropdownMenuItem(
+        text = {
+            Text(
+                stringResource(R.string.playlist_delete),
+                color = MaterialTheme.colorScheme.error
+            )
+        },
+        leadingIcon = {
+            Icon(
+                painterResource(R.drawable.ic_delete),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        onClick = {
+            close()
+            onDelete()
+        }
+    )
+}
+
+@Composable
+private fun PlaylistHeader(playlist: PlaylistContent, isOffline: Boolean, navigator: Navigator) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -287,6 +316,7 @@ private fun PlaylistHeader(playlist: PlaylistContent, navigator: Navigator) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        OfflineNote(isOffline)
         if (playlist.tracks.isNotEmpty()) {
             PlayShuffleButtons(
                 onPlay = { navigator.play(playlist.tracks, 0) },

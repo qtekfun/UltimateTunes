@@ -15,9 +15,12 @@ fun TrackTile.toPlayable(): PlayableTrack = PlayableTrack(
     artist = artist,
     album = album,
     albumId = albumId,
+    artistId = artistId,
     durationMs = durationSec?.let { it * MS_PER_SECOND },
     artworkUrl = coverUrl,
-    trackNumber = trackNumber
+    trackNumber = trackNumber,
+    discNumber = discNumber,
+    albumArtist = albumArtist
 )
 
 /** [this] track as a tile for the screens. */
@@ -30,5 +33,8 @@ fun PlayableTrack.toTile(): TrackTile = TrackTile(
     coverUrl = artworkUrl,
     isExternal = isExternal,
     albumId = albumId,
-    trackNumber = trackNumber
+    trackNumber = trackNumber,
+    artistId = artistId,
+    discNumber = discNumber,
+    albumArtist = albumArtist
 )

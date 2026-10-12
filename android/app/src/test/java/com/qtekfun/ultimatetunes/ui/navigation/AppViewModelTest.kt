@@ -7,8 +7,12 @@ import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
+import com.qtekfun.ultimatetunes.ui.FakeAppPrefs
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -23,13 +27,13 @@ class AppViewModelTest {
 
     @Test
     fun `a fresh process without a server starts on Connect`() {
-        assertTrue(AppViewModel(ConnectionGate(source)).showConnect.value)
+        assertTrue(AppViewModel(ConnectionGate(source), FakeAppPrefs()).showConnect.value)
     }
 
     @Test
     fun `the root follows the configuration, and reconnect goes back to Connect`() {
         source.set(config)
-        val viewModel = AppViewModel(ConnectionGate(source))
+        val viewModel = AppViewModel(ConnectionGate(source), FakeAppPrefs())
         assertFalse(viewModel.showConnect.value)
 
         viewModel.reconnect()
@@ -37,5 +41,17 @@ class AppViewModelTest {
 
         source.set(config)
         assertFalse(viewModel.showConnect.value)
+    }
+
+    @Test
+    fun `the notification question is asked until answered once`() = runTest {
+        val prefs = FakeAppPrefs()
+        val viewModel = AppViewModel(ConnectionGate(source), prefs)
+        assertTrue(viewModel.askNotifications.value)
+
+        viewModel.onNotificationsAsked()
+
+        assertFalse(viewModel.askNotifications.awaitFirst { !it })
+        assertTrue(prefs.notificationsAsked.first())
     }
 }

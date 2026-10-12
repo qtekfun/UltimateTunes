@@ -53,8 +53,6 @@ private const val LINES_ABOVE_ACTIVE = 2
 /** Opacity of the lines that are not being sung. */
 private const val INACTIVE_ALPHA = 0.45f
 
-private const val MILLIS_PER_SECOND = 1000L
-
 /** The lyrics view's data and what it can do, as the player passes them. */
 @Immutable
 data class LyricsHooks(
@@ -65,15 +63,16 @@ data class LyricsHooks(
 )
 
 /**
- * Lyrics full screen (SPEC §5): the line being sung highlighted and kept in view; tapping a synced
- * line seeks there when [canSeek] (the song is in the library, so its file supports seeking).
+ * Lyrics full screen (SPEC §5): the line being sung at [positionMillis] highlighted and kept in
+ * view; tapping a synced line seeks there ([onSeek], milliseconds) when [canSeek] (the song is in
+ * the library, so its file supports seeking).
  */
 @Composable
 fun LyricsView(
     state: LyricsUiState,
     positionMillis: Long,
     canSeek: Boolean,
-    onSeek: (Int) -> Unit,
+    onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -126,7 +125,7 @@ private fun Lines(
     lyrics: LyricsContent,
     positionMillis: Long,
     canSeek: Boolean,
-    onSeek: (Int) -> Unit
+    onSeek: (Long) -> Unit
 ) {
     val active = LyricsViewModel.activeLine(lyrics.lines, positionMillis)
     val listState = rememberLazyListState()
@@ -165,7 +164,7 @@ private fun Lines(
                     .then(
                         if (canSeek && start != null) {
                             Modifier.clickable(onClickLabel = seekLabel) {
-                                onSeek((start / MILLIS_PER_SECOND).toInt())
+                                onSeek(start)
                             }
                         } else {
                             Modifier

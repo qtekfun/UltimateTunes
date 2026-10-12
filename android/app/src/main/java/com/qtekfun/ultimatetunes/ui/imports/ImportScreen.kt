@@ -72,6 +72,7 @@ import kotlinx.coroutines.launch
 const val IMPORT_URL_TAG = "import.url"
 const val IMPORT_URL_BUTTON_TAG = "import.urlButton"
 const val IMPORT_PROGRESS_TAG = "import.progress"
+const val IMPORT_INTRO_TAG = "import.intro"
 
 /** What the Import screen can do. */
 data class ImportActions(
@@ -154,10 +155,14 @@ private fun ImportForm(state: ImportUiState, actions: ImportActions) {
         verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)
     ) {
         Text(
-            text = stringResource(R.string.import_intro),
+            text = stringResource(
+                if (state.anyImport) R.string.import_intro else R.string.import_all_disabled
+            ),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag(IMPORT_INTRO_TAG)
         )
+        if (!state.anyImport) return@Column
         OutlinedTextField(
             value = state.name,
             onValueChange = actions.onNameChange,
@@ -166,8 +171,9 @@ private fun ImportForm(state: ImportUiState, actions: ImportActions) {
             enabled = !state.submitting,
             modifier = Modifier.fillMaxWidth()
         )
-        LinkSection(state, actions)
-        FileSection(state, actions)
+        // Kinds the server has turned off are not offered (capabilities of /ut/v1/server).
+        if (state.urlImport) LinkSection(state, actions)
+        if (state.fileImport) FileSection(state, actions)
         state.error?.let { error ->
             Text(
                 text = stringResource(error.messageRes()),

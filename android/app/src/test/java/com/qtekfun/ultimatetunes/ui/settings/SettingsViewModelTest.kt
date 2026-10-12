@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
+import com.qtekfun.ultimatetunes.ui.FakeExports
+import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
@@ -72,8 +74,17 @@ class SettingsViewModelTest {
         server.close()
     }
 
-    private fun viewModel() =
-        SettingsViewModel(connectedApi(server), configSource, ConnectionGate(configSource), store)
+    private val offline = FakeOfflineControls()
+    private val exports = FakeExports()
+
+    private fun viewModel() = SettingsViewModel(
+        connectedApi(server),
+        configSource,
+        ConnectionGate(configSource),
+        store,
+        offline,
+        exports
+    )
 
     private suspend fun SettingsViewModel.loaded(): SettingsUiState =
         state.awaitFirst { it.server !is LoadState.Loading && it.keys !is LoadState.Loading }
@@ -206,6 +217,23 @@ class SettingsViewModelTest {
             PlaybackSettings(cacheSizeMb = 5120, offlineOnly = true, downloadOnWifiOnly = false),
             playback
         )
+        // The offline sync is scheduled again with the new network rule.
+        assertEquals(1, offline.syncs)
+    }
+
+    @Test
+    fun `the export folder shows and a picked one is kept`() = runTest {
+        val viewModel = viewModel()
+        assertNull(viewModel.state.value.exportFolder)
+
+        viewModel.onExportFolderPicked(null)
+        assertNull(viewModel.state.value.exportFolder)
+        viewModel.onExportFolderPicked("content://tree/primary%3AMusic")
+
+        assertEquals(
+            "content://tree/primary%3AMusic",
+            viewModel.state.awaitFirst { it.exportFolder != null }.exportFolder
+        )
     }
 
     @Test
@@ -218,6 +246,30 @@ class SettingsViewModelTest {
     inner class Store {
         @TempDir
         lateinit var dir: File
+
+        @Test
+        fun `the app prefs keep the export folder and the notification answer`() = runTest {
+            val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+            try {
+                val prefs = DataStoreAppPrefs(
+                    PreferenceDataStoreFactory.create(scope = scope) {
+                        File(dir, "app.preferences_pb")
+                    }
+                )
+                assertNull(prefs.exportFolder.first())
+                assertFalse(prefs.notificationsAsked.first())
+
+                prefs.setExportFolder("content://tree/x")
+                prefs.setNotificationsAsked(true)
+                assertEquals("content://tree/x", prefs.exportFolder.first())
+                assertTrue(prefs.notificationsAsked.first())
+
+                prefs.setExportFolder(null)
+                assertNull(prefs.exportFolder.first())
+            } finally {
+                scope.cancel()
+            }
+        }
 
         @Test
         fun `the DataStore keeps the choices, with RF-12 defaults`() = runTest {

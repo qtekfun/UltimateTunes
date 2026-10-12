@@ -8,15 +8,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
 /**
- * The songs downloaded for offline listening (RF-12), which the Library's Downloads screen lists.
- * The downloads themselves are PLAN T17 (Media3 downloads); until it binds its own implementation
- * the app uses [NoOfflineDownloads].
+ * The songs downloaded for offline listening (RF-12), which the Library's Downloads screen lists:
+ * the Media3 downloads of PLAN T17 (`DownloadsOfflineLibrary`), or [NoOfflineDownloads] in tests.
  */
 interface OfflineLibrary {
     val downloads: Flow<List<TrackTile>>
 }
 
-/** No offline downloads (before PLAN T17). */
+/** No offline downloads. */
 object NoOfflineDownloads : OfflineLibrary {
     override val downloads: Flow<List<TrackTile>> = flowOf(emptyList())
 }

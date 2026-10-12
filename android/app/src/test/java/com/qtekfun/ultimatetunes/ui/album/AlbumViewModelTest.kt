@@ -6,6 +6,8 @@ package com.qtekfun.ultimatetunes.ui.album
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
@@ -39,8 +41,13 @@ class AlbumViewModelTest {
         server.close()
     }
 
-    private fun viewModel(id: String = libraryAlbum) =
-        AlbumViewModel(SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)), connectedApi(server))
+    private val offline = FakeOfflineControls()
+
+    private fun viewModel(id: String = libraryAlbum) = AlbumViewModel(
+        SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)),
+        connectedApi(server),
+        offline
+    )
 
     private suspend fun AlbumViewModel.ready(): AlbumContent =
         (state.awaitFirst { it.content is LoadState.Ready }.content as LoadState.Ready).value
@@ -136,5 +143,32 @@ class AlbumViewModelTest {
         assertEquals("Harbour Lights", viewModel.ready().album.title)
         // One failed getAlbum and one retry; the toggles sent nothing.
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `an album can be kept offline and dropped again`() = runTest {
+        val viewModel = viewModel()
+        viewModel.ready()
+        assertFalse(viewModel.state.value.isOffline)
+
+        viewModel.toggleOffline()
+        assertTrue(viewModel.state.awaitFirst { it.isOffline }.isOffline)
+        val kept = offline.mutableSelection.value.collections.single()
+        assertEquals(CollectionKind.ALBUM, kept.kind)
+        assertEquals(libraryAlbum, kept.id)
+        assertEquals("Harbour Lights", kept.name)
+
+        viewModel.toggleOffline()
+        assertFalse(viewModel.state.awaitFirst { !it.isOffline }.isOffline)
+    }
+
+    @Test
+    fun `an album not loaded yet cannot be kept offline`() = runTest {
+        server.dispatcher.override("rest/getAlbum") { dropConnection() }
+        val viewModel = viewModel()
+        viewModel.state.awaitFirst { it.content is LoadState.Failed }
+
+        viewModel.toggleOffline()
+        assertTrue(offline.mutableSelection.value.collections.isEmpty())
     }
 }

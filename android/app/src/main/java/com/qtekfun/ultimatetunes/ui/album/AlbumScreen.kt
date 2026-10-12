@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.ui.album
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,7 +27,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -41,6 +45,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.actions.CollectionMenuItems
+import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
+import com.qtekfun.ultimatetunes.ui.actions.OfflineNote
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
@@ -55,8 +62,9 @@ import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 
-/** Test tag of the album screen's song list. */
+/** Test tags of the album screen. */
 const val ALBUM_LIST_TAG = "album.list"
+const val ALBUM_MENU_TAG = "album.menu"
 
 private const val SECONDS_PER_MINUTE = 60
 
@@ -73,7 +81,8 @@ fun AlbumRoute(
         navigator = navigator,
         onRetry = viewModel::load,
         onToggleFavourite = viewModel::toggleFavourite,
-        onMessageShown = viewModel::dismissMessage
+        onMessageShown = viewModel::dismissMessage,
+        onToggleOffline = viewModel::toggleOffline
     )
 }
 
@@ -86,7 +95,8 @@ fun AlbumScreen(
     onRetry: () -> Unit,
     onToggleFavourite: () -> Unit,
     modifier: Modifier = Modifier,
-    onMessageShown: () -> Unit = {}
+    onMessageShown: () -> Unit = {},
+    onToggleOffline: () -> Unit = {}
 ) {
     val content = (state.content as? LoadState.Ready)?.value
     val snackbar = remember { SnackbarHostState() }
@@ -100,6 +110,7 @@ fun AlbumScreen(
             if (content != null && content.canFavourite) {
                 FavouriteButton(content.isFavourite, onToggleFavourite)
             }
+            if (content != null) AlbumMenu(content.tracks, state.isOffline, onToggleOffline)
         }
     ) { inner ->
         LazyColumn(
@@ -116,7 +127,7 @@ fun AlbumScreen(
 
                 is LoadState.Ready -> {
                     val album = load.value
-                    item { AlbumHeader(album, navigator) }
+                    item { AlbumHeader(album, navigator, state.isOffline) }
                     itemsIndexed(album.tracks, key = { i, t -> "$i-${t.id.value}" }) { i, track ->
                         AlbumTrackRow(
                             track = track,
@@ -147,8 +158,24 @@ fun FavouriteButton(isFavourite: Boolean, onToggle: () -> Unit) {
     }
 }
 
+/** The album's menu: keep offline, add to a playlist, export. */
 @Composable
-private fun AlbumHeader(album: AlbumContent, navigator: Navigator) {
+private fun AlbumMenu(tracks: List<TrackTile>, isOffline: Boolean, onToggleOffline: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    IconButton(onClick = { open = true }, modifier = Modifier.testTag(ALBUM_MENU_TAG)) {
+        Icon(
+            painter = painterResource(R.drawable.ic_more),
+            contentDescription = stringResource(R.string.more_options),
+            tint = MaterialTheme.colorScheme.primary
+        )
+    }
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        CollectionMenuItems(tracks, isOffline, onToggleOffline, close = { open = false })
+    }
+}
+
+@Composable
+private fun AlbumHeader(album: AlbumContent, navigator: Navigator, isOffline: Boolean) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -184,6 +211,7 @@ private fun AlbumHeader(album: AlbumContent, navigator: Navigator) {
                 )
         )
         AlbumDetails(album)
+        OfflineNote(isOffline)
         if (album.tracks.isNotEmpty()) {
             PlayShuffleButtons(
                 onPlay = { navigator.play(album.tracks, 0) },
@@ -220,11 +248,16 @@ private fun AlbumDetails(album: AlbumContent) {
 fun AlbumTrackRow(track: TrackTile, number: Int, onClick: () -> Unit) {
     val description = stringResource(R.string.track_description, track.title, track.artist) +
         if (track.isExternal) ", " + stringResource(R.string.not_in_library) else ""
+    val menu = LocalTrackMenu.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = Dimens.MinRowHeight)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
+                onLongClick = { menu(track) }
+            )
             .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS),
         verticalAlignment = Alignment.CenterVertically

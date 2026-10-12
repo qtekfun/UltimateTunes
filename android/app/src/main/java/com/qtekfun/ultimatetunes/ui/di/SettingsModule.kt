@@ -6,10 +6,15 @@ package com.qtekfun.ultimatetunes.ui.di
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
-import com.qtekfun.ultimatetunes.ui.library.NoOfflineDownloads
+import com.qtekfun.ultimatetunes.playback.DownloadsOfflineLibrary
+import com.qtekfun.ultimatetunes.ui.actions.Exports
+import com.qtekfun.ultimatetunes.ui.actions.SafExports
 import com.qtekfun.ultimatetunes.ui.library.OfflineLibrary
+import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
+import com.qtekfun.ultimatetunes.ui.settings.DataStoreAppPrefs
 import com.qtekfun.ultimatetunes.ui.settings.DataStorePlaybackSettings
 import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettingsStore
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -29,12 +34,21 @@ object SettingsModule {
                 context.preferencesDataStoreFile("playback_settings")
             }
         )
+
+    @Provides
+    @Singleton
+    fun appPrefs(@ApplicationContext context: Context): AppPrefsStore = DataStoreAppPrefs(
+        PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("app_prefs") }
+    )
 }
 
-/** Offline downloads arrive with PLAN T17, which replaces this module with its own binding. */
+/** The Library's Downloads list and the export to the phone, from the player (PLAN T17/T18). */
 @Module
 @InstallIn(SingletonComponent::class)
-object OfflineLibraryModule {
-    @Provides
-    fun offlineLibrary(): OfflineLibrary = NoOfflineDownloads
+interface OfflineLibraryModule {
+    @Binds
+    fun offlineLibrary(impl: DownloadsOfflineLibrary): OfflineLibrary
+
+    @Binds
+    fun exports(impl: SafExports): Exports
 }

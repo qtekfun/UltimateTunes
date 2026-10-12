@@ -3,7 +3,6 @@
 
 package com.qtekfun.ultimatetunes.playback
 
-import com.qtekfun.ultimatetunes.core.player.offline.OfflineManager
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.ui.library.OfflineLibrary
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -15,7 +14,7 @@ import kotlinx.coroutines.flow.map
  * The Library's Downloads list from the real offline downloads (RF-12): the songs fully on the
  * phone, newest first. Bound in place of T13's empty `NoOfflineDownloads` (see the PR notes).
  */
-class DownloadsOfflineLibrary @Inject constructor(offline: OfflineManager) : OfflineLibrary {
+class DownloadsOfflineLibrary @Inject constructor(offline: OfflineControls) : OfflineLibrary {
     override val downloads: Flow<List<TrackTile>> = offline.items.map { items ->
         items.filter { it.state == OfflineState.DONE }.map { it.track.toTile() }
     }

@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.ui.imports
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.ErrorKind
+import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.Import
@@ -95,8 +96,14 @@ data class ImportUiState(
     val error: ImportError? = null,
     /** The import being followed (just started, or opened from the history). */
     val current: ImportProgress? = null,
-    val history: LoadState<List<ImportProgress>> = LoadState.Loading
+    val history: LoadState<List<ImportProgress>> = LoadState.Loading,
+    /** Import by YouTube Music link is on (server capability `youtubeMusicImport`). */
+    val urlImport: Boolean = true,
+    /** Import from a file is on (server capability `fileImport`). */
+    val fileImport: Boolean = true
 ) {
+    val anyImport: Boolean get() = urlImport || fileImport
+
     val canImportUrl: Boolean get() = !submitting && url.isNotBlank()
     val canImportFile: Boolean get() = !submitting && file != null
 }
@@ -109,7 +116,10 @@ data class ImportUiState(
  */
 @Suppress("TooManyFunctions") // One function per action of the Import screen.
 @HiltViewModel
-class ImportViewModel @Inject constructor(private val api: TunesApi) : ViewModel() {
+class ImportViewModel @Inject constructor(
+    private val api: TunesApi,
+    private val configSource: ServerConfigSource
+) : ViewModel() {
     private val mutableState = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = mutableState.asStateFlow()
 
@@ -118,6 +128,25 @@ class ImportViewModel @Inject constructor(private val api: TunesApi) : ViewModel
 
     init {
         loadHistory()
+        viewModelScope.launch {
+            historyJob?.join()
+            loadCapabilities()
+        }
+    }
+
+    /** Hides the kinds of import the server has turned off; both stay offered if it cannot say. */
+    private suspend fun loadCapabilities() {
+        val root = configSource.config.value?.root ?: return
+        val info = api.serverInfo(root)
+        if (info is TunesResult.Success) {
+            val capabilities = info.value.capabilities
+            mutableState.update {
+                it.copy(
+                    urlImport = capabilities.youtubeMusicImport,
+                    fileImport = capabilities.fileImport
+                )
+            }
+        }
     }
 
     fun onUrlChange(value: String) {
@@ -243,7 +272,7 @@ class ImportViewModel @Inject constructor(private val api: TunesApi) : ViewModel
                     }
 
                     is TunesResult.Failure -> {
-                        mutableState.update { it.copy(error = errorOf(result, fromFile = false)) }
+                        mutableState.update { it.copy(error = pollErrorOf(result)) }
                         return@launch
                     }
                 }
@@ -289,6 +318,16 @@ class ImportViewModel @Inject constructor(private val api: TunesApi) : ViewModel
 
                 else -> ImportFileFormat.CSV
             }
+        }
+
+        /**
+         * How a failed progress check is explained: nothing the user typed is at fault, so it is
+         * the network, the key, or else a generic server error.
+         */
+        fun pollErrorOf(failure: TunesResult.Failure): ImportError = when (failure) {
+            is TunesResult.NetworkError -> ImportError.NETWORK
+            is TunesResult.Unauthorized, TunesResult.NotConfigured -> ImportError.UNAUTHORIZED
+            is TunesResult.ApiError, is TunesResult.ProtocolError -> ImportError.SERVER
         }
 
         /** How a failed call is explained; [fromFile] tells a bad file from a bad link. */

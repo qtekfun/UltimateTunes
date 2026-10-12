@@ -40,6 +40,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Export to the phone (RF-14) runs as foreground work with a progress notification. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <service
             android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
             android:exported="false"

@@ -14,12 +14,16 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +31,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.actions.LocalCollectionActions
 import com.qtekfun.ultimatetunes.ui.designsystem.AlbumCard
 import com.qtekfun.ultimatetunes.ui.designsystem.ArtistRow
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
@@ -55,7 +60,10 @@ fun DownloadsRoute(
     DownloadsScreen(state, contentPadding, navigator)
 }
 
-/** Library › Downloads: the songs kept for offline listening (filled by PLAN T17). */
+/** Test tag of "Export All". */
+const val DOWNLOADS_EXPORT_TAG = "downloads.export"
+
+/** Library › Downloads: the songs kept for offline listening (RF-12), and "Export All" (RF-14). */
 @Composable
 fun DownloadsScreen(
     state: LoadState<List<TrackTile>>,
@@ -76,9 +84,28 @@ fun DownloadsScreen(
                     )
                 }
             } else {
+                item { ExportAllButton(state.value) }
                 trackList(state.value, keyPrefix = "download", navigator)
             }
         }
+    }
+}
+
+@Composable
+private fun ExportAllButton(tracks: List<TrackTile>) {
+    val actions = LocalCollectionActions.current
+    TextButton(
+        onClick = { actions.export(tracks) },
+        modifier = Modifier
+            .padding(horizontal = Dimens.SpaceS)
+            .testTag(DOWNLOADS_EXPORT_TAG)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_upload),
+            contentDescription = null,
+            modifier = Modifier.padding(end = Dimens.SpaceS)
+        )
+        Text(stringResource(R.string.downloads_export_all))
     }
 }
 
