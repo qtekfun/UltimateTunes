@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from ultimatetunes import __version__, cli
 from ultimatetunes.commands import CommandRegistry
@@ -79,7 +80,20 @@ def test_python_dash_m_prints_the_version() -> None:
 
 def test_secrets_are_read_from_docker_secret_files(tmp_path: Path) -> None:
     """compose.yaml mounts the worker token as /run/secrets/ut_worker_token."""
-    (tmp_path / "ut_worker_token").write_text("token-from-file\n")
+    token = "token-from-file-" + "x" * 32
+    (tmp_path / "ut_worker_token").write_text(token + "\n")
     settings = Settings(_secrets_dir=tmp_path)
     assert settings.worker_token is not None
-    assert settings.worker_token.get_secret_value() == "token-from-file"
+    assert settings.worker_token.get_secret_value() == token
+
+
+@pytest.mark.parametrize("value", ["short", "x" * 31, " " * 40 + "x"])
+def test_a_short_worker_token_is_refused(value: str) -> None:
+    """Audit L4: the shared api/worker token has 32+ characters."""
+    with pytest.raises(ValidationError, match="32"):
+        Settings(worker_token=value)
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_an_empty_worker_token_means_unset(value: str) -> None:
+    assert Settings(worker_token=value).worker_token is None

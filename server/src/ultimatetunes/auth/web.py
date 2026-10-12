@@ -4,7 +4,9 @@
 
 Puts the `AuthService` in `app.state.auth` for the `/ut/v1/keys` routes and the admin panel, and
 creates the first admin from `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD`
-when both are set and there is no user yet.
+when both are set and there is no user yet. The password may be the Docker secret file
+`/run/secrets/ut_bootstrap_admin_password` instead of an env var (`AreaSettings`); once the
+admin exists every start warns until it is removed.
 """
 
 import logging
@@ -37,6 +39,13 @@ def bootstrap_from_env(service: AuthService, settings: AuthSettings) -> bool:
     created = service.bootstrap_admin(username, password.get_secret_value())
     if created:
         log.info("bootstrap admin %s created from the environment", username)
+    else:
+        # Audit L5: the first admin exists, so the password only lingers in the environment
+        # (`docker inspect`, process listings) or a secret file. It is never used again.
+        log.warning(
+            "UT_BOOTSTRAP_ADMIN_PASSWORD is still set but users exist: remove the variable"
+            " (or the bootstrap_admin_password secret) from the deployment"
+        )
     return created
 
 

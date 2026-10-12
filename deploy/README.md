@@ -12,6 +12,43 @@ SPDX-License-Identifier: GPL-3.0-or-later
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
 | `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` LAN/Tailscale-only. |
 
+## Exposing UltimateTunes
+
+1. **Tailscale only is the recommended setup.** `tailscale serve` (`tailscale/README.md`) gives HTTPS inside your tailnet and nothing is reachable from the Internet. Never Tailscale Funnel.
+2. **Public access only through Caddy** (`caddy/Caddyfile`) on the host, with the per-IP rate limits of the `caddy-ratelimit` module enabled (commented out in the example; it needs a custom Caddy build). Caddy is what gives you TLS, a request-header timeout (`read_header`), per-IP request limits and a body cap at the edge; uvicorn has no header timeout of its own.
+3. **Never port-forward 8044** (or 8045) on your router, and never publish `UT_BIND` on a public address: the api must not face the Internet directly.
+4. **Never put a tunnel or another proxy in front of Caddy** (Cloudflare Tunnel, ngrok, an SSH forward, Funnel). Caddy would see the tunnel's local address as every client: the `/admin` rule and every per-IP limit would treat the Internet as your LAN.
+5. **Fresh secrets with `server/compose.yaml`**: `openssl rand -hex 32 > secrets/worker_token` and the same for `secrets/admin_session_secret` (the worker token needs 32+ characters). Never reuse the test stack's token (`server/compose.test.yaml`, public on purpose) or any key or password you used while testing: **revoke every API key** created on a test stack or while trying things out (panel → Keys) and change test passwords before going public.
+6. **Narrow the admin networks.** The default `UT_ADMIN_ALLOWED_NETWORKS` (loopback, every RFC 1918 and ULA range, link-local, Tailscale) is safe but broad. Once it works, narrow it to your tailnet and your LAN's /24, e.g. `UT_ADMIN_ALLOWED_NETWORKS=127.0.0.1/32,::1/128,100.64.0.0/10,fd7a:115c:a1e0::/48,192.168.1.0/24`, and give Caddy the same ranges (`UT_ADMIN_LAN_RANGES`, `UT_ADMIN_TAILNET_RANGES`). Leave the Docker bridge ranges (`172.16.0.0/12`) out of both: other containers on the host live there.
+7. **Firewall the worker** (below) and remove the bootstrap password after the first start (below).
+8. Walk the checklist in `SECURITY.md`.
+
+### Limits of the api itself
+
+The listeners close idle keep-alive connections after `UT_KEEPALIVE_TIMEOUT_S` (5 s), refuse with 503 past `UT_LIMIT_CONCURRENCY` open connections (128; the internal listener `UT_INTERNAL_LIMIT_CONCURRENCY`, 32), queue `UT_BACKLOG` (256) pending connections and refuse request heads over `UT_MAX_HEADER_BYTES` (16 KiB). Bodies: 4 MiB api-wide (`UT_MAX_BODY_BYTES`), 1 MiB for OpenSubsonic form posts and 16 KiB for `POST /ut/v1/keys`. OpenSubsonic form bodies may carry the API key themselves (`formPost`), so they are read before the key is checked; the 1 MiB cap times the concurrency limit bounds that memory, and Caddy's `request_body` caps them at the edge. `server/compose.yaml` also caps the containers (`mem_limit`, `cpus`, open files, PIDs).
+
+### Firewall: the worker reaches the Internet only
+
+The worker runs yt-dlp, which executes extractor code paths on content from the Internet. Its way out is the `egress` network (bridge interface `ut-egress`, subnet `UT_EGRESS_SUBNET`, default `10.213.45.0/24`), and it needs nothing on your LAN. The api already refuses `/admin` to that subnet (`UT_WORKER_NETWORKS`), but block it on the host too, so a compromised worker cannot reach the host's own services (Caddy, a LAN-published `UT_BIND`, SSH) nor your LAN, tailnet or other containers:
+
+```sh
+# New connections from the worker to the host itself:
+sudo iptables -I INPUT -i ut-egress -m conntrack --ctstate NEW -j DROP
+# ...and to private networks (forwarded traffic; Docker's DOCKER-USER chain):
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16; do
+  sudo iptables -I DOCKER-USER -i ut-egress -d "$net" -j DROP
+done
+# If your DNS resolver is on the LAN (e.g. the router 192.168.1.1), allow it, inserted last
+# so it comes first:
+sudo iptables -I DOCKER-USER -i ut-egress -d 192.168.1.1 -p udp --dport 53 -j ACCEPT
+```
+
+With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`, `fd7a:115c:a1e0::/48`). On firewalld or nftables hosts, write the equivalent rules (zone `docker`, or a table hooked before Docker's). Persist them with your distribution's tool. Check from the worker: `docker compose exec worker python -c "import urllib.request; urllib.request.urlopen('http://192.168.1.1', timeout=3)"` must time out, while downloads keep working.
+
+### Bootstrap admin password
+
+`UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.
+
 ## The two listeners
 
 The api serves clients on **8044** and the internal worker API on **8045** (`UT_INTERNAL_PORT`). Publish only 8044. The worker reaches 8045 over the Docker networks (`UT_API_URL=http://api:8045`); the client port answers 404 for `/internal/*`.
@@ -33,13 +70,13 @@ docker network inspect ultimatetunes_default --format '{{(index .IPAM.Config 0).
 UT_TRUSTED_PROXIES=172.18.0.1/32
 ```
 
-Use the single gateway address (`/32`), not the whole `172.16.0.0/12`: other containers on that network could then claim any client address. Check it from a tailnet device: `/admin` opens, and `https://<host>/readyz` shows the `checks` detail only from the tailnet or LAN.
+Use the single gateway address (`/32`), not the whole `172.16.0.0/12`: other containers on that network could then claim any client address. Check it from a tailnet device: `/admin` opens, and `https://<host>/readyz` (through `tailscale serve`; the Caddy example does not route `/readyz` at all) shows the `checks` detail only from the tailnet or LAN.
 
 The per-IP authentication limit and lockout (T04), the audit log and `/readyz` use the same resolved address, so without this setting every client behind the proxy would also share one rate-limit bucket.
 
 ## Hardening already in `server/compose.yaml`
 
-Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port, sharing only the pinned `internal` network with the api (`UT_INTERNAL_SUBNET`, default `10.213.44.0/24`; change it if it overlaps one of your networks), from which `/admin` is refused.
+Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, memory, CPU and open-file limits, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port, sharing only the pinned `internal` network with the api (`UT_INTERNAL_SUBNET`, default `10.213.44.0/24`) and leaving through its own pinned `egress` network (`UT_EGRESS_SUBNET`, default `10.213.45.0/24`); change either if it overlaps one of your networks. `/admin` and the `/readyz` detail are refused to both subnets (`UT_WORKER_NETWORKS`). A new database file is created owner-only (0600).
 
 ## Backups of `/data` (and a restore test)
 

@@ -7,9 +7,13 @@
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
 #   UT_TRUSTED_PROXIES=...           only behind a reverse proxy (deploy/README.md)
 #   UT_INTERNAL_SUBNET=10.213.44.0/24 the api-worker network (change it if it overlaps yours)
-# and two random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
-# (e.g. `openssl rand -hex 32` each).
+#   UT_EGRESS_SUBNET=10.213.45.0/24   the worker's way out (change it if it overlaps yours)
+# and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
+# (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
+# stack's token (compose.test.yaml) here.
 #   docker compose up -d
+# Public exposure: only through Caddy (deploy/README.md, "Exposing UltimateTunes"); never
+# forward port 8044 on your router.
 # Migrations run first (`migrate`), then the api. The worker never touches the database: it
 # talks to the api's internal worker API (token-protected) and needs `default` to reach
 # YouTube Music and MusicBrainz.
@@ -46,10 +50,22 @@ services:
       UT_TRUSTED_PROXIES: ${UT_TRUSTED_PROXIES:-}
       # The worker reaches the api only over `internal`: callers from there never get `/admin`
       # or the `/readyz` detail. Keep it equal to the subnet below.
-      UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24}
+      # Both of the worker's networks: `internal`, and `egress`, from which it could reach the
+      # host's Caddy or a LAN-published UT_BIND (SECURITY.md: the gateway residual).
+      UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24},${UT_EGRESS_SUBNET:-10.213.45.0/24}
+      # Connection limits (settings.py): past UT_LIMIT_CONCURRENCY connections uvicorn answers
+      # 503; idle keep-alive connections close after UT_KEEPALIVE_TIMEOUT_S.
+      UT_LIMIT_CONCURRENCY: ${UT_LIMIT_CONCURRENCY:-128}
+      UT_KEEPALIVE_TIMEOUT_S: ${UT_KEEPALIVE_TIMEOUT_S:-5}
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # Idle about 60-120 MiB (docs/measurements.md); the rest bounds request bodies held at once
+    # (UT_LIMIT_CONCURRENCY x at most 1-4 MiB) and SQLite's page cache.
+    mem_limit: 768m
+    cpus: 2.0
+    ulimits:
+      nofile: {soft: 4096, hard: 4096}
     # Only the client port is published. The internal worker API listens on 8045
     # (UT_INTERNAL_PORT), reachable from the worker over the Docker networks, never published.
     ports: ["${UT_BIND:-127.0.0.1:8044}:8044"]
@@ -64,6 +80,11 @@ services:
       - source: admin_session_secret
         # Signs admin panel sessions (32+ random characters); without it sessions die on restart.
         target: ut_admin_session_secret
+      # First start only (optional): create ./secrets/bootstrap_admin_password, uncomment this
+      # and the secret below, set UT_BOOTSTRAP_ADMIN_USERNAME, start once, then remove all three
+      # and the file (the api warns while it is still set). Never put the password in .env.
+      # - source: bootstrap_admin_password
+      #   target: ut_bootstrap_admin_password
     networks: [default, internal]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
@@ -78,6 +99,9 @@ services:
     # Idle it runs no tool; a job adds yt-dlp (~65 MB) and, on the fallback client, a short-lived
     # Deno process (~330 MB) (spike T03c).
     mem_limit: 768m
+    cpus: 2.0
+    ulimits:
+      nofile: {soft: 1024, hard: 1024}
     depends_on:
       api:
         condition: service_healthy
@@ -101,6 +125,8 @@ secrets:
     file: ./secrets/worker_token
   admin_session_secret:
     file: ./secrets/admin_session_secret
+  # bootstrap_admin_password:
+  #   file: ./secrets/bootstrap_admin_password
 
 networks:
   internal:
@@ -111,6 +137,15 @@ networks:
       config:
         - subnet: ${UT_INTERNAL_SUBNET:-10.213.44.0/24}
   egress:
+    # Pinned so the api can refuse `/admin` to it too (UT_WORKER_NETWORKS): from here the worker
+    # could reach the host (Caddy, a LAN-published UT_BIND). Block this bridge from your LAN on
+    # the host firewall (deploy/README.md).
+    ipam:
+      config:
+        - subnet: ${UT_EGRESS_SUBNET:-10.213.45.0/24}
+    # A fixed interface name for those firewall rules.
+    driver_opts:
+      com.docker.network.bridge.name: ut-egress
 
 volumes:
   data:

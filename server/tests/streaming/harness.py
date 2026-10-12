@@ -29,7 +29,7 @@ from ultimatetunes.errors import InvalidApiKey
 from ultimatetunes.jobs.queue import Claimed, Job, ProgressReport
 from ultimatetunes.settings import Settings
 
-TOKEN = "streaming-test-worker-token"
+TOKEN = "streaming-test-worker-token-0123456789abcdef"
 VIDEO = "Rb8Tn3ZcYv0"  # "Glass Orchard" in the fake catalog
 OTHER_VIDEO = "Wq5Jd7HsKe2"
 ANA = Principal("0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001", "ana", "user", "k-ana")

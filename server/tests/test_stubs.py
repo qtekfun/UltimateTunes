@@ -24,7 +24,7 @@ from ultimatetunes.core.services import build_services
 from ultimatetunes.settings import Settings
 
 OPENAPI = Path(__file__).resolve().parents[2] / "contracts" / "openapi"
-TOKEN = "worker-token-for-tests"
+TOKEN = "worker-token-for-tests-0123456789abcdef"
 
 
 def operations(name: str) -> list[tuple[str, str]]:

@@ -121,3 +121,19 @@ def test_wal_and_foreign_keys_are_on(tmp_path: Path) -> None:
 )
 def test_placeholders_become_format_style(portable: str, psycopg: str) -> None:
     assert to_format_style(portable) == psycopg
+
+
+def test_a_new_database_file_is_owner_only(tmp_path: Path) -> None:
+    """It holds password and key hashes: 0600 whatever the umask, WAL files included."""
+    path = tmp_path / "data" / "ut.db"
+    conn = connect_sqlite(path)
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    wal = path.with_name(path.name + "-wal")
+    assert wal.stat().st_mode & 0o777 == 0o600
+    conn.close()
+    # An existing file keeps its mode (an admin may have chosen 0640 for a backup reader).
+    path.chmod(0o640)
+    connect_sqlite(path).close()
+    assert path.stat().st_mode & 0o777 == 0o640

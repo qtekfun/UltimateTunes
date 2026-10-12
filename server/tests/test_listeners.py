@@ -18,7 +18,7 @@ from ultimatetunes import cli, listeners
 from ultimatetunes.app import create_app
 from ultimatetunes.settings import Settings
 
-TOKEN = "listener-test-token"
+TOKEN = "listener-test-token-0123456789abcdef"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -97,6 +97,12 @@ def test_run_api_serves_two_listeners(settings: Settings, monkeypatch: pytest.Mo
         assert config.server_header is False
         assert config.log_config is None
         assert config.timeout_graceful_shutdown == settings.shutdown_timeout_s
+        assert config.timeout_keep_alive == settings.keepalive_timeout_s == 5
+        assert config.backlog == settings.backlog == 256
+        assert config.h11_max_incomplete_event_size == settings.max_header_bytes == 16384
+        assert config.http == "h11"
+    assert client.limit_concurrency == settings.limit_concurrency == 128
+    assert internal.limit_concurrency == settings.internal_limit_concurrency == 32
     assert isinstance(client.app, listeners.Listener)
     assert not client.app.internal
     assert isinstance(internal.app, listeners.Listener)
