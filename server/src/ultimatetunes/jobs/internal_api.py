@@ -1,45 +1,231 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Internal worker API, jobs and worker status (`/internal/v1/jobs`, `/internal/v1/workers`). Owner:
-PLAN T08.
+"""Internal worker API, jobs and worker status (`/internal/v1/jobs`, `/internal/v1/workers`).
+Owner: PLAN T08. Contract: contracts/openapi/internal-worker.yaml.
 
-T02 stubs: each route answers `not_implemented` (501). The worker token is checked before
-(`internal_api.py`).
+The worker token is checked before (`internal_api.py`). Handlers are thin: the queue
+(`queue.py`) and the state machine (`state.py`) decide; errors are `TunesError`s rendered as
+problems by the app.
 """
 
-from fastapi import APIRouter
-from starlette.responses import Response
+from typing import Annotated, Literal
 
-from ultimatetunes.errors import FeatureNotImplemented
+from fastapi import APIRouter, Path, Request
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+from starlette.responses import JSONResponse, Response
+
+from ultimatetunes.core.clock import format_ts
+from ultimatetunes.core.services import services
+from ultimatetunes.jobs.archive import archive_finalizer
+from ultimatetunes.jobs.queue import Claimed, JobResult, Lease, ProgressReport
+from ultimatetunes.jobs.settings import JobsSettings
+from ultimatetunes.jobs.workers import CanaryResult, WorkerRegistry
 
 router = APIRouter()
 
+JobId = Annotated[str, Path(alias="jobId", min_length=1, max_length=64)]
+WorkerId = Annotated[str, Path(alias="workerId", min_length=1, max_length=100)]
+LeaseSeconds = Annotated[int, Field(ge=15, le=300)]
+StagingPath = Annotated[str, Field(min_length=1, max_length=1024)]
+FailCode = Literal[
+    "video_unavailable",
+    "format_unavailable",
+    "extractor_error",
+    "network_error",
+    "rate_limited_upstream",
+    "tagging_failed",
+    "storage_error",
+    "invalid_video_id",
+    "cancelled",
+    "internal_error",
+]
+
+
+class _Body(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, frozen=True)
+
+
+class ClaimBody(_Body):
+    worker_id: str = Field(min_length=1, max_length=100)
+    kinds: list[Literal["download"]] = Field(default=["download"])
+    lease_seconds: LeaseSeconds = 60
+
+
+class HeartbeatBody(_Body):
+    lease_id: str
+    lease_seconds: LeaseSeconds = 60
+
+
+class ProgressBody(_Body):
+    lease_id: str
+    state: Literal["downloading", "tagging"]
+    progress: float = Field(ge=0, le=1)
+    bytes_downloaded: int = Field(ge=0)
+    expected_size: int | None = Field(ge=1)
+    part_path: StagingPath
+    final_path: StagingPath
+    finished: bool
+    format_id: str = Field(min_length=1, max_length=32)
+    content_type: str = Field(min_length=1, max_length=100)
+    progressive: bool
+
+
+class StagingFile(_Body):
+    path: StagingPath
+    size_bytes: int = Field(ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class CompleteBody(_Body):
+    lease_id: str
+    track_id: str = Field(min_length=1, max_length=64)
+    library_path: str | None = Field(min_length=1, max_length=1024)
+    staging: StagingFile
+
+
+class FailBody(_Body):
+    lease_id: str
+    error_code: FailCode
+    retryable: bool
+    message: str = Field(max_length=2000)
+
+
+class Canary(_Body):
+    at: str = Field(min_length=1, max_length=40)
+    ok: bool
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class WorkerStatusBody(_Body):
+    version: str = Field(max_length=100)
+    ytdlp_version: str = Field(max_length=100)
+    canary: Canary | None = None
+
+
+def _lease(lease: Lease) -> dict[str, object]:
+    return {
+        "leaseId": lease.lease_id,
+        "expiresAt": lease.expires_at,
+        "cancelRequested": lease.cancel_requested,
+    }
+
+
+def _result(result: JobResult) -> dict[str, object]:
+    return {
+        "jobId": result.job_id,
+        "state": result.state,
+        "attempts": result.attempts,
+        "notBefore": result.not_before,
+    }
+
+
+def _claimed(request: Request, claimed: Claimed) -> dict[str, object]:
+    job = claimed.job
+    hints = services(request).jobs.hints(job)
+    return {
+        "job": {
+            "id": job.id,
+            "kind": job.kind,
+            "trackId": job.track_id,
+            "videoId": job.yt_video_id,
+            "attempt": job.attempts,
+            "maxAttempts": job.max_attempts,
+            "priority": job.priority,
+            "stagingDir": job.staging_dir,
+            "hints": {
+                "title": hints.title,
+                "artist": hints.artist_name,
+                "album": hints.album_name,
+                "albumBrowseId": hints.yt_album_browse_id,
+                "artistChannelId": hints.yt_artist_channel_id,
+                "durationMs": hints.duration_ms,
+                "year": hints.year,
+                "trackNumber": hints.track_number,
+                "thumbnailUrl": hints.yt_thumbnail_url,
+            },
+        },
+        "lease": {
+            "leaseId": claimed.lease.lease_id,
+            "expiresAt": claimed.lease.expires_at,
+            "heartbeatSeconds": claimed.lease.heartbeat_s,
+        },
+    }
+
+
+def _settings(request: Request) -> JobsSettings:
+    found = getattr(request.app.state, "jobs_settings", None)
+    return found if isinstance(found, JobsSettings) else JobsSettings()
+
 
 @router.post("/internal/v1/jobs/claim")
-def claim_job() -> Response:
-    raise FeatureNotImplemented()
+def claim_job(request: Request, body: ClaimBody) -> Response:
+    claimed = services(request).jobs.claim(
+        body.worker_id, lease_s=body.lease_seconds, kinds=tuple(dict.fromkeys(body.kinds))
+    )
+    if claimed is None:
+        retry = str(_settings(request).claim_retry_after_s)
+        return Response(status_code=204, headers={"Retry-After": retry})
+    return JSONResponse(_claimed(request, claimed))
 
 
 @router.post("/internal/v1/jobs/{jobId}/heartbeat")
-def heartbeat() -> Response:
-    raise FeatureNotImplemented()
+def heartbeat(request: Request, job_id: JobId, body: HeartbeatBody) -> Response:
+    lease = services(request).jobs.heartbeat(job_id, body.lease_id, lease_s=body.lease_seconds)
+    return JSONResponse(_lease(lease))
 
 
 @router.post("/internal/v1/jobs/{jobId}/progress")
-def report_progress() -> Response:
-    raise FeatureNotImplemented()
+def report_progress(request: Request, job_id: JobId, body: ProgressBody) -> Response:
+    report = ProgressReport(
+        state=body.state,
+        progress=body.progress,
+        bytes_downloaded=body.bytes_downloaded,
+        expected_size=body.expected_size,
+        part_path=body.part_path,
+        final_path=body.final_path,
+        finished=body.finished,
+        format_id=body.format_id,
+        content_type=body.content_type,
+        progressive=body.progressive,
+    )
+    lease = services(request).jobs.progress(job_id, body.lease_id, report)
+    return JSONResponse(_lease(lease))
 
 
 @router.post("/internal/v1/jobs/{jobId}/complete")
-def complete_job() -> Response:
-    raise FeatureNotImplemented()
+def complete_job(request: Request, job_id: JobId, body: CompleteBody) -> Response:
+    svc = services(request)
+    finalize = archive_finalizer(
+        svc.library,
+        track_id=body.track_id,
+        library_path=body.library_path,
+        now=format_ts(svc.clock.now()),
+    )
+    return JSONResponse(_result(svc.jobs.complete(job_id, body.lease_id, finalize)))
 
 
 @router.post("/internal/v1/jobs/{jobId}/fail")
-def fail_job() -> Response:
-    raise FeatureNotImplemented()
+def fail_job(request: Request, job_id: JobId, body: FailBody) -> Response:
+    result = services(request).jobs.fail(
+        job_id,
+        body.lease_id,
+        error_code=body.error_code,
+        retryable=body.retryable,
+        message=body.message,
+    )
+    return JSONResponse(_result(result))
 
 
 @router.put("/internal/v1/workers/{workerId}/status")
-def report_worker_status() -> Response:
-    raise FeatureNotImplemented()
+def report_worker_status(request: Request, worker_id: WorkerId, body: WorkerStatusBody) -> Response:
+    svc = services(request)
+    canary = (
+        None
+        if body.canary is None
+        else CanaryResult(body.canary.at, body.canary.ok, body.canary.message)
+    )
+    commands = WorkerRegistry(svc.db, svc.clock).report(
+        worker_id, version=body.version, ytdlp_version=body.ytdlp_version, canary=canary
+    )
+    return JSONResponse({"commands": commands})
