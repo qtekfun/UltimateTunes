@@ -35,9 +35,14 @@
     npAlbum: el("np-album"),
     lyricsPanel: el("lyrics-panel"),
     lyricsLines: el("lyrics-lines"),
+    npLyrics: el("np-lyrics"),
     queuePanel: el("queue-panel"),
     queueList: el("queue-list"),
   };
+  // Lyrics show in the panel, and beside the artwork in the now-playing view on wide screens.
+  const WIDE = window.matchMedia("(min-width: 1000px)");
+  const lyricLists = [ui.lyricsLines, ui.npLyrics].filter(Boolean);
+
   const text = (name) => player.dataset["t" + name] || "";
   const stateText = (state) => player.getAttribute("data-t-state-" + state) || "";
   const BLANK = "/web/static/blank.svg";
@@ -197,7 +202,7 @@
     watchStatus(song);
     renderQueue();
     markCurrent();
-    if (!ui.lyricsPanel.hidden) {
+    if (lyricsShown()) {
       loadLyrics(song);
     }
   }
@@ -335,6 +340,13 @@
     }
     lastFocus = document.activeElement;
     ui.np.hidden = false;
+    if (lyricsShown()) {
+      loadLyrics(current());
+      if (lyrics) {
+        lyrics.current = -1;
+        followLyrics();
+      }
+    }
     const close = ui.np.querySelector("[data-act=collapse]");
     if (close) {
       close.focus();
@@ -546,16 +558,21 @@
 
   // ------------------------------------------------------------------ lyrics and panels
 
+  function lyricsShown() {
+    return !ui.lyricsPanel.hidden || (!ui.np.hidden && WIDE.matches);
+  }
+
   function loadLyrics(song) {
     if (!song || (lyrics && lyrics.for === song.id)) {
       return;
     }
     lyrics = { for: song.id, synced: false, lines: [], current: -1 };
-    ui.lyricsLines.replaceChildren();
-    const loading = document.createElement("li");
-    loading.className = "muted";
-    loading.textContent = text("Loadinglyrics");
-    ui.lyricsLines.append(loading);
+    lyricLists.forEach((list) => {
+      const loading = document.createElement("li");
+      loading.className = "muted";
+      loading.textContent = text("Loadinglyrics");
+      list.replaceChildren(loading);
+    });
     getJson("/web/api/lyrics/" + encodeURIComponent(song.id))
       .then((data) => {
         if (!lyrics || lyrics.for !== song.id) {
@@ -569,32 +586,35 @@
   }
 
   function renderLyrics() {
-    const list = ui.lyricsLines;
-    list.replaceChildren();
-    list.className = "lyrics " + (lyrics && lyrics.synced ? "synced" : "plain");
-    if (!lyrics || !lyrics.lines.length) {
-      const none = document.createElement("li");
-      none.textContent = text("Nolyrics");
-      list.append(none);
-      return;
-    }
-    lyrics.lines.forEach((line, i) => {
-      const item = document.createElement("li");
-      item.textContent = line.text || "♪";
-      if (lyrics.synced) {
-        // Tap a line to jump to it.
-        item.dataset.act = "lyric";
-        item.dataset.index = String(i);
-        item.tabIndex = 0;
+    lyricLists.forEach((list) => {
+      list.replaceChildren();
+      list.className = "lyrics " + (lyrics && lyrics.synced ? "synced" : "plain");
+      if (!lyrics || !lyrics.lines.length) {
+        const none = document.createElement("li");
+        none.textContent = text("Nolyrics");
+        list.append(none);
+        return;
       }
-      list.append(item);
+      lyrics.lines.forEach((line, i) => {
+        const item = document.createElement("li");
+        item.textContent = line.text || "♪";
+        if (lyrics.synced) {
+          // Tap a line to jump to it.
+          item.dataset.act = "lyric";
+          item.dataset.index = String(i);
+          item.tabIndex = 0;
+        }
+        list.append(item);
+      });
     });
-    lyrics.current = -1;
+    if (lyrics) {
+      lyrics.current = -1;
+    }
     followLyrics();
   }
 
   function followLyrics() {
-    if (!lyrics || !lyrics.synced || ui.lyricsPanel.hidden) {
+    if (!lyrics || !lyrics.synced || !lyricsShown()) {
       return;
     }
     const ms = audio.currentTime * 1000;
@@ -607,15 +627,20 @@
     if (found === lyrics.current) {
       return;
     }
-    const items = ui.lyricsLines.children;
-    if (lyrics.current >= 0 && items[lyrics.current]) {
-      items[lyrics.current].classList.remove("on");
-    }
+    const previous = lyrics.current;
     lyrics.current = found;
-    if (found >= 0 && items[found]) {
-      items[found].classList.add("on");
-      items[found].scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    lyricLists.forEach((list) => {
+      const items = list.children;
+      if (previous >= 0 && items[previous]) {
+        items[previous].classList.remove("on");
+      }
+      if (found >= 0 && items[found]) {
+        items[found].classList.add("on");
+        if (list.offsetParent !== null) {
+          items[found].scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }
+    });
   }
 
   function markPanels() {

@@ -64,10 +64,11 @@
 
 <div id="nowplaying" class="nowplaying" role="dialog" aria-modal="true" aria-label="{{ _("Now playing") }}" hidden>
   <img id="np-bg" class="np-bg" src="/web/static/blank.svg" alt="">
-  <div class="np-inner">
-    <header class="np-head">
+  <header class="np-head">
       <button type="button" class="icon-button" data-act="collapse" aria-label="{{ _("Close now playing") }}" title="{{ _("Close now playing") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
-    </header>
+  </header>
+  <div class="np-inner">
+    <div class="np-main">
     <img id="np-art" class="np-art" src="/web/static/blank.svg" alt="" width="480" height="480">
     <div class="np-meta">
       <h2 id="np-title">{{ _("Not playing") }}</h2>
@@ -91,6 +92,10 @@
       <button type="button" class="pill" data-act="queue" aria-controls="queue-panel" aria-expanded="false">{{ icon_queue|safe }}<span>{{ _("Up next") }}</span></button>
       <button type="button" class="pill" data-act="np-radio">{% include "_icon_radio.html" %}<span>{{ _("Start radio") }}</span></button>
     </div>
+    </div>
+    <section class="np-lyrics" aria-label="{{ _("Lyrics") }}">
+      <ol id="np-lyrics" class="lyrics"></ol>
+    </section>
   </div>
 </div>
 
