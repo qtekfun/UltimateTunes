@@ -123,6 +123,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Android: API key stored encrypted with the Android Keystore; cleartext traffic forbidden in release (debug allows the emulator host only); no secrets in logs.
 
 ## 8. Quality and CI
+(GitHub Actions are disabled and publishing is paused — the same gates run locally with `tools/ci-local.sh`, and releases are local; see §11, coordinator decisions in Wave 1.)
 - CI on every PR: server (ruff, mypy, pytest with coverage, bandit, pip-audit), contracts (OpenAPI validation, migrations apply, schemathesis against the app), Android (`./gradlew check assembleDebug`), Docker (build, Trivy scan, `compose.test.yaml` smoke), gitleaks, store texts, PR title.
 - Nightly: pip-audit, Android instrumented tests on an emulator against the test compose stack. The canary (real ytmusicapi search, radio, album and playlist read + yt-dlp download of one fixed Creative Commons track) runs **scheduled on the server** (api for ytmusicapi, worker for the download; reported in the admin panel); on GitHub it is manual only, because runner IPs get YouTube's bot wall (T03c).
 - Release on tag: signed APK + multi-arch (amd64, arm64) image on GHCR, GitHub Release with notes, APK SHA-256. Updates on the phone through Obtainium.
@@ -196,3 +197,97 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - **Key last use** is written at most once a minute per key and IP.
 - **Disabled user** → error 50.
 - **`POST /ut/v1/keys`** answers with `Cache-Control: no-store`; its body is capped at 16 KiB.
+
+### Taken in Wave 1 — T04 users, keys and auth (#22, 2026-10-12)
+- A stale or revoked key, or a key of a disabled user, does not count towards the IP lockout.
+- Password checks need the client IP: a proxy in front of the api must forward it.
+- OpenSubsonic auth errors carry `helpUrl` pointing to the README `#api-keys` section.
+
+### Taken in Wave 1 — T05 library and browsing (#35, 2026-10-12)
+- `unstar` of a `yt:` id never materializes (overrides the contract text: removing a star must not start a download).
+- `tokenInfo` answers only with `apiKey` auth; `u` + `p` gets error 44.
+- `scrobble` with `submission=false` is stored with `submission = 0`, counts nothing and never materializes.
+- A star `id` that is a library album or artist UUID stars that album or artist (legacy clients).
+- Another user's private playlist is error 70 (not revealed); changing someone else's public one is error 50.
+- The scan never deletes a track whose file is gone (counted as `missing`); removal is an admin action (T15).
+- The scan skips paths reserved by an unfinished job (`jobs.library_path`); the archive flow registers them.
+- Rescans re-read only files whose size changed (no mtime column); after an in-place tag edit that keeps the size, run `ultimatetunes scan-library --full`.
+- Covers: only `image/jpeg`, `image/png`, `image/webp`, `image/gif` are served or cached (`image/jpg` → jpeg), with `X-Content-Type-Options: nosniff`.
+- `/ut/v1/server` reports `streamingWhileDownloading` true only once a real `PendingStreams` is wired (T16).
+
+### Taken in Wave 1 — T06 search (#19, 2026-10-12)
+- The catalog's `requests.Session` allows only `https://music.youtube.com`, sets the 5 s timeout and raises HTTP errors before ytmusicapi parses them; unknown ids are not-found, never a parse error.
+- The circuit breaker opens on 429/403/gated for 5 min, doubling up to 1 h; its state lives in the cache (stateless api) and `breaker_state()` feeds the panel.
+- Library results come first; external results are deduplicated through id resolution (archived videos show as the library song; pending/failed keep `yt:` and `libraryState`). A failing catalog never fails search; an empty `search3` query pages the library only.
+- Text matching uses `search.text.normalize` (NFKD, accents stripped, casefold, punctuation → space); every writer of `*_norm` columns uses it.
+- External albums in `search3` carry `songCount`/`duration` 0 (search gives no track count).
+
+### Taken in Wave 1 — T07 radio and Listen Now (#28, #39, 2026-10-12)
+- A radio seed is a library UUID (merged tracks followed) or a `yt:` id; `getSimilarSongs2` also accepts `ytartist:` and library artist ids and starts from the artist's first top song (a library artist without a channel uses its first library song).
+- A library song seeds with its `yt_video_id`, else its oldest `yt:` alias; a song that never came from YouTube Music uses the first catalog song found for "title artist".
+- `getSimilarSongs2` leaves the song seed out; `count` defaults to 50, is capped at 100, and `count=0` does not call the catalog.
+- Listing a radio materializes nothing. `UT_RADIO=false` makes radio answer `FeatureDisabled`. The catalog guard returns at most 50 songs per seed.
+- A `search3` query over 200 characters is `InvalidParameter` (error 0). Thumbnails are accepted only when the netloc is exactly an approved host (no port, no userinfo).
+- `CatalogClientError` marks refused requests and is never retried.
+- Listen Now is library-only. `favouriteRadios` holds starred songs only (as the contract says); the Android Radio tab adds one station per `mostPlayed` song after them.
+
+### Taken in Wave 1 — T08 download worker (#24, 2026-10-12)
+- Retry backoff 30 s / 2 min / 8 min ±20 %; `expectedSize` and `formatId` are fixed per attempt; the previous attempt's format and size are kept (migration `0300`) so T16 knows whether a retry changes the stream.
+- A new request re-queues a `failed`/`cancelled` job with attempts reset (one track, one job per video). Request bodies are parsed only after the token check, so callers without the token always get 401.
+- Worker: lease lost → work dropped without `fail`; SIGTERM → retryable release; bot wall → claiming paused 30 min, doubling to 4 h; `extractor_error` → yt-dlp update at most hourly; status report every 5 min.
+- yt-dlp self-update follows hops by hand from the approved hosts only, with size caps, `gpgv` VALIDSIG against the pinned fingerprint, SHA-256, a `--version` smoke test and an atomic symlink swap; two previous releases are kept.
+
+### Taken in Wave 1 — T09 tagging and archive (#37, 2026-10-12)
+- Archive: Opus is remuxed to Ogg/Opus `.opus`, AAC to M4A with `+faststart`; source metadata dropped, `+bitexact`; any other codec is `tagging_failed`, not retried. ffmpeg/ffprobe run with `-nostdin`, `-protocol_whitelist file`, `file:<absolute path>` inputs, a minimal env and a timeout.
+- ReplayGain 2.0 at -18 LUFS from ffmpeg `ebur128`; silence gets 0 dB, gains clamped to ±51 dB; album gain from the album's files concatenated (best effort); Opus files also get `R128_*` tags. Library files are retagged through a temporary copy and a rename.
+- MusicBrainz: 1 req/s, User-Agent with version and repo URL, no redirects, answers ≤ 2 MiB, one retry on 503/429 (`Retry-After` ≤ 10 s). Score = 0.45 title + 0.35 artist + 0.20 duration; below `UT_MUSICBRAINZ_MIN_SCORE` (0.85) the YT Music data is kept and `needs_review` is set. A lookup failure never fails a job.
+- Covers: CAA release front, then release-group front, then the YouTube thumbnail; CAA redirects followed by hand (HTTPS, `coverartarchive.org`/`archive.org`/`*.archive.org`, ≤ 3 hops); JPEG body ≤ 5 MiB; any failure means "no cover"; an existing `cover.jpg` is kept.
+- Layout `AlbumArtist/Album/NN - Title.ext` (`D-NN` on later discs, `Title.ext` without a number); names NFKC, `/\:*?"<>|` → `_`, control/invisible characters dropped, leading/trailing dots and spaces stripped, Windows reserved names prefixed with `_`, ≤ 180 bytes per component. A `conflict` retries once with ` (<videoId>)`.
+- **Adoption**: a file already at `libraryPath` that no track owns and whose SHA-256 matches is the job's own file from a crashed attempt; register adopts it and the worker skips the move (contracts updated).
+
+### Taken in Wave 1 — T10 lyrics (#18, 2026-10-12)
+- A `yt:` id without an alias answers an empty list and LRCLIB is not asked.
+- LRC `[offset:]` and the row's `offset_ms` are applied to `start`, so `offset` is never sent.
+- LRCLIB failure with nothing stored → error 0 (`UpstreamUnavailable`); with a stale negative entry → empty list.
+- Settings: `UT_LYRICS_TIMEOUT_S`, `UT_LYRICS_RATE_PER_S`, `UT_LYRICS_BURST`, `UT_LYRICS_NOT_FOUND_RETRY_DAYS`, `UT_LYRICS_FAILURE_BACKOFF_S`.
+
+### Taken in Wave 1 — T11 playlist import (#31, 2026-10-12)
+- Imports run as response background tasks through `InFlight`; all state is in the database, and an active import untouched for 120 s resumes when its owner reads it.
+- Matching is text-only (title, artists, album) with a hard ±3 s duration rule and a 0.7 threshold; ATV wins ties; ISRC is recorded only.
+- A Spotify data-export JSON with several playlists needs `name` (case-insensitive) to pick one; the same field names the result.
+- All imports share one catalog bucket (0.5 req/s, burst 1) and a user runs at most 3 at once; catalog outages pause and resume instead of failing items.
+- A matched item whose track is not archived yet shows as the `yt:` external item with its `libraryState`.
+
+### Taken in Wave 1 — T12 Android shell (#23, 2026-10-12)
+- Own design system (warm red accent, system sans-serif, local vector icons shaped after Material icons); no Apple assets or fonts.
+- Connect keeps the server only after `GET /ut/v1/server` and `GET /ut/v1/me` succeed; https by default.
+- Coil loads covers through the `@TunesHttpClient` OkHttp client (cover URLs carry no key).
+
+### Taken in Wave 1 — T13 Android screens (#33, 2026-10-12)
+- Playback settings (cache size, offline only, Wi-Fi-only downloads) live in a Preferences DataStore (`PlaybackSettingsStore`); T17 reads it, and replaces the empty `OfflineLibrary` binding with Media3 downloads.
+- "Add to playlist", long-press menus, starring from rows and capability-based hiding of import kinds are T18.
+
+### Taken in Wave 1 — T14 release pipeline (#21, 2026-10-12)
+- `release.yml` has a dry-run mode (manual dispatch and PRs touching the pipeline, release tools or `VERSION`) that builds everything, arm64 image included, and publishes nothing; only a tag push publishes.
+- The image is pushed only after the APK built and was verified (signature, `versionName`, `versionCode`); release notes come from CHANGELOG via `tools/release-notes.sh`.
+
+### Taken in Wave 1 — T15 admin panel (#38, 2026-10-12)
+- Admin sessions are stateless itsdangerous-signed cookies with a password-hash fingerprint, expiry from the injected clock and the CSRF token inside; login uses a signed double-submit token.
+- Default admin allowlist: loopback, RFC 1918, link-local, IPv6 ULA, Tailscale `100.64.0.0/10` and `fd7a:115c:a1e0::/48`; anything else gets 403 first.
+- Notification target (ntfy or webhook, https, no credentials, never loopback, link-local, unspecified, multicast or `localhost`, checked on save and on every send) and the sweep cursor live in the `settings` table; the cursor moves by compare-and-set, so one replica sends.
+- QR: own encoder (byte mode, level M, versions 1–10), payload per `contracts/ids.md`, server URL https only and ≤ 120 characters.
+- Library deletes: rows first, files best effort; refused while a lease is held.
+
+### Taken in Wave 1 — track registration (#42, integration, 2026-10-12)
+- `registerTrack` merges into a `ready` track with the same MusicBrainz recording id (`merged: true`, applied by `complete`); otherwise artist and album are reused by MusicBrainz id, else YouTube id, else normalized name.
+- The staging file must be inside the job's `stagingDir` and have the registered size; the answer carries the album state so the worker can compute album gain.
+- `jobs.placed_path`/`placed_sha256` (migration `0301`) survive a release, so a crashed attempt is adopted on retry and a retry that merges or picks another path deletes the earlier file if still unowned and unchanged.
+
+### Taken in Wave 1 — demo mode (#36, 2026-10-12)
+- Debug builds only: "Try the demo" starts a MockWebServer on `127.0.0.1` inside the app with an invented library, reached through the real `TunesApi` stack and Connect checks; release builds have only an optional `DemoServer` hook bound to nothing.
+
+### Taken by the coordinator in Wave 1 (2026-10-12)
+- **GitHub Actions are disabled**: the author wants no spending and everything lives on the homelab. The workflows stay in the repo.
+- A merge needs `tools/ci-local.sh` green on the PR branch merged with master (it includes the Conventional Commit PR-title check, same rule as `pr-title.yml`), plus the independent review without blocking findings.
+- No publishing to GHCR or GitHub Releases and no release tags until the author decides otherwise; releases are built locally (RELEASING.md).
+- Open option: self-hosted GitHub Actions runners on the homelab.
