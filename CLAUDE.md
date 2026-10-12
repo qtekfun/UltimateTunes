@@ -57,7 +57,7 @@ tools/       Repo scripts (store texts, worktrees, version code)
 - Never log secrets, API keys, passwords, cookies, full request URLs with `apiKey`/`p` parameters, or YouTube cookies. Redact in the logging filter, with a test.
 - Every subprocess (yt-dlp, ffmpeg) is called with an **argument list**, never `shell=True`, never with unvalidated input; video ids match `^[A-Za-z0-9_-]{11}$`.
 - Every filesystem path built from metadata goes through the path sanitizer (100 % coverage) and must stay inside `/music` or `/staging`.
-- Import URLs: allowlist of hosts (YouTube, YouTube Music, Spotify). No server-side request to arbitrary URLs (SSRF).
+- Import URLs: allowlist of hosts (YouTube, YouTube Music); Spotify URLs are rejected in v1 (Spotify playlists come as uploaded files). No server-side request to arbitrary URLs (SSRF).
 - Admin endpoints: admin role, session cookie `HttpOnly`/`Secure`/`SameSite=Strict`, CSRF token, network allowlist (LAN/Tailscale by default). Every admin endpoint has a test that a non-admin gets 403.
 - Containers run as non-root with a read-only root filesystem; secrets only from env vars or Docker secrets.
 - Nothing is exposed to the Internet until PLAN T22 is done. Proof of concept: Tailscale only (`tailscale serve` gives HTTPS).
