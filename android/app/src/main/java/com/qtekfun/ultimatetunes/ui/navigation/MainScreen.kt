@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,16 +48,29 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import com.qtekfun.ultimatetunes.ui.library.LibraryScreen
+import com.qtekfun.ultimatetunes.ui.album.AlbumRoute
+import com.qtekfun.ultimatetunes.ui.artist.ArtistRoute
+import com.qtekfun.ultimatetunes.ui.imports.ImportRoute
+import com.qtekfun.ultimatetunes.ui.library.AlbumsRoute
+import com.qtekfun.ultimatetunes.ui.library.ArtistsRoute
+import com.qtekfun.ultimatetunes.ui.library.DownloadsRoute
+import com.qtekfun.ultimatetunes.ui.library.FavouritesRoute
+import com.qtekfun.ultimatetunes.ui.library.LibraryRoute
 import com.qtekfun.ultimatetunes.ui.listennow.ListenNowRoute
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsViewModel
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.player.FullPlayer
 import com.qtekfun.ultimatetunes.ui.player.MiniPlayer
 import com.qtekfun.ultimatetunes.ui.player.PlayerActions
+import com.qtekfun.ultimatetunes.ui.player.PlayerUiState
 import com.qtekfun.ultimatetunes.ui.player.PlayerViewModel
+import com.qtekfun.ultimatetunes.ui.playlists.PlaylistRoute
+import com.qtekfun.ultimatetunes.ui.playlists.PlaylistsRoute
 import com.qtekfun.ultimatetunes.ui.radio.RadioRoute
 import com.qtekfun.ultimatetunes.ui.radio.StationRoute
-import com.qtekfun.ultimatetunes.ui.search.SearchScreen
+import com.qtekfun.ultimatetunes.ui.search.SearchRoute
+import com.qtekfun.ultimatetunes.ui.settings.SettingsRoute
 
 /** Key of the artwork shared between the mini and the full player. */
 private const val SHARED_ARTWORK_KEY = "player.artwork"
@@ -68,9 +82,13 @@ private const val SHARED_ARTWORK_KEY = "player.artwork"
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun MainScreen(playerViewModel: PlayerViewModel = hiltViewModel()) {
+fun MainScreen(
+    playerViewModel: PlayerViewModel = hiltViewModel(),
+    lyricsViewModel: LyricsViewModel = hiltViewModel()
+) {
     val navController = rememberNavController()
     val player by playerViewModel.state.collectAsStateWithLifecycle()
+    val lyrics = lyricsHooks(lyricsViewModel)
     var expanded by rememberSaveable { mutableStateOf(false) }
     val hasTrack = player.current != null
     val actions = remember(playerViewModel) { PlayerActions.of(playerViewModel) }
@@ -83,23 +101,12 @@ fun MainScreen(playerViewModel: PlayerViewModel = hiltViewModel()) {
                 contentWindowInsets = WindowInsets(0),
                 bottomBar = {
                     Column {
-                        AnimatedVisibility(
+                        MiniPlayerBar(
                             visible = hasTrack && !expanded,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            MiniPlayer(
-                                state = player,
-                                actions = actions,
-                                onOpen = { expanded = true },
-                                artworkModifier = Modifier.sharedElement(
-                                    sharedContentState = rememberSharedContentState(
-                                        SHARED_ARTWORK_KEY
-                                    ),
-                                    animatedVisibilityScope = this
-                                )
-                            )
-                        }
+                            player = player,
+                            actions = actions,
+                            onOpen = { expanded = true }
+                        )
                         TabBar(navController)
                     }
                 }
@@ -119,6 +126,7 @@ fun MainScreen(playerViewModel: PlayerViewModel = hiltViewModel()) {
                     state = player,
                     actions = actions,
                     onCollapse = { expanded = false },
+                    lyrics = lyrics,
                     artworkModifier = Modifier.sharedElement(
                         sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
                         animatedVisibilityScope = this
@@ -127,6 +135,39 @@ fun MainScreen(playerViewModel: PlayerViewModel = hiltViewModel()) {
             }
         }
     }
+}
+
+/** The mini player above the tab bar, its artwork shared with the full player. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun SharedTransitionScope.MiniPlayerBar(
+    visible: Boolean,
+    player: PlayerUiState,
+    actions: PlayerActions,
+    onOpen: () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically()
+    ) {
+        MiniPlayer(
+            state = player,
+            actions = actions,
+            onOpen = onOpen,
+            artworkModifier = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
+                animatedVisibilityScope = this
+            )
+        )
+    }
+}
+
+/** The lyrics of the full player, from the activity-wide [LyricsViewModel]. */
+@Composable
+private fun lyricsHooks(viewModel: LyricsViewModel): LyricsHooks {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    return LyricsHooks(state = state, onShow = viewModel::show, onRetry = viewModel::retry)
 }
 
 @Composable
@@ -172,35 +213,60 @@ private fun TabsNavHost(
         navController = navController,
         startDestination = Tab.LISTEN_NOW.route
     ) {
-        navigation(route = Tab.LISTEN_NOW.route, startDestination = Tab.LISTEN_NOW.home) {
-            composable(Tab.LISTEN_NOW.home) {
-                ListenNowRoute(
-                    contentPadding = contentPadding,
-                    onPlay = onPlay,
-                    onOpenStation = { navController.navigate(Tab.LISTEN_NOW.station(it)) }
-                )
+        Tab.entries.forEach { tab ->
+            navigation(route = tab.route, startDestination = tab.home) {
+                composable(tab.home) {
+                    TabHome(tab, contentPadding, rememberNavigator(tab, navController, onPlay))
+                }
+                details(tab, navController, contentPadding, onPlay)
+                if (tab == Tab.LIBRARY) libraryPages(tab, navController, contentPadding, onPlay)
             }
-            station(Tab.LISTEN_NOW, navController, contentPadding, onPlay)
-        }
-        navigation(route = Tab.RADIO.route, startDestination = Tab.RADIO.home) {
-            composable(Tab.RADIO.home) {
-                RadioRoute(
-                    contentPadding = contentPadding,
-                    onOpenStation = { navController.navigate(Tab.RADIO.station(it)) }
-                )
-            }
-            station(Tab.RADIO, navController, contentPadding, onPlay)
-        }
-        navigation(route = Tab.LIBRARY.route, startDestination = Tab.LIBRARY.home) {
-            composable(Tab.LIBRARY.home) { LibraryScreen(contentPadding) }
-        }
-        navigation(route = Tab.SEARCH.route, startDestination = Tab.SEARCH.home) {
-            composable(Tab.SEARCH.home) { SearchScreen(contentPadding) }
         }
     }
 }
 
-private fun NavGraphBuilder.station(
+/** The first screen of [tab]. */
+@Composable
+private fun TabHome(tab: Tab, contentPadding: PaddingValues, navigator: Navigator) {
+    when (tab) {
+        Tab.LISTEN_NOW -> ListenNowRoute(
+            contentPadding = contentPadding,
+            onPlay = navigator.play,
+            onOpenStation = navigator.openStation,
+            onOpenAlbum = navigator.openAlbum
+        )
+
+        Tab.RADIO -> RadioRoute(
+            contentPadding = contentPadding,
+            onOpenStation = navigator.openStation
+        )
+
+        Tab.LIBRARY -> LibraryRoute(contentPadding, navigator)
+
+        Tab.SEARCH -> SearchRoute(contentPadding, navigator)
+    }
+}
+
+/** Where screens inside [tab] go: always inside the same tab. */
+@Composable
+private fun rememberNavigator(
+    tab: Tab,
+    navController: NavHostController,
+    onPlay: (List<TrackTile>, Int) -> Unit
+): Navigator = remember(tab, navController, onPlay) {
+    Navigator(
+        back = { navController.popBackStack() },
+        play = onPlay,
+        openAlbum = { navController.navigate(tab.album(it)) },
+        openArtist = { navController.navigate(tab.artist(it)) },
+        openPlaylist = { navController.navigate(tab.playlist(it)) },
+        openStation = { navController.navigate(tab.station(it)) },
+        openPage = { navController.navigate(Tab.LIBRARY.page(it)) }
+    )
+}
+
+/** Stations, albums, artists and playlists, inside [tab]. */
+private fun NavGraphBuilder.details(
     tab: Tab,
     navController: NavHostController,
     contentPadding: PaddingValues,
@@ -212,5 +278,37 @@ private fun NavGraphBuilder.station(
             onBack = { navController.popBackStack() },
             onPlay = onPlay
         )
+    }
+    composable(tab.albumPattern) {
+        AlbumRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+    }
+    composable(tab.artistPattern) {
+        ArtistRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+    }
+    composable(tab.playlistPattern) {
+        PlaylistRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+    }
+}
+
+/** The Library's pages, Import and Settings. */
+private fun NavGraphBuilder.libraryPages(
+    tab: Tab,
+    navController: NavHostController,
+    contentPadding: PaddingValues,
+    onPlay: (List<TrackTile>, Int) -> Unit
+) {
+    LibraryPage.entries.forEach { page ->
+        composable(tab.page(page)) {
+            val navigator = rememberNavigator(tab, navController, onPlay)
+            when (page) {
+                LibraryPage.PLAYLISTS -> PlaylistsRoute(contentPadding, navigator)
+                LibraryPage.ARTISTS -> ArtistsRoute(contentPadding, navigator)
+                LibraryPage.ALBUMS -> AlbumsRoute(contentPadding, navigator)
+                LibraryPage.FAVOURITES -> FavouritesRoute(contentPadding, navigator)
+                LibraryPage.DOWNLOADS -> DownloadsRoute(contentPadding, navigator)
+                LibraryPage.IMPORT -> ImportRoute(contentPadding, navigator)
+                LibraryPage.SETTINGS -> SettingsRoute(contentPadding, navigator)
+            }
+        }
     }
 }
