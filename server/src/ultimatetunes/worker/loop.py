@@ -159,14 +159,41 @@ class Worker:
         if self.paused_until > now:
             return min(self.paused_until - now, self.settings.poll_interval_s)
         try:
-            claimed = await self.api.claim(self.worker_id, self.settings.lease_s)
+            claimed = await self._claim(stop)
         except (ApiUnavailableError, TunesError) as exc:
             log.warning("worker %s: claim failed: %s", self.worker_id, exc)
             return self.settings.poll_interval_s
+        if claimed is None:  # stopping
+            return 0.0
         if isinstance(claimed, NoJob):
-            return claimed.retry_after_s or self.settings.poll_interval_s
+            if claimed.retry_after_s is None:
+                return self.settings.poll_interval_s
+            return claimed.retry_after_s
         await self.process(claimed, stop or anyio.Event())
         return 0.0
+
+    async def _claim(self, stop: anyio.Event | None) -> ClaimedJob | NoJob | None:
+        """The claim, abandoned (None) when `stop` is set while the api holds it (long poll):
+        a stopping worker does not wait for it, and the api hands nothing to a closed one."""
+        if stop is None:
+            return await self.api.claim(self.worker_id, self.settings.lease_s)
+        claimed: ClaimedJob | NoJob | None = None
+        error: ApiUnavailableError | TunesError | None = None
+        async with anyio.create_task_group() as tg:
+
+            async def cancel_on_stop() -> None:
+                await stop.wait()
+                tg.cancel_scope.cancel()
+
+            tg.start_soon(cancel_on_stop)
+            try:
+                claimed = await self.api.claim(self.worker_id, self.settings.lease_s)
+            except (ApiUnavailableError, TunesError) as exc:  # raised below, not as a group
+                error = exc
+            tg.cancel_scope.cancel()
+        if error is not None:
+            raise error
+        return claimed
 
     # ------------------------------------------------------------ one job
 
@@ -377,7 +404,7 @@ def build_worker(settings: Settings, worker: WorkerSettings, client: httpx.Async
     token = settings.worker_token.get_secret_value() if settings.worker_token else ""
     if not token:
         log.error("UT_WORKER_TOKEN is not set: the api will refuse every call")
-    api = HttpWorkerApi(client, token, retries=worker.api_retries)
+    api = HttpWorkerApi(client, token, retries=worker.api_retries, claim_wait_s=worker.claim_wait_s)
     runtime: Runtime | None = None
     downloader: Downloader
     if settings.fake_youtube:
@@ -412,6 +439,8 @@ def run_worker(
 ) -> int:
     worker_settings = worker_settings or WorkerSettings()
     stop = stop or threading.Event()
+    # httpx logs every request at INFO: one line per idle claim is noise (issue #55).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     def _on_signal(signum: int, _frame: FrameType | None) -> None:
         log.info("worker: signal %s received, stopping", signum)

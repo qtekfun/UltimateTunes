@@ -75,7 +75,9 @@ class ClaimedJob:
 
 @dataclass(frozen=True)
 class NoJob:
-    retry_after_s: float
+    # `Retry-After` of the 204: 0 after a long poll (claim again at once), None when the api
+    # did not say.
+    retry_after_s: float | None
 
 
 @dataclass(frozen=True)
@@ -164,6 +166,15 @@ def problem_error(response: httpx.Response) -> TunesError:
     return cls(str(detail or f"api answered {response.status_code}"))
 
 
+def _retry_after(value: str | None) -> float | None:
+    """Delay seconds of a `Retry-After` header; None when missing or not a delay."""
+    try:
+        retry = float(value) if value is not None else None
+    except ValueError:
+        return None
+    return retry if retry is not None and retry >= 0 else None
+
+
 class HttpWorkerApi:
     """`WorkerApi` over httpx. Pass `client` to reuse one (tests use an ASGI transport)."""
 
@@ -174,20 +185,34 @@ class HttpWorkerApi:
         *,
         retries: int = 3,
         sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
+        claim_wait_s: int = 0,
     ) -> None:
         self._client = client
         self._headers = {"Authorization": f"Bearer {token}"}
         self._retries = retries
         self._sleep = sleep
+        self._claim_wait_s = claim_wait_s
+
+    def _timeout_plus(self, extra_s: float) -> httpx.Timeout:
+        """The client's timeout with `extra_s` more to read the answer (a long poll)."""
+        base = self._client.timeout
+        read = None if base.read is None else base.read + extra_s
+        return httpx.Timeout(connect=base.connect, read=read, write=base.write, pool=base.pool)
 
     async def _call(
-        self, method: str, path: str, body: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        held_s: float = 0,
     ) -> httpx.Response:
         delay = 0.5
+        timeout = self._timeout_plus(held_s) if held_s > 0 else httpx.USE_CLIENT_DEFAULT
         for attempt in range(self._retries + 1):
             try:
                 response = await self._client.request(
-                    method, path, json=body, headers=self._headers
+                    method, path, json=body, headers=self._headers, timeout=timeout
                 )
             except httpx.TransportError as exc:
                 failure = f"{type(exc).__name__}"
@@ -204,17 +229,19 @@ class HttpWorkerApi:
         raise ApiUnavailableError(f"{method} {path}: {failure}")
 
     async def claim(self, worker_id: str, lease_s: int) -> ClaimedJob | NoJob:
+        body: dict[str, Any] = {
+            "workerId": worker_id,
+            "kinds": ["download"],
+            "leaseSeconds": lease_s,
+        }
+        if self._claim_wait_s > 0:
+            # Long poll (issue #55): the api holds the claim until a job is queued.
+            body["waitSeconds"] = self._claim_wait_s
         response = await self._call(
-            "POST",
-            "/internal/v1/jobs/claim",
-            {"workerId": worker_id, "kinds": ["download"], "leaseSeconds": lease_s},
+            "POST", "/internal/v1/jobs/claim", body, held_s=self._claim_wait_s
         )
         if response.status_code == httpx.codes.NO_CONTENT:
-            try:
-                retry = float(response.headers.get("retry-after", "0"))
-            except ValueError:
-                retry = 0.0
-            return NoJob(retry)
+            return NoJob(_retry_after(response.headers.get("retry-after")))
         raw = response.json()
         job, lease = raw["job"], raw["lease"]
         return ClaimedJob(
