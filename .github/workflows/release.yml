@@ -84,8 +84,8 @@ jobs:
             echo "image=ghcr.io/${OWNER,,}/ultimatetunes-server"
           } >> "$GITHUB_OUTPUT"
 
-      # A tag, and a release PR (branch release/*), must carry the CHANGELOG section and the store
-      # changelogs of the version. Other dry runs only warn (VERSION is not bumped there).
+      # A tag, a release PR (branch release/*) and a manual dry run on a release/* branch must carry
+      # the CHANGELOG section and the store changelogs of the version. Other dry runs only warn.
       - name: Release notes and store changelogs
         env:
           VERSION: ${{ steps.v.outputs.version }}
