@@ -153,9 +153,10 @@ Notes:
   `ffmpeg` and `gpgv`.
 - **`migrate`** is a separate command so Kubernetes can run it as a Job later; the api only
   checks the schema version at start (`/readyz` fails while it is behind).
-- **Other commands** of the same entrypoint, run by hand with `docker compose run --rm api ...`:
-  `bootstrap-admin <name>` (first admin, password on the terminal), `scan-library`,
-  `canary`.
+- **Other commands** of the same entrypoint, run by hand: `docker compose run --rm api ...` for
+  `bootstrap-admin <name>` (first admin, password on the terminal), `scan-library` and
+  `canary --only catalog`; `docker compose run --rm worker canary` for the full canary, since
+  only the worker has yt-dlp (`/opt/ytdlp`) and talks to `www.youtube.com`.
 - **Test stack** (`server/compose.test.yaml`): built from source (`ultimatetunes-server:test`),
   `UT_FAKE_YOUTUBE=true` (fake catalog and fake downloader: nothing leaves the host), a fixed
   public worker token in the environment instead of a secret, the worker only on `internal` (no

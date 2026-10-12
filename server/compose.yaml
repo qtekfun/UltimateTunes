@@ -117,8 +117,8 @@ services:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
-    # `internal` reaches the api; `egress` is its own way out to YouTube Music and MusicBrainz,
-    # so the worker shares no other network with the api.
+    # `internal` reaches the api; `egress` is its own way out (yt-dlp to www.youtube.com,
+    # MusicBrainz, Cover Art Archive, GitHub), so the worker shares no other network with the api.
     networks: [egress, internal]
 
 secrets:
