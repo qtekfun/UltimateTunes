@@ -1,0 +1,5 @@
+﻿Track URI,ISRC,Track Name,Album Name,Artist Name(s),Release Date,Duration (ms),Popularity,Explicit,Added By,Added At,Genres,Record Label,Danceability
+spotify:track:0aaaaaaaaaaaaaaaaaaaa1,QZDEF2600001,"Paper Canyon","Salt & Cedar","Marisol Vega;Guest Singer",2024-01-01,209400,10,false,someone,2026-01-01T00:00:00Z,"indie","Label"
+spotify:track:0aaaaaaaaaaaaaaaaaaaa2,undefined,"Copper Static","Salt & Cedar","The Paper Lanterns",2024-01-01,177000,10,false,someone,2026-01-01T00:00:00Z,"","undefined"
+spotify:local:x,undefined,"","","",,0,0,false,someone,2026-01-01T00:00:00Z,"",""
+spotify:track:0aaaaaaaaaaaaaaaaaaaa3,,"Unheard Of Song","Nowhere","Nobody Known",2024-01-01,200000,1,false,someone,2026-01-01T00:00:00Z,"",""

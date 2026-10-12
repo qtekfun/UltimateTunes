@@ -1,0 +1,52 @@
+{
+  "playlists": [
+    {
+      "name": "Road Trip",
+      "lastModifiedDate": "2026-01-01",
+      "description": null,
+      "numberOfFollowers": 0,
+      "items": [
+        {
+          "track": {
+            "trackName": "Neon Orchard",
+            "artistName": "Ivy & the Owls",
+            "albumName": "Harbour Lights",
+            "trackUri": "spotify:track:0bbbbbbbbbbbbbbbbbbbb1"
+          },
+          "episode": null,
+          "audiobook": null,
+          "localTrack": null,
+          "addedDate": "2026-01-01"
+        },
+        {
+          "track": null,
+          "episode": {
+            "episodeName": "A Podcast",
+            "showName": "Show",
+            "episodeUri": "spotify:episode:x"
+          },
+          "audiobook": null,
+          "localTrack": null,
+          "addedDate": "2026-01-01"
+        },
+        {
+          "track": {
+            "trackName": "Paper Canyon",
+            "artistName": "Marisol Vega",
+            "albumName": "Salt & Cedar",
+            "trackUri": "spotify:track:0bbbbbbbbbbbbbbbbbbbb2"
+          },
+          "episode": null,
+          "audiobook": null,
+          "localTrack": null,
+          "addedDate": "2026-01-01"
+        }
+      ]
+    },
+    {
+      "name": "Gym",
+      "lastModifiedDate": "2026-01-01",
+      "items": []
+    }
+  ]
+}

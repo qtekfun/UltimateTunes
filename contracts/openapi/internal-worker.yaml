@@ -24,10 +24,12 @@ info:
     - An expired lease returns the job to `queued` on the next claim (attempt counted, error `lease_expired`), or
       to `failed` when its attempts are used up (the track is then marked `failed` too), or to `cancelled` when an
       admin asked for it. So a killed worker never blocks a job, and another worker retries it.
-    - **Each attempt has its own staging directory**, `stagingDir` = `<jobId>/<attempt>`. The worker writes only
-      there and never touches another attempt's directory, so a worker that lost its lease but is still running
-      can never write into the file of the next attempt. The api deletes old attempt directories once no listener
-      reads them (it owns staging cleanup).
+    - **Each attempt has its own staging directory**, `stagingDir` = `<jobId>/<attemptSeq>`, where `attemptSeq`
+      is a per-job sequence (`jobs.attempt_seq`) that every claim increments and that **never resets**, not even
+      when a new request re-queues a failed job and resets its retry budget (`attempt`, `attempts`). The worker
+      writes only there and never touches another attempt's directory, so a worker that lost its lease but is
+      still running can never write into the file of a later attempt, even after a re-request. The api deletes
+      old attempt directories once no listener reads them (it owns staging cleanup).
 
     ## Job state machine (100 % coverage, PLAN T08)
     `queued → downloading → tagging → ready`. Any state with a lease can go to `failed`, or back to `queued` (retry
@@ -808,7 +810,8 @@ components:
         attempt:
           type: integer
           minimum: 1
-          description: 1 on the first try.
+          description: 1 on the first try of the current retry budget (a new request after a failure starts
+            again at 1). Not the staging directory number, see `stagingDir`.
         maxAttempts:
           type: integer
           minimum: 1
@@ -816,8 +819,9 @@ components:
           type: integer
         stagingDir:
           $ref: '#/components/schemas/RelativePath'
-          description: Directory under `/staging` reserved for this attempt (`<jobId>/<attempt>`). The worker writes
-            only there, and never into another attempt's directory.
+          description: Directory under `/staging` reserved for this attempt (`<jobId>/<attemptSeq>`, a per-job
+            sequence that never resets, so it is unique even across re-requests). The worker writes only there, and
+            never into another attempt's directory.
         hints:
           $ref: '#/components/schemas/JobHints'
     Claimed:

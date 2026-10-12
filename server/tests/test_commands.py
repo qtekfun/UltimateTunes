@@ -11,8 +11,14 @@ from ultimatetunes.settings import Settings
 
 
 def test_every_area_registers_its_commands() -> None:
-    names = [spec.name for spec in build_registry().specs()]
-    assert names == ["api", "migrate", "worker"]
+    specs = build_registry().specs()
+    names = [spec.name for spec in specs]
+    # The core set is always there; areas (e.g. auth's bootstrap-admin) add their own without
+    # editing this test.
+    assert {"api", "migrate", "worker"} <= set(names)
+    assert names[:2] == ["api", "migrate"]
+    assert len(names) == len(set(names))
+    assert all(spec.help.strip() for spec in specs)
     assert AREAS[0] == "ultimatetunes.cli"
 
 
