@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Your real settings and any secret files never go into the repository.
+.env
+secrets/

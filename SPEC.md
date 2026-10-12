@@ -103,7 +103,7 @@ The user can **export** tracks, albums or playlists that are fully available on 
 
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
-- Bottom bar with 4 tabs: **Listen Now, Radio, Library, Search**; a **mini player** pinned above it that expands into the full player with a shared-element transition.
+- Bottom bar with 4 tabs: **Listen Now, Radio, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
 - Large rounded artwork grids, bold titles, generous spacing; large-title headers that collapse on scroll.
 - Full player: big artwork, **colours from the artwork** (Palette) and a blurred artwork background, scrubber, queue sheet.
 - Lyrics full-screen, active line highlighted, auto-scroll, tap a line to seek (when the track is in the library).
@@ -322,3 +322,6 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken in Wave 2 — track request and status (#49, integration, 2026-10-12)
 - `POST /ut/v1/tracks/{id}/request` checks a `yt:` id in the catalog before writing, enqueues at `keep` (or `prefetch`) priority, answers 202 (200 when `ready`); a failed or cancelled track is queued again with its attempts reset.
 - `GET /ut/v1/tracks/{id}/status`: `not_requested` for an unknown `yt:` id or a pending track without a job, `ready` for a library file without a job, else the job's state; `streamable` comes from the streaming state machine.
+
+### Taken by the author — full player transition (#64, 2026-10-12)
+- The author found the shared-element close animation ugly on the Pixel 8 (the mini player expanded and the tabs reflowed under the closing player). The full player now slides fully up and down (320 ms) as a sheet that follows the finger; past 120 dp or on a fast flick it closes. The mini player keeps its place while the full player is open, which is hidden from TalkBack. The shared-element artwork transition is dropped (§5 updated); the author accepted trying it and changing it again if it does not convince.
