@@ -20,6 +20,7 @@ from pydantic import SecretStr
 
 from tests.jobs.test_queue import add_track
 from ultimatetunes.app import create_app
+from ultimatetunes.canary.worker import build_canary_worker
 from ultimatetunes.commands import CommandRegistry
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import Services, build_services
@@ -598,17 +599,18 @@ async def test_build_worker_picks_the_downloader(settings: Settings) -> None:
 
 
 def test_worker_command_runs_the_loop(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[Settings] = []
+    seen: list[tuple[Settings, Any]] = []
 
-    def run_stub(s: Settings) -> int:
-        seen.append(s)
+    def run_stub(s: Settings, *, factory: Any) -> int:
+        seen.append((s, factory))
         return 0
 
     monkeypatch.setattr(loop, "run_worker", run_stub)
     registry = CommandRegistry()
     worker_cli.register(registry)
     assert registry.get("worker").run(settings, []) == 0
-    assert seen == [settings]
+    # The production worker carries the download canary (T19).
+    assert seen == [(settings, build_canary_worker)]
 
 
 def test_worker_settings_come_from_ut_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:

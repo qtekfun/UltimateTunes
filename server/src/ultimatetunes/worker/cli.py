@@ -7,9 +7,11 @@ from ultimatetunes.settings import Settings
 
 
 def _worker(settings: Settings) -> int:
-    from ultimatetunes.worker.loop import run_worker  # noqa: PLC0415 - only this role needs it
+    # Only this role needs them.
+    from ultimatetunes.canary.worker import build_canary_worker  # noqa: PLC0415
+    from ultimatetunes.worker.loop import run_worker  # noqa: PLC0415
 
-    return run_worker(settings)
+    return run_worker(settings, factory=build_canary_worker)
 
 
 def register(registry: CommandRegistry) -> None:

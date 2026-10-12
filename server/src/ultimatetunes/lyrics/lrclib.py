@@ -17,6 +17,7 @@ Both errors are `UpstreamUnavailable`, so they map to OpenSubsonic error 0 if th
 import json
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 
 import httpx
 
@@ -105,6 +106,12 @@ def parse_record(body: bytes) -> LrclibRecord:
         plain_lyrics=_optional_text(document, "plainLyrics"),
         synced_lyrics=_optional_text(document, "syncedLyrics"),
     )
+
+
+class LyricsSource(Protocol):
+    """Looks up one record (`LrclibClient`, or `FakeLrclib` in the test stack)."""
+
+    def get(self, query: LrclibQuery) -> LrclibRecord | None: ...
 
 
 class LrclibClient:
