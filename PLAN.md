@@ -73,14 +73,19 @@ Rules: one task per branch `feat/tNN-<slug>`, its gates green before the PR (`ma
   - *Result:* reached 2026-10-12: T04–T15 merged; GitHub Actions disabled, merges gated by `tools/ci-local.sh` + independent review (SPEC §11).
 
 ## Wave 2 — Parallel build (3 subagents)
-- [ ] **T16 [E] Streaming while downloading**: `stream` of `yt:` ids tees `/staging` while the job runs (per T03a), `InFlight` registry, several listeners on one download, no seek on partial, clean error on failure, alias `yt:` → library id once archived; streaming state machine **100 %**. Depends T05, T08.
+- [x] **T16 [E] Streaming while downloading**: `stream` of `yt:` ids tees `/staging` while the job runs (per T03a), `InFlight` registry, several listeners on one download, no seek on partial, clean error on failure, alias `yt:` → library id once archived; streaming state machine **100 %**. Depends T05, T08.
   - *Verification:* integration test with the fake downloader writing slowly; two clients on the same track; failure mid-stream.
-- [ ] **T17 [G] Android playback**: Media3 `MediaSessionService`, `SimpleCache` LRU 2 GB configurable, cache policy (**100 %**), queue **prefetch** planner (**100 %**: request next track on the server + preload), offline downloads (Media3 downloads, separate from cache; playlists/albums marked offline stay in sync via WorkManager, RF-12), first-play status polling, ReplayGain applied, real server connection with encrypted API key. Depends T12, T05.
+  - *Result:* merged #44 (with #49: `/ut/v1/tracks/{id}/request|status`); streaming state machine 100 %.
+- [x] **T17 [G] Android playback**: Media3 `MediaSessionService`, `SimpleCache` LRU 2 GB configurable, cache policy (**100 %**), queue **prefetch** planner (**100 %**: request next track on the server + preload), offline downloads (Media3 downloads, separate from cache; playlists/albums marked offline stay in sync via WorkManager, RF-12), first-play status polling, ReplayGain applied, real server connection with encrypted API key. Depends T12, T05.
   - *Verification:* unit tests of cache/prefetch; instrumented test against the test stack: play, cache hit on replay with network off.
-- [ ] **T18 [G] Android features wired**: radio queue, synced lyrics with seek, favourites, playlists, play queue sync, import screen, settings, **export to the phone** (RF-14: SAF folder picker, original files with tags, progress notification, skips tracks not fully available). Depends T17. *Verification:* UI tests on the fake server; manual run on the author's phone noted in the PR.
-- [ ] **T19 [J] Contract tests and canary**: schemathesis against the real app for every contract, XML and JSON; OpenSubsonic compatibility checks with one third-party client (manual matrix in `docs/compat.md`); canary (one fixed Creative Commons track) scheduled on the server with alert, GitHub job manual only (T03c). Depends T05, T06.
+  - *Result:* merged #47; instrumented playback tests green on the author's Pixel 8 (in-process server).
+- [x] **T18 [G] Android features wired**: radio queue, synced lyrics with seek, favourites, playlists, play queue sync, import screen, settings, **export to the phone** (RF-14: SAF folder picker, original files with tags, progress notification, skips tracks not fully available). Depends T17. *Verification:* UI tests on the fake server; manual run on the author's phone noted in the PR.
+  - *Result:* merged #50; 32 instrumented tests green on the Pixel 8; manual run against a real server moved to T20/T23.
+- [x] **T19 [J] Contract tests and canary**: schemathesis against the real app for every contract, XML and JSON; OpenSubsonic compatibility checks with one third-party client (manual matrix in `docs/compat.md`); canary (one fixed Creative Commons track) scheduled on the server with alert, GitHub job manual only (T03c). Depends T05, T06.
   - *Verification:* CI job green; the server canary runs green against the test stack config (a run on GitHub is best effort: runner IPs get the bot wall).
-- [ ] **Checkpoint 2** — report.
+  - *Result:* merged #45; canary wired into the api and the worker by #49; canary track license confirmation pending from the author.
+- [x] **Checkpoint 2** — report.
+  - *Result:* reached 2026-10-12: T16–T19 merged; the repo is public and GitHub Actions CI is back on (free minutes); Release and Nightly stay disabled.
 
 ## Wave 3 — Integration and hardening (coordinator, sequential)
 - [ ] **T20 End-to-end**: compose test stack + emulator: search → play external → archived → replay from disk → offline from cache; two users; worker killed mid-download. *Verification:* `e2e` workflow green.
