@@ -452,28 +452,26 @@ class Registrar:
         library_path = self._library.check(check_relative(body.library_path))
         staging_path = check_relative(body.staging_path)
         now = format_ts(self._clock.now())
+        # Hashed once, outside the write transaction (no write lock held while reading the file).
+        staged_sha = self._staged_sha256(body, staging_path, now)
         try:
             with self._db.transaction() as conn:
-                return self._register(conn, body, library_path, staging_path, now)
+                return self._register(
+                    conn, body, library_path, staging_path, now, staged_sha=staged_sha
+                )
         except IntegrityError:
             pass
         # A concurrent register wrote a unique row (a path, an artist, an album) between our
         # lookups and our writes: once more, the lookups now see it.
         try:
             with self._db.transaction() as conn:
-                return self._register(conn, body, library_path, staging_path, now)
+                return self._register(
+                    conn, body, library_path, staging_path, now, staged_sha=staged_sha
+                )
         except IntegrityError as exc:
             raise Conflict("libraryPath is held by another job") from exc
 
-    def _register(
-        self,
-        conn: Connection,
-        body: RegisterBody,
-        library_path: str,
-        staging_path: str,
-        now: str,
-    ) -> Registered:
-        job = self._leased(conn, body.job_id, body.lease_id, now)
+    def _check_staging(self, job: _Job, body: RegisterBody, staging_path: str) -> None:
         if body.track_id != job.track_id:
             raise Conflict("trackId is not the job's track")
         if not staging_path.startswith(f"{job.staging_dir}/"):
@@ -482,12 +480,32 @@ class Registrar:
             self._staging.size(staging_path) != body.file.size_bytes
         ):
             raise Conflict("the staging file is missing or has another size")
-        # The api hashes the staging file itself: a compromised worker cannot make it adopt
-        # another file by reporting that file's hash (SECURITY.md, T22).
+
+    def _staged_sha256(self, body: RegisterBody, staging_path: str, now: str) -> str:
+        """The api hashes the staging file itself: a compromised worker cannot make it adopt
+        another file by reporting that file's hash (SECURITY.md, T22). Read-only lookups first,
+        so a bad lease or path is refused before any file is read."""
+        with self._db.read() as conn:
+            job = self._leased(conn, body.job_id, body.lease_id, now)
+        self._check_staging(job, body, staging_path)
         try:
-            staged_sha = file_sha256(self._staging, staging_path)
+            return file_sha256(self._staging, staging_path)
         except OSError as exc:
             raise Conflict("the staging file is not readable") from exc
+
+    def _register(  # noqa: PLR0913 - one registration
+        self,
+        conn: Connection,
+        body: RegisterBody,
+        library_path: str,
+        staging_path: str,
+        now: str,
+        *,
+        staged_sha: str,
+    ) -> Registered:
+        job = self._leased(conn, body.job_id, body.lease_id, now)
+        # Again under the write lock: the lease and the file may have changed meanwhile.
+        self._check_staging(job, body, staging_path)
         if staged_sha != body.file.sha256:
             raise Conflict("the staging file does not match sha256")
         meta = body.metadata
