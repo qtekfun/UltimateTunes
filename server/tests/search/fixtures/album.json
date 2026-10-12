@@ -1,0 +1,21 @@
+{"title": "Lanterns at Dusk", "type": "Album", "year": "2024", "trackCount": 3,
+ "duration": "11 minutes", "duration_seconds": 717, "isExplicit": false,
+ "audioPlaylistId": "OLAK5uy_fakeLanternsAtDusk0123456789abcdef",
+ "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}],
+ "description": "An invented album.",
+ "thumbnails": [
+   {"url": "https://yt3.googleusercontent.com/fakeDusk=w226-h226-l90-rj", "width": 226, "height": 226},
+   {"url": "https://yt3.googleusercontent.com/fakeDusk=w544-h544-l90-rj", "width": 544, "height": 544}],
+ "tracks": [
+   {"videoId": "Fk2Lp9QwXa1", "title": "Low Tide Letters", "trackNumber": 1, "album": "Lanterns at Dusk",
+    "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}], "videoType": "MUSIC_VIDEO_TYPE_ATV",
+    "isAvailable": true, "isExplicit": false, "duration": "3:34", "duration_seconds": 214,
+    "views": "1.2M plays", "thumbnails": null, "creditsBrowseId": "MPTCfakeCredits1"},
+   {"videoId": "Rb8Tn3ZcYv0", "title": "Glass Orchard", "trackNumber": 2, "album": "Lanterns at Dusk",
+    "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}], "videoType": "MUSIC_VIDEO_TYPE_OMV",
+    "isAvailable": true, "isExplicit": false, "duration": "3:18", "duration_seconds": 198,
+    "views": "800K plays", "thumbnails": null},
+   {"videoId": "Wq5Jd7HsKe2", "title": "Night Ferry", "trackNumber": 3, "album": "Lanterns at Dusk",
+    "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}], "videoType": "MUSIC_VIDEO_TYPE_ATV",
+    "isAvailable": false, "isExplicit": false, "duration": "5:05", "duration_seconds": 305,
+    "views": null, "thumbnails": null}]}

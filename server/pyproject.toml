@@ -15,6 +15,8 @@ dependencies = [
   "mutagen>=1.47",
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
+  # Outbound HTTP (LRCLIB, MusicBrainz, Cover Art Archive, cover proxy; SPEC §6).
+  "httpx>=0.28",
   "python-multipart>=0.0.20",
   "uvicorn>=0.34",
   # Runs in the api only (SPEC §11, T03b). yt-dlp is not a Python dependency: the worker runs
@@ -29,7 +31,6 @@ ultimatetunes = "ultimatetunes.cli:main"
 dev = [
   "anyio>=4.8",
   "bandit>=1.8",
-  "httpx>=0.28",
   "mypy>=1.15",
   "openapi-spec-validator>=0.7",
   "pip-audit>=2.8",
