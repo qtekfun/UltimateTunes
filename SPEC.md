@@ -95,9 +95,11 @@ Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radi
 ### RF-12 Client cache and offline
 Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). Offline: only cached and downloaded content is browsable; search needs the server.
 
-
 ### RF-13 Notifications from the server
 Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows no server-pushed notifications: only playback (MediaSession), download/sync and export progress notifications (POST_NOTIFICATIONS on Android 13+ is the one permission this adds).
+
+### RF-14 Export to the phone
+The user can **export** tracks, albums or playlists that are fully available on the phone as **library tracks** (offline downloads, or library tracks completely in the cache; bytes cached under a `yt:` id from a first play are not exported because they predate tagging) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
@@ -139,8 +141,6 @@ Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/L
 
 ## 11. Decisions
 
-### RF-14 Export to the phone
-The user can **export** tracks, albums or playlists that are fully available on the phone as **library tracks** (offline downloads, or library tracks completely in the cache; bytes cached under a `yt:` id from a first play are not exported because they predate tagging) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 ### Open
 - License: GPL-3.0-or-later like the family, or **AGPL-3.0-or-later** for the server (it is network software)? For now GPL-3.0-or-later.
 - How to treat versions of the same song (live, remix, radio edit)? For now: different tracks.
