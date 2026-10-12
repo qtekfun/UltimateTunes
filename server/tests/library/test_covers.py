@@ -312,3 +312,26 @@ def test_cover_cache_ttl_and_size_cap(tmp_path: Path) -> None:
     cache.put("yt:c", b"new", "image/gif")
     assert cache.get("yt:c") == (b"new", "image/gif")
     assert len([p for p in (tmp_path / "covers").iterdir() if p.name.startswith(".")]) == 0
+
+
+@respx.mock
+def test_uncached_external_covers_spend_the_callers_catalog_budget(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UT_CATALOG_USER_BURST", "2")
+    monkeypatch.setenv("UT_CATALOG_USER_RATE_PER_S", "0.001")
+    route = respx.get(url__regex=r"https://i\.ytimg\.com/vi/.*").mock(
+        return_value=httpx.Response(200, content=JPEG, headers={"Content-Type": "image/jpeg"})
+    )
+    assert cover(lib, "yt:Qx7Lm2pZ0aB").status_code == 200
+    assert cover(lib, "yt:Fk2Lp9QwXa1").status_code == 200
+    refused = cover(lib, "yt:Rb8Tn3ZcYv0")
+    assert refused.status_code == 429
+    assert int(refused.headers["retry-after"]) > 0
+    assert route.call_count == 2
+    # Cached covers cost nothing, and another user has a budget of its own.
+    assert cover(lib, "yt:Qx7Lm2pZ0aB").status_code == 200
+    other = lib.client.get(
+        "/rest/getCoverArt", params={"apiKey": "utk_bob", "f": "json", "id": "yt:Rb8Tn3ZcYv0"}
+    )
+    assert other.status_code == 200

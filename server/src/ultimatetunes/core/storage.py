@@ -70,6 +70,10 @@ class FileStore(Protocol):
 
     def usage(self) -> Usage: ...
 
+    def free_bytes(self) -> int:
+        """Bytes free for new files (the abuse limits' `UT_MIN_FREE_BYTES` check)."""
+        ...
+
 
 class StagingStore(FileStore, Protocol):
     """Partial downloads, one directory per job (`<jobId>/`). Shared by api and worker."""
@@ -183,6 +187,9 @@ class LocalStore:
     def usage(self) -> Usage:
         total, used, free = shutil.disk_usage(self.root)
         return Usage(total, used, free)
+
+    def free_bytes(self) -> int:
+        return shutil.disk_usage(self.root).free
 
 
 class LocalStagingStore(LocalStore):
