@@ -1,0 +1,1 @@
+Primera versión de prueba. Puedes conectarte a tu servidor UltimateTunes y ver Escuchar ahora y Radio. La reproducción llega en las próximas versiones.
