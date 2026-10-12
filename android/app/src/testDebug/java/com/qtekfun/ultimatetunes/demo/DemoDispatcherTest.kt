@@ -10,8 +10,12 @@ import com.qtekfun.ultimatetunes.core.api.TunesApiFactory
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.AlbumListType
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
+import com.qtekfun.ultimatetunes.core.api.model.ImportFileFormat
+import com.qtekfun.ultimatetunes.core.api.model.ImportSource
+import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.test.runTest
 import mockwebserver3.MockWebServer
@@ -26,7 +30,15 @@ import org.junit.jupiter.api.Test
 /** The demo server answers every screen's call through the real client. */
 class DemoDispatcherTest {
     private val key = "utk_" + "d".repeat(43)
-    private val clock = Clock.fixed(Instant.parse("2026-10-01T12:00:00Z"), ZoneOffset.UTC)
+    private val clock = object : Clock() {
+        var now: Instant = Instant.parse("2026-10-01T12:00:00Z")
+
+        override fun instant(): Instant = now
+
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+
+        override fun withZone(zone: ZoneId?): Clock = this
+    }
     private val server = MockWebServer()
     private lateinit var source: InMemoryServerConfigSource
     private lateinit var api: TunesApi
@@ -114,6 +126,62 @@ class DemoDispatcherTest {
         assertEquals(first, api.playQueue().value()?.current)
         api.scrobble(first).value()
         api.requestTrack(first).value()
+    }
+
+    @Test
+    fun `an import progresses and ends in a playlist`() = runTest {
+        val history = api.imports().value()
+        assertEquals(1, history.size)
+        assertEquals(ImportState.DONE, history.single().state)
+        val playlistsBefore = api.playlists().value().size
+
+        val created = api.createImport("https://music.youtube.com/playlist?list=x", "Mine").value()
+        assertEquals(ImportState.QUEUED, created.state)
+
+        clock.now = clock.now.plusSeconds(6)
+        val halfway = api.import(created.id).value()
+        assertEquals(ImportState.MATCHING, halfway.state)
+        assertTrue(halfway.progress > 0.0 && halfway.progress < 1.0, halfway.toString())
+
+        clock.now = clock.now.plusSeconds(10)
+        val done = api.import(created.id).value()
+        assertEquals(ImportState.DONE, done.state)
+        assertEquals(done.total, done.matched + done.notFound)
+        assertTrue(done.notFound > 0)
+        val playlist = api.playlist(checkNotNull(done.playlistId)).value()
+        assertEquals("Mine", playlist.name)
+        assertEquals(done.matched, playlist.entry.size)
+        assertEquals(playlistsBefore + 1, api.playlists().value().size)
+        assertEquals(2, api.imports().value().size)
+    }
+
+    @Test
+    fun `a file import is accepted`() = runTest {
+        val created = api.createFileImport(
+            "title,artist\nA,B\n".encodeToByteArray(),
+            "list.csv",
+            ImportFileFormat.CSV,
+            "From a file"
+        ).value()
+        assertEquals(ImportSource.CSV, created.source)
+        assertEquals("From a file", created.name)
+        assertTrue(api.createImport("not a url") is TunesResult.ApiError)
+    }
+
+    @Test
+    fun `a playlist song can be removed and the playlist renamed`() = runTest {
+        val playlist = api.playlists().value().first()
+        val before = api.playlist(playlist.id).value().entry
+        api.updatePlaylist(playlist.id, name = "Renamed", songIndexesToRemove = listOf(0)).value()
+        val after = api.playlist(playlist.id).value()
+        assertEquals("Renamed", after.name)
+        assertEquals(before.drop(1), after.entry)
+    }
+
+    @Test
+    fun `keys can be listed and revoked`() = runTest {
+        assertTrue(api.listKeys().value().keys.single().current)
+        api.revokeKey(api.listKeys().value().keys.single().id).value()
     }
 
     @Test

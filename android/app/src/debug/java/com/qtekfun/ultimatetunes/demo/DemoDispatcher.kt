@@ -11,7 +11,9 @@ import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndex
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
 import com.qtekfun.ultimatetunes.core.api.model.Capabilities
+import com.qtekfun.ultimatetunes.core.api.model.Import
 import com.qtekfun.ultimatetunes.core.api.model.ImportList
+import com.qtekfun.ultimatetunes.core.api.model.ImportSource
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.Me
@@ -40,6 +42,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -65,6 +70,14 @@ internal class DemoDispatcher(
     private val startedAt = clock.instant()
     private val lock = Any()
     private val playlists = DemoPlaylists.initial(startedAt).toMutableList()
+    private val imports = DemoImports(clock) { done ->
+        createPlaylist(
+            done.name ?: "Imported Playlist",
+            done.items.mapNotNull {
+                it.track?.id?.value
+            }
+        ).id
+    }
     private val starredSongs = DemoCatalog.mostPlayed.take(4).map { it.id.value }.toMutableSet()
     private var playQueue: PlayQueue? = null
 
@@ -123,7 +136,17 @@ internal class DemoDispatcher(
 
             "GET listen-now" -> ok(ListenNow.serializer(), listenNow())
 
-            "GET imports" -> ok(ImportList.serializer(), ImportList(emptyList()))
+            "GET imports" -> ok(
+                ImportList.serializer(),
+                ImportList(
+                    imports.list(query("limit")?.toIntOrNull(), query("offset")?.toIntOrNull())
+                )
+            )
+
+            "POST imports" -> createImport(request)
+
+            "GET imports/*" -> imports.get(id)?.let { ok(Import.serializer(), it) }
+                ?: problem(404, "not_found", "No such import in the demo")
 
             else -> problem(501, "not_implemented", "The demo does not do this")
         }
@@ -141,8 +164,8 @@ internal class DemoDispatcher(
             externalSearch = true,
             radio = true,
             lyrics = true,
-            youtubeMusicImport = false,
-            fileImport = false,
+            youtubeMusicImport = true,
+            fileImport = true,
             streamingWhileDownloading = false
         )
     )
@@ -286,7 +309,15 @@ internal class DemoDispatcher(
             }
 
             "updatePlaylist" -> {
-                updatePlaylist(param("playlistId").orEmpty(), param("name"), all("songIdToAdd"))
+                updatePlaylist(
+                    param("playlistId").orEmpty(),
+                    PlaylistChange(
+                        name = param("name"),
+                        comment = param("comment"),
+                        add = all("songIdToAdd"),
+                        remove = all("songIndexToRemove").mapNotNull(String::toIntOrNull).toSet()
+                    )
+                )
                 envelope {}
             }
 
@@ -389,17 +420,66 @@ internal class DemoDispatcher(
         playlist
     }
 
-    private fun updatePlaylist(id: String, name: String?, add: List<String>) = synchronized(lock) {
+    private class PlaylistChange(
+        val name: String?,
+        val comment: String?,
+        val add: List<String>,
+        val remove: Set<Int>
+    )
+
+    private fun updatePlaylist(id: String, change: PlaylistChange) = synchronized(lock) {
         val index = playlists.indexOfFirst { it.id.value == id }
         if (index >= 0) {
             val old = playlists[index]
+            val kept = old.entry.filterIndexed { i, _ -> i !in change.remove }
             playlists[index] = DemoPlaylists.of(
                 id = old.id,
-                name = name ?: old.name,
-                songs = old.entry + add.mapNotNull(DemoCatalog::song),
+                name = change.name ?: old.name,
+                songs = kept + change.add.mapNotNull(DemoCatalog::song),
                 at = clock.instant(),
-                comment = old.comment
+                comment = change.comment ?: old.comment
             )
+        }
+    }
+
+    /** `POST /ut/v1/imports`: a playlist URL (JSON) or an uploaded file (multipart). */
+    private fun createImport(request: RecordedRequest): MockResponse {
+        val text = request.body?.utf8().orEmpty()
+        val multipart = request.headers["Content-Type"].orEmpty().startsWith("multipart/")
+        val import = if (multipart) fileImport(text) else urlImport(text)
+        return if (import == null) {
+            problem(400, "invalid_parameter", "Not a playlist URL or a known file format")
+        } else {
+            MockResponse(
+                code = 202,
+                headers = headersOf(
+                    "Content-Type",
+                    "application/json",
+                    "Location",
+                    "/ut/v1/imports/${import.id.value}"
+                ),
+                body = json.encodeToString(Import.serializer(), import)
+            )
+        }
+    }
+
+    private fun fileImport(text: String): Import? {
+        val source = when (formField(text, "format")) {
+            "csv" -> ImportSource.CSV
+            "exportify_csv" -> ImportSource.EXPORTIFY_CSV
+            "spotify_json" -> ImportSource.SPOTIFY_JSON
+            else -> null
+        }
+        return source?.let { imports.create(it, null, formField(text, "name")) }
+    }
+
+    private fun urlImport(text: String): Import? {
+        val body = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
+        val url = body?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf {
+            it.startsWith("https://")
+        }
+        return url?.let {
+            imports.create(ImportSource.YTMUSIC, it, body["name"]?.jsonPrimitive?.contentOrNull)
         }
     }
 
@@ -517,6 +597,16 @@ internal class DemoDispatcher(
         val SONGS = ListSerializer(Song.serializer())
         val PLAYLISTS = ListSerializer(Playlist.serializer())
         val LYRICS = ListSerializer(Lyrics.serializer())
+
+        /** The value of the multipart field [name] (for a file part, its content), or null. */
+        fun formField(body: String, name: String): String? {
+            val part = Regex(
+                "Content-Disposition: form-data; name=\"$name\"[^\r\n]*\r\n(?:[^\r\n]+\r\n)*\r\n"
+            )
+            val start = part.find(body)?.range?.last?.plus(1) ?: return null
+            val end = body.indexOf("\r\n--", start)
+            return if (end < 0) null else body.substring(start, end)
+        }
 
         /** Query parameters plus a `formPost` body. */
         fun paramsOf(request: RecordedRequest): Map<String, List<String>> {
