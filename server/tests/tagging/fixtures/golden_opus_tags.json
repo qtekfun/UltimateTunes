@@ -1,0 +1,68 @@
+{
+  "ALBUM": [
+    "Lanterns at Dusk"
+  ],
+  "ALBUMARTIST": [
+    "The Paper Lanterns"
+  ],
+  "ARTIST": [
+    "The Paper Lanterns"
+  ],
+  "ARTISTSORT": [
+    "Paper Lanterns, The"
+  ],
+  "DATE": [
+    "2024"
+  ],
+  "DISCNUMBER": [
+    "1"
+  ],
+  "DISCTOTAL": [
+    "1"
+  ],
+  "GENRE": [
+    "Indie Pop"
+  ],
+  "ISRC": [
+    "XXA012400004"
+  ],
+  "MUSICBRAINZ_ALBUMARTISTID": [
+    "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01"
+  ],
+  "MUSICBRAINZ_ALBUMID": [
+    "4d6f8a0c-3e5a-4b7c-8f9a-1b3d5f7a9c02"
+  ],
+  "MUSICBRAINZ_ARTISTID": [
+    "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01"
+  ],
+  "MUSICBRAINZ_RELEASEGROUPID": [
+    "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e04"
+  ],
+  "MUSICBRAINZ_RELEASETRACKID": [
+    "3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a07"
+  ],
+  "MUSICBRAINZ_TRACKID": [
+    "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d01"
+  ],
+  "R128_TRACK_GAIN": [
+    "-3290"
+  ],
+  "RELEASETYPE": [
+    "live"
+  ],
+  "REPLAYGAIN_TRACK_GAIN": [
+    "-7.85 dB"
+  ],
+  "REPLAYGAIN_TRACK_PEAK": [
+    "0.993000"
+  ],
+  "TITLE": [
+    "Paper Moons (Live)"
+  ],
+  "TRACKNUMBER": [
+    "4"
+  ],
+  "TRACKTOTAL": [
+    "9"
+  ]
+}

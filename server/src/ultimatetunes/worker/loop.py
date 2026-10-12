@@ -45,7 +45,7 @@ from ultimatetunes.core.storage import (
 )
 from ultimatetunes.errors import LeaseLost, NotFound, TunesError, WorkerErrorCode
 from ultimatetunes.settings import Settings
-from ultimatetunes.worker.archiver import Archiver, ArchiveRequest, PendingArchiver
+from ultimatetunes.worker.archiver import Archiver, ArchiveRequest, default_archiver
 from ultimatetunes.worker.client import (
     ApiUnavailableError,
     ClaimedJob,
@@ -394,7 +394,7 @@ def build_worker(settings: Settings, worker: WorkerSettings, client: httpx.Async
     return Worker(
         api=api,
         downloader=downloader,
-        archiver=PendingArchiver(),
+        archiver=default_archiver(settings),
         staging=staging,
         library=library,
         settings=worker,
