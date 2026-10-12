@@ -14,7 +14,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A title/body-only edit gets its own group, so it never cancels a real run.
+  group: ci-${{ github.ref }}${{ github.event.action == 'edited' && github.event.changes.base == null && format('-edit-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -43,7 +44,7 @@ jobs:
           if [[ "$EVENT" != pull_request ]]; then
             echo "server=true" >> "$GITHUB_OUTPUT"; echo "android=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          files=$(git diff --name-only "$BASE...$HEAD")
+          files=$(git diff --no-renames --name-only "$BASE...$HEAD")
           printf '%s\n' "$files"
           # Shared files (workflows, tools, VERSION, .claude) run both sides.
           shared='^(\.github/|VERSION$|tools/|\.claude/|\.gitleaks)'
@@ -190,6 +191,8 @@ jobs:
 
   secrets:
     needs: changes
+    # Always run (also if `changes` fails), except for a title-only edit that skipped it.
+    if: always() && needs.changes.result != 'skipped' && needs.changes.result != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -217,6 +220,8 @@ jobs:
 
   store-texts:
     needs: changes
+    # Always run (also if `changes` fails), except for a title-only edit that skipped it.
+    if: always() && needs.changes.result != 'skipped' && needs.changes.result != 'cancelled'
     # Store text limits on every PR; on a release PR (branch release/*), also requires the
     # en-US and es-ES changelogs for the versionCode of VERSION. See RELEASING.md.
     runs-on: ubuntu-latest
