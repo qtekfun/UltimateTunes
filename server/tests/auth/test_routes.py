@@ -2,14 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """`/ut/v1/me`, `/ut/v1/keys` and authentication through the real app and `/rest` pipeline."""
 
+import secrets
 from collections.abc import Iterator, Mapping
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from tests.auth.conftest import ADMIN_PASSWORD, USER_PASSWORD, fast_passwords
+from tests.auth.conftest import ADMIN_PASSWORD, IP, USER_PASSWORD, fast_passwords
 from ultimatetunes.app import create_app
 from ultimatetunes.auth import web
 from ultimatetunes.auth.routes import CreateKeyRequest
@@ -315,7 +317,21 @@ def test_bootstrap_from_env(
             (admin,) = services.authenticator.list_users()
     assert (admin.username, admin.role) == ("root", "admin")
     assert caplog.text.count("bootstrap admin Root created from the environment") == 1
+    # Audit L5: the second start says the password should go.
+    assert caplog.text.count("UT_BOOTSTRAP_ADMIN_PASSWORD is still set") == 1
     assert password not in caplog.text
+
+
+def test_bootstrap_password_from_a_docker_secret_file(
+    service: AuthService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audit L5: no password in the environment; compose mounts it as a secret file."""
+    monkeypatch.delenv("UT_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    from_file = secrets.token_urlsafe(24)
+    (tmp_path / "ut_bootstrap_admin_password").write_text(from_file + "\n")
+    settings = AuthSettings(bootstrap_admin_username="root", _secrets_dir=tmp_path)
+    assert web.bootstrap_from_env(service, settings)
+    assert service.verify_password("root", from_file, IP).role == "admin"
 
 
 def test_bootstrap_from_env_needs_both_variables(service: AuthService) -> None:

@@ -39,6 +39,12 @@ def stream(lib: Harness, song: str, *, name: str = "stream", **headers: str) -> 
         ("bytes=-", 10, None),
         ("bytes=0-1,4-5", 10, None),
         ("items=0-1", 10, None),
+        # Audit L1: only ASCII digits, at most 19 of them; anything else is no range.
+        ("bytes=0-" + "9" * 19, 10, (0, 9)),
+        ("bytes=" + "1" * 20 + "-", 10, None),
+        ("bytes=0-" + "9" * 5000, 10, None),
+        ("bytes=-" + "9" * 5000, 10, None),
+        ("bytes=\u0661-", 10, None),
     ],
 )
 def test_parse_range(header: str | None, size: int, expected: tuple[int, int] | None) -> None:
@@ -68,6 +74,18 @@ def test_stream_whole_file(lib: Harness) -> None:
     assert int(r.headers["content-length"]) == len(data)
     assert r.content == data
     assert "content-disposition" not in r.headers
+
+
+def test_a_huge_range_is_ignored_without_an_error(
+    lib: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Audit L1: thousands of digits used to reach `int()` and log a traceback."""
+    song = lib.ids()["Lighthouse Keeper"]
+    data = file_bytes(lib, LIGHTHOUSE)
+    r = stream(lib, song, Range="bytes=0-" + "9" * 5000)
+    assert r.status_code == 200
+    assert r.content == data
+    assert not [rec for rec in caplog.records if rec.exc_info]
 
 
 def test_stream_ranges(lib: Harness) -> None:

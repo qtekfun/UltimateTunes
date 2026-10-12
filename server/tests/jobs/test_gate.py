@@ -272,6 +272,7 @@ def test_daily_download_bytes_per_user_are_capped(
     assert refused.value.retry_after_s == RETRY_BYTES_S
     # A job queued before the allowance ran out is not claimed either; others' jobs are.
     assert queue.claim("w2", lease_s=60) is None
+    clock.advance(1)  # Bob's job is younger than Alice's waiting one
     keep(queue, add_track(db, clock, 4), user=BOB)
     bobs = queue.claim("w2", lease_s=60)
     assert bobs is not None

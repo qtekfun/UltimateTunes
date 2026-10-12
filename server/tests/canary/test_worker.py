@@ -32,7 +32,7 @@ from ultimatetunes.worker.loop import Worker
 from ultimatetunes.worker.settings import WorkerSettings
 
 pytestmark = pytest.mark.anyio
-TOKEN = "worker-token-for-canary-tests"
+TOKEN = "worker-token-for-canary-tests-0123456789abcdef"
 
 
 @dataclass

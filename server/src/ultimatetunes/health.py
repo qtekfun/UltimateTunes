@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request, Response, status
 
+from ultimatetunes.core.clock import Clock
 from ultimatetunes.core.forwarded import via_untrusted_proxy
 from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.netaddr import LOOPBACK, IpNetwork, in_networks
@@ -20,6 +21,9 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 # `app.state` attribute: the networks that may read the `/readyz` detail.
 PROBE_NETWORKS_STATE = "probe_networks"
+# `app.state` attribute: the last readiness result and when it was taken (monotonic seconds).
+READYZ_CACHE_STATE = "readyz_cache"
+READYZ_CACHE_S = 5.0
 
 
 @router.get("/healthz", include_in_schema=False)
@@ -30,27 +34,43 @@ def healthz() -> dict[str, str]:
 
 @router.get("/readyz", include_in_schema=False)
 def readyz(request: Request, response: Response) -> dict[str, object]:
-    """Database reachable, schema up to date, library and staging writable.
+    """Database reachable, schema up to date, library and staging writable (cached for
+    `READYZ_CACHE_S`).
 
     The status code and `status` are for everyone (probes, a proxy's health check); the
     per-check detail only for callers inside `PROBE_NETWORKS_STATE` (loopback, plus the admin
     allowlist once the admin area is installed) that did not come through an untrusted proxy
     and are not on the worker's network (`UT_WORKER_NETWORKS`).
     """
-    settings: Settings = request.app.state.settings
-    checks = {
-        "database": _check_database(settings),
-        "music": _check_writable(settings.music_dir),
-        "staging": _check_writable(settings.staging_dir),
-    }
+    checks = _checks(request)
     ready = all(result == "ok" for result in checks.values())
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     body: dict[str, object] = {"status": "ok" if ready else "unavailable"}
     if _may_see_detail(request):
         # Not a readiness condition: the api serves the library while downloads wait.
-        body["checks"] = {**checks, "downloads": _check_downloads(settings)}
+        body["checks"] = {**checks, "downloads": _check_downloads(request.app.state.settings)}
     return body
+
+
+def _checks(request: Request) -> dict[str, str]:
+    """The checks, run at most once every `READYZ_CACHE_S` per process (audit L3: each run
+    opens the database and writes two files, so a flood of probes must not repeat them)."""
+    settings: Settings = request.app.state.settings
+    clock: Clock = request.app.state.services.clock
+    now = clock.monotonic()
+    cached: tuple[float, dict[str, str]] | None = getattr(
+        request.app.state, READYZ_CACHE_STATE, None
+    )
+    if cached is not None and 0 <= now - cached[0] < READYZ_CACHE_S:
+        return cached[1]
+    checks = {
+        "database": _check_database(settings),
+        "music": _check_writable(settings.music_dir),
+        "staging": _check_writable(settings.staging_dir),
+    }
+    setattr(request.app.state, READYZ_CACHE_STATE, (now, checks))
+    return checks
 
 
 def _may_see_detail(request: Request) -> bool:

@@ -288,3 +288,17 @@ def test_catalog_lookups_are_charged_to_the_authenticated_user(
     lib.ok("star", id="yt:Qx7Lm2pZ0aB", key="utk_bob")
     lib.ok("star", id="yt:Fk2Lp9QwXa1")
     assert seen == [BOB.user_id, ANA.user_id]
+
+
+def test_the_keep_cap_never_exceeds_the_catalog_burst(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ultimatetunes.search.service import search_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_CATALOG_USER_BURST", "1")
+    search_settings.cache_clear()
+    try:
+        assert lib.error("star", id=["yt:Qx7Lm2pZ0aB", "yt:Fk2Lp9QwXa1"]) == 0
+        lib.ok("star", id="yt:Qx7Lm2pZ0aB")
+    finally:
+        search_settings.cache_clear()

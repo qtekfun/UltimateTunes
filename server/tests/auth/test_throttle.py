@@ -191,3 +191,24 @@ def test_the_failure_budget_refills_over_time(budgeted: AuthService, clock: Fake
                 budgeted.authenticate_api_key(UNKNOWN_KEY, None, f"198.51.{minute}.{n}")
         clock.advance(60)
     assert budgeted.verify_password("alice", SIGN_IN, IP).username == "alice"
+
+
+def test_the_admins_networks_are_exempt_from_the_global_budget(budgeted: AuthService) -> None:
+    # Failures from the admin's networks are not counted...
+    for n in range(8):
+        with pytest.raises(AuthenticationFailed):
+            budgeted.verify_password(f"nobody{n}", NOT_IT, f"192.168.1.{n + 1}", trusted=True)
+    assert budgeted.verify_password("alice", SIGN_IN, "203.0.113.9").username == "alice"
+    # ...and once strangers lock the budget, the admin can still sign in from inside.
+    for n in range(5):
+        with pytest.raises(AuthenticationFailed):
+            budgeted.verify_password(f"stranger{n}", NOT_IT, f"198.51.100.{n + 1}")
+    with pytest.raises(RateLimited):
+        budgeted.verify_password("alice", SIGN_IN, "203.0.113.10")
+    with pytest.raises(RateLimited):
+        budgeted.create_key_with_password("alice", SIGN_IN, "Laptop", "203.0.113.11")
+    assert budgeted.verify_password("alice", SIGN_IN, "192.168.1.50", trusted=True).username
+    created = budgeted.create_key_with_password(
+        "alice", SIGN_IN, "Laptop", "192.168.1.51", trusted=True
+    )
+    assert created.key.name == "Laptop"

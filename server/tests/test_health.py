@@ -9,7 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ultimatetunes.app import create_app
+from ultimatetunes.core.clock import FakeClock
+from ultimatetunes.core.services import build_services
 from ultimatetunes.db import migrate
+from ultimatetunes.health import READYZ_CACHE_S
 from ultimatetunes.settings import Settings
 
 LOCAL = ("127.0.0.1", 50000)
@@ -137,3 +140,17 @@ def test_readyz_detail_never_goes_to_the_worker_network(settings: Settings) -> N
     walled = settings.model_copy(update={"worker_networks": "172.30.44.0/24"})
     assert client(walled, ("172.30.44.3", 1)).get("/readyz").json() == {"status": "ok"}
     assert "checks" in client(walled, LOCAL).get("/readyz").json()
+
+
+def test_readyz_caches_its_checks_for_a_few_seconds(settings: Settings) -> None:
+    """Audit L3: a flood of probes does not reopen the database on every request."""
+    clock = FakeClock()
+    app = create_app(services=build_services(settings, clock))
+    probe = TestClient(app, client=LOCAL)
+    assert probe.get("/readyz").json()["checks"]["database"] == "missing"
+    migrated(settings)
+    assert probe.get("/readyz").status_code == 503
+    clock.advance(READYZ_CACHE_S - 0.1)
+    assert probe.get("/readyz").status_code == 503
+    clock.advance(0.1)
+    assert probe.get("/readyz").status_code == 200

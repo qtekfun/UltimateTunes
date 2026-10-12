@@ -69,6 +69,11 @@ class RecordingTransport(httpx.AsyncBaseTransport):
         return httpx.Response(self.status)
 
 
+async def public_dns(host: str) -> list[str]:
+    """Fake resolver of the notification tests: every name is a public address (no DNS)."""
+    return ["203.0.113.80"]
+
+
 @pytest.fixture
 def transport() -> RecordingTransport:
     return RecordingTransport()
@@ -86,7 +91,7 @@ def app_factory(
     class Hook:
         @staticmethod
         def install(app: object, svc: Services) -> None:
-            web.install(app, svc, admin_settings, Sender(transport))  # type: ignore[arg-type]
+            web.install(app, svc, admin_settings, Sender(transport, public_dns))  # type: ignore[arg-type]
 
     monkeypatch.setattr(
         "ultimatetunes.app.AREAS", tuple(Hook if area is web else area for area in AREAS)

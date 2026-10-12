@@ -5,7 +5,12 @@
 The target lives in the runtime `settings` table: a kind (`ntfy`: plain text with a `Title`
 header, as ntfy topics expect; `webhook`: a small JSON document) and an **https** URL without
 credentials in it. It is the only outbound host the panel ever contacts (CLAUDE.md), with no
-redirects followed and a short timeout. The URL is never logged (an ntfy topic name is a
+redirects followed and a short timeout. A host name is resolved again right before each send,
+and the send is refused when any address it resolves to is loopback, link-local, unspecified
+or multicast (audit L6: a public name pointing at the server itself or at cloud metadata);
+LAN addresses stay allowed for a self-hosted ntfy. httpx resolves once more when it connects,
+so a name re-pointed within that instant (DNS rebinding) is a residual risk the short window
+and the admin-only setting keep small. The URL is never logged (an ntfy topic name is a
 secret of sorts); only its host is.
 
 `NotificationSweep` runs in the api: every `UT_ADMIN_NOTIFY_INTERVAL_S` it collects the jobs
@@ -19,6 +24,8 @@ the cursor at that moment (no backlog).
 import asyncio
 import ipaddress
 import logging
+import socket
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
@@ -80,15 +87,23 @@ def check_url(url: str) -> str:
 
 def _own_host(host: str) -> bool:
     """Loopback, link-local (cloud metadata), unspecified and multicast addresses, and
-    `localhost` names. Checked on save and again on every send. Names are not resolved here
-    (no DNS from the panel); LAN addresses stay allowed for a self-hosted ntfy."""
+    `localhost` names. Checked on save and again on every send, where `Sender` also checks
+    every address the name resolves to; LAN addresses stay allowed for a self-hosted ntfy."""
     name = host.rstrip(".").lower()
     if name == "localhost" or name.endswith(".localhost"):
         return True
+    address = _ip(name)
+    return address is not None and _own_address(address)
+
+
+def _ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
-        address = ipaddress.ip_address(name)
+        return ipaddress.ip_address(text.split("%", 1)[0])
     except ValueError:
-        return False
+        return None
+
+
+def _own_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     mapped = getattr(address, "ipv4_mapped", None)
     address = mapped or address
     return (
@@ -129,11 +144,40 @@ def save_target(db: Database, clock: Clock, target: Target | None) -> None:
             repo.put_setting(KEY_CURSOR, now, now)
 
 
+Resolver = Callable[[str], Awaitable[list[str]]]
+
+
+async def system_resolve(host: str) -> list[str]:
+    """Every address `host` resolves to (the system resolver, as httpx will use it)."""
+    infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    return [str(info[4][0]) for info in infos]
+
+
 class Sender:
     """Posts one message to the target. Errors are logged, never raised to the caller."""
 
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self, transport: httpx.AsyncBaseTransport | None = None, resolve: Resolver | None = None
+    ) -> None:
         self._transport = transport
+        self._resolve = resolve or system_resolve
+
+    async def _resolves_safely(self, target: Target) -> bool:
+        """False (logged) when the host does not resolve, or resolves to an address of this
+        server's own network. IP literals were already checked by `check_url`."""
+        host = target.host
+        if _ip(host) is not None:
+            return True
+        try:
+            addresses = await self._resolve(host)
+        except OSError:
+            log.warning("notification to %s failed: the name does not resolve", host)
+            return False
+        parsed = [_ip(a) for a in addresses]
+        if not parsed or any(a is None or _own_address(a) for a in parsed):
+            log.warning("notification to %s refused: it resolves to this server's network", host)
+            return False
+        return True
 
     async def send(self, target: Target, message: Message) -> bool:
         if target.kind == "ntfy":
@@ -146,11 +190,18 @@ class Sender:
                 "json": {"source": "ultimatetunes", "title": message.title, "message": message.body}
             }
         try:
+            url = check_url(target.url)
+        except InvalidParameter as exc:
+            log.warning("notification to %s failed: %s", target.host, type(exc).__name__)
+            return False
+        if not await self._resolves_safely(target):
+            return False
+        try:
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=TIMEOUT_S, follow_redirects=False
             ) as client:
-                response = await client.post(check_url(target.url), **request)  # type: ignore[arg-type]
-        except (httpx.HTTPError, InvalidParameter) as exc:
+                response = await client.post(url, **request)  # type: ignore[arg-type]
+        except httpx.HTTPError as exc:
             log.warning("notification to %s failed: %s", target.host, type(exc).__name__)
             return False
         if response.is_success:

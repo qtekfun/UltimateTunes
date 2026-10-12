@@ -37,7 +37,7 @@ from ultimatetunes.library.scan import LibraryScanner
 from ultimatetunes.settings import Settings
 
 OPENAPI = CONTRACTS / "openapi"
-TOKEN = "contract-test-worker-token"
+TOKEN = "contract-test-worker-token-0123456789abcdef"
 USERNAME = "contract"
 PASSWORD = "contract test passphrase"
 # Generated traffic is fast and full of bad credentials: no throttling, no lockout.

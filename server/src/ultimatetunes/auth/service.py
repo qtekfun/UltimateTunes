@@ -16,8 +16,12 @@ On `/ut/v1`: `X-Api-Key` or `apiKey`, both only when equal (`conflicting_auth`).
 
 Rate limit and lockout (`core.ratelimit`):
 - Every request with a valid key takes a token from `auth:key:<id>`.
-- Failures (40, 44, 50) count per IP (`auth:ip:<ip>`), and password failures also per username
-  (`auth:user:<name>`). Reaching the limit locks that bucket for `auth_lockout_s`. A key that
+- Failures (40, 44, 50) count per IP (`auth:ip:<ip>`), and password failures also per username.
+  Reaching the limit locks that bucket for `auth_lockout_s`. The per-username count is **split
+  by origin** (`trusted` of `verify_password`): `auth:user:<name>` for checks from the admin's
+  own networks (LAN/Tailscale, `core.forwarded.from_trusted_network`) and `auth:user-out:<name>`
+  for everything else (the public `POST /ut/v1/keys`). Strangers on the Internet can lock the
+  outside counter only, so an admin can always log in from LAN/Tailscale. A key that
   exists but is revoked or belongs to a disabled user is refused without counting (a stale
   device is not guessing), so it never locks out its IP.
 - Password checks need the client address: without one they are refused (`Forbidden`), so
@@ -259,8 +263,10 @@ class AuthService:
         return f"auth:ip:{client_key(client_ip)}"
 
     @staticmethod
-    def _user_bucket(username: str) -> str:
-        return f"auth:user:{username}"
+    def _user_bucket(username: str, *, trusted: bool) -> str:
+        """The per-username lockout counter of the caller's origin: failures from outside the
+        admin's networks never lock logins from inside them (an admin locked out by strangers)."""
+        return f"auth:user:{username}" if trusted else f"auth:user-out:{username}"
 
     def _refuse_locked(self, *buckets: str) -> None:
         for bucket in buckets:
@@ -272,15 +278,15 @@ class AuthService:
         self,
         error: TunesError,
         client_ip: str | None,
-        username: str | None = None,
+        user_bucket: str | None = None,
         *,
         trusted: bool = False,
     ) -> NoReturn:
-        """Counts the failure (per IP, and per username for passwords), then raises `error`.
+        """Counts the failure (per IP, and in `user_bucket` for passwords), then raises `error`.
         Locking a bucket is logged and audited."""
         buckets = [(self._ip_bucket(client_ip), self._settings.auth_max_failures_per_ip)]
-        if username is not None:
-            buckets.append((self._user_bucket(username), self._settings.auth_max_failures_per_user))
+        if user_bucket is not None:
+            buckets.append((user_bucket, self._settings.auth_max_failures_per_user))
         for bucket, max_failures in buckets:
             decision = self._limiter.record_failure(
                 bucket, max_failures=max_failures, lockout_s=self._settings.auth_lockout_s
@@ -324,12 +330,14 @@ class AuthService:
     ) -> User:
         """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
         and unknown user give the same `AuthenticationFailed` in the same time. `trusted`: the
-        request comes from the admin's own networks (the `/admin` allowlist): exempt from the
-        global failure budget, and not counted in it."""
+        request comes from the admin's own networks (`core.forwarded.trusted_origin`); it picks
+        the per-username lockout counter (module docstring), and such checks are neither refused
+        by the global failure budget nor counted in it."""
         if not client_ip:
             raise Forbidden("Password checks need the client address")
         name = normalize_username(username)
-        self._refuse_locked(self._ip_bucket(client_ip), self._user_bucket(name))
+        user_bucket = self._user_bucket(name, trusted=trusted)
+        self._refuse_locked(self._ip_bucket(client_ip), user_bucket)
         self._refuse_global(trusted=trusted)
         limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
         decision = self._limiter.hit(f"auth:login:{client_key(client_ip)}", limit)
@@ -338,11 +346,11 @@ class AuthService:
         with self._db.read() as conn:
             user = UserRepository(conn).by_username(name)
         if not self._password_matches(user, password) or user is None:
-            self._fail(AuthenticationFailed(), client_ip, name, trusted=trusted)
+            self._fail(AuthenticationFailed(), client_ip, user_bucket, trusted=trusted)
         if user.is_disabled:
-            self._fail(AccountDisabled(), client_ip, name, trusted=trusted)
+            self._fail(AccountDisabled(), client_ip, user_bucket, trusted=trusted)
         self._limiter.record_success(self._ip_bucket(client_ip))
-        self._limiter.record_success(self._user_bucket(name))
+        self._limiter.record_success(user_bucket)
         new_hash = (
             self._passwords.hash(password)
             if self._passwords.needs_rehash(user.password_hash)
