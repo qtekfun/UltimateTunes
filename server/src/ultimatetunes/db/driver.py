@@ -8,6 +8,8 @@ SQLite-only details (pragmas, WAL, `sqlite_master`) live here and nowhere else. 
 dev-only for now: CI applies the migrations on it, and PLAN T25 makes it a runtime option.
 """
 
+import contextlib
+import os
 import re
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
@@ -126,9 +128,13 @@ class SqliteConnection:
 
 def connect_sqlite(path: Path, *, read_only: bool = False) -> SqliteConnection:
     """Opens a SQLite database: WAL, foreign keys on, a busy timeout. Read-only connections
-    never create the file (used by `/readyz`)."""
+    never create the file (used by `/readyz`). A new database file is created owner-only
+    (0600; SQLite gives its `-wal` and `-shm` files the same mode): it holds password and key
+    hashes."""
     if not read_only:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with contextlib.suppress(FileExistsError):
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
     target = f"file:{path}?mode=ro" if read_only else str(path)
     try:
         raw = sqlite3.connect(target, uri=read_only, isolation_level=None, check_same_thread=False)
