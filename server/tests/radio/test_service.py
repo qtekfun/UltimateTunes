@@ -8,6 +8,8 @@ alias of the library song Lighthouse Keeper), Paper Moons (`Qx7…`, external), 
 (`Hm3…`, external), Signal Fires (`Tz9…`, pending), Harbor Lights (`Pa6…`, external).
 """
 
+from dataclasses import replace
+
 import pytest
 
 from tests.search.conftest import (
@@ -21,6 +23,7 @@ from tests.search.conftest import (
     TIDEWATER,
     USER,
 )
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.db import Database
 from ultimatetunes.errors import FeatureDisabled, InvalidId, NotFound, UpstreamUnavailable
 from ultimatetunes.radio.service import Radio, RadioService, radio_settings
@@ -346,3 +349,21 @@ async def test_a_radio_keeps_nothing(service: RadioService, library: Database) -
     await service.radio(USER, "ytartist:UCn4HbR7oQ2sLx9TzV0eWm3K", 50, artists=True)
     await service.radio(USER, ORCHARD, 50)
     assert counts() == before
+
+
+async def test_songs_too_long_to_download_are_left_out_unless_archived(
+    library: Database, catalog: FakeMusicCatalog
+) -> None:
+    for video in ("Rb8Tn3ZcYv0", "Hm3Vx8Nq2Lp", "Fk2Lp9QwXa1"):
+        catalog.tracks[video] = replace(catalog.tracks[video], duration_s=1801)
+    radio = await RadioService(library, catalog, RadioSettings()).radio(USER, "yt:Qx7Lm2pZ0aB", 50)
+    shown = keys(radio)
+    # Pending and unknown ones are dropped; the archived one (LOW_TIDE) stays.
+    assert "yt:Rb8Tn3ZcYv0 (pending)" not in shown
+    assert "yt:Hm3Vx8Nq2Lp" not in shown
+    assert LOW_TIDE in shown
+    roomy = DownloadLimits(max_track_duration_s=3600)
+    everything = await RadioService(library, catalog, RadioSettings(), roomy).radio(
+        USER, "yt:Qx7Lm2pZ0aB", 50
+    )
+    assert "yt:Hm3Vx8Nq2Lp" in keys(everything)

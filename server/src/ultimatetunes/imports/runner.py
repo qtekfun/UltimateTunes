@@ -36,9 +36,15 @@ user playlist exists) or `failed` (the playlist does not exist, or a bug). Per i
 (the song is requested: pending track, `yt:` alias and download job), `not_found`, or `failed`
 (the catalog refused that item for good).
 
-Requesting a match uses `ids.resolve.materialize_song` in its own transaction and then
-`JobQueue.enqueue` (idempotent, one job per track) before the item is recorded, so a crash in
-between leaves the item `pending` and a resume repeats both steps harmlessly.
+Requesting a match uses `ids.resolve.materialize_song` and `JobQueue.enqueue_in` (idempotent,
+one job per track) in one transaction before the item is recorded, so a crash in between leaves
+the item `pending` and a resume repeats both steps harmlessly. The download limits
+(jobs/gate.py) apply to the import's owner: a song the server refuses for good (too long) fails
+its item and nothing is written for it; a refusal for now (`RetryLater`: the owner's queue or
+daily allowance is full, or disk space is low) pauses the run like a passing outage.
+
+Catalog calls of an import are never charged to a user's catalog budget (`core.caller`): the
+shared `import:catalog` bucket paces them.
 """
 
 import logging
@@ -49,6 +55,7 @@ from typing import TYPE_CHECKING
 import anyio
 from starlette.concurrency import run_in_threadpool
 
+from ultimatetunes.core.caller import unmetered
 from ultimatetunes.core.clock import Clock, format_ts
 from ultimatetunes.core.ratelimit import Limit, RateLimiter
 from ultimatetunes.db.database import Database
@@ -128,7 +135,8 @@ class ImportRunner:
 
     async def run(self, import_id: str) -> None:
         """Runs (or resumes) the import until it ends or pauses."""
-        await self._inflight.run(_KEY + import_id, lambda: self._guarded(import_id))
+        with unmetered():
+            await self._inflight.run(_KEY + import_id, lambda: self._guarded(import_id))
 
     def stale(self, active: list[tuple[str, str]]) -> list[str]:
         """Of (id, updated_at) pairs of active imports, those to resume now."""
@@ -266,7 +274,27 @@ class ImportRunner:
                 lambda r: r.record_item(row.id, position, state="not_found", now=self._now())
             )
             return
-        track_id = await self._request(row.user_id, found.track)
+        try:
+            track_id = await self._request(row.user_id, found.track)
+        except RetryLater as exc:
+            pauses = await self._write(lambda r: r.pause_item(row.id, position, self._now()))
+            if pauses < MAX_PAUSES:
+                raise _Paused(exc.message) from exc
+            message = exc.message
+            await self._write(
+                lambda r: r.record_item(
+                    row.id, position, state="failed", now=self._now(), error=message
+                )
+            )
+            return
+        except TunesError as exc:
+            message = exc.message
+            await self._write(
+                lambda r: r.record_item(
+                    row.id, position, state="failed", now=self._now(), error=message
+                )
+            )
+            return
         await self._write(
             lambda r: r.record_item(
                 row.id,
@@ -285,13 +313,14 @@ class ImportRunner:
         def keep() -> str:
             with self._db.transaction() as conn:
                 ref = materialize_song(conn, self._clock, track)
-            if ref.status == "pending":
-                self._jobs.enqueue(
-                    track_id=ref.id,
-                    video_id=track.video_id,
-                    priority=PRIORITY_IMPORT,
-                    requested_by=user_id,
-                )
+                if ref.status == "pending":
+                    self._jobs.enqueue_in(
+                        conn,
+                        track_id=ref.id,
+                        video_id=track.video_id,
+                        priority=PRIORITY_IMPORT,
+                        requested_by=user_id,
+                    )
             return ref.id
 
         return await run_in_threadpool(keep)

@@ -17,6 +17,13 @@ Wraps any `MusicCatalog` (ytmusicapi in production) with:
   `CatalogThrottled`. Its state lives in the cache (shared by every api replica) and each
   opening is logged as a warning for the admin (`breaker_state()` for the panel).
 
+- a **per-user budget** (`catalog:user:<id>`, `UT_CATALOG_USER_RATE_PER_S`, burst
+  `UT_CATALOG_USER_BURST`): every lookup that misses the cache costs its caller one token
+  (`core.caller`; anonymous callers share one bucket, imports are unmetered and paced by their
+  own bucket). Cached answers (including covers of known items) cost nothing. An empty bucket
+  is `RateLimited` (429). Searches are not charged here: `SearchService` charges one token of
+  its own bucket per search instead.
+
 All state is in the cache and the rate limiter, so the api stays stateless.
 """
 
@@ -30,8 +37,10 @@ from dataclasses import dataclass
 from starlette.concurrency import run_in_threadpool
 
 from ultimatetunes.core.cache import TtlCache
+from ultimatetunes.core.caller import current_bucket
 from ultimatetunes.core.inflight import InFlight
 from ultimatetunes.core.ratelimit import Limit, RateLimiter
+from ultimatetunes.errors import RateLimited
 from ultimatetunes.search import codec
 from ultimatetunes.search.catalog import (
     CatalogAlbum,
@@ -65,6 +74,7 @@ TTL_NOT_FOUND = HOUR
 SEARCH_PAGE = 20
 RADIO_SIZE = 50
 BUCKET = "ytmusic:global"
+USER_BUCKET = "catalog:user:"
 BREAKER_OPEN = "ytmusic:breaker:open"
 BREAKER_LEVEL = "ytmusic:breaker:level"
 
@@ -102,6 +112,7 @@ class GuardedCatalog:
         self._sleep = sleep
         self._jitter = jitter
         self._limit = Limit(settings.ytm_rate_per_s, settings.ytm_burst)
+        self._user_limit = user_limit(settings)
 
     # ------------------------------------------------------------------ public API
 
@@ -113,6 +124,7 @@ class GuardedCatalog:
             lambda: self._inner.search_songs(query, SEARCH_PAGE),
             codec.decode_tracks,
             _tracks_of,
+            metered=False,
         )
         return found[:limit]
 
@@ -123,6 +135,7 @@ class GuardedCatalog:
             TTL_SEARCH,
             lambda: self._inner.search_albums(query, SEARCH_PAGE),
             codec.decode_album_refs,
+            metered=False,
         )
         return found[:limit]
 
@@ -133,6 +146,7 @@ class GuardedCatalog:
             TTL_SEARCH,
             lambda: self._inner.search_artists(query, SEARCH_PAGE),
             codec.decode_artist_refs,
+            metered=False,
         )
         return found[:limit]
 
@@ -184,19 +198,23 @@ class GuardedCatalog:
 
     # ------------------------------------------------------------------ machinery
 
-    async def _get[T](
+    async def _get[T](  # noqa: PLR0913 - one cached lookup and how to charge it
         self,
         key: str,
         ttl: float,
         load: Callable[[], Awaitable[T]],
         decode: Callable[[str], T],
         tracks: Callable[[T], Iterable[CatalogTrack]] | None = None,
+        *,
+        metered: bool = True,
     ) -> T:
         cached = await self._cached(key, decode)
         if cached is not None:
             return cached
         if await run_in_threadpool(self._cache.get, f"nf:{key}") is not None:
             raise CatalogNotFound()
+        if metered:
+            await self._charge_caller()
         return await self._inflight.run(
             f"catalog:{key}", lambda: self._load(key, ttl, load, tracks)
         )
@@ -262,6 +280,9 @@ class GuardedCatalog:
         for item in tracks(value) if tracks else ():
             self._cache.set(f"track:{item.video_id}", codec.encode(item), TTL_TRACK)
 
+    async def _charge_caller(self) -> None:
+        await charge_caller(self._limiter, self._user_limit)
+
     async def _token(self) -> None:
         waited = 0.0
         while True:
@@ -299,6 +320,23 @@ class GuardedCatalog:
     async def _close_breaker(self) -> None:
         if await run_in_threadpool(self._cache.get, BREAKER_LEVEL) is not None:
             await run_in_threadpool(self._cache.delete, BREAKER_LEVEL)
+
+
+def user_limit(settings: SearchSettings) -> Limit:
+    """The per-user catalog budget (`UT_CATALOG_USER_RATE_PER_S`, `UT_CATALOG_USER_BURST`)."""
+    return Limit(settings.catalog_user_rate_per_s, settings.catalog_user_burst)
+
+
+async def charge_caller(limiter: RateLimiter, limit: Limit) -> None:
+    """One token of the current caller's catalog budget (core/caller.py), or `RateLimited`.
+    Also used for other upstream fetches made for a user, e.g. an uncached cover image."""
+    bucket = current_bucket()
+    if bucket is None:
+        return
+    decision = await run_in_threadpool(limiter.hit, USER_BUCKET + bucket, limit)
+    if not decision.allowed:
+        log.info("catalog budget of a caller is used up")
+        raise RateLimited(decision.retry_after_s, "Too many catalog lookups, try again later")
 
 
 def _tracks_of(value: list[CatalogTrack]) -> Iterable[CatalogTrack]:

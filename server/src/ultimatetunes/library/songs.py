@@ -12,7 +12,10 @@
   add): every id resolves to a library track; a `yt:` id without one is materialized as a
   `pending` track with its alias (`ids.resolve.materialize_song`) and its download job is
   requested in the same transaction (`JobQueue.enqueue_in`), also for a pending track kept
-  by its library UUID. Every id is checked before anything is written.
+  by its library UUID. Every id is checked before anything is written. At most
+  `MAX_KEEP_DOWNLOADS` of the ids may need a download (a `yt:` id without a track, or a
+  pending track): one request cannot queue (or look up) more than that, whatever `MAX_IDS`
+  allows for songs already in the library. The download limits of jobs/gate.py apply too.
 """
 
 import asyncio
@@ -35,6 +38,8 @@ if TYPE_CHECKING:
 
 # Most ids one request may carry (contracts/errors.md, PayloadTooLarge).
 MAX_IDS = 1000
+# Most ids of one "keep" request that may start a download (abuse limits).
+MAX_KEEP_DOWNLOADS = 100
 # Catalog lookups of unknown `yt:` items per request, and how many run at once.
 MAX_LOOKUPS = 100
 LOOKUP_CONCURRENCY = 4
@@ -166,6 +171,11 @@ async def keep(services: "Services", user_id: str, raw_ids: Sequence[str]) -> li
     _parse_songs(raw_ids)
     resolved = await run_in_threadpool(_resolve_keep, services, raw_ids)
     missing = list(dict.fromkeys(r.payload for r in resolved.values() if isinstance(r, VirtualId)))
+    pending = {r.id for r in resolved.values() if isinstance(r, TrackRef) and r.status == "pending"}
+    if len(missing) + len(pending) > MAX_KEEP_DOWNLOADS:
+        raise PayloadTooLarge(
+            f"At most {MAX_KEEP_DOWNLOADS} songs that are not in the library yet per request"
+        )
     # Every external song must exist in the catalog before anything is written.
     records = await asyncio.gather(*(services.catalog.track(v) for v in missing))
     refs = await run_in_threadpool(

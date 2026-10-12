@@ -3,6 +3,8 @@
 """What a streaming request does besides sending bytes: HEAD, listener caps, clients that go
 away, songs archived meanwhile, pending tracks, unknown ids, and `/ut/v1/server`."""
 
+from dataclasses import replace
+
 import anyio
 import httpx
 import pytest
@@ -11,10 +13,11 @@ from starlette.requests import Request
 from tests.streaming.harness import ANA, AUDIO, OTHER_VIDEO, VIDEO, Listening, Live, serve, until
 from tests.streaming.test_stream import envelope_code, requested, start
 from ultimatetunes.core.clock import FakeClock, format_ts
-from ultimatetunes.errors import NotFound, StreamFailed
+from ultimatetunes.errors import InvalidParameter, NotFound, StreamFailed
 from ultimatetunes.ids.resolve import TrackRef
 from ultimatetunes.ids.virtual import VirtualId
 from ultimatetunes.jobs.queue import PRIORITY_KEEP, PRIORITY_STREAM
+from ultimatetunes.search.fake import FakeMusicCatalog
 from ultimatetunes.settings import Settings
 from ultimatetunes.streaming import service
 from ultimatetunes.streaming.service import StreamingWhileDownloading
@@ -365,3 +368,11 @@ async def test_head_of_an_unknown_external_song_is_not_found(live: Live) -> None
             download=False,
             head=True,
         )
+
+
+async def test_a_song_too_long_to_download_is_never_streamed(live: Live) -> None:
+    long = replace(FakeMusicCatalog().tracks[VIDEO], duration_s=3 * 3600)
+    with pytest.raises(InvalidParameter):
+        streams(live)._enqueue(VirtualId("song", VIDEO), VIDEO, long, ANA.user_id)
+    assert live.one("SELECT COUNT(*) FROM tracks") == 0
+    assert live.job() is None
