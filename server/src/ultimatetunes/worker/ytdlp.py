@@ -338,7 +338,7 @@ class _Run:
     def relative(self, absolute: str) -> str:
         """The staging-relative path of a file yt-dlp wrote: directly inside `out_dir`."""
         path = Path(absolute)
-        if path.parent != self.out_dir or not path.name:
+        if path.parent != self.out_dir or path.name in ("", ".", ".."):
             raise DownloadError(
                 WorkerErrorCode.INTERNAL_ERROR,
                 "yt-dlp wrote outside the job directory",
@@ -410,7 +410,9 @@ class YtDlpDownloader:
             run.out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise DownloadError(WorkerErrorCode.STORAGE_ERROR, exc.strerror or "mkdir") from exc
-        zipapp = self._runtime.current_zipapp()
+        # Resolve `current` once: an update swapping the link mid-download never changes the
+        # file this run executes.
+        zipapp = self._runtime.current_zipapp().resolve()
         if not zipapp.is_file():
             raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "the zipapp is not installed")
         args = build_args(

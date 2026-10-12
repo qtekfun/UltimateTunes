@@ -123,10 +123,11 @@ def check_expected_size(stored: int | None, reported: int | None) -> int | None:
     return stored
 
 
-def check_format(stored: str | None, reported: str) -> str:
-    """One attempt downloads one format."""
+def check_fixed(name: str, stored: str | None, reported: str) -> str:
+    """Fields fixed by the first report of an attempt (`formatId`, `partPath`, `finalPath`):
+    one attempt downloads one format into one file."""
     if stored is not None and stored != reported:
-        raise InvalidStateTransition("formatId cannot change within an attempt")
+        raise InvalidStateTransition(f"{name} cannot change within an attempt")
     return reported
 
 

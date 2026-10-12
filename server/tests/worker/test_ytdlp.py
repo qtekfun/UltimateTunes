@@ -6,6 +6,7 @@ against a stand-in zipapp (`fixtures/fake_ytdlp.py`). Nothing reaches the networ
 import itertools
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
@@ -228,6 +229,7 @@ async def test_the_client_ladder_retries_extraction_failures(staging: LocalStagi
         ("NoResultL01", WorkerErrorCode.INTERNAL_ERROR, True),
         ("MkvFormat01", WorkerErrorCode.FORMAT_UNAVAILABLE, False),
         ("EscapeDir01", WorkerErrorCode.INTERNAL_ERROR, False),
+        ("DotDotName1", WorkerErrorCode.INTERNAL_ERROR, False),
     ],
 )
 async def test_failures(
@@ -292,3 +294,19 @@ async def test_a_vanished_file_is_a_storage_error(
     with pytest.raises(DownloadError) as caught:
         await downloader(staging).download("OkWebm00001", JOB_DIR, Recorder())
     assert caught.value.code == WorkerErrorCode.STORAGE_ERROR
+
+
+async def test_the_current_link_is_resolved_once_per_download(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    link = tmp_path / "current"
+    link.symlink_to(FAKE_ZIPAPP)
+    seen: list[list[str]] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(args)
+        return await ytdlp._open(args, env)
+
+    resolving = YtDlpDownloader(staging, WorkerSettings(), Zipapp(link), runner=runner)
+    await resolving.download("OkWebm00001", JOB_DIR, Recorder())
+    assert seen[0][3] == str(FAKE_ZIPAPP.resolve())

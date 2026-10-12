@@ -603,3 +603,52 @@ def test_jobs_are_found_by_video_and_carry_hints(queue: SqliteJobQueue, db: Data
         conn.execute("DELETE FROM tracks WHERE id = 't1'")
     with pytest.raises(NotFound):
         queue.hints(job)
+
+
+def test_staging_dirs_never_repeat_across_re_requests(queue: SqliteJobQueue) -> None:
+    job = queue.enqueue(track_id="t1", video_id="Rb8Tn3ZcYv0", priority=1)
+    first = claim(queue)
+    assert (first.job.attempts, first.job.staging_dir) == (1, f"{job.id}/1")
+    queue.fail(
+        job.id, first.lease.lease_id, error_code="video_unavailable", retryable=False, message="x"
+    )
+    queue.enqueue(track_id="t1", video_id="Rb8Tn3ZcYv0", priority=1)
+    again = claim(queue)
+    # The retry budget starts over, the staging sequence does not.
+    assert (again.job.attempts, again.job.attempt_seq) == (1, 2)
+    assert again.job.staging_dir == f"{job.id}/2"
+
+
+def test_paths_are_fixed_by_the_first_report(queue: SqliteJobQueue) -> None:
+    queue.enqueue(track_id="t1", video_id="Rb8Tn3ZcYv0", priority=1)
+    claimed = claim(queue)
+    lease, base = claimed.lease.lease_id, claimed.job.staging_dir
+    queue.progress(claimed.job.id, lease, report(claimed))
+    with pytest.raises(InvalidStateTransition, match="partPath"):
+        queue.progress(claimed.job.id, lease, report(claimed, part_path=f"{base}/other.part"))
+    with pytest.raises(InvalidStateTransition, match="finalPath"):
+        queue.progress(claimed.job.id, lease, report(claimed, final_path=f"{base}/other.webm"))
+
+
+def test_a_write_that_matches_no_row_is_a_lost_lease(queue: SqliteJobQueue, db: Database) -> None:
+    """Under READ COMMITTED another claimer can win between the read and the conditional
+    update; a trigger that skips the update stands in for that race here."""
+    job = queue.enqueue(track_id="t1", video_id="Rb8Tn3ZcYv0", priority=1)
+    claimed = claim(queue)
+    with db.transaction() as conn:
+        conn.execute(
+            "CREATE TRIGGER steal BEFORE UPDATE ON jobs WHEN NEW.lease_id = OLD.lease_id"
+            " OR NEW.lease_id IS NULL BEGIN SELECT RAISE(IGNORE); END"
+        )
+    with pytest.raises(LeaseLost):
+        queue.progress(job.id, claimed.lease.lease_id, report(claimed))
+    seen: list[str] = []
+
+    def finalize(conn: Connection, current: Job) -> None:
+        conn.execute("UPDATE tracks SET status = 'ready' WHERE id = ?", (current.track_id,))
+        seen.append(current.id)
+
+    with pytest.raises(LeaseLost):
+        queue.release(job.id, claimed.lease.lease_id, state="failed", finalize=finalize)
+    assert seen == [job.id]
+    assert track_status(db, "t1") == "pending"

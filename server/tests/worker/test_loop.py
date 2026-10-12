@@ -210,6 +210,10 @@ class FakeRuntime:
         self.fail_update = fail_update
         self.fail_install = fail_install
         self.version: str | None = "2026.08.19"
+        self.due = True
+
+    def update_due(self, interval_s: float) -> bool:
+        return self.due
 
     def current_version(self) -> str | None:
         return self.version
@@ -617,3 +621,43 @@ def test_worker_settings_come_from_ut_env_vars(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("UT_YTDLP_PLAYER_CLIENTS", "default; rm -rf")
     with pytest.raises(ValueError, match="pattern"):
         WorkerSettings()
+
+
+class StopsAfterTheMove(Registering):
+    """Registers and moves, then SIGTERM and an admin cancel arrive before `complete`."""
+
+    def __init__(self, stack: Stack, stop: anyio.Event, job_id: str) -> None:
+        super().__init__(stack)
+        self.stop = stop
+        self.job_id = job_id
+
+    async def archive(self, request: ArchiveRequest) -> Archived:
+        archived = await super().archive(request)
+        self.stack.services.jobs.request_cancel(self.job_id)
+        self.stop.set()
+        await anyio.sleep(0.05)  # heartbeats see the cancel, the watcher sees the stop
+        return archived
+
+
+async def test_a_stop_or_cancel_during_archiving_still_completes(stack: Stack) -> None:
+    job_id = enqueue(stack)
+    stop = anyio.Event()
+    archiver = StopsAfterTheMove(stack, stop, job_id)
+    run = await make_worker(stack, fake_downloader(stack), archiver=archiver).run_once(stop)
+    assert run == 0.0
+    job = stack.job(job_id)
+    assert (job.state, job.error_code) == ("ready", None)
+    path = f"The Paper Lanterns/Lanterns at Dusk/{VIDEO}.opus"
+    with stack.db.read() as conn:
+        track = conn.execute("SELECT status, path FROM tracks WHERE id = 't1'").fetchone()
+    assert track is not None
+    assert dict(track) == {"status": "ready", "path": path}
+    assert stack.services.library.exists(path)
+
+
+async def test_no_update_check_before_it_is_due(stack: Stack) -> None:
+    runtime = FakeRuntime()
+    runtime.due = False
+    worker = make_worker(stack, fake_downloader(stack), runtime=runtime)
+    await worker.housekeeping()
+    assert runtime.updates == 0

@@ -4,14 +4,17 @@
 faked), atomic swap, pruning, and every refusal."""
 
 import hashlib
+import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from subprocess import CompletedProcess
 
+import anyio
 import httpx
 import pytest
 
+from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.worker.settings import YTDLP_KEY_FINGERPRINT, WorkerSettings
 from ultimatetunes.worker.ytdlp_runtime import UpdateError, YtDlpRuntime, _run
 
@@ -285,3 +288,49 @@ async def test_a_link_to_something_else_is_not_a_version(settings: WorkerSetting
 async def test_the_default_runner_uses_an_argument_list() -> None:
     result = await _run([sys.executable, "-c", "print(7)"])
     assert (result.returncode, result.stdout.strip()) == (0, b"7")
+
+
+async def test_the_last_check_is_persisted(settings: WorkerSettings) -> None:
+    clock = FakeClock()
+    client = httpx.AsyncClient(transport=httpx.MockTransport(github()))
+    rt = YtDlpRuntime(settings, client=client, run=Processes(), clock=clock)
+    assert rt.last_check() is None
+    assert rt.update_due(3600)
+    await rt.update()
+    assert rt.last_check() == clock.now()
+    clock.advance(1800)
+    # A restarted worker reads the same file.
+    again = YtDlpRuntime(settings, client=client, run=Processes(), clock=clock)
+    assert not again.update_due(3600)
+    clock.advance(1800)
+    assert again.update_due(3600)
+    rt.state_file.write_text("{broken", encoding="utf-8")
+    assert rt.last_check() is None
+
+
+async def test_a_hung_update_times_out(tmp_path: Path) -> None:
+    slow_settings = WorkerSettings(ytdlp_dir=tmp_path / "y", ytdlp_update_timeout_s=0.05)
+
+    class Hanging(Processes):
+        async def __call__(self, args: Sequence[str]) -> CompletedProcess[bytes]:
+            await anyio.sleep(10)
+            raise AssertionError("never")
+
+    with pytest.raises(UpdateError, match="timed out"):
+        await runtime(slow_settings, github(), Hanging()).update()
+    assert list((tmp_path / "y" / "tmp").iterdir()) == []
+
+
+async def test_updaters_use_private_tmp_dirs_and_sweep_stale_ones(
+    settings: WorkerSettings,
+) -> None:
+    tmp_root = settings.ytdlp_dir / "tmp"
+    busy = tmp_root / "2026.09.28-someone-else"
+    stale = tmp_root / "2026.01.01-crashed"
+    busy.mkdir(parents=True)
+    stale.mkdir()
+    os.utime(stale, (0, 0))
+    await runtime(settings, github()).update()
+    assert busy.is_dir()
+    assert not stale.exists()
+    assert sorted(p.name for p in tmp_root.iterdir()) == [busy.name]

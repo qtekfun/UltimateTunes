@@ -115,10 +115,10 @@ def test_expected_size_and_format_are_fixed_once_reported() -> None:
         sm.check_expected_size(10, 11)
     with pytest.raises(InvalidStateTransition):
         sm.check_expected_size(10, None)
-    assert sm.check_format(None, "251") == "251"
-    assert sm.check_format("251", "251") == "251"
+    assert sm.check_fixed("formatId", None, "251") == "251"
+    assert sm.check_fixed("formatId", "251", "251") == "251"
     with pytest.raises(InvalidStateTransition):
-        sm.check_format("251", "140")
+        sm.check_fixed("formatId", "251", "140")
 
 
 @pytest.mark.parametrize(

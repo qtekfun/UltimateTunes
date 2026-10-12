@@ -79,6 +79,8 @@ def main(args: list[str]) -> None:
         ext = "mkv"
     final = out_dir / f"{video}.{ext}"
     part = Path(f"{final}.part")
+    if video == "DotDotName1":
+        final = out_dir / ".."
     if video == "EscapeDir01":
         part = out_dir.parent / "elsewhere.part"
     total = None if video == "NoSizeKnown" else len(AUDIO)

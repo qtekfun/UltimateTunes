@@ -13,9 +13,11 @@
   backoff (contracts/errors.md). An `extractor_error` also triggers a yt-dlp update (at most
   once per `ytdlp_update_on_error_min_interval_s`); `rate_limited_upstream` pauses claiming
   (circuit breaker, doubling up to a maximum) instead of burning every job's attempts.
-- SIGTERM/SIGINT stop claiming; a job in progress is stopped and released with a retryable
-  `fail`, so another worker can take it after the backoff. A worker that is killed outright
-  releases nothing: its lease runs out and the next claim re-queues the job.
+- SIGTERM/SIGINT stop claiming; a job still downloading is stopped and released with a
+  retryable `fail`, so another worker can take it after the backoff (that release counts as an
+  attempt: the contract has no "release without consuming"). Once archiving has started
+  (register, move, complete), neither a shutdown nor an admin cancel interrupts it. A worker
+  that is killed outright releases nothing: its lease runs out and the next claim re-queues it.
 - On start, and every `status_interval_s`, the worker reports its versions; the answer carries
   admin commands (`update_ytdlp`; `run_canary` belongs to PLAN T19).
 """
@@ -64,6 +66,8 @@ log = logging.getLogger(__name__)
 
 SignalInstaller = Callable[[int, Callable[[int, FrameType | None], None]], object]
 Sleep = Callable[[float], Awaitable[None]]
+# How often the loop looks at the persisted time of the last yt-dlp update check.
+UPDATE_CHECK_EVERY_S = 60.0
 
 
 class Runtime(Protocol):
@@ -72,6 +76,8 @@ class Runtime(Protocol):
     def current_version(self) -> str | None: ...
 
     async def ensure_installed(self) -> str: ...
+
+    def update_due(self, interval_s: float) -> bool: ...
 
     async def update(self, *, force: bool = False) -> UpdateResult: ...
 
@@ -85,6 +91,7 @@ class JobRun:
     lost: bool = False
     cancel_requested: bool = False
     shutdown: bool = False
+    archiving: bool = False
     error: DownloadError | None = None
     last: DownloadProgress | None = None
 
@@ -207,16 +214,20 @@ class Worker:
 
         download = await self.downloader.download(job.video_id, job.staging_dir, on_progress)
         await self._report(run, "tagging", self._final_report(run, download))
-        archived = await self.archiver.archive(
-            ArchiveRequest(job, download, self.api, self.staging, self.library)
-        )
-        await self.api.complete(
-            job,
-            track_id=archived.track_id,
-            library_path=archived.library_path,
-            staging_path=download.final_path,
-            staging_size=download.size_bytes,
-        )
+        # From register on, stopping halfway would leave a reserved path or a moved file
+        # without `complete`: a shutdown or an admin cancel no longer interrupts, it waits.
+        with anyio.CancelScope(shield=True):
+            run.archiving = True
+            archived = await self.archiver.archive(
+                ArchiveRequest(job, download, self.api, self.staging, self.library)
+            )
+            await self.api.complete(
+                job,
+                track_id=archived.track_id,
+                library_path=archived.library_path,
+                staging_path=download.final_path,
+                staging_size=download.size_bytes,
+            )
         log.info("worker %s: job %s complete", self.worker_id, job.job_id)
 
     @staticmethod
@@ -260,14 +271,17 @@ class Worker:
                 continue
             if info.cancel_requested:
                 run.cancel_requested = True
-                scope.cancel()
-                return
+                if not run.archiving:
+                    scope.cancel()
+                    return
+                # Archiving: keep the lease alive until register, move and complete are done.
 
     @staticmethod
     async def _watch_stop(run: JobRun, stop: anyio.Event, scope: anyio.CancelScope) -> None:
         await stop.wait()
         run.shutdown = True
-        scope.cancel()
+        if not run.archiving:
+            scope.cancel()
 
     async def _settle(self, run: JobRun) -> None:
         job = run.job
@@ -314,10 +328,12 @@ class Worker:
         if now >= self._next_status:
             self._next_status = now + self.settings.status_interval_s
             await self.report_status()
-        due = now >= self._next_update
-        if self.runtime is not None and self.settings.ytdlp_auto_update and due:
-            self._next_update = now + self.settings.ytdlp_update_interval_h * 3600
-            await self.update_ytdlp()
+        runtime = self.runtime
+        if runtime is not None and self.settings.ytdlp_auto_update and now >= self._next_update:
+            # The last check is persisted in the volume, so restarts do not hit GitHub again.
+            self._next_update = now + UPDATE_CHECK_EVERY_S
+            if runtime.update_due(self.settings.ytdlp_update_interval_h * 3600):
+                await self.update_ytdlp()
 
     def ytdlp_version(self) -> str:
         if self.runtime is None:

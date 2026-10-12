@@ -30,6 +30,7 @@ import shutil
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 # Only for the type of a finished process; processes start with anyio and argument lists.
@@ -38,6 +39,7 @@ from subprocess import CompletedProcess  # nosec B404
 import anyio
 import httpx
 
+from ultimatetunes.core.clock import Clock, SystemClock, format_ts, parse_ts
 from ultimatetunes.worker.settings import WorkerSettings
 
 log = logging.getLogger(__name__)
@@ -61,6 +63,8 @@ MAX_ZIPAPP_BYTES = 50 * 1024 * 1024
 MAX_SMALL_BYTES = 1024 * 1024
 SUBPROCESS_TIMEOUT_S = 60.0
 KEEP_PREVIOUS = 2
+STATE_FILE = "state.json"
+STALE_TMP_S = 24 * 3600
 VALIDSIG_MIN_FIELDS = 3
 
 ProcessRunner = Callable[[Sequence[str]], Awaitable[CompletedProcess[bytes]]]
@@ -92,12 +96,39 @@ class YtDlpRuntime:
         client: httpx.AsyncClient | None = None,
         run: ProcessRunner = _run,
         python: str = sys.executable,
+        clock: Clock | None = None,
     ) -> None:
         self._settings = settings
         self._root = settings.ytdlp_dir
         self._client = client
         self._run = run
         self._python = python
+        self._clock = clock or SystemClock()
+
+    @property
+    def state_file(self) -> Path:
+        return self._root / STATE_FILE
+
+    def last_check(self) -> datetime | None:
+        """When the last update check started (persisted in the volume), or None."""
+        try:
+            raw = json.loads(self.state_file.read_text(encoding="utf-8"))
+            return parse_ts(str(raw["lastCheck"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def update_due(self, interval_s: float) -> bool:
+        """True when no check happened within `interval_s` (also across worker restarts)."""
+        last = self.last_check()
+        if last is None:
+            return True
+        return (self._clock.now() - last).total_seconds() >= interval_s
+
+    def _record_check(self) -> None:
+        self._root.mkdir(parents=True, exist_ok=True)
+        tmp = self._root / f".{STATE_FILE}.{secrets.token_hex(4)}"
+        tmp.write_text(json.dumps({"lastCheck": format_ts(self._clock.now())}), encoding="utf-8")
+        tmp.replace(self.state_file)
 
     @property
     def current_link(self) -> Path:
@@ -125,33 +156,49 @@ class YtDlpRuntime:
             raise UpdateError("no yt-dlp in the volume and no seed in the image")
         version = await self._smoke(seed)
         tmp = self._fresh_tmp(version)
-        shutil.copyfile(seed, tmp / ZIPAPP)
-        self._install(tmp, version)
+        try:
+            shutil.copyfile(seed, tmp / ZIPAPP)
+            self._install(tmp, version)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         log.info("yt-dlp: seed %s installed", version)
         return version
 
     # ------------------------------------------------------------ update
 
     async def update(self, *, force: bool = False) -> UpdateResult:
-        """Installs the latest release of the channel when it is newer (or `force`)."""
+        """Installs the latest release of the channel when it is newer (or `force`). The whole
+        check is bounded by `ytdlp_update_timeout_s`, and its start time is persisted."""
+        self._record_check()
+        try:
+            with anyio.fail_after(self._settings.ytdlp_update_timeout_s):
+                return await self._update(force=force)
+        except TimeoutError as exc:
+            raise UpdateError("the update timed out") from exc
+
+    async def _update(self, *, force: bool) -> UpdateResult:
         repo = REPOS[self._settings.ytdlp_channel]
         tag = await self._latest_tag(repo)
         current = self.current_version()
         if tag == current and not force:
             return UpdateResult(tag, updated=False)
         tmp = self._fresh_tmp(tag)
-        base = f"https://github.com/{repo}/releases/download/{tag}"
-        (tmp / ZIPAPP).write_bytes(await self._get(f"{base}/{ZIPAPP}", MAX_ZIPAPP_BYTES))
-        (tmp / SUMS).write_bytes(await self._get(f"{base}/{SUMS}", MAX_SMALL_BYTES))
-        (tmp / SIGNATURE).write_bytes(await self._get(f"{base}/{SIGNATURE}", MAX_SMALL_BYTES))
-        await self._verify_signature(tmp)
-        self._verify_sha256(tmp)
-        version = await self._smoke(tmp / ZIPAPP)
-        if version != tag:
-            raise UpdateError(f"the zipapp reports {version!r}, expected {tag!r}")
-        (tmp / SUMS).unlink()
-        (tmp / SIGNATURE).unlink()
-        self._install(tmp, tag)
+        try:
+            base = f"https://github.com/{repo}/releases/download/{tag}"
+            (tmp / ZIPAPP).write_bytes(await self._get(f"{base}/{ZIPAPP}", MAX_ZIPAPP_BYTES))
+            (tmp / SUMS).write_bytes(await self._get(f"{base}/{SUMS}", MAX_SMALL_BYTES))
+            (tmp / SIGNATURE).write_bytes(await self._get(f"{base}/{SIGNATURE}", MAX_SMALL_BYTES))
+            await self._verify_signature(tmp)
+            self._verify_sha256(tmp)
+            version = await self._smoke(tmp / ZIPAPP)
+            if version != tag:
+                raise UpdateError(f"the zipapp reports {version!r}, expected {tag!r}")
+            (tmp / SUMS).unlink()
+            (tmp / SIGNATURE).unlink()
+            self._install(tmp, tag)
+        finally:
+            # Only this updater's own directory: another worker may be verifying in tmp/ too.
+            shutil.rmtree(tmp, ignore_errors=True)
         log.info("yt-dlp: updated %s -> %s", current, tag)
         return UpdateResult(tag, updated=True)
 
@@ -242,19 +289,23 @@ class YtDlpRuntime:
     # ------------------------------------------------------------ files
 
     def _fresh_tmp(self, tag: str) -> Path:
+        """A private directory under tmp/ for one install. Leftovers of crashed updaters are
+        removed once they are older than a day (a live one never takes that long)."""
         tmp_root = self._root / "tmp"
-        shutil.rmtree(tmp_root, ignore_errors=True)
-        tmp = tmp_root / f"{tag}-{secrets.token_hex(4)}"
-        tmp.mkdir(parents=True)
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        cutoff = self._clock.now().timestamp() - STALE_TMP_S
+        for old in tmp_root.iterdir():
+            if old.stat().st_mtime < cutoff:
+                shutil.rmtree(old, ignore_errors=True)
+        tmp = tmp_root / f"{tag}-{secrets.token_hex(8)}"
+        tmp.mkdir()
         return tmp
 
     def _install(self, tmp: Path, tag: str) -> None:
         releases = self._root / "releases"
         releases.mkdir(parents=True, exist_ok=True)
         target = releases / tag
-        if target.exists():
-            shutil.rmtree(tmp)
-        else:
+        if not target.exists():
             (tmp / ZIPAPP).chmod(0o444)
             tmp.rename(target)
         link_tmp = self._root / f"current.{secrets.token_hex(4)}"

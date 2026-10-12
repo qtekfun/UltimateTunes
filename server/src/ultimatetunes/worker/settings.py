@@ -50,6 +50,8 @@ class WorkerSettings(AreaSettings):
     ytdlp_channel: Literal["stable", "nightly"] = "stable"
     ytdlp_auto_update: bool = True
     ytdlp_update_interval_h: float = Field(default=24.0, gt=0)
+    # Bound of one whole update check (GitHub, gpgv, smoke test).
+    ytdlp_update_timeout_s: float = Field(default=300.0, gt=0)
     # An extractor error triggers an update at most this often.
     ytdlp_update_on_error_min_interval_s: float = Field(default=3600.0, ge=0)
     ytdlp_player_clients: str = Field(default="default", pattern=CLIENTS_PATTERN)

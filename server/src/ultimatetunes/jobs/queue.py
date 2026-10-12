@@ -82,11 +82,13 @@ class Job:
     previous_format_id: str | None = None
     previous_expected_size: int | None = None
     lease_seconds: int | None = None
+    attempt_seq: int = 0
 
     @property
     def staging_dir(self) -> str:
-        """The staging directory of the current attempt (contract `Job.stagingDir`)."""
-        return f"{self.id}/{self.attempts}"
+        """The staging directory of the current attempt (contract `Job.stagingDir`): numbered by
+        the job's claim sequence, which never resets, so a re-request never reuses one."""
+        return f"{self.id}/{self.attempt_seq}"
 
 
 @dataclass(frozen=True)
@@ -205,7 +207,7 @@ _COLUMNS = (
     " last_lease_id, last_outcome, created_at, updated_at, progress, bytes_downloaded,"
     " expected_size, part_path, final_path, finished, progressive, format_id, content_type,"
     " library_path, merge_into_track_id, previous_format_id, previous_expected_size,"
-    " lease_seconds"
+    " lease_seconds, attempt_seq"
 )
 
 
@@ -275,7 +277,7 @@ _EXPIRE_JOBS = (
 # reported a format, so an attempt that died before its first report erases nothing), and the
 # streaming columns start empty.
 _TAKE = (
-    "UPDATE jobs SET state = 'downloading', attempts = attempts + 1,"
+    "UPDATE jobs SET state = 'downloading', attempts = attempts + 1, attempt_seq = attempt_seq + 1,"
     " lease_id = ?, lease_owner = ?, lease_expires_at = ?, lease_seconds = ?, not_before = NULL,"
     " previous_expected_size = CASE WHEN format_id IS NULL THEN previous_expected_size"
     " ELSE expected_size END,"
@@ -457,13 +459,17 @@ class SqliteJobQueue:
         with self._db.transaction() as conn:
             job = self._leased(conn, job_id, lease_id, now)
             target = sm.check_report(job.state, report.state)
-            part = _inside(job.staging_dir, report.part_path)
-            final = _inside(job.staging_dir, report.final_path)
+            part = sm.check_fixed(
+                "partPath", job.part_path, _inside(job.staging_dir, report.part_path)
+            )
+            final = sm.check_fixed(
+                "finalPath", job.final_path, _inside(job.staging_dir, report.final_path)
+            )
             size = sm.check_expected_size(job.expected_size, report.expected_size)
-            format_id = sm.check_format(job.format_id, report.format_id)
+            format_id = sm.check_fixed("formatId", job.format_id, report.format_id)
             lease_s = job.lease_seconds or DEFAULT_LEASE_S
             expires = format_ts(moment + timedelta(seconds=lease_s))
-            conn.execute(
+            updated = conn.execute(
                 "UPDATE jobs SET state = ?, progress = ?, bytes_downloaded = ?,"
                 " expected_size = ?, part_path = ?, final_path = ?, finished = ?,"
                 " progressive = ?, format_id = ?, content_type = ?, lease_expires_at = ?,"
@@ -484,7 +490,11 @@ class SqliteJobQueue:
                     job_id,
                     lease_id,
                 ),
-            )
+            ).rowcount
+            # Conditional on the lease: under READ COMMITTED (PostgreSQL) another claim may have
+            # taken the job since it was read; then nothing is written and the lease is lost.
+            if updated != 1:
+                raise LeaseLost()
         return Lease(lease_id, expires, _heartbeat_s(lease_s), bool(job.cancel_requested))
 
     def release(  # noqa: PLR0913 - keyword-only fields of a release
@@ -534,7 +544,7 @@ class SqliteJobQueue:
         result = JobResult(job.id, state, job.attempts, not_before if state == "queued" else None)
         outcome = json.dumps({"operation": _operation(state), **asdict(result)})
         keep = 1 if state == "ready" else 0
-        conn.execute(
+        updated = conn.execute(
             "UPDATE jobs SET state = ?, error_code = ?, error_message = ?, not_before = ?,"
             " lease_id = NULL, lease_owner = NULL, lease_expires_at = NULL,"
             " cancel_requested = 0, last_lease_id = ?, last_outcome = ?,"
@@ -557,7 +567,11 @@ class SqliteJobQueue:
                 job.id,
                 lease_id,
             ),
-        )
+        ).rowcount
+        if updated != 1:
+            # Another claimer took the job since it was read: the whole release (and the
+            # finalizer's writes) rolls back.
+            raise LeaseLost()
         if state in ("failed", "cancelled"):
             self._fail_track(conn, job.track_id, now)
         return result
