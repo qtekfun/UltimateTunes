@@ -10,3 +10,12 @@ plugins {
 android {
     namespace = "com.qtekfun.ultimatetunes.core.player"
 }
+
+dependencies {
+    // One Media3 version for all artifacts; datasource-okhttp streams through the OkHttp client of
+    // :core:api, which adds the credentials (SPEC §11, T02).
+    implementation(libs.media3.exoplayer)
+    // api: the app's playback package (T17) binds a MediaController to the session service.
+    api(libs.media3.session)
+    implementation(libs.media3.datasource.okhttp)
+}

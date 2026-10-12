@@ -171,6 +171,16 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.datastore.preferences)
+
+    // Artwork through the app's OkHttp client (coil-network-okhttp) and colours from artwork.
+    implementation(platform(libs.coil.bom))
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.palette)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
