@@ -11,6 +11,9 @@ the limits; this module only does the arithmetic and keeps the state in `rate_li
 - `record_failure(key, ...)` counts a failure (wrong password, invalid key); reaching
   `max_failures` locks the key for `lockout_s` and starts a new count.
 - `record_success(key)` clears the failure count.
+- `purge_idle(idle_s)` forgets keys with no activity (hit, failure or success) for `idle_s`
+  and no running lockout. So a failure count lives as long as failures keep coming less than
+  `idle_s` apart: purging never wipes a live count.
 """
 
 import math
@@ -57,7 +60,7 @@ class RateLimiter(Protocol):
     def record_success(self, key: str) -> None: ...
 
     def purge_idle(self, idle_s: float) -> int:
-        """Drops buckets untouched for `idle_s` and not locked. Returns how many."""
+        """Drops keys with no activity for `idle_s` and not locked. Returns how many."""
         ...
 
 
@@ -68,6 +71,7 @@ def _ceil_s(seconds: float) -> int:
 @dataclass
 class _Bucket:
     tokens: float
+    # Refill time of the tokens.
     updated_at: str
     failures: int
     locked_until: str | None
@@ -96,12 +100,20 @@ class SqliteRateLimiter:
 
     def _save(self, conn: Connection, key: str, bucket: _Bucket) -> None:
         conn.execute(
-            "INSERT INTO rate_limit_buckets (key, tokens, updated_at, failures, locked_until)"
-            " VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO rate_limit_buckets"
+            " (key, tokens, updated_at, touched_at, failures, locked_until)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (key) DO UPDATE SET tokens = excluded.tokens,"
-            " updated_at = excluded.updated_at, failures = excluded.failures,"
-            " locked_until = excluded.locked_until",
-            (key, bucket.tokens, bucket.updated_at, bucket.failures, bucket.locked_until),
+            " updated_at = excluded.updated_at, touched_at = excluded.touched_at,"
+            " failures = excluded.failures, locked_until = excluded.locked_until",
+            (
+                key,
+                bucket.tokens,
+                bucket.updated_at,
+                format_ts(self._clock.now()),
+                bucket.failures,
+                bucket.locked_until,
+            ),
         )
 
     def _lockout(self, bucket: _Bucket | None) -> Decision:
@@ -156,14 +168,17 @@ class SqliteRateLimiter:
 
     def record_success(self, key: str) -> None:
         with self._db.transaction() as conn:
-            conn.execute("UPDATE rate_limit_buckets SET failures = 0 WHERE key = ?", (key,))
+            conn.execute(
+                "UPDATE rate_limit_buckets SET failures = 0, touched_at = ? WHERE key = ?",
+                (format_ts(self._clock.now()), key),
+            )
 
     def purge_idle(self, idle_s: float) -> int:
         now = self._clock.now()
         cutoff = format_ts(now - timedelta(seconds=idle_s))
         with self._db.transaction() as conn:
             return conn.execute(
-                "DELETE FROM rate_limit_buckets WHERE updated_at < ?"
+                "DELETE FROM rate_limit_buckets WHERE touched_at < ?"
                 " AND (locked_until IS NULL OR locked_until <= ?)",
                 (cutoff, format_ts(now)),
             ).rowcount

@@ -94,3 +94,36 @@ def test_failure_parameters_must_be_positive(limiter: SqliteRateLimiter) -> None
         limiter.record_failure("k", max_failures=0, lockout_s=1)
     with pytest.raises(ValueError, match="positive"):
         limiter.record_failure("k", max_failures=1, lockout_s=0)
+
+
+def test_purging_never_wipes_a_live_failure_count(
+    limiter: SqliteRateLimiter, clock: FakeClock
+) -> None:
+    """Slow brute force: 40 failures 200 s apart, with a purge of 600 s idle after each."""
+    decisions = []
+    for _ in range(40):
+        clock.advance(200)
+        decisions.append(limiter.record_failure("ip:slow", max_failures=40, lockout_s=900))
+        assert limiter.purge_idle(600) == 0
+    assert all(d.allowed for d in decisions[:-1])
+    assert decisions[-1] == Decision(False, 900)
+    assert limiter.locked("ip:slow") == Decision(False, 900)
+
+
+def test_failures_are_forgotten_once_idle(limiter: SqliteRateLimiter, clock: FakeClock) -> None:
+    limiter.record_failure("ip:gone", max_failures=2, lockout_s=60)
+    clock.advance(601)
+    assert limiter.purge_idle(600) == 1
+    assert limiter.record_failure("ip:gone", max_failures=2, lockout_s=60).allowed
+
+
+def test_success_and_hits_count_as_activity(limiter: SqliteRateLimiter, clock: FakeClock) -> None:
+    limiter.record_failure("key:a", max_failures=5, lockout_s=60)
+    limiter.hit("key:b", LIMIT)
+    clock.advance(500)
+    limiter.record_success("key:a")
+    limiter.hit("key:b", LIMIT)
+    clock.advance(500)
+    assert limiter.purge_idle(600) == 0
+    clock.advance(101)
+    assert limiter.purge_idle(600) == 2

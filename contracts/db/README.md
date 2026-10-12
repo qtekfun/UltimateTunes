@@ -62,13 +62,14 @@ Migrations from different ranges are applied in plain numeric order. A stream mi
 | --- | --- | --- |
 | `users`, `api_keys`, `audit_log` | Accounts (Argon2id), per-device keys (SHA-256 hash, prefix, last use, revocation), audit trail | T04, T15 |
 | `rate_limit_buckets` | `RateLimiter` SQLite implementation: token bucket, failure count, lockout | T04 |
-| `artists`, `albums`, `tracks` | Library. A track row exists from its first request (`status` `pending` → `ready` / `failed`) | T05, T09, T16 |
+| `artists`, `albums`, `tracks` | Library. A track row exists from its first request (`status` `pending` → `ready` / `failed`, or `merged` into an existing track, `../ids.md`). `tracks.format` accepts only `opus`, `m4a`, `mp3`, `flac`, `ogg`: the library scan (T05) skips files in any other format | T05, T09, T16 |
 | `track_aliases` | Virtual ids (`yt:…`) → library track id | T06, T16 |
-| `jobs`, `worker_status` | Download queue with leases. Worker reports (yt-dlp version, canary) | T08, T15 |
-| `playlists`, `playlist_tracks` | User playlists (also the result of imports) | T05, T11 |
+| `jobs`, `worker_status`, `worker_commands` | Download queue with leases, streaming state of the current attempt, library path reservation, idempotent release. Worker reports (versions). Admin commands for the workers, each delivered once | T08, T15, T16 |
+| `canary_runs` | Canary results of the worker (download) and the api (catalog checks) | T08, T15, T19 |
+| `playlists`, `playlist_tracks` | User playlists (also the result of imports). Positions are in the key: rewrite a playlist by deleting its entries and inserting the new list in one transaction, never by updating positions in place | T05, T11 |
 | `starred_tracks`, `starred_albums`, `starred_artists` | Favourites | T05 |
 | `play_history`, `user_track_stats` | Scrobbles and per-user play counts (Listen Now, most played) | T05, T07 |
-| `play_queues`, `play_queue_entries` | Saved play queue per user (raw item ids) | T05 |
+| `play_queues`, `play_queue_entries` | Saved play queue per user (raw item ids). Saved like playlists: delete and reinsert the entries in one transaction | T05 |
 | `lyrics` | LRCLIB results, including negative cache | T10 |
 | `imports`, `import_items` | Playlist imports and match report | T11 |
 | `settings` | Admin-editable runtime settings (no secrets) | T15 |

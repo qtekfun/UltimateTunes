@@ -100,12 +100,18 @@ CREATE INDEX ix_albums_created ON albums (created_at);
 CREATE INDEX ix_albums_year ON albums (year);
 
 -- A track row exists from the moment an external video is first requested (status pending),
--- so stars, playlists and history can reference it. artist_id, album_id, path and the file
--- columns are filled when the worker registers the archived file (status ready).
--- artist_name and album_name are the display values, also while pending.
+-- so stars, playlists and history can reference it. artist_id, album_id and the file columns
+-- are filled when the worker registers the archived file, path and status ready when the job
+-- completes (contracts/ids.md). artist_name and album_name are the display values, also while
+-- pending. format accepts only the listed formats: the library scan (T05) skips other files.
+-- merged: the archived file was the same recording as merged_into (an existing library track).
+-- The row is kept (its job row still references it), its alias, stars, playlist entries and
+-- history moved to merged_into. merged_into always points at a track that is not merged.
+-- yt_thumbnail_url is stored for later, the server never fetches it until SPEC section 11
+-- approves the YouTube image hosts.
 CREATE TABLE tracks (
     id TEXT NOT NULL PRIMARY KEY,
-    status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed', 'merged')),
     title TEXT NOT NULL,
     title_norm TEXT NOT NULL,
     sort_title TEXT,
@@ -134,6 +140,10 @@ CREATE TABLE tracks (
     musicbrainz_track_id TEXT,
     isrc TEXT,
     yt_video_id TEXT UNIQUE,
+    yt_album_browse_id TEXT,
+    yt_artist_channel_id TEXT,
+    yt_thumbnail_url TEXT,
+    merged_into TEXT REFERENCES tracks (id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     archived_at TEXT
@@ -161,6 +171,18 @@ CREATE INDEX ix_track_aliases_track ON track_aliases (track_id);
 -- One job row per (kind, track): a retry reuses the row, which also deduplicates requests
 -- per video id. Claimed with a lease (internal-worker.yaml), an expired lease goes back to
 -- queued. priority: higher first (stream 100, prefetch 50, keep 30, import 10).
+-- A job row is never deleted while it can hold a lease, and a merged track keeps its job row.
+-- Attempt n writes only to the staging directory <id>/<n>.
+-- Streaming (RF-05): expected_size is the exact size (NULL until known), part_path the growing
+-- file, final_path where it is once finished = 1, format_id and content_type the format of
+-- the current attempt, progressive = 1 when it may be streamed while it grows. Paths are
+-- relative to /staging.
+-- Archive: library_path is the path reserved under /music by register (UNIQUE: two jobs never
+-- reserve the same file), merge_into_track_id the existing track when register found the same
+-- recording. Both are cleared when the job goes back to queued or ends without ready.
+-- cancel_requested: an admin asked to cancel a leased job (the worker learns it on heartbeat).
+-- Idempotent release: last_lease_id and last_outcome (a JSON document as TEXT) let a repeated
+-- complete or fail with the same lease return the same result.
 CREATE TABLE jobs (
     id TEXT NOT NULL PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('download')),
@@ -174,10 +196,20 @@ CREATE TABLE jobs (
     lease_id TEXT UNIQUE,
     lease_owner TEXT,
     lease_expires_at TEXT,
+    cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
     progress DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 1),
     bytes_downloaded BIGINT,
-    bytes_total BIGINT,
-    staging_path TEXT,
+    expected_size BIGINT,
+    part_path TEXT,
+    final_path TEXT,
+    finished INTEGER NOT NULL DEFAULT 0 CHECK (finished IN (0, 1)),
+    progressive INTEGER NOT NULL DEFAULT 0 CHECK (progressive IN (0, 1)),
+    format_id TEXT,
+    content_type TEXT,
+    library_path TEXT UNIQUE,
+    merge_into_track_id TEXT REFERENCES tracks (id) ON DELETE SET NULL,
+    last_lease_id TEXT,
+    last_outcome TEXT,
     error_code TEXT,
     error_message TEXT,
     requested_by TEXT REFERENCES users (id) ON DELETE SET NULL,
@@ -192,16 +224,45 @@ CREATE INDEX ix_jobs_claim ON jobs (state, priority, created_at);
 CREATE INDEX ix_jobs_lease_expiry ON jobs (state, lease_expires_at);
 CREATE INDEX ix_jobs_video ON jobs (yt_video_id);
 
--- Last report of each worker process (yt-dlp version, canary), shown in the admin panel.
+-- Last report of each worker process (versions), shown in the admin panel.
 CREATE TABLE worker_status (
     worker_id TEXT NOT NULL PRIMARY KEY,
     version TEXT,
     ytdlp_version TEXT,
-    last_seen_at TEXT NOT NULL,
-    canary_at TEXT,
-    canary_ok INTEGER CHECK (canary_ok IN (0, 1)),
-    canary_message TEXT
+    last_seen_at TEXT NOT NULL
 );
+
+-- Admin commands for the workers (internal-worker.yaml, WorkerCommands). worker_id NULL means
+-- any worker: the first status report after created_at takes it. Each command is delivered
+-- once (delivered_at, delivered_to).
+CREATE TABLE worker_commands (
+    id TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL CHECK (command IN ('update_ytdlp', 'run_canary')),
+    worker_id TEXT,
+    requested_by TEXT REFERENCES users (id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    delivered_to TEXT
+);
+
+CREATE INDEX ix_worker_commands_pending ON worker_commands (delivered_at, created_at);
+
+-- Canary results (SPEC section 11): source worker (the download check) or api (the catalog
+-- checks). detail is a JSON document as TEXT (one entry per check). A worker report repeated
+-- after a timeout carries the same ran_at and is not stored twice.
+CREATE TABLE canary_runs (
+    id TEXT NOT NULL PRIMARY KEY,
+    source TEXT NOT NULL CHECK (source IN ('worker', 'api')),
+    worker_id TEXT,
+    ytdlp_version TEXT,
+    ran_at TEXT NOT NULL,
+    ok INTEGER NOT NULL CHECK (ok IN (0, 1)),
+    message TEXT,
+    detail TEXT,
+    UNIQUE (source, worker_id, ran_at)
+);
+
+CREATE INDEX ix_canary_runs_ran ON canary_runs (ran_at);
 
 -- ---------------------------------------------------------------- per-user state
 
@@ -217,7 +278,9 @@ CREATE TABLE playlists (
 
 CREATE INDEX ix_playlists_owner ON playlists (owner_id);
 
--- position is 0-based and dense, renumbered by the application on removal.
+-- position is 0-based and dense. Positions are part of the key, so the application rewrites a
+-- playlist's entries by deleting them and inserting the new list in one transaction (an
+-- in-place UPDATE of positions can collide with the key on PostgreSQL).
 CREATE TABLE playlist_tracks (
     playlist_id TEXT NOT NULL REFERENCES playlists (id) ON DELETE CASCADE,
     position INTEGER NOT NULL,
@@ -283,6 +346,8 @@ CREATE TABLE play_queues (
     changed_by TEXT NOT NULL
 );
 
+-- Saved like playlist_tracks: delete every entry of the user, then insert the new list, in one
+-- transaction.
 CREATE TABLE play_queue_entries (
     user_id TEXT NOT NULL REFERENCES play_queues (user_id) ON DELETE CASCADE,
     idx INTEGER NOT NULL,
@@ -368,13 +433,16 @@ CREATE TABLE cache_entries (
 CREATE INDEX ix_cache_entries_expires ON cache_entries (expires_at);
 
 -- RateLimiter state: one token bucket per key (e.g. 'auth:ip:192.0.2.10', 'auth:key:<key id>')
--- plus the consecutive failure counter that drives temporary lockout.
+-- plus the consecutive failure counter that drives temporary lockout. updated_at is the refill
+-- time of the tokens, touched_at the last activity of any kind (hit, failure, success), which
+-- decides when an idle row (and its failure count) may be purged.
 CREATE TABLE rate_limit_buckets (
     key TEXT NOT NULL PRIMARY KEY,
     tokens DOUBLE PRECISION NOT NULL,
     updated_at TEXT NOT NULL,
+    touched_at TEXT NOT NULL,
     failures INTEGER NOT NULL DEFAULT 0,
     locked_until TEXT
 );
 
-CREATE INDEX ix_rate_limit_buckets_updated ON rate_limit_buckets (updated_at);
+CREATE INDEX ix_rate_limit_buckets_touched ON rate_limit_buckets (touched_at);
