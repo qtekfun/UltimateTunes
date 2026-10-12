@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from tests.lyrics.helpers import TRACK_ID, VIDEO_ID, add_track, fixture_bytes
 from ultimatetunes.app import create_app
+from ultimatetunes.auth import PendingAuthenticator
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import Services, build_services
@@ -130,6 +131,37 @@ def test_errors(client: TestClient, params: dict[str, str], code: int) -> None:
     r = client.get("/rest/getLyricsBySongId", params={**params, "f": "json"})
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["error"]["code"] == code
+
+
+@pytest.mark.parametrize("fmt", ["json", "xml"])
+def test_without_credentials_the_real_authenticator_refuses(
+    settings: Settings, clock: FakeClock, lrclib: respx.MockRouter, fmt: str
+) -> None:
+    """The real authenticator of `build_services` (not `AllowAll`): no credentials never reach
+    the handler or LRCLIB. Error 10 (missing credentials) once T04's authenticator is wired;
+    until then `PendingAuthenticator` answers error 0 with HTTP 501."""
+    conn = migrate.connect(settings.database_file)
+    migrate.migrate(conn, CONTRACTS / "db" / "migrations", clock)
+    conn.close()
+    services = build_services(settings, clock)
+    add_track(services.db, clock)
+    route = lrclib.get("/api/get").respond(200, content=fixture_bytes("lighthouse_keeper.json"))
+    pending = isinstance(services.authenticator, PendingAuthenticator)
+    with TestClient(create_app(services=services)) as client:
+        r = client.get("/rest/getLyricsBySongId", params={"id": TRACK_ID, "f": fmt})
+        with services.db.read() as read:
+            assert read.execute("SELECT COUNT(*) FROM lyrics").scalar() == 0
+    code = 0 if pending else 10
+    assert r.status_code == (501 if pending else 200)
+    if fmt == "json":
+        body = r.json()["subsonic-response"]
+        assert body["status"] == "failed"
+        assert body["error"]["code"] == code
+        assert "lyricsList" not in body
+    else:
+        assert f'<error code="{code}"' in r.text
+        assert "lyricsList" not in r.text
+    assert not route.called
 
 
 def test_lrclib_down_is_error_zero(
