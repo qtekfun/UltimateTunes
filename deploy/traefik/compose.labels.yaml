@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY: overlay for server/compose.yaml behind Traefik (compose.traefik.yaml):
+#   docker compose -f compose.yaml -f ../deploy/traefik/compose.labels.yaml up -d
+# It puts the api (never the worker) on Traefik's `proxy` network under a unique alias,
+# trusts exactly Traefik's address for X-Forwarded-For, and refuses /admin to every other
+# container on `proxy`. The labels are the docker-provider variant of the routers in
+# dynamic/ultimatetunes.yml: use EITHER these labels OR that file's `routers` and `services`
+# (the middlewares stay in the file either way, referenced here as `@file`).
+
+services:
+  api:
+    environment:
+      # Traefik's pinned address on `proxy`: only it may say who the client is.
+      UT_TRUSTED_PROXIES: ${UT_TRAEFIK_ADDRESS:-10.213.46.2}/32
+      # Denied /admin and the /readyz detail: the worker's two networks and `proxy` (other
+      # homelab containers live there). Requests through Traefik resolve to the real client
+      # first, so they are not affected.
+      UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24},${UT_EGRESS_SUBNET:-10.213.45.0/24},${UT_PROXY_SUBNET:-10.213.46.0/24}
+    networks:
+      default: {}
+      internal: {}
+      proxy:
+        aliases: [ultimatetunes-api]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      traefik.http.services.ut-api.loadbalancer.server.port: "8044"
+      traefik.http.routers.ut-admin.entrypoints: websecure
+      traefik.http.routers.ut-admin.rule: Host(`music.example.org`) && (Path(`/admin`) || PathPrefix(`/admin/`))
+      traefik.http.routers.ut-admin.priority: "300"
+      traefik.http.routers.ut-admin.middlewares: ut-lan-only@file,authelia@file,ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
+      traefik.http.routers.ut-admin.service: ut-api
+      traefik.http.routers.ut-keys-login.entrypoints: websecure
+      traefik.http.routers.ut-keys-login.rule: Host(`music.example.org`) && Path(`/ut/v1/keys`) && Method(`POST`)
+      traefik.http.routers.ut-keys-login.priority: "250"
+      traefik.http.routers.ut-keys-login.middlewares: ut-lan-only@file,ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
+      traefik.http.routers.ut-keys-login.service: ut-api
+      traefik.http.routers.ut-api-write.entrypoints: websecure
+      traefik.http.routers.ut-api-write.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
+      traefik.http.routers.ut-api-write.priority: "200"
+      traefik.http.routers.ut-api-write.middlewares: ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
+      traefik.http.routers.ut-api-write.service: ut-api
+      traefik.http.routers.ut-api.entrypoints: websecure
+      traefik.http.routers.ut-api.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
+      traefik.http.routers.ut-api.priority: "100"
+      traefik.http.routers.ut-api.middlewares: ut-headers@file,ut-inflight@file,ut-ratelimit@file
+      traefik.http.routers.ut-api.service: ut-api
+
+networks:
+  proxy:
+    external: true

@@ -28,7 +28,7 @@ Music library, user accounts, API keys, admin panel, the host running the contai
 | Container escape impact | Non-root, read-only root filesystem, dropped capabilities, `no-new-privileges`, PID limit, no privileged mounts | T00, T22 |
 | Vulnerable dependencies | Dependabot, pip-audit, Trivy, gitleaks in CI; nightly audit | T01 |
 | Malicious audio/cover files | Files only produced by our own pipeline; mutagen/ffmpeg up to date; never execute content | T09 |
-| Public exposure | Reverse proxy with TLS + HSTS + request limits (`deploy/caddy/`), client address only from trusted proxies, `/readyz` detail internal and not routed by Caddy, connection limits on the listeners, container memory/CPU/file limits; ZAP baseline scan (`tools/zap-baseline.sh`); "Exposing UltimateTunes" in `deploy/README.md` | T22, exposure fixes |
+| Public exposure | Reverse proxy with TLS + HSTS + request limits (`deploy/caddy/` or `deploy/traefik/` with Authelia on `/admin`), client address only from trusted proxies, `/readyz` detail internal and not routed by Caddy, connection limits on the listeners, container memory/CPU/file limits; ZAP baseline scan (`tools/zap-baseline.sh`); "Exposing UltimateTunes" in `deploy/README.md` | T22, exposure fixes |
 | Resource exhaustion by one user | Per-user limit on external searches, capped and purged search cache, purged rate-limit state | T22 |
 | Future multi-replica deployment (k8s) | Shared state only through interfaces (Redis later), NetworkPolicies, PodSecurity restricted | Phase 5 |
 

@@ -1,0 +1,105 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY: Traefik v3 dynamic configuration (file provider) for UltimateTunes behind
+# Traefik + Authelia. Replace music.example.org, the LAN range and the Authelia address.
+# Routed: /admin (Authelia two_factor + LAN/Tailscale only), /rest and /ut/v1 (API keys, no
+# Authelia), the landing page /. Everything else, including /internal and /readyz, matches no
+# router and gets Traefik's 404.
+
+http:
+  routers:
+    # Admin panel: LAN/Tailscale only, then Authelia (two_factor policy in Authelia's
+    # access_control), then the api's own allowlist and admin login.
+    ut-admin:
+      entryPoints: [websecure]
+      rule: "Host(`music.example.org`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
+      priority: 300
+      middlewares: [ut-lan-only, authelia, ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
+      service: ut-api
+
+    # Password login (`POST /ut/v1/keys`, the only password endpoint outside the panel): only
+    # from LAN/Tailscale. Devices then get their key from the panel's QR code at home. This
+    # removes the per-username lockout surface (audit M1) at the edge. Drop `ut-lan-only` here
+    # to allow it from anywhere (the api still rate-limits and locks out per IP and username).
+    ut-keys-login:
+      entryPoints: [websecure]
+      rule: "Host(`music.example.org`) && Path(`/ut/v1/keys`) && Method(`POST`)"
+      priority: 250
+      middlewares: [ut-lan-only, ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
+      service: ut-api
+
+    # Requests with a body (form posts, imports, key revocation): buffered and capped. The
+    # buffering middleware also buffers the RESPONSE, so it is never on GET/HEAD (audio
+    # streams would be held back until complete).
+    ut-api-write:
+      entryPoints: [websecure]
+      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)"
+      priority: 200
+      middlewares: [ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
+      service: ut-api
+
+    # OpenSubsonic and the app's own API: API keys, NO Authelia (forwardAuth would answer
+    # clients with a login redirect and break every OpenSubsonic client and the app).
+    ut-api:
+      entryPoints: [websecure]
+      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))"
+      priority: 100
+      middlewares: [ut-headers, ut-inflight, ut-ratelimit]
+      service: ut-api
+
+  middlewares:
+    # LAN and tailnet only. No ipStrategy: Traefik is the edge, the TCP peer is the client.
+    # Narrow ranges; never the Docker bridges (172.16.0.0/12) nor the `proxy` network.
+    ut-lan-only:
+      ipAllowList:
+        sourceRange:
+          - "192.168.1.0/24"
+          - "100.64.0.0/10"
+          - "fd7a:115c:a1e0::/48"
+
+    # Authelia 4.38+ forward-auth endpoint. trustForwardHeader is safe here because the
+    # entrypoint rewrites X-Forwarded-* of untrusted clients before any middleware runs.
+    authelia:
+      forwardAuth:
+        address: "http://authelia:9091/api/authz/forward-auth"
+        trustForwardHeader: true
+        authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
+
+    # Per client IP (the TCP peer: no ipStrategy at the edge; behind a trusted Cloudflare
+    # proxy use `ipStrategy: {depth: 1}`). Generous for browsing (covers, many small calls);
+    # the api adds its own limits on authentication and searches.
+    ut-ratelimit:
+      rateLimit:
+        average: 20
+        period: 1s
+        burst: 100
+
+    # Concurrent requests per client IP (a stream holds one while it plays).
+    ut-inflight:
+      inFlightReq:
+        amount: 16
+
+    # Bodies up to 2 MB (an import file is at most 1 MiB; the api caps bodies at 4 MiB and
+    # OpenSubsonic form posts at 1 MiB). Buffered to memory up to 1 MiB, then to disk. No
+    # response cap: a client may POST `stream`, whose answer is a whole audio file.
+    ut-body-limit:
+      buffering:
+        maxRequestBodyBytes: 2000000
+        memRequestBodyBytes: 1048576
+
+    ut-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+
+  services:
+    ut-api:
+      loadBalancer:
+        # The api's network alias on the shared `proxy` network (compose.labels.yaml).
+        servers:
+          - url: "http://ultimatetunes-api:8044"
+        passHostHeader: true

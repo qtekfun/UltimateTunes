@@ -11,11 +11,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 |---|---|
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
 | `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` LAN/Tailscale-only. |
+| `traefik/` | The same with Traefik v3 + Authelia: static config (`traefik.yml`), routers and middlewares (`dynamic/ultimatetunes.yml`), Traefik's stack with a pinned `proxy` network (`compose.traefik.yaml`) and an overlay for `server/compose.yaml` with the labels variant (`compose.labels.yaml`). |
 
 ## Exposing UltimateTunes
 
 1. **Tailscale only is the recommended setup.** `tailscale serve` (`tailscale/README.md`) gives HTTPS inside your tailnet and nothing is reachable from the Internet. Never Tailscale Funnel.
-2. **Public access only through Caddy** (`caddy/Caddyfile`) on the host, with the per-IP rate limits of the `caddy-ratelimit` module enabled (commented out in the example; it needs a custom Caddy build). Caddy is what gives you TLS, a request-header timeout (`read_header`), per-IP request limits and a body cap at the edge; uvicorn has no header timeout of its own.
+2. **Public access only through Caddy** (`caddy/Caddyfile`) or **Traefik** (`traefik/`, below) on the host, with the per-IP rate limits of the `caddy-ratelimit` module enabled (commented out in the example; it needs a custom Caddy build). Caddy is what gives you TLS, a request-header timeout (`read_header`), per-IP request limits and a body cap at the edge; uvicorn has no header timeout of its own.
 3. **Never port-forward 8044** (or 8045) on your router, and never publish `UT_BIND` on a public address: the api must not face the Internet directly.
 4. **Never put a tunnel or another proxy in front of Caddy** (Cloudflare Tunnel, ngrok, an SSH forward, Funnel). Caddy would see the tunnel's local address as every client: the `/admin` rule and every per-IP limit would treat the Internet as your LAN.
 5. **Fresh secrets with `server/compose.yaml`**: `openssl rand -hex 32 > secrets/worker_token` and the same for `secrets/admin_session_secret` (the worker token needs 32+ characters). Never reuse the test stack's token (`server/compose.test.yaml`, public on purpose) or any key or password you used while testing: **revoke every API key** created on a test stack or while trying things out (panel → Keys) and change test passwords before going public.
@@ -48,6 +49,29 @@ With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`,
 ### Bootstrap admin password
 
 `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.
+
+## Traefik + Authelia
+
+`deploy/traefik/` is the Traefik v3 version of the Caddy example, for homelabs that already run Traefik with Authelia. Checked by running `traefik:v3.3.6` offline on these files: `/readyz`, `/internal/*`, `/healthz` and any other path answer 404; `/admin` and `POST /ut/v1/keys` from outside the LAN ranges answer 403; `/rest/*`, `/ut/v1/*` and `/` reach the api.
+
+- **Routers** (`dynamic/ultimatetunes.yml`, or the same as labels in `compose.labels.yaml`; use one of the two):
+  - `/admin`: `ipAllowList` (your LAN /24 and tailnet), then Authelia `forwardAuth`, then the api's own allowlist and admin login. Give it a `two_factor` rule in Authelia's `access_control`:
+    ```yaml
+    access_control:
+      rules:
+        - domain: music.example.org
+          resources: ['^/admin([/?].*)?$']
+          policy: two_factor
+        - domain: music.example.org
+          policy: bypass   # /rest, /ut/v1 and / authenticate with API keys
+    ```
+  - `/rest/*`, `/ut/v1/*`, `/`: **no Authelia**. OpenSubsonic clients and the app authenticate with API keys; a `forwardAuth` login redirect would break all of them. They get `rateLimit` (per client IP), `inFlightReq` and secure headers (HSTS); requests that are not GET/HEAD also get `buffering` with `maxRequestBodyBytes` 2 MB. Traefik's buffering also holds back the whole response, so it is never put on GET (audio streams).
+  - `POST /ut/v1/keys` (the password login): LAN/Tailscale only, through the same `ipAllowList`. Devices then get their key at home from the panel's QR code (Keys → new key). This removes the password-guessing surface, and with it the lockout of audit M1, at the edge. Remove `ut-lan-only` from that router if you want password logins from anywhere; the api still rate-limits them and locks out per IP and per username.
+  - Nothing routes `/internal` or `/readyz`: Traefik answers 404. The host's healthcheck uses `127.0.0.1:8044/readyz`.
+- **Entrypoint** (`traefik.yml`): `transport.respondingTimeouts` with `readTimeout: 30s` (slowloris; the whole request must arrive in time), `idleTimeout: 120s` and `writeTimeout: 0s` (streams last minutes). `forwardedHeaders.trustedIPs` stays empty: Traefik is the edge and rewrites every client's `X-Forwarded-*`. Add an upstream there only if it really sits in front of Traefik, for example Cloudflare's proxy ranges. In that case also set `ipStrategy: {depth: 1}` on `ut-ratelimit` and `ut-lan-only`, so they key on the client Cloudflare saw. Never a tunnel on the same host (`cloudflared`, ngrok, an SSH forward): it connects from a local address.
+- **The client address** (`UT_TRUSTED_PROXIES`): Traefik's own stack pins the `proxy` network (`UT_PROXY_SUBNET`, default `10.213.46.0/24`) and Traefik's address on it (`UT_TRAEFIK_ADDRESS`, `10.213.46.2`). The overlay puts the api on `proxy` under the alias `ultimatetunes-api`; the worker never joins it. It sets `UT_TRUSTED_PROXIES=10.213.46.2/32` and adds the `proxy` subnet to `UT_WORKER_NETWORKS`, so other homelab containers on `proxy` never get `/admin`. Traefik sends `X-Forwarded-For: <client>`. The api believes it only because the TCP peer is exactly `10.213.46.2`, reads it from the right, and uses that address for its admin allowlist, its per-IP limits and lockout, and the audit log. A forged `X-Forwarded-For` from the Internet never survives: Traefik drops it at the entrypoint. A container that is not Traefik gains nothing by sending one: it is not a trusted proxy.
+- Traefik's `ipAllowList` and `rateLimit` see the real client only if Docker preserves the source address on the published ports 80/443. It does for LAN and tailnet traffic (iptables DNAT); if every client shows up as a `172.x` gateway, the userland proxy is in the way. In that case run Traefik with `network_mode: host`, or check the host's Docker settings.
+- Start: `docker compose -f compose.traefik.yaml up -d` in `deploy/traefik/`, then the server with `docker compose -f compose.yaml -f ../deploy/traefik/compose.labels.yaml up -d`. Remove `ports:` from the api (or keep `127.0.0.1:8044` for the host's own checks).
 
 ## The two listeners
 
