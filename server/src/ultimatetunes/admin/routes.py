@@ -91,6 +91,11 @@ DONE = {
     "notify_saved": "Notification settings saved.",
     "notify_sent": "Test notification sent.",
     "notify_failed": "The test notification could not be delivered.",
+    "notify_rejected": (
+        "ntfy rejected the credentials (HTTP 401 or 403). Check the access token, or the user"
+        " and password, and that this user may write to the topic."
+    ),
+    "notify_rejected_webhook": "The webhook rejected the credentials (HTTP 401 or 403).",
 }
 
 
@@ -800,10 +805,19 @@ def _notifications_page(
     request: Request, admin: Admin, *, error: str | None = None, status: int = 200
 ) -> Response:
     target = notify.load_target(state(request).services.db)
+    sender = state(request).sender
     return page(
         request,
         "notifications.html",
-        {"target": target, "kinds": notify.KINDS},
+        {
+            "target": target,
+            "kinds": notify.KINDS,
+            "auth_kind": sender.auth_kind,
+            "auth_host": sender.credentials_host,
+            "auth_mismatch": target is not None
+            and sender.auth_kind is not None
+            and not sender.credentials_apply(target),
+        },
         admin=admin,
         error=error,
         status=status,
@@ -857,7 +871,7 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
     message = notify.Message(
         "UltimateTunes test", "Notifications from your UltimateTunes server work."
     )
-    sent = await st.sender.send(target, message)
+    outcome = await st.sender.deliver(target, message)
 
     def record() -> None:
         with st.services.db.transaction() as conn:
@@ -867,8 +881,20 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
                 actor_id=post.admin.user.id,
                 ip=post.admin.ip,
                 action="notify.test",
-                detail={"kind": target.kind, "host": target.host, "sent": sent},
+                # Which kind of credentials went along, never their value.
+                detail={
+                    "kind": target.kind,
+                    "host": target.host,
+                    "auth": (st.sender.auth_kind or "none")
+                    if st.sender.credentials_apply(target)
+                    else "none",
+                    "outcome": outcome,
+                },
             )
 
     await run_in_threadpool(record)
-    return back("/admin/notifications", "notify_sent" if sent else "notify_failed")
+    if outcome == "rejected":
+        done = "notify_rejected" if target.kind == "ntfy" else "notify_rejected_webhook"
+    else:
+        done = "notify_sent" if outcome == "sent" else "notify_failed"
+    return back("/admin/notifications", done)

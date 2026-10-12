@@ -46,7 +46,7 @@ def install(
     auth = getattr(app.state, "auth", None)
     if not isinstance(auth, AuthService):
         auth = AuthService.from_services(services)
-    sender = sender or notify.Sender()
+    sender = sender or notify.Sender(credentials=notify.Credentials.from_settings(settings))
     app.state.admin = routes.AdminState(
         services=services,
         auth=auth,

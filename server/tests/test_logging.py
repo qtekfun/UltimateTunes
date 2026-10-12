@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Secrets never reach the log output (CLAUDE.md, Security rules)."""
 
+import base64
 import io
 import json
 import logging
+import secrets
+import string
 from collections.abc import Iterator
 
 import pytest
@@ -163,3 +166,55 @@ def test_outbound_request_urls_are_not_logged(
     assert "topic-1" not in out
     assert "connect_tcp" not in out
     assert "transport failed" in out
+
+
+def _ntfy_token(length: int = 29) -> str:
+    """Shaped like an ntfy access token, made at run time (no secret-looking literal here)."""
+    alphabet = string.ascii_letters + string.digits
+    return "tk_" + "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "token {} created",
+        "Authorization: Bearer {}",
+        '{{"note": "{}"}}',
+        "UT_NOTIFY_TOKEN={}",
+    ],
+)
+@pytest.mark.parametrize("length", [20, 29, 64])
+def test_ntfy_tokens_are_redacted_anywhere(template: str, length: int) -> None:
+    token = _ntfy_token(length)
+    out = redact(template.format(token))
+    assert token not in out
+    assert REDACTED in out
+
+
+def test_short_tk_strings_are_not_tokens() -> None:
+    assert redact("tk_short and utk_x") == "tk_short and utk_x"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "Authorization: Bearer {}",
+        "authorization=Basic {}",
+        "{{'Authorization': 'Bearer {}'}}",
+        "[(b'authorization', b'Basic {}')]",
+        '{{"authorization": "bearer {}"}}',
+        "AUTHORIZATION => Bearer {} sent",
+    ],
+)
+def test_authorization_values_are_redacted_in_any_shape(template: str) -> None:
+    value = secrets.token_urlsafe(24)
+    out = redact(template.format(value))
+    assert value not in out
+    assert REDACTED in out
+
+
+def test_basic_authorization_is_redacted() -> None:
+    pair = base64.b64encode(f"alerts:{secrets.token_urlsafe(16)}".encode()).decode()
+    out = redact(f"Authorization: Basic {pair}")
+    assert pair not in out
+    assert REDACTED in out

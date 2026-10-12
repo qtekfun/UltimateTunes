@@ -59,6 +59,8 @@ services:
       # 503; idle keep-alive connections close after UT_KEEPALIVE_TIMEOUT_S.
       UT_LIMIT_CONCURRENCY: ${UT_LIMIT_CONCURRENCY:-128}
       UT_KEEPALIVE_TIMEOUT_S: ${UT_KEEPALIVE_TIMEOUT_S:-5}
+      # The only host notification credentials go to (required with them; empty: none).
+      UT_NOTIFY_HOST: ${UT_NOTIFY_HOST:-}
       # The internal worker API (8045) listens only on the api's pinned address on `internal`,
       # so nothing on the api's other networks (`default`, a reverse proxy's shared network)
       # can even connect to it. The client port (8044) still listens everywhere.
@@ -91,6 +93,11 @@ services:
       # and the file (the api warns while it is still set). Never put the password in .env.
       # - source: bootstrap_admin_password
       #   target: ut_bootstrap_admin_password
+      # Optional: an ntfy access token for a notification server that requires login
+      # (deploy/README.md, "Notifications with ntfy"). Uncomment with the secret below, and set
+      # UT_NOTIFY_HOST in .env to the ntfy host name (required: the token goes only there).
+      # - source: notify_token
+      #   target: ut_notify_token
     networks:
       default: {}
       internal:
@@ -139,6 +146,8 @@ secrets:
     file: ./secrets/admin_session_secret
   # bootstrap_admin_password:
   #   file: ./secrets/bootstrap_admin_password
+  # notify_token:
+  #   file: ./secrets/notify_token
 
 networks:
   internal:
