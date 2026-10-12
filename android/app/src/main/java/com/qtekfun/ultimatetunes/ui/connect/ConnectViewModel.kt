@@ -10,6 +10,7 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.Optional
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,10 +70,34 @@ data class ConnectUiState(
 class ConnectViewModel @Inject constructor(
     private val api: TunesApi,
     private val gate: ConnectionGate,
-    private val cleartext: CleartextPolicy
+    private val cleartext: CleartextPolicy,
+    demo: Optional<DemoServer> = Optional.empty()
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = mutableState.asStateFlow()
+
+    private val demoServer: DemoServer? = demo.orElse(null)
+
+    /** The label of the demo button, or null when this build has no demo (release builds). */
+    val demoLabelRes: Int? = demoServer?.labelRes
+
+    /** Starts the debug-only demo server and connects to it through the same checks. */
+    fun tryDemo() {
+        val demo = demoServer ?: return
+        if (mutableState.value.checking) return
+        mutableState.update { it.copy(checking = true, error = null) }
+        viewModelScope.launch {
+            val config = demo.start()
+            if (config == null) {
+                mutableState.update { it.copy(checking = false, error = ConnectError.UNREACHABLE) }
+            } else {
+                mutableState.update {
+                    it.copy(serverUrl = config.root.toString(), apiKey = config.apiKey.value)
+                }
+                finish(validate(config.root.toString(), config.apiKey.value))
+            }
+        }
+    }
 
     fun onServerUrlChange(value: String) {
         mutableState.update { it.copy(serverUrl = value, error = null) }
@@ -85,26 +110,47 @@ class ConnectViewModel @Inject constructor(
     fun connect() {
         val current = mutableState.value
         if (current.checking) return
-        val url = normalizeServerUrl(current.serverUrl)
-        val key = current.apiKey.trim()
-        val invalid = when {
-            url == null -> ConnectError.INVALID_URL
-            !url.isHttps && !cleartext.isPermitted(url.host) -> ConnectError.INSECURE_URL
-            !ApiKeySecret.isWellFormed(key) -> ConnectError.INVALID_KEY
-            else -> null
-        }
-        if (invalid != null || url == null) {
-            mutableState.update { it.copy(error = invalid) }
+        val validated = validate(current.serverUrl, current.apiKey)
+        if (validated is Validated.Invalid) {
+            mutableState.update { it.copy(error = validated.error) }
             return
         }
         mutableState.update { it.copy(checking = true, error = null) }
-        viewModelScope.launch {
-            val result = check(url, ApiKeySecret(key))
-            mutableState.update {
-                when (result) {
-                    is CheckResult.Connected -> it.copy(checking = false, connectedTo = result.name)
-                    is CheckResult.Failed -> it.copy(checking = false, error = result.error)
-                }
+        viewModelScope.launch { finish(validated) }
+    }
+
+    private sealed interface Validated {
+        data class Valid(val url: HttpUrl, val key: ApiKeySecret) : Validated
+
+        data class Invalid(val error: ConnectError) : Validated
+    }
+
+    /** The local checks of the address and key, before asking the server. */
+    private fun validate(serverUrl: String, apiKey: String): Validated {
+        val url = normalizeServerUrl(serverUrl)
+        val key = apiKey.trim()
+        return when {
+            url == null -> Validated.Invalid(ConnectError.INVALID_URL)
+
+            !url.isHttps && !cleartext.isPermitted(url.host) ->
+                Validated.Invalid(ConnectError.INSECURE_URL)
+
+            !ApiKeySecret.isWellFormed(key) -> Validated.Invalid(ConnectError.INVALID_KEY)
+
+            else -> Validated.Valid(url, ApiKeySecret(key))
+        }
+    }
+
+    /** Asks the server (when [validated] is valid) and ends the check. */
+    private suspend fun finish(validated: Validated) {
+        val result = when (validated) {
+            is Validated.Invalid -> CheckResult.Failed(validated.error)
+            is Validated.Valid -> check(validated.url, validated.key)
+        }
+        mutableState.update {
+            when (result) {
+                is CheckResult.Connected -> it.copy(checking = false, connectedTo = result.name)
+                is CheckResult.Failed -> it.copy(checking = false, error = result.error)
             }
         }
     }
