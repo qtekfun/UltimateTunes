@@ -23,6 +23,7 @@ from ultimatetunes.errors import InvalidParameter
 from ultimatetunes.jobs.archive import archive_finalizer
 from ultimatetunes.jobs.queue import Claimed, JobResult, Lease, ProgressReport
 from ultimatetunes.jobs.settings import JobsSettings
+from ultimatetunes.jobs.signal import claim_waiting
 from ultimatetunes.jobs.workers import CanaryResult, WorkerRegistry
 
 router = APIRouter()
@@ -55,6 +56,7 @@ class ClaimBody(_Body):
     worker_id: str = Field(min_length=1, max_length=100)
     kinds: list[Literal["download"]] = Field(default=["download"])
     lease_seconds: LeaseSeconds = 60
+    wait_seconds: int = Field(default=0, ge=0, le=30)
 
 
 class HeartbeatBody(_Body):
@@ -184,15 +186,26 @@ def _job_id(job_id: str) -> str:
 @router.post("/internal/v1/jobs/claim")
 async def claim_job(request: Request) -> Response:
     body = await _body(request, ClaimBody)
-    return await run_in_threadpool(_claim, request, body)
-
-
-def _claim(request: Request, body: ClaimBody) -> Response:
-    claimed = services(request).jobs.claim(
-        body.worker_id, lease_s=body.lease_seconds, kinds=tuple(dict.fromkeys(body.kinds))
+    settings = _settings(request)
+    jobs = services(request).jobs
+    claim = partial(
+        jobs.claim,
+        body.worker_id,
+        lease_s=body.lease_seconds,
+        kinds=tuple(dict.fromkeys(body.kinds)),
     )
+
+    async def attempt() -> Claimed | None:
+        # A worker that hung up (e.g. it is stopping) must not be handed a job it never sees.
+        if await request.is_disconnected():
+            return None
+        return await run_in_threadpool(claim)
+
+    wait_s = min(float(body.wait_seconds), settings.claim_max_wait_s)
+    claimed = await claim_waiting(attempt, jobs.signal, wait_s=wait_s, poll_s=settings.claim_poll_s)
     if claimed is None:
-        retry = str(_settings(request).claim_retry_after_s)
+        # After a long poll the worker asks again at once; otherwise it waits a little.
+        retry = "0" if wait_s > 0 else str(settings.claim_retry_after_s)
         return Response(status_code=204, headers={"Retry-After": retry})
     return JSONResponse(_claimed(request, claimed))
 
