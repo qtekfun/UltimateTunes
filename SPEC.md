@@ -93,7 +93,10 @@ Per user: stars, playlists, play history (scrobble), play queue saved across dev
 Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info). Details in §5.
 
 ### RF-12 Client cache and offline
-Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. Offline: only cached and downloaded content is browsable; search needs the server.
+Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). Offline: only cached and downloaded content is browsable; search needs the server.
+
+### RF-14 Export to the phone
+The user can **export** tracks, albums or playlists that are fully available on the phone (offline downloads, or tracks completely in the cache) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 
 ### RF-13 Notifications from the server
 Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows playback notification only (MediaSession).
@@ -185,3 +188,4 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken before Wave 1 (2026-10-12)
 - **Dependencies added in one coordinator PR** so parallel streams never edit shared build files. Server: argon2-cffi (MIT), ytmusicapi (MIT; pulls `requests`, Apache-2.0), mutagen (GPL-2.0-or-later), jinja2, itsdangerous (BSD-3-Clause), python-multipart (Apache-2.0); dev respx (BSD-3-Clause). yt-dlp is not a Python dependency (zipapp subprocess, T03c). Android: Coil 3 (compose, network-okhttp), palette, DataStore preferences, Media3 (exoplayer, session, datasource-okhttp; `:core:player` depends on `:core:api` so one OkHttp version ships). Also **navigation-compose** and **hilt-navigation-compose** (Apache-2.0), approved by the author on 2026-10-12. DataStore bundles protobuf, so licensee also allows BSD-3-Clause.
+- **Offline playlists in sync and export to the phone** (author, 2026-10-12): RF-12 extended (playlists/albums marked offline stay in sync) and new RF-14 (export of fully available tracks to a user-picked folder via SAF, original format and tags). Implemented in T17 (download/sync engine) and T18 (UI and export).
