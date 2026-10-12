@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared helpers of the tagging tests: fixture files, a fake `WorkerApi`, a fake ffmpeg."""
 
+import hashlib
 import json
 import shutil
 from collections.abc import Iterator, Sequence
@@ -11,7 +12,7 @@ from typing import Any
 import pytest
 import respx
 
-from ultimatetunes.core.storage import LocalLibraryStore, LocalStagingStore
+from ultimatetunes.core.storage import LibraryStore, LocalLibraryStore, LocalStagingStore
 from ultimatetunes.errors import Conflict
 from ultimatetunes.tagging.ffmpeg import Ffmpeg, ProcessResult
 from ultimatetunes.tagging.model import M4A, OPUS, MusicBrainzIds, TrackMetadata
@@ -95,8 +96,19 @@ def copy_fixture(name: str, target: Path) -> Path:
 class FakeApi:
     """The library side of the internal worker API, as the worker sees it."""
 
-    def __init__(self, *, answers: Sequence[dict[str, Any] | Exception] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        answers: Sequence[dict[str, Any] | Exception] = (),
+        library: LibraryStore | None = None,
+        owned: Sequence[str] = (),
+    ) -> None:
+        """With `library`, register follows the adoption rule of SPEC section 11: an existing
+        file at `libraryPath` is adopted when no track owns that path (`owned`) and its
+        SHA-256 matches, else `conflict`."""
         self.answers = list(answers)
+        self.library = library
+        self.owned = set(owned)
         self.registered: list[dict[str, Any]] = []
         self.replay_gain: list[tuple[str, dict[str, Any]]] = []
 
@@ -107,6 +119,12 @@ class FakeApi:
             if isinstance(answer, Exception):
                 raise answer
             return answer
+        path = body["libraryPath"]
+        if self.library is not None and (path in self.owned or self.library.exists(path)):
+            with self.library.open_read(path) as reader:
+                existing = hashlib.sha256(reader.read()).hexdigest()
+            if path in self.owned or existing != body["file"]["sha256"]:
+                raise conflict()
         return {
             "trackId": body["trackId"],
             "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b004",

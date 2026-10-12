@@ -34,7 +34,8 @@ class TaggingError(Exception):
 
 
 def _clean(value: str) -> str:
-    return value.replace("\x00", "").strip()
+    """No NUL and no lone surrogate (not encodable as UTF-8)."""
+    return "".join(ch for ch in value if ch != "\x00" and not "\ud800" <= ch <= "\udfff").strip()
 
 
 def _gain(value: float) -> str:

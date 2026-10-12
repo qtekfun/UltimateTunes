@@ -11,6 +11,7 @@ import respx
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.tagging.matching import Query, YoutubeIds
 from ultimatetunes.tagging.musicbrainz import (
+    MAX_BODY_BYTES,
     MUSICBRAINZ_URL,
     USER_AGENT,
     LookupFailedError,
@@ -126,3 +127,11 @@ async def test_the_resolver_keeps_youtube_data_unless_the_match_is_strong(
         assert (failed.needs_review, failed.album_browse_id) == (True, "MPREb_k3Vd9QmT2xL")
     off = await MetadataResolver(None, 0.85).resolve(QUERY, hints)
     assert off.needs_review
+
+
+async def test_huge_answers_are_refused(web: respx.MockRouter) -> None:
+    web.get(MUSICBRAINZ_URL).respond(200, content=b" " * (MAX_BODY_BYTES + 1))
+    async with httpx.AsyncClient() as client:
+        musicbrainz, _ = make(client)
+        with pytest.raises(LookupFailedError, match="too large"):
+            await musicbrainz.search_recordings(QUERY)

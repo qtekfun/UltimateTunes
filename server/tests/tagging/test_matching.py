@@ -169,3 +169,20 @@ def test_a_weak_match_keeps_youtube_data() -> None:
     )
     single = from_youtube(Query("Solo Song", "A", None, None), YoutubeIds(), match_score=None)
     assert single.album == "Solo Song"
+
+
+def test_youtube_fields_are_cleaned() -> None:
+    meta = from_youtube(
+        Query("\ud800", " ", None, None),
+        YoutubeIds(track_number=0, year=-5),
+        match_score=None,
+    )
+    assert (meta.title, meta.artist, meta.album) == ("Untitled", "Unknown Artist", "Untitled")
+    assert (meta.track_number, meta.year) == (None, None)
+    bare = from_musicbrainz(Query("\ud800", "", None, None), YoutubeIds(year=0), Candidate(1, {}))
+    assert (bare.title, bare.artist, bare.album, bare.year) == (
+        "Untitled",
+        "Unknown Artist",
+        "Untitled",
+        None,
+    )

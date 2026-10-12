@@ -36,6 +36,8 @@ _ENV = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 _INTEGRATED = re.compile(r"^\s*I:\s+(\S+)\s+LUFS\s*$", re.MULTILINE)
 _PEAK = re.compile(r"^\s*Peak:\s+(\S+)\s+dBFS\s*$", re.MULTILINE)
 _KEEP_STDERR = 400
+# Inputs may only be local files: no network, no concat/subfile/data tricks (input option).
+_LOCAL_ONLY = ("-protocol_whitelist", "file")
 
 
 class FfmpegError(Exception):
@@ -156,7 +158,7 @@ def loudness_args(ffmpeg: Path, paths: Sequence[Path]) -> list[str]:
         raise FfmpegError("loudness of nothing")
     args = [str(ffmpeg), "-nostdin", "-hide_banner", "-nostats", "-loglevel", "info"]
     for path in paths:
-        args += ["-i", _file(path)]
+        args += [*_LOCAL_ONLY, "-i", _file(path)]
     if len(paths) == 1:
         graph = "[0:a:0]ebur128=peak=true:framelog=quiet[out]"
     else:
@@ -178,6 +180,7 @@ def remux_args(ffmpeg: Path, src: Path, dst: Path, kind: ArchiveKind) -> list[st
         "-loglevel",
         "error",
         "-n",
+        *_LOCAL_ONLY,
         "-i",
         _file(src),
         "-map",
@@ -208,6 +211,7 @@ def probe_args(ffprobe: Path, path: Path) -> list[str]:
         "a:0",
         "-show_streams",
         "-show_format",
+        *_LOCAL_ONLY,
         _file(path),
     ]
 

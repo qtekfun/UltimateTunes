@@ -32,6 +32,8 @@ _MBID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 _ISRC = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
 _YEAR = re.compile(r"^(\d{4})")
 MAX_TEXT = 500
+UNTITLED = "Untitled"
+UNKNOWN_ARTIST = "Unknown Artist"
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,8 @@ def duration_agreement(left_ms: int | None, right_ms: int | None) -> float:
 def _text(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
-    clean = value.replace("\x00", "").strip()
+    clean = "".join(ch for ch in value if ch != "\x00" and not "\ud800" <= ch <= "\udfff")
+    clean = clean.strip()
     return clean[:MAX_TEXT] or None
 
 
@@ -205,13 +208,15 @@ class YoutubeIds:
 def from_youtube(query: Query, hints: YoutubeIds, *, match_score: float | None) -> TrackMetadata:
     """Weak or no match: the YouTube Music data, marked `needs_review`. A single without an
     album is filed under its own title (as YouTube Music does)."""
+    title = _text(query.title) or UNTITLED
+    artist = _text(query.artist) or UNKNOWN_ARTIST
     return TrackMetadata(
-        title=query.title,
-        artist=query.artist,
-        album_artist=query.artist,
-        album=query.album or query.title,
-        track_number=hints.track_number,
-        year=hints.year,
+        title=title,
+        artist=artist,
+        album_artist=artist,
+        album=_text(query.album) or title,
+        track_number=_positive(hints.track_number),
+        year=_positive(hints.year),
         album_browse_id=hints.album_browse_id,
         artist_channel_id=hints.artist_channel_id,
         needs_review=True,
@@ -225,23 +230,24 @@ def from_musicbrainz(query: Query, hints: YoutubeIds, candidate: Candidate) -> T
     release = best_release(query, recording) or {}
     medium, track = _medium(release)
     artist_credit = recording.get("artist-credit")
-    artist = credit_name(artist_credit) or query.artist
+    artist = credit_name(artist_credit) or _text(query.artist) or UNKNOWN_ARTIST
     single_artist = len(_list(artist_credit)) == 1
     first = _first_artist(artist_credit)
     release_artist_credit = release.get("artist-credit")
     album_artist = credit_name(release_artist_credit) or artist
     album_first = _first_artist(release_artist_credit) if release_artist_credit else first
     return TrackMetadata(
-        title=_text(recording.get("title")) or query.title,
+        title=_text(recording.get("title")) or _text(query.title) or UNTITLED,
         artist=artist,
         artist_sort=_text(first.get("sort-name")) if single_artist else None,
         album_artist=album_artist,
-        album=_text(release.get("title")) or query.album or query.title,
+        album=_text(release.get("title")) or _text(query.album) or _text(query.title) or UNTITLED,
         track_number=_positive(track.get("number")) or _positive(track.get("position")),
         disc_number=_positive(medium.get("position")),
         total_tracks=_positive(medium.get("track-count")),
         total_discs=None,
-        year=_year(release.get("date"), recording.get("first-release-date")) or hints.year,
+        year=_year(release.get("date"), recording.get("first-release-date"))
+        or _positive(hints.year),
         genre=_genre(recording),
         release_type=_release_type(release),
         isrc=_isrc(recording),

@@ -207,3 +207,16 @@ async def test_track_and_album_loudness_of_the_tones() -> None:
     album = await ffmpeg.loudness([opus, m4a])
     assert -23.0 < album.integrated_lufs < -20.0
     assert album.true_peak >= track.true_peak - 0.01
+
+
+def test_inputs_are_local_files_only() -> None:
+    for args in (
+        remux_args(FF, Path("/s/a.webm"), Path("/s/archive.opus"), OPUS),
+        loudness_args(FF, [Path("/m/a.opus"), Path("/m/b.m4a")]),
+    ):
+        inputs = [i for i, arg in enumerate(args) if arg == "-i"]
+        assert inputs
+        for i in inputs:
+            assert args[i - 2 : i] == ["-protocol_whitelist", "file"]
+    probe = probe_args(FF, Path("/s/a.opus"))
+    assert probe[-3:] == ["-protocol_whitelist", "file", "file:/s/a.opus"]

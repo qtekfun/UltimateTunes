@@ -113,3 +113,19 @@ async def test_invalid_ids_and_errors_mean_no_cover(web: respx.MockRouter) -> No
     assert await fetch(release_id="../../x", release_group_id="nope") is None
     assert not caa.called
     assert await fetch(release_id=None, release_group_id=None, thumbnail_url=None) is None
+
+
+@pytest.mark.parametrize(
+    "url", ["https://i.ytimg.com:abc/x.jpg", "https://[::1/x.jpg", "https://[zz::1]/x.jpg"]
+)
+async def test_malformed_urls_are_rejected(web: respx.MockRouter, url: str) -> None:
+    route = web.route()
+    assert await fetch(release_id=None, release_group_id=None, thumbnail_url=url) is None
+    assert not route.called
+
+
+async def test_a_malformed_redirect_falls_back(web: respx.MockRouter) -> None:
+    web.get(CAA_RELEASE).respond(307, headers={"Location": "https://[::1/x"})
+    web.get(CAA_GROUP).respond(307, headers={"Location": "https://archive.org:99999/x"})
+    web.get(THUMB).respond(200, content=JPEG, headers=IMAGE)
+    assert await fetch() == JPEG

@@ -202,3 +202,9 @@ def test_an_m4a_without_any_tag_block(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.undo()
     assert read_track_gain(tmp_path / "a.m4a", M4A) == GAIN
     assert read_track_gain(tmp_path / "b.m4a", M4A) == GAIN
+
+
+def test_nul_and_lone_surrogates_never_reach_a_tag(tmp_path: Path) -> None:
+    path = copy_fixture("tone.opus", tmp_path / "a.opus")
+    write_tags(path, OPUS, sample_metadata(title="Pa\ud800per\x00 \udfffMoons"), GAIN)
+    assert dump(path)["TITLE"] == ["Paper Moons"]

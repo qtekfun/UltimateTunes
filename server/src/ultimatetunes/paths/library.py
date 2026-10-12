@@ -22,6 +22,7 @@ UNKNOWN_ARTIST = "Unknown Artist"
 UNKNOWN_ALBUM = "Unknown Album"
 UNTITLED = "Untitled"
 MAX_NUMBER = 999
+MAX_SUFFIX_BYTES = 64
 
 
 def _number(value: int | None) -> int | None:
@@ -58,10 +59,12 @@ def track_file_name(
     prefix = ""
     if track is not None:
         prefix = f"{disc}-{track:02d} - " if disc is not None and disc > 1 else f"{track:02d} - "
+    tail = ""
     if suffix:
-        title = f"{title} ({suffix})"
-    room = MAX_COMPONENT_BYTES - len(prefix) - len(ext) - 1
-    return f"{prefix}{sanitize_component(title, fallback=UNTITLED, max_bytes=room)}.{ext}"
+        # The suffix must survive truncation: the title is cut, never the suffix.
+        tail = f" ({sanitize_component(suffix, fallback='x', max_bytes=MAX_SUFFIX_BYTES)})"
+    room = MAX_COMPONENT_BYTES - len(prefix) - len(ext) - 1 - len(tail.encode("utf-8"))
+    return f"{prefix}{sanitize_component(title, fallback=UNTITLED, max_bytes=room)}{tail}.{ext}"
 
 
 def library_path(  # noqa: PLR0913 - the fields of one file name, keyword-only

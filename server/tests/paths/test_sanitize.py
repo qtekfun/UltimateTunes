@@ -200,3 +200,14 @@ def test_random_metadata_ends_inside_the_library(tmp_path: Path) -> None:
             disc_number=rng.randint(-1, 3),
         )
         _inside(store, tmp_path, rel)
+
+
+@pytest.mark.parametrize("title", ["x" * 300, "\u65e5\u672c\u8a9e\u306e\u6b4c" * 60])
+def test_the_suffix_survives_long_titles(title: str) -> None:
+    name = track_file_name(title, "opus", track_number=4, suffix="Qx7Lm2pZ0aB")
+    assert name.startswith("04 - ")
+    assert name.endswith(" (Qx7Lm2pZ0aB).opus")
+    assert len(name.encode("utf-8")) <= MAX_COMPONENT_BYTES
+    long_suffix = track_file_name("T", "m4a", suffix="/" * 300)
+    assert long_suffix.startswith("T (_")
+    assert len(long_suffix.encode("utf-8")) <= MAX_COMPONENT_BYTES

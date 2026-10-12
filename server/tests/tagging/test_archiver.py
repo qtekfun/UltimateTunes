@@ -31,7 +31,7 @@ from tests.tagging.conftest import (
     real_settings,
 )
 from ultimatetunes.core.clock import FakeClock
-from ultimatetunes.errors import LeaseLost, PathRejected, WorkerErrorCode
+from ultimatetunes.errors import LeaseLost, NotFound, PathRejected, WorkerErrorCode
 from ultimatetunes.settings import Settings
 from ultimatetunes.tagging.archiver import TaggingArchiver, build_archiver, digest
 from ultimatetunes.tagging.ffmpeg import Ffmpeg
@@ -40,6 +40,7 @@ from ultimatetunes.tagging.musicbrainz import MUSICBRAINZ_URL
 from ultimatetunes.tagging.settings import TaggingSettings
 from ultimatetunes.tagging.tags import read_track_gain, write_tags
 from ultimatetunes.worker.archiver import Archived, default_archiver
+from ultimatetunes.worker.client import ApiUnavailableError
 from ultimatetunes.worker.downloader import DownloadError
 
 pytestmark = pytest.mark.anyio
@@ -261,14 +262,32 @@ async def test_audio_without_duration_is_refused(tmp_path: Path, web: respx.Mock
 async def test_a_retry_finds_its_own_file_in_place(
     tmp_path: Path, online: respx.MockRouter
 ) -> None:
+    """The worker moved the file, then died before `complete`; the next attempt registers the
+    same path, the api adopts the file (same SHA-256, no owner) and the move is skipped: no
+    orphan, no ` (<videoId>)` duplicate."""
     first = make_request(tmp_path, FakeApi())
-    await archiver().archive(first)
+    await archiver().archive(first)  # moved, but `complete` never happened
     placed = tmp_path / "music" / LIB_PATH
     before = placed.read_bytes()
     first.staging.delete(STAGING_DIR)
-    again = make_request(tmp_path, FakeApi())
+    api = FakeApi(library=first.library)
+    again = make_request(tmp_path, api)
     assert await archiver().archive(again) == Archived(TRACK_ID, LIB_PATH)
+    assert [body["libraryPath"] for body in api.registered] == [LIB_PATH]
     assert placed.read_bytes() == before
+    album = sorted(p.name for p in placed.parent.iterdir())
+    assert album == ["04 - Paper Moons (Live).opus", "cover.jpg"]
+
+
+async def test_a_file_owned_by_another_track_is_never_adopted(
+    tmp_path: Path, online: respx.MockRouter
+) -> None:
+    first = make_request(tmp_path, FakeApi())
+    await archiver().archive(first)
+    first.staging.delete(STAGING_DIR)
+    api = FakeApi(library=first.library, owned=[LIB_PATH])
+    archived = await archiver().archive(make_request(tmp_path, api))
+    assert archived.library_path == LIB_PATH.replace(").opus", f") ({VIDEO}).opus")
 
 
 async def test_another_file_at_the_reserved_path_is_a_storage_error(
@@ -422,3 +441,38 @@ async def test_golden_archive_with_real_ffmpeg(
     assert 1.0 < gain["trackGainDb"] < 5.0
     assert api.registered[0]["file"]["durationMs"] in range(950, 1050)
     assert api.registered[0]["file"]["sha256"] == sha(path)
+
+
+@pytest.mark.parametrize("failure", [ApiUnavailableError("api down"), NotFound("no track")])
+async def test_a_replay_gain_report_that_fails_is_only_logged(
+    tmp_path: Path,
+    online: respx.MockRouter,
+    caplog: pytest.LogCaptureFixture,
+    failure: Exception,
+) -> None:
+    class PutFails(FakeApi):
+        async def update_replay_gain(self, track_id: str, body: dict[str, Any]) -> None:
+            raise failure
+
+    other = "The Paper Lanterns/Lanterns at Dusk/01 - Other.opus"
+    _library_track(tmp_path, "tone.opus", other, ReplayGain(-1.0, 0.5))
+    api = PutFails(answers=[_album_answer((OTHER_TRACK, other), (TRACK_ID, LIB_PATH))])
+    with caplog.at_level(logging.WARNING):
+        result = await archiver().archive(make_request(tmp_path, api))
+    assert result == Archived(TRACK_ID, LIB_PATH)
+    assert caplog.text.count("not reported") == 2
+
+
+async def test_a_lost_lease_during_album_gain_stops_the_job(
+    tmp_path: Path, online: respx.MockRouter
+) -> None:
+    class LeaseGone(FakeApi):
+        async def update_replay_gain(self, track_id: str, body: dict[str, Any]) -> None:
+            raise LeaseLost("expired")
+
+    other = "The Paper Lanterns/Lanterns at Dusk/01 - Other.opus"
+    _library_track(tmp_path, "tone.opus", other, ReplayGain(-1.0, 0.5))
+    api = LeaseGone(answers=[_album_answer((OTHER_TRACK, other), (TRACK_ID, LIB_PATH))])
+    with pytest.raises(LeaseLost):
+        await archiver().archive(make_request(tmp_path, api))
+    assert not (tmp_path / "music" / LIB_PATH).exists()

@@ -11,6 +11,7 @@
   YouTube Music data and marks the track `needs_review` (a lookup never fails a job).
 """
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -38,6 +39,8 @@ RATE_KEY = "musicbrainz:global"
 ONE_PER_SECOND = Limit(rate_per_s=1.0, burst=1.0)
 SEARCH_LIMIT = 10
 MAX_RETRY_AFTER_S = 10.0
+# Ten recordings with their releases fit in well under this.
+MAX_BODY_BYTES = 2 * 1024 * 1024
 _SLOW_DOWN = frozenset({429, 503})
 
 
@@ -79,28 +82,37 @@ class MusicBrainz:
         self._limiter = limiter
         self._sleep = sleep
 
-    async def _get(self, params: dict[str, str]) -> httpx.Response:
+    async def _get(self, params: dict[str, str]) -> tuple[httpx.Response, bytes]:
+        """One paced request; the body is read only on 200, and at most `MAX_BODY_BYTES`."""
         await wait_for_token(self._limiter, RATE_KEY, ONE_PER_SECOND, self._sleep)
         try:
-            return await self._client.get(
+            async with self._client.stream(
+                "GET",
                 MUSICBRAINZ_URL,
                 params=params,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 follow_redirects=False,
-            )
+            ) as response:
+                body = bytearray()
+                if response.status_code == httpx.codes.OK:
+                    async for chunk in response.aiter_bytes():
+                        body += chunk
+                        if len(body) > MAX_BODY_BYTES:
+                            raise LookupFailedError("MusicBrainz answer is too large")
+                return response, bytes(body)
         except httpx.HTTPError as exc:
             raise LookupFailedError(f"MusicBrainz unreachable: {type(exc).__name__}") from exc
 
     async def search_recordings(self, query: Query) -> list[dict[str, Any]]:
         params = {"query": search_query(query), "fmt": "json", "limit": str(SEARCH_LIMIT)}
-        response = await self._get(params)
+        response, body = await self._get(params)
         if response.status_code in _SLOW_DOWN:
             await self._sleep(_retry_after(response))
-            response = await self._get(params)
+            response, body = await self._get(params)
         if response.status_code != httpx.codes.OK:
             raise LookupFailedError(f"MusicBrainz answered {response.status_code}")
         try:
-            data = response.json()
+            data = json.loads(body)
         except ValueError as exc:
             raise LookupFailedError("MusicBrainz answered no JSON") from exc
         recordings = data.get("recordings") if isinstance(data, dict) else None

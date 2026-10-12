@@ -36,7 +36,7 @@ import httpx
 from ultimatetunes.core.clock import Clock, SystemClock
 from ultimatetunes.core.ratelimit import RateLimiter
 from ultimatetunes.core.storage import FileStore, LibraryStore, StagingStore
-from ultimatetunes.errors import Conflict, PathRejected, WorkerErrorCode
+from ultimatetunes.errors import Conflict, LeaseLost, PathRejected, WorkerErrorCode
 from ultimatetunes.paths import cover_path, library_path
 from ultimatetunes.settings import Settings
 from ultimatetunes.tagging.covers import CoverFetcher
@@ -280,17 +280,32 @@ class TaggingArchiver:
                     track.track_gain_db, track.track_peak, loudness.gain_db, loudness.true_peak
                 )
                 new = await anyio.to_thread.run_sync(self._retag, file, gain)
-                await request.api.update_replay_gain(
-                    file.track_id,
-                    {
-                        "jobId": request.job.job_id,
-                        "leaseId": request.job.lease_id,
-                        "replayGain": gain.to_contract(),
-                        "file": {"sizeBytes": new.size_bytes, "sha256": new.sha256},
-                    },
-                )
+                await self._report_gain(request, file.track_id, gain, new)
         except (FfmpegError, TaggingError, PathRejected, OSError) as exc:
             log.warning("job %s: album ReplayGain skipped: %s", request.job.job_id, exc)
+
+    @staticmethod
+    async def _report_gain(
+        request: ArchiveRequest, track_id: str, gain: ReplayGain, new: Digest
+    ) -> None:
+        """Best effort: only a lost lease stops the job (the loop drops it)."""
+        body = {
+            "jobId": request.job.job_id,
+            "leaseId": request.job.lease_id,
+            "replayGain": gain.to_contract(),
+            "file": {"sizeBytes": new.size_bytes, "sha256": new.sha256},
+        }
+        try:
+            await request.api.update_replay_gain(track_id, body)
+        except LeaseLost:
+            raise
+        except Exception as exc:  # noqa: BLE001 - best effort, every other failure is logged
+            log.warning(
+                "job %s: ReplayGain of track %s not reported: %s",
+                request.job.job_id,
+                track_id,
+                type(exc).__name__,
+            )
 
     def _album_files(
         self, request: ArchiveRequest, built: _Built, album: dict[str, Any]
@@ -340,18 +355,22 @@ class TaggingArchiver:
 
     @staticmethod
     def _place(request: ArchiveRequest, rel: str, lib_rel: str, sha: str) -> None:
+        """Moves the file unless register adopted it: the same file (same SHA-256) already at
+        the path, moved by an earlier attempt that died before `complete` (SPEC section 11)."""
         library: LibraryStore = request.library
         staging: StagingStore = request.staging
+        if library.exists(lib_rel) and digest(library, lib_rel).sha256 == sha:
+            log.info("job %s: %s is already in place, adopted", request.job.job_id, lib_rel)
+            return
         try:
             library.import_file(staging, rel, lib_rel)
         except Conflict as exc:
-            # A retry after a crash between the move and `complete`: our own file is fine.
-            if digest(library, lib_rel).sha256 != sha:
-                raise DownloadError(
-                    WorkerErrorCode.STORAGE_ERROR,
-                    "another file is at the reserved library path",
-                    retryable=False,
-                ) from exc
+            # Someone else's file appeared there after register: never overwrite it.
+            raise DownloadError(
+                WorkerErrorCode.STORAGE_ERROR,
+                "another file is at the reserved library path",
+                retryable=False,
+            ) from exc
 
     @staticmethod
     def _place_cover(request: ArchiveRequest, staged: str, rel: str) -> None:

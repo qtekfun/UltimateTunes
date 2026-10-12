@@ -49,12 +49,23 @@ def youtube_host(host: str) -> bool:
 
 
 def _checked(url: str, allowed: HostCheck) -> str:
-    parts = urlsplit(url)
-    if parts.scheme != "https" or parts.port not in (None, 443) or parts.username:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:  # a malformed port or IPv6 literal
+        raise CoverRejectedError("malformed URL") from exc
+    if parts.scheme != "https" or port not in (None, 443) or parts.username:
         raise CoverRejectedError("not a plain https URL")
     if not allowed(parts.hostname or ""):
         raise CoverRejectedError(f"host {parts.hostname!r} is not allowed")
     return url
+
+
+def _host(url: str) -> str:
+    try:
+        return urlsplit(url).hostname or "?"
+    except ValueError:
+        return "?"
 
 
 class CoverFetcher:
@@ -90,10 +101,10 @@ class CoverFetcher:
     async def _try(self, url: str, allowed: HostCheck, redirects: int) -> bytes | None:
         try:
             return await self._download(url, allowed, redirects)
-        except CoverRejectedError as exc:
-            log.info("no cover from %s: %s", urlsplit(url).hostname, exc)
+        except (CoverRejectedError, ValueError) as exc:  # ValueError: a malformed redirect
+            log.info("no cover from %s: %s", _host(url), exc)
         except httpx.HTTPError as exc:
-            log.info("no cover from %s: %s", urlsplit(url).hostname, type(exc).__name__)
+            log.info("no cover from %s: %s", _host(url), type(exc).__name__)
         return None
 
     async def fetch(
