@@ -11,6 +11,11 @@
   every other line is a log line, and `ERROR:` lines classify a failure (`classify`).
 - Player clients come from settings, with one fallback ladder step when extraction fails
   before any byte was reported. Deno is the only JS runtime, with no remote components.
+- Abuse limits (core/limits.py): `--match-filter "duration<=N"` (`UT_MAX_TRACK_DURATION_S`;
+  an unknown duration, e.g. a live stream, does not pass) and `--max-filesize`
+  (`UT_MAX_DOWNLOAD_BYTES`). yt-dlp skips such a video quietly (exit 0, no file): that is
+  `video_unavailable`, not retried. A download whose size is unknown up front and grows past
+  the limit is stopped by the worker itself.
 - The subprocess gets a minimal environment (no secrets) and is killed when the job is
   cancelled, the lease is lost or the timeout runs out.
 """
@@ -31,6 +36,7 @@ from typing import Protocol
 import anyio
 from anyio.abc import Process
 
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.storage import StagingStore
 from ultimatetunes.errors import WorkerErrorCode
 from ultimatetunes.worker.downloader import (
@@ -90,8 +96,14 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
     clients: str,
     out_dir: Path,
     video_id: str,
+    limits: DownloadLimits,
 ) -> list[str]:
     """The yt-dlp command line (spike T03c). `video_id` must already be checked."""
+    # Validated integers only (pydantic checked them; `int` again so no text gets through).
+    max_duration = int(limits.max_track_duration_s)
+    max_bytes = int(limits.max_download_bytes)
+    if max_duration <= 0 or max_bytes <= 0:
+        raise ValueError("download limits must be positive")
     return [
         python,
         "-I",
@@ -112,6 +124,10 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
         f"youtube:player_client={clients}",
         "--format",
         FORMAT_SELECTOR,
+        "--match-filter",
+        f"duration<={max_duration}",
+        "--max-filesize",
+        str(max_bytes),
         "--retries",
         "3",
         "--socket-timeout",
@@ -363,7 +379,7 @@ async def _open(args: list[str], env: dict[str, str]) -> Process:
 
 
 class YtDlpDownloader:
-    def __init__(
+    def __init__(  # noqa: PLR0913 - its stores, settings and seams for tests
         self,
         staging: StagingStore,
         settings: WorkerSettings,
@@ -371,9 +387,11 @@ class YtDlpDownloader:
         *,
         python: str = sys.executable,
         runner: Runner = _open,
+        limits: DownloadLimits | None = None,
     ) -> None:
         self._staging = staging
         self._settings = settings
+        self._limits = limits or DownloadLimits()
         self._runtime = runtime
         self._python = python
         self._runner = runner
@@ -422,6 +440,7 @@ class YtDlpDownloader:
             clients=clients,
             out_dir=run.out_dir,
             video_id=video_id,
+            limits=self._limits,
         )
         process = await self._runner(args, minimal_env(run.out_dir))
         try:
@@ -482,6 +501,7 @@ class YtDlpDownloader:
         if run.expected_size is None:
             run.expected_size = line.total_bytes
         run.downloaded = max(run.downloaded, line.downloaded_bytes)
+        self._check_size(run)
         run.reported = True
         await run.on_progress(
             DownloadProgress(
@@ -496,10 +516,29 @@ class YtDlpDownloader:
             )
         )
 
+    def _check_size(self, run: _Run) -> None:
+        """Stops a download that is (or announces to be) over `UT_MAX_DOWNLOAD_BYTES`."""
+        limit = self._limits.max_download_bytes
+        if run.downloaded > limit or (run.expected_size or 0) > limit:
+            raise DownloadError(
+                WorkerErrorCode.VIDEO_UNAVAILABLE,
+                f"the audio is larger than this server allows ({limit} bytes)",
+                retryable=False,
+            )
+
     async def _finish(self, run: _Run) -> DownloadResult:
         result = run.result
-        if result is None:
+        if result is None and run.reported:
             raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "yt-dlp reported no file")
+        if result is None:
+            # yt-dlp exited 0 before downloading anything: it skipped the video on a limit
+            # (match filter or max-filesize; it says so only on the screen, which `--print`
+            # keeps quiet).
+            raise DownloadError(
+                WorkerErrorCode.VIDEO_UNAVAILABLE,
+                "yt-dlp skipped the video: longer or larger than this server allows",
+                retryable=False,
+            )
         content_type, progressive = _container(result.ext)
         final = run.relative(result.filepath)
         if run.final_path is not None and final != run.final_path:
