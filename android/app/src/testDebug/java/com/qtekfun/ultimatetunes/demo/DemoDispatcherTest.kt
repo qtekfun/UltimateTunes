@@ -195,7 +195,12 @@ class DemoDispatcherTest {
         }
         val stream = checkNotNull(api.streamUrl(album.song.first().id))
         client.newCall(Request.Builder().url(stream).build()).execute().use {
-            assertEquals("RIFF", it.body.bytes().copyOfRange(0, 4).decodeToString())
+            val wav = it.body.bytes()
+            assertEquals("RIFF", wav.copyOfRange(0, 4).decodeToString())
+            // As long as the song says: 44-byte header, then 16-bit mono at the byte rate.
+            val byteRate = java.nio.ByteBuffer.wrap(wav, 28, 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            assertEquals(album.song.first().duration, (wav.size - 44) / byteRate)
         }
     }
 

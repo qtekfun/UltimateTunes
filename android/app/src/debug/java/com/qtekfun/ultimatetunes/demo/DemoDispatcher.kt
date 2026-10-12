@@ -352,7 +352,7 @@ internal class DemoDispatcher(
                 envelope {}
             }
 
-            "stream", "download" -> if (DemoCatalog.song(id) == null) notFound() else audio()
+            "stream", "download" -> DemoCatalog.song(id)?.let { audio(it.duration) } ?: notFound()
 
             "getCoverArt" -> image(id, param("size")?.toIntOrNull())
 
@@ -499,10 +499,10 @@ internal class DemoDispatcher(
             }
         }
 
-    private fun audio(): MockResponse = MockResponse.Builder()
+    private fun audio(seconds: Int?): MockResponse = MockResponse.Builder()
         .addHeader("Content-Type", "audio/wav")
         .addHeader("Accept-Ranges", "none")
-        .body(Buffer().write(DemoAudio.wav))
+        .body(Buffer().write(DemoAudio.wav(seconds)))
         .build()
 
     private fun image(id: String, size: Int?): MockResponse {
