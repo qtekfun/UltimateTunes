@@ -2,21 +2,37 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """`/ut/v1/radio` and `/ut/v1/listen-now`. Owner: PLAN T07.
 
-T02 stubs: each route answers `not_implemented` (501) until the task fills it in. Routes in
-`router` need an API key (see `ut/__init__.py`); `public_router` routes do not.
+Routes in `router` need an API key (see `ut/__init__.py`). `/ut/v1/radio` answers the seed
+first and then the radio, local-first (`radio.service`); `TrackItem` carries no per-user
+field, so it does not need the caller's identity. `/ut/v1/listen-now` is still the T02 stub
+(501): it needs the caller, whose dependency lives in `ut/__init__.py`.
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Request
 from starlette.responses import Response
 
+from ultimatetunes.core.services import services
 from ultimatetunes.errors import FeatureNotImplemented
+from ultimatetunes.radio.service import MAX_RADIO, RadioService
+from ultimatetunes.search import render
 
 router = APIRouter()
+DEFAULT_LIMIT = 50
 
 
 @router.get("/ut/v1/radio")
-def get_radio() -> Response:
-    raise FeatureNotImplemented()
+async def get_radio(
+    request: Request,
+    seed: Annotated[str, Query(min_length=1, max_length=80)],
+    limit: Annotated[int, Query(ge=1, le=MAX_RADIO)] = DEFAULT_LIMIT,
+) -> dict[str, object]:
+    radio = await RadioService.of(services(request)).radio(None, seed, limit)
+    return {
+        "seed": render.track_item(radio.seed),
+        "items": [render.track_item(s) for s in radio.items],
+    }
 
 
 @router.get("/ut/v1/listen-now")
