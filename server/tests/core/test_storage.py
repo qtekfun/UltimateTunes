@@ -160,3 +160,23 @@ def test_entry_paths_must_stay_inside(staging: LocalStagingStore, tmp_path: Path
         staging.rename("x", "dir/file")
     with pytest.raises(PathRejected):
         staging.delete("../x")
+
+
+def test_walk_lists_files_and_skips_symlinks(tmp_path: Path) -> None:
+    root = tmp_path / "music"
+    (root / "B" / "Album").mkdir(parents=True)
+    (root / "A").mkdir()
+    (root / "A" / "2.opus").write_bytes(b"x")
+    (root / "A" / "1.opus").write_bytes(b"x")
+    (root / "B" / "Album" / "01 - Song.m4a").write_bytes(b"x")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.opus").write_bytes(b"x")
+    (root / "A" / "link.opus").symlink_to(outside / "secret.opus")
+    (root / "dirlink").symlink_to(outside, target_is_directory=True)
+    store = LocalLibraryStore(root)
+    assert list(store.walk()) == ["A/1.opus", "A/2.opus", "B/Album/01 - Song.m4a"]
+
+
+def test_walk_of_a_missing_root_is_empty(tmp_path: Path) -> None:
+    assert list(LocalLibraryStore(tmp_path / "nope").walk()) == []
