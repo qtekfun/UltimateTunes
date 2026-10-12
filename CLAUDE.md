@@ -9,7 +9,7 @@ Always read `SPEC.md` (what to build) and `PLAN.md` (in what order, and who owns
 
 ## Project identity
 - Name: **UltimateTunes**. Server image `ghcr.io/qtekfun/ultimatetunes-server`. Android `applicationId` `com.qtekfun.ultimatetunes`.
-- Repository: `github.com/qtekfun/UltimateTunes`, **monorepo**, main branch **`master`** (only entered through a PR with CI green — while GitHub Actions are disabled, local CI `tools/ci-local.sh` green on the branch merged with master; by convention, there is no ruleset).
+- Repository: `github.com/qtekfun/UltimateTunes`, **monorepo**, main branch **`master`** (only entered through a PR with GitHub CI green; by convention, there is no ruleset).
 - License: **GPL-3.0-or-later**; SPDX header in every source file (py, kt, kts, yml, toml, sql, md, Dockerfile, sh).
 - Languages: code, identifiers, commits and repository docs in **English**; the app UI in English (default) and Spanish, every visible string in `strings.xml` (`values/`, `values-es/`). The admin panel in English and Spanish too (Jinja catalogs).
 - One version for everything: the root **`VERSION`** file (SemVer, `X.Y.Z` or `X.Y.Z-rc.N`). Gradle and `pyproject.toml` read it; nobody else writes a version.
@@ -77,10 +77,10 @@ Android (from `android/`):
 - UI tests on the author's phone **without uninstalling**: `./gradlew installDebug installDebugAndroidTest` + `adb shell am instrument -w com.qtekfun.ultimatetunes.test/com.qtekfun.ultimatetunes.HiltTestRunner`. **Never** `connectedDebugAndroidTest` on the author's phone.
 
 Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the worktree and branch for a PLAN task).
-- Local CI (GitHub Actions are disabled; SPEC §11): `tools/ci-local.sh` runs the same gates as `ci.yml` for what changed against `origin/master`; `--all` for every gate, or name groups (`pr-title`, `secrets`, `store-texts`, `server`, `contracts`, `android`, `docker`). With no arguments it always runs the PR-title (Conventional Commit, via `gh`), secrets and store-text gates. Needs a clean tree (it tests the committed HEAD).
+- Local CI (same gates before pushing; SPEC §11): `tools/ci-local.sh` runs the same gates as `ci.yml` for what changed against `origin/master`; `--all` for every gate, or name groups (`pr-title`, `secrets`, `store-texts`, `server`, `contracts`, `android`, `docker`). With no arguments it always runs the PR-title (Conventional Commit, via `gh`), secrets and store-text gates. Needs a clean tree (it tests the committed HEAD).
 
 ## Quality and tests
-- A task is done only when `make -C server check` and/or `./gradlew check` (whatever it touched) are green, and local CI (`tools/ci-local.sh`) is green on the branch merged with master (while GitHub Actions are disabled).
+- A task is done only when `make -C server check` and/or `./gradlew check` (whatever it touched) are green, and GitHub CI is green on the PR (`tools/ci-local.sh` runs the same gates locally).
 - Server: pytest + `anyio`, `respx` for outbound HTTP, a **fake catalog** (`FakeMusicCatalog`) and a **fake downloader** that writes a short generated audio file; `schemathesis` against the OpenAPI contracts. No test reaches YouTube except the nightly **canary**.
 - Android: JUnit5 + MockK, Turbine, in-memory Room, MockWebServer with the **fake server** of `:core:api` (built from the contract examples), Compose UI tests for key flows.
 - **Coverage**: server ≥ 85 % (pytest-cov), Android ≥ 85 % over `:core:*` and view models (Kover). **100 % mandatory** in: auth (API keys, passwords, OpenSubsonic auth rules), rate limiter, id resolution (`yt:` ↔ library), path sanitizer, job state machine, streaming-while-downloading state machine, client cache policy and queue prefetch planner. Never write empty or tautological tests to raise a number.
@@ -98,7 +98,7 @@ Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the wo
 - One PLAN task per branch (`feat/tNN-<slug>`, `fix/…`), from `master`. Start in plan mode for tasks that touch more than one area.
 - Commits in **Conventional Commits**, small and atomic; **the PR title too** (squash merge).
 - No `git push --force`, no history rewriting, no commits or pushes to `master`. The hooks block it; do not work around them.
-- Open the PR with `gh pr create` filling in the template. While GitHub Actions are disabled, run `tools/ci-local.sh` on the branch merged with master and fix what fails. When it is green and the independent review has no blocking findings, the coordinator merges with `gh pr merge --squash`.
+- Open the PR with `gh pr create` filling in the template. Run `tools/ci-local.sh` before pushing and fix what fails on GitHub CI. When CI is green and the independent review has no blocking findings, the coordinator merges with `gh pr merge --squash`.
 - When a task ends: 2-3 lines on what was done and what remains; tick it in `PLAN.md` with `*Result:*` if anything differs from the plan; record decisions in `SPEC.md` §11 with date and task.
 - If the spec is ambiguous or information is missing: **ask**, do not invent.
 

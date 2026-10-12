@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# End-to-end overrides of the test stack (PLAN T20), merged on top of server/compose.test.yaml:
+#   docker compose -p ut-e2e -f server/compose.test.yaml -f tools/e2e/compose.e2e.yaml up --build --wait
+# Still the fake YouTube (never a real download). Changes:
+# - its own image tag, so building it never replaces the image another test stack runs;
+# - the host port is UT_E2E_PORT (default 8044), so the suite can run next to another test stack;
+# - the fake downloader is slowed down (8 chunks, 1 s apart), so a stream is seen growing while
+#   the worker writes it and the worker can be killed mid-download;
+# - the shortest lease the worker may ask for (15 s), so a killed worker's job comes back soon.
+
+services:
+  migrate:
+    image: ultimatetunes-server:e2e
+
+  api:
+    image: ultimatetunes-server:e2e
+    ports: !override
+      - "127.0.0.1:${UT_E2E_PORT:-8044}:8044"
+
+  worker:
+    image: ultimatetunes-server:e2e
+    environment:
+      UT_LEASE_S: "15"
+      UT_POLL_INTERVAL_S: "1"
+      UT_FAKE_DOWNLOAD_CHUNKS: "8"
+      UT_FAKE_DOWNLOAD_DELAY_S: "1"
