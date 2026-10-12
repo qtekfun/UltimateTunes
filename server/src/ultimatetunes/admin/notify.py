@@ -13,6 +13,13 @@ so a name re-pointed within that instant (DNS rebinding) is a residual risk the 
 and the admin-only setting keep small. The URL is never logged (an ntfy topic name is a
 secret of sorts); only its host is.
 
+An ntfy server that requires login gets credentials from the environment only
+(`UT_NOTIFY_TOKEN`, or `UT_NOTIFY_USERNAME` + `UT_NOTIFY_PASSWORD`; `admin/settings.py`): an
+access token goes out as `Authorization: Bearer`, a user and password as HTTP Basic. The same
+header goes to a webhook target. It is added to the one request to the configured https URL,
+which never follows a redirect, and is never logged or audited; the panel only says whether
+credentials are set. A 401 or 403 answer is reported as rejected credentials.
+
 `NotificationSweep` runs in the api: every `UT_ADMIN_NOTIFY_INTERVAL_S` it collects the jobs
 that failed and the canary runs that failed since its cursor (also in `settings`), moves the
 cursor with a compare-and-set (so with several replicas one of them sends), then sends one
@@ -22,6 +29,7 @@ the cursor at that moment (no backlog).
 """
 
 import asyncio
+import base64
 import ipaddress
 import logging
 import socket
@@ -31,9 +39,11 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import SecretStr
 from starlette.concurrency import run_in_threadpool
 
 from ultimatetunes.admin.repository import AdminRepository
+from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.core.clock import Clock, format_ts
 from ultimatetunes.db.database import Database
 from ultimatetunes.errors import InvalidParameter
@@ -42,6 +52,9 @@ from ultimatetunes.jobs.gate import LOW_DISK_KEY
 log = logging.getLogger(__name__)
 
 Kind = Literal["ntfy", "webhook"]
+AuthKind = Literal["token", "basic"]
+# What one delivery attempt came to; `rejected` is a 401 or 403 (wrong or missing credentials).
+Outcome = Literal["sent", "rejected", "failed"]
 KINDS: tuple[Kind, ...] = ("ntfy", "webhook")
 KEY_KIND = "admin.notify.kind"
 KEY_URL = "admin.notify.url"
@@ -60,6 +73,35 @@ class Target:
     @property
     def host(self) -> str:
         return urlsplit(self.url).hostname or "?"
+
+
+@dataclass(frozen=True)
+class Credentials:
+    """The `Authorization` value for the notification target. Its repr hides the value."""
+
+    kind: AuthKind
+    authorization: SecretStr
+
+    @classmethod
+    def bearer(cls, token: str) -> "Credentials":
+        return cls("token", SecretStr(f"Bearer {token}"))
+
+    @classmethod
+    def basic(cls, username: str, password: str) -> "Credentials":
+        pair = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
+        return cls("basic", SecretStr(f"Basic {pair}"))
+
+    @classmethod
+    def from_settings(cls, settings: AdminSettings) -> "Credentials | None":
+        """The token, else the user and password, else None (`AdminSettings` allows one)."""
+        if settings.notify_token is not None:
+            return cls.bearer(settings.notify_token.get_secret_value())
+        if settings.notify_username is not None and settings.notify_password is not None:
+            return cls.basic(
+                settings.notify_username.get_secret_value(),
+                settings.notify_password.get_secret_value(),
+            )
+        return None
 
 
 @dataclass(frozen=True)
@@ -157,10 +199,19 @@ class Sender:
     """Posts one message to the target. Errors are logged, never raised to the caller."""
 
     def __init__(
-        self, transport: httpx.AsyncBaseTransport | None = None, resolve: Resolver | None = None
+        self,
+        transport: httpx.AsyncBaseTransport | None = None,
+        resolve: Resolver | None = None,
+        credentials: Credentials | None = None,
     ) -> None:
         self._transport = transport
         self._resolve = resolve or system_resolve
+        self._credentials = credentials
+
+    @property
+    def auth_kind(self) -> AuthKind | None:
+        """Which credentials go with each message (the panel shows this, never the value)."""
+        return self._credentials.kind if self._credentials else None
 
     async def _resolves_safely(self, target: Target) -> bool:
         """False (logged) when the host does not resolve, or resolves to an address of this
@@ -180,11 +231,13 @@ class Sender:
         return True
 
     async def send(self, target: Target, message: Message) -> bool:
+        return await self.deliver(target, message) == "sent"
+
+    async def deliver(self, target: Target, message: Message) -> Outcome:
+        headers: dict[str, str] = {}
         if target.kind == "ntfy":
-            request: dict[str, object] = {
-                "content": message.body.encode(),
-                "headers": {"Title": _header_safe(message.title), "Tags": "warning"},
-            }
+            headers = {"Title": _header_safe(message.title), "Tags": "warning"}
+            request: dict[str, object] = {"content": message.body.encode()}
         else:
             request = {
                 "json": {"source": "ultimatetunes", "title": message.title, "message": message.body}
@@ -193,21 +246,33 @@ class Sender:
             url = check_url(target.url)
         except InvalidParameter as exc:
             log.warning("notification to %s failed: %s", target.host, type(exc).__name__)
-            return False
+            return "failed"
         if not await self._resolves_safely(target):
-            return False
+            return "failed"
+        if self._credentials is not None:
+            # Only on this one request to the checked URL; redirects are never followed.
+            headers["Authorization"] = self._credentials.authorization.get_secret_value()
         try:
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=TIMEOUT_S, follow_redirects=False
             ) as client:
-                response = await client.post(url, **request)  # type: ignore[arg-type]
+                response = await client.post(url, headers=headers, **request)  # type: ignore[arg-type]
         except httpx.HTTPError as exc:
             log.warning("notification to %s failed: %s", target.host, type(exc).__name__)
-            return False
+            return "failed"
         if response.is_success:
-            return True
-        log.warning("notification to %s answered HTTP %d", target.host, response.status_code)
-        return False
+            return "sent"
+        status = response.status_code
+        if status in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+            log.warning(
+                "notification to %s answered HTTP %d: %s",
+                target.host,
+                status,
+                "credentials rejected" if self._credentials else "it needs credentials",
+            )
+            return "rejected"
+        log.warning("notification to %s answered HTTP %d", target.host, status)
+        return "failed"
 
 
 def _header_safe(text: str) -> str:

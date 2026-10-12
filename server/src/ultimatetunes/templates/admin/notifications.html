@@ -18,6 +18,12 @@
     <button type="submit">{{ _("Save") }}</button>
   </form>
 </div>
+<div class="card">
+  <h2>{{ _("Credentials") }}</h2>
+  <p>{% if auth_kind == "token" %}{{ _("Access token: set ✓") }}{% elif auth_kind == "basic" %}{{ _("User and password: set ✓") }}{% else %}{{ _("Credentials: not set") }}{% endif %}</p>
+  <p>{{ _("For an ntfy server that requires login, set UT_NOTIFY_TOKEN (an ntfy access token), or UT_NOTIFY_USERNAME and UT_NOTIFY_PASSWORD, as Docker secrets or environment variables, and restart the api. They go only to the address above, over https, and also to a webhook.") }}</p>
+  <p>{{ _("They cannot be entered here: this server has no encryption library to keep them safe in its database.") }}</p>
+</div>
 {% if target %}
 <div class="card">
   <form class="inline" method="post" action="/admin/notifications/test">
