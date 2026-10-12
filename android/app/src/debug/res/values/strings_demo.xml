@@ -2,7 +2,9 @@
 <!--
   SPDX-FileCopyrightText: 2026 UltimateTunes contributors
   SPDX-License-Identifier: GPL-3.0-or-later
+
+  Debug builds only: the demo button of the Connect screen (src/debug, never in release).
 -->
 <resources>
-    <color name="ic_launcher_background">#FFE0284F</color>
+    <string name="demo_try">Try the demo</string>
 </resources>

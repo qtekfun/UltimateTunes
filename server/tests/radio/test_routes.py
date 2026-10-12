@@ -22,6 +22,7 @@ from ultimatetunes.settings import Settings
 
 SIMILAR = schema_validator("opensubsonic-subset.yaml", "GetSimilarSongs2Response")
 RADIO = schema_validator("ut-v1.yaml", "Radio")
+LISTEN_NOW = schema_validator("ut-v1.yaml", "ListenNow")
 XMLNS = "{http://subsonic.org/restapi}"
 
 
@@ -170,9 +171,17 @@ def test_similar_songs_of_an_artist_start_with_its_top_song(client: TestClient) 
     assert song_ids(library_artist) == [LOW_TIDE, "yt:Rb8Tn3ZcYv0"]
 
 
+def test_similar_songs_count_zero_never_calls_the_catalog(
+    client: TestClient, catalog: FakeMusicCatalog
+) -> None:
+    assert song_ids(similar(client, id=LIGHTHOUSE, count="0")) == []
+    assert song_ids(similar(client, id="ytartist:UCn4HbR7oQ2sLx9TzV0eWm3K", count="0")) == []
+    assert catalog.calls == []
+    assert similar(client, id="ytalbum:bad id", count="0")["error"]["code"] == 70
+
+
 def test_similar_songs_count(client: TestClient) -> None:
     assert song_ids(similar(client, id=LIGHTHOUSE, count="1")) == [LOW_TIDE]
-    assert song_ids(similar(client, id=LIGHTHOUSE, count="0")) == []
     assert len(song_ids(similar(client, id=LIGHTHOUSE, count="100000"))) == 6
 
 
@@ -216,3 +225,15 @@ def test_similar_songs_without_songs_is_an_empty_list(
     catalog.radio = radio  # type: ignore[method-assign]
     result = similar(client, id="yt:Qx7Lm2pZ0aB")
     assert result["similarSongs2"] == {"song": []}
+
+
+# ---------------------------------------------------------------------- /ut/v1/listen-now
+
+
+def test_listen_now(client: TestClient) -> None:
+    r = client.get("/ut/v1/listen-now")
+    assert r.status_code == 200
+    body = r.json()
+    LISTEN_NOW.validate(body)
+    assert [s["id"] for s in body["mostPlayed"]] == [LIGHTHOUSE]
+    assert [s["seedId"] for s in body["favouriteRadios"]] == [LIGHTHOUSE]

@@ -184,6 +184,10 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
+    // Debug builds only: the demo server on 127.0.0.1 behind the Connect screen's "Try the demo"
+    // (src/debug). Release builds have neither the code nor this library.
+    debugImplementation(libs.okhttp.mockwebserver)
+
     // UI tests, run on a device with installDebug installDebugAndroidTest + adb instrument
     // (never connectedDebugAndroidTest on the author's phone).
     androidTestImplementation(platform(libs.androidx.compose.bom))
