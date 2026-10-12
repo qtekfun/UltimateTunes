@@ -32,7 +32,8 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
 
     The status code and `status` are for everyone (probes, a proxy's health check); the
     per-check detail only for callers inside `PROBE_NETWORKS_STATE` (loopback, plus the admin
-    allowlist once the admin area is installed) that did not come through an untrusted proxy.
+    allowlist once the admin area is installed) that did not come through an untrusted proxy
+    and are not on the worker's network (`UT_WORKER_NETWORKS`).
     """
     settings: Settings = request.app.state.settings
     checks = {
@@ -52,7 +53,12 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
 def _may_see_detail(request: Request) -> bool:
     networks: tuple[IpNetwork, ...] = getattr(request.app.state, PROBE_NETWORKS_STATE, LOOPBACK)
     host = request.client.host if request.client else None
-    return not via_untrusted_proxy(request.scope) and in_networks(host, networks)
+    settings: Settings = request.app.state.settings
+    return (
+        not via_untrusted_proxy(request.scope)
+        and in_networks(host, networks)
+        and not in_networks(host, settings.worker_network_list)
+    )
 
 
 def _check_database(settings: Settings) -> str:

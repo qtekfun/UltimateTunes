@@ -109,3 +109,10 @@ def test_readyz_detail_through_a_trusted_proxy(settings: Settings) -> None:
     assert "checks" in from_lan.json()
     from_outside = client(behind, proxy).get("/readyz", headers={"X-Forwarded-For": "203.0.113.9"})
     assert from_outside.json() == {"status": "ok"}
+
+
+def test_readyz_detail_never_goes_to_the_worker_network(settings: Settings) -> None:
+    migrated(settings)
+    walled = settings.model_copy(update={"worker_networks": "172.30.44.0/24"})
+    assert client(walled, ("172.30.44.3", 1)).get("/readyz").json() == {"status": "ok"}
+    assert "checks" in client(walled, LOCAL).get("/readyz").json()

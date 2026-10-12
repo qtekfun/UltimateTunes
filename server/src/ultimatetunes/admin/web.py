@@ -58,7 +58,8 @@ def install(
     app.include_router(routes.router)
     for exc_class, handler in routes.handlers().items():
         app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]
-    app.add_middleware(AdminGate, networks=settings.networks())
+    denied = services.settings.worker_network_list
+    app.add_middleware(AdminGate, networks=settings.networks(), denied=denied)
     # Whoever may reach the panel may also read the `/readyz` detail.
     setattr(app.state, PROBE_NETWORKS_STATE, LOOPBACK + settings.networks())
     sweep = notify.NotificationSweep(services.db, services.clock, sender)

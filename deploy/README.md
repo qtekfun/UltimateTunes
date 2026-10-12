@@ -39,7 +39,7 @@ The per-IP authentication limit and lockout (T04), the audit log and `/readyz` u
 
 ## Hardening already in `server/compose.yaml`
 
-Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port.
+Non-root user (10001), read-only root filesystem, `/tmp` as tmpfs, all capabilities dropped, `no-new-privileges`, a PID limit, secrets as Docker secrets (`./secrets/worker_token`, `./secrets/admin_session_secret`), the worker without database access and without a published port, sharing only the pinned `internal` network with the api (`UT_INTERNAL_SUBNET`, default `10.213.44.0/24`; change it if it overlaps one of your networks), from which `/admin` is refused.
 
 ## Backups of `/data` (and a restore test)
 

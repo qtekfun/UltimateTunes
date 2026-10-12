@@ -6,6 +6,7 @@
 #   UT_MUSIC_PATH=/srv/music         your library on the host
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
 #   UT_TRUSTED_PROXIES=...           only behind a reverse proxy (deploy/README.md)
+#   UT_INTERNAL_SUBNET=10.213.44.0/24 the api-worker network (change it if it overlaps yours)
 # and two random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (e.g. `openssl rand -hex 32` each).
 #   docker compose up -d
@@ -38,10 +39,14 @@ services:
     command: ["api"]
     environment:
       # Behind `tailscale serve` or Caddy on the host, clients reach the api through Docker's
-      # port publishing: set the proxy's address as the container sees it (the bridge gateway,
-      # e.g. 172.16.0.0/12) so `/admin`, `/readyz` and the per-IP limits see the real client.
+      # port publishing: set the proxy's address as the container sees it, the single bridge
+      # gateway (e.g. 172.18.0.1/32, never a whole range: other containers could then claim
+      # any client address), so `/admin`, `/readyz` and the per-IP limits see the real client.
       # Empty: no proxy is trusted and `/admin` refuses proxied requests (deploy/README.md).
       UT_TRUSTED_PROXIES: ${UT_TRUSTED_PROXIES:-}
+      # The worker reaches the api only over `internal`: callers from there never get `/admin`
+      # or the `/readyz` detail. Keep it equal to the subnet below.
+      UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -87,8 +92,9 @@ services:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
-    # `internal` reaches the api; `default` is the way out to YouTube Music and MusicBrainz.
-    networks: [default, internal]
+    # `internal` reaches the api; `egress` is its own way out to YouTube Music and MusicBrainz,
+    # so the worker shares no other network with the api.
+    networks: [egress, internal]
 
 secrets:
   worker_token:
@@ -99,6 +105,12 @@ secrets:
 networks:
   internal:
     internal: true
+    # Pinned so the api can refuse `/admin` to it (UT_WORKER_NETWORKS). Change it with
+    # UT_INTERNAL_SUBNET if it overlaps one of your networks.
+    ipam:
+      config:
+        - subnet: ${UT_INTERNAL_SUBNET:-10.213.44.0/24}
+  egress:
 
 volumes:
   data:

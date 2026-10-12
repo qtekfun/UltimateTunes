@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # `tailscale serve` through Docker's port publishing, ...). Empty (default): nobody's, the
     # TCP peer is the client, and `/admin` refuses requests that carry forwarding headers.
     trusted_proxies: str = ""
+    # Comma-separated CIDRs of the worker's network (the internal Docker network): callers from
+    # there never get `/admin` or the `/readyz` detail, even though the addresses are private.
+    worker_networks: str = ""
     # Largest request body the api reads (an import file is at most 1 MiB).
     max_body_bytes: int = Field(default=4 * 1024 * 1024, ge=64 * 1024)
     # Housekeeping of the api (expired cache entries, idle rate-limit buckets, cache caps).
@@ -77,15 +80,19 @@ class Settings(BaseSettings):
     # Test stack only: the fake catalog and fake downloader instead of YouTube Music.
     fake_youtube: bool = False
 
-    @field_validator("trusted_proxies")
+    @field_validator("trusted_proxies", "worker_networks")
     @classmethod
-    def _valid_proxies(cls, value: str) -> str:
+    def _valid_networks(cls, value: str) -> str:
         parse_networks(value)
         return value
 
     @property
     def proxy_networks(self) -> tuple[IpNetwork, ...]:
         return parse_networks(self.trusted_proxies)
+
+    @property
+    def worker_network_list(self) -> tuple[IpNetwork, ...]:
+        return parse_networks(self.worker_networks)
 
     @property
     def internal_bind(self) -> str:

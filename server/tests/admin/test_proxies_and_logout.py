@@ -132,3 +132,15 @@ def test_a_garbled_epoch_counts_as_zero(
         )
     session_for(client, people.alice)
     assert client.get("/admin").status_code == 200
+
+
+def test_the_worker_network_never_reaches_the_panel(
+    app_factory: Callable[[], FastAPI], services: Services
+) -> None:
+    """The worker's network is private, but a compromised worker must not get the panel."""
+    services.settings = services.settings.model_copy(update={"worker_networks": "172.30.44.0/24"})
+    app = app_factory()
+    with panel(app, ("172.30.44.3", 40000)) as from_worker:
+        assert from_worker.get("/admin/login").status_code == 403
+    with panel(app, ("172.30.45.3", 40000)) as from_lan:
+        assert from_lan.get("/admin/login").status_code == 200

@@ -8,6 +8,7 @@ In order, for every request under `/admin`:
    else runs. The address is the one `core/forwarded.py` resolved (`X-Forwarded-For` only from
    `UT_TRUSTED_PROXIES`); a request with forwarding headers from any other peer, or a Tailscale
    Funnel request, is refused too: behind an unconfigured proxy every caller looks local.
+   The worker's network (`UT_WORKER_NETWORKS`) is refused even though it is private.
    This is also the mitigation for the per-username lockout of T04 (SPEC §11): a stranger
    cannot reach the login form to lock an admin out.
 2. **Session**: a cookie signed with itsdangerous (`HttpOnly`, `Secure`, `SameSite=Strict`,
@@ -89,9 +90,15 @@ class AdminGate:
     A plain ASGI middleware: every other path passes through untouched (no wrapping of the
     streaming responses of `/rest`)."""
 
-    def __init__(self, app: ASGIApp, networks: tuple[IpNetwork, ...]) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        networks: tuple[IpNetwork, ...],
+        denied: tuple[IpNetwork, ...] = (),
+    ) -> None:
         self._app = app
         self._networks = networks
+        self._denied = denied
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -108,6 +115,7 @@ class AdminGate:
             refusal: Response | None = None
             if (
                 not client_allowed(host, self._networks)
+                or client_allowed(host, self._denied)
                 or via_untrusted_proxy(scope)
                 or FUNNEL_HEADER in request.headers
             ):
