@@ -23,6 +23,7 @@ import com.qtekfun.ultimatetunes.core.api.model.CreateImportBody
 import com.qtekfun.ultimatetunes.core.api.model.CreateKeyRequest
 import com.qtekfun.ultimatetunes.core.api.model.CreatedKey
 import com.qtekfun.ultimatetunes.core.api.model.Import
+import com.qtekfun.ultimatetunes.core.api.model.ImportFileFormat
 import com.qtekfun.ultimatetunes.core.api.model.ImportId
 import com.qtekfun.ultimatetunes.core.api.model.ImportList
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
@@ -56,6 +57,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -150,6 +152,25 @@ internal class OkHttpTunesApi(
     override suspend fun createImport(url: String, name: String?): TunesResult<Import> {
         val body = json.encodeToString(CreateImportBody.serializer(), CreateImportBody(url, name))
         return ut(Import.serializer(), "imports", method = "POST", body = body.toJsonBody())
+    }
+
+    override suspend fun createFileImport(
+        content: ByteArray,
+        fileName: String,
+        format: ImportFileFormat,
+        name: String?
+    ): TunesResult<Import> {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                fileName,
+                content.toRequestBody(format.mediaType.toMediaType())
+            )
+            .addFormDataPart("format", format.wireName)
+            .apply { if (name != null) addFormDataPart("name", name) }
+            .build()
+        return ut(Import.serializer(), "imports", method = "POST", body = body)
     }
 
     override suspend fun import(id: ImportId): TunesResult<Import> =

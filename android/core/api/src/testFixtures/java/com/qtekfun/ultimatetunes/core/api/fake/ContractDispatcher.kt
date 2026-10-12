@@ -6,7 +6,9 @@ package com.qtekfun.ultimatetunes.core.api.fake
 import java.net.URLDecoder
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -220,14 +222,60 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
         private fun radio(): MockResponse =
             validId(request.url.queryParameter("seed").orEmpty()) ?: ok(ut("getRadio.200"))
 
+        /**
+         * A URL import (JSON) answers the contract example; a file import (multipart) the same
+         * example with its `source` and a null `sourceUrl`. Spotify URLs are `unsupported_url`.
+         */
         private fun createImport(): MockResponse {
-            val location = "/ut/v1/imports/0199d6a2-4c1e-7b3a-9f10-2a6c8e017001"
-            return MockResponse(
+            val text = request.body?.utf8().orEmpty()
+            val multipart = request.headers["Content-Type"].orEmpty().startsWith("multipart/")
+            val example = Json.parseToJsonElement(ut("createImport.202")).jsonObject
+            val format = formField(text, "format")
+            val invalid = if (multipart) fileImportError(text, format) else urlImportError(text)
+            val body = if (multipart) {
+                JsonObject(
+                    example + mapOf("source" to JsonPrimitive(format), "sourceUrl" to JsonNull)
+                )
+            } else {
+                example
+            }
+            val location = "/ut/v1/imports/" + example.getValue("id").jsonPrimitive.content
+            return invalid ?: MockResponse(
                 code = 202,
                 headers = headersOf("Content-Type", JSON, "Location", location),
-                body = ut("createImport.202")
+                body = body.toString()
             )
         }
+
+        private fun fileImportError(text: String, format: String?): MockResponse? = when {
+            formField(text, "file") == null -> missing("file")
+
+            format == null -> missing("format")
+
+            format !in FILE_FORMATS ->
+                problem(400, "invalid_parameter", "Invalid parameter", "Unknown format '$format'")
+
+            else -> null
+        }
+
+        private fun urlImportError(text: String): MockResponse? {
+            val url = Json.parseToJsonElement(
+                text.ifEmpty {
+                    "{}"
+                }
+            ).jsonObject["url"]?.jsonPrimitive?.content
+            return when {
+                url == null -> missing("url")
+
+                !YOUTUBE_PLAYLIST.containsMatchIn(url) ->
+                    problem(400, "unsupported_url", "Unsupported URL", "Not a YouTube playlist URL")
+
+                else -> null
+            }
+        }
+
+        private fun missing(name: String) =
+            problem(400, "missing_parameter", "Missing parameter", "'$name' is required")
 
         private fun authFailure(): MockResponse? {
             val header = request.headers["X-Api-Key"]
@@ -338,6 +386,22 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
         val JSON_HEADERS = headersOf("Content-Type", JSON)
         val PROBLEM_HEADERS = headersOf("Content-Type", "application/problem+json")
         val VIDEO_ID = Regex("^[A-Za-z0-9_-]{11}$")
+        val FILE_FORMATS = setOf("csv", "exportify_csv", "spotify_json")
+        val YOUTUBE_PLAYLIST =
+            Regex(
+                "^https://(music\\.youtube\\.com|www\\.youtube\\.com|youtube\\.com|m\\.youtube\\.com)/.*[?&]list="
+            )
+
+        /** The value of the multipart field [name] (for a file part: its content), or null. */
+        fun formField(body: String, name: String): String? {
+            val part =
+                Regex(
+                    "Content-Disposition: form-data; name=\"$name\"[^\r\n]*\r\n(?:[^\r\n]+\r\n)*\r\n"
+                )
+            val start = part.find(body)?.range?.last?.plus(1) ?: return null
+            val end = body.indexOf("\r\n--", start)
+            return if (end < 0) null else body.substring(start, end)
+        }
 
         /** Endpoints without credentials. */
         val PUBLIC_REST = setOf("getOpenSubsonicExtensions")

@@ -37,7 +37,8 @@ data class Capabilities(
     val radio: Boolean,
     val lyrics: Boolean,
     val youtubeMusicImport: Boolean,
-    val spotifyImport: Boolean,
+    /** Playlist import from an uploaded file (CSV, Exportify CSV, Spotify data-export JSON). */
+    val fileImport: Boolean,
     val streamingWhileDownloading: Boolean
 )
 
@@ -209,8 +210,27 @@ enum class ImportSource {
     @SerialName("ytmusic")
     YTMUSIC,
 
-    @SerialName("spotify")
-    SPOTIFY
+    @SerialName("csv")
+    CSV,
+
+    @SerialName("exportify_csv")
+    EXPORTIFY_CSV,
+
+    @SerialName("spotify_json")
+    SPOTIFY_JSON
+}
+
+/**
+ * The format of an uploaded playlist file (`POST /ut/v1/imports`, multipart):
+ * - [CSV]: a header row with `title`, `artist` (several joined with `;`), optional `album`,
+ *   `duration` (seconds or m:ss) and `isrc`;
+ * - [EXPORTIFY_CSV]: the CSV Exportify writes;
+ * - [SPOTIFY_JSON]: a playlist file of Spotify's "Download your data" export.
+ */
+enum class ImportFileFormat(val wireName: String, val mediaType: String) {
+    CSV("csv", "text/csv"),
+    EXPORTIFY_CSV("exportify_csv", "text/csv"),
+    SPOTIFY_JSON("spotify_json", "application/json")
 }
 
 @Serializable
@@ -268,7 +288,8 @@ data class ImportItem(
 data class Import(
     val id: ImportId,
     val source: ImportSource,
-    val sourceUrl: String,
+    /** The playlist URL of a `ytmusic` import; null for file imports. */
+    val sourceUrl: String? = null,
     val name: String? = null,
     val state: ImportState,
     val total: Int,

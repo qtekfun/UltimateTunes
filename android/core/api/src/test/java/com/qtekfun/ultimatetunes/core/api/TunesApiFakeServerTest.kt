@@ -9,8 +9,10 @@ import com.qtekfun.ultimatetunes.core.api.model.AlbumListType
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
+import com.qtekfun.ultimatetunes.core.api.model.ImportFileFormat
 import com.qtekfun.ultimatetunes.core.api.model.ImportId
 import com.qtekfun.ultimatetunes.core.api.model.ImportItemState
+import com.qtekfun.ultimatetunes.core.api.model.ImportSource
 import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.LibraryState
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
@@ -65,7 +67,7 @@ class TunesApiFakeServerTest {
             assertEquals("UltimateTunes", info.name)
             assertEquals("1", info.apiVersion)
             assertTrue(info.capabilities.externalSearch)
-            assertFalse(info.capabilities.spotifyImport)
+            assertTrue(info.capabilities.fileImport)
             assertEquals(
                 listOf("apiKeyAuthentication", "formPost", "songLyrics"),
                 info.openSubsonic.extensions
@@ -238,6 +240,46 @@ class TunesApiFakeServerTest {
                 SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001"),
                 shelves.favouriteRadios.single().seedId
             )
+        }
+
+        @Test
+        fun `a file import is a multipart upload`() = runTest {
+            val csv = "title,artist\nLighthouse Keeper,The Paper Lanterns\n".encodeToByteArray()
+            val created = api.createFileImport(
+                csv,
+                "road.csv",
+                ImportFileFormat.CSV,
+                "Road Trip"
+            ).value()
+            assertEquals(ImportSource.CSV, created.source)
+            assertNull(created.sourceUrl)
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/ut/v1/imports", request.url.encodedPath)
+            assertTrue(request.headers["Content-Type"]!!.startsWith("multipart/form-data"))
+            val body = request.body!!.utf8()
+            assertTrue(body.contains("name=\"file\"; filename=\"road.csv\""), body)
+            assertTrue(body.contains("Content-Type: text/csv"), body)
+            assertTrue(body.contains("Lighthouse Keeper,The Paper Lanterns"), body)
+            assertTrue(body.contains("name=\"name\""), body)
+
+            val json = api.createFileImport(
+                "{}".encodeToByteArray(),
+                "p.json",
+                ImportFileFormat.SPOTIFY_JSON
+            )
+                .value()
+            assertEquals(ImportSource.SPOTIFY_JSON, json.source)
+            val jsonBody = server.takeRequest().body!!.utf8()
+            assertTrue(jsonBody.contains("Content-Type: application/json"), jsonBody)
+            assertTrue(jsonBody.contains("spotify_json"), jsonBody)
+            assertFalse(jsonBody.contains("name=\"name\""), jsonBody)
+        }
+
+        @Test
+        fun `a Spotify URL is an unsupported url`() = runTest {
+            val result = api.createImport("https://open.spotify.com/playlist/37i9dQZF1DX")
+            assertEquals(ErrorKind.UNSUPPORTED_URL, (result as TunesResult.ApiError).error.kind)
         }
 
         @Test

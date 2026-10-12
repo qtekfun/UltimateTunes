@@ -171,8 +171,12 @@ class SerializationTest {
         assertTrue(TrackState.QUEUED.isInProgress)
         assertFalse(TrackState.CANCELLED.isInProgress)
         assertEquals(
-            ImportSource.SPOTIFY,
-            TunesJson.decodeFromString(ImportSource.serializer(), "\"spotify\"")
+            ImportSource.EXPORTIFY_CSV,
+            TunesJson.decodeFromString(ImportSource.serializer(), "\"exportify_csv\"")
+        )
+        assertEquals(
+            listOf("csv", "exportify_csv", "spotify_json"),
+            ImportFileFormat.entries.map { it.wireName }
         )
         assertEquals(Role.USER, TunesJson.decodeFromString(Role.serializer(), "\"user\""))
         assertEquals(

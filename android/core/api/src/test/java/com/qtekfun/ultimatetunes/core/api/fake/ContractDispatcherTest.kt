@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -147,6 +148,40 @@ class ContractDispatcherTest {
         client.newCall(created).execute().use {
             assertEquals(202, it.code)
             assertTrue(it.header("Location")!!.startsWith("/ut/v1/imports/"))
+        }
+    }
+
+    @Test
+    fun `file imports need a file and a known format`() {
+        fun upload(vararg parts: Pair<String, String>): Pair<Int, String> {
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+                parts.forEach { (name, value) ->
+                    if (name ==
+                        "file"
+                    ) {
+                        addFormDataPart(name, "p.csv", value.toRequestBody())
+                    } else {
+                        addFormDataPart(name, value)
+                    }
+                }
+            }.build()
+            val request = Request.Builder().url(server.baseUrl.resolve("/ut/v1/imports")!!)
+                .header("X-Api-Key", key).post(body).build()
+            return client.newCall(request).execute().use { it.code to it.body.string() }
+        }
+        assertEquals(202, upload("file" to "title,artist\n", "format" to "exportify_csv").first)
+        assertEquals("missing_parameter", problemCode(upload("format" to "csv").second))
+        assertEquals("missing_parameter", problemCode(upload("file" to "x").second))
+        assertEquals(
+            "invalid_parameter",
+            problemCode(upload("file" to "x", "format" to "xlsx").second)
+        )
+
+        val json = "application/json".toMediaType()
+        val noUrl = Request.Builder().url(server.baseUrl.resolve("/ut/v1/imports")!!)
+            .header("X-Api-Key", key).post("{}".toRequestBody(json)).build()
+        client.newCall(noUrl).execute().use {
+            assertEquals("missing_parameter", problemCode(it.body.string()))
         }
     }
 

@@ -14,6 +14,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.CreatedKey
 import com.qtekfun.ultimatetunes.core.api.model.Import
+import com.qtekfun.ultimatetunes.core.api.model.ImportFileFormat
 import com.qtekfun.ultimatetunes.core.api.model.ImportId
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
@@ -94,8 +95,21 @@ interface TunesApi {
     /** `GET /ut/v1/imports`: this user's imports, newest first, without items. */
     suspend fun imports(limit: Int? = null, offset: Int? = null): TunesResult<List<Import>>
 
-    /** `POST /ut/v1/imports`: import a YouTube Music or Spotify playlist. */
+    /** `POST /ut/v1/imports`: import a YouTube Music or YouTube playlist by URL. */
     suspend fun createImport(url: String, name: String? = null): TunesResult<Import>
+
+    /**
+     * `POST /ut/v1/imports` (multipart): import a playlist from an exported file. [content] is the
+     * file (at most 1 MiB and 5000 rows, UTF-8; the server answers `payload_too_large` or
+     * `invalid_parameter` otherwise), [fileName] its name, [name] the resulting playlist's name
+     * (default: the name in the file, else the file name).
+     */
+    suspend fun createFileImport(
+        content: ByteArray,
+        fileName: String,
+        format: ImportFileFormat,
+        name: String? = null
+    ): TunesResult<Import>
 
     /** `GET /ut/v1/imports/{id}`: progress and match report. */
     suspend fun import(id: ImportId): TunesResult<Import>

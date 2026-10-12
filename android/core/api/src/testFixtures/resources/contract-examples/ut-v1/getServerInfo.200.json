@@ -15,7 +15,7 @@
         "radio": true,
         "lyrics": true,
         "youtubeMusicImport": true,
-        "spotifyImport": false,
+        "fileImport": true,
         "streamingWhileDownloading": true
     }
 }
