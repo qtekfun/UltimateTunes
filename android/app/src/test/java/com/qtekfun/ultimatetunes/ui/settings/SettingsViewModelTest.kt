@@ -11,6 +11,7 @@ import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
@@ -69,8 +70,13 @@ class SettingsViewModelTest {
         configSource = InMemoryServerConfigSource(server.serverConfig())
     }
 
+    private val created = mutableListOf<SettingsViewModel>()
+
     @AfterEach
     fun tearDown() {
+        // Stop every view model before Main is reset, so no HTTP answer resumes on it later and
+        // fails the next test (UncaughtExceptionsBeforeTest).
+        created.forEach { it.closeForTest() }
         server.close()
     }
 
@@ -84,7 +90,7 @@ class SettingsViewModelTest {
         store,
         offline,
         exports
-    )
+    ).also { created += it }
 
     private suspend fun SettingsViewModel.loaded(): SettingsUiState =
         state.awaitFirst { it.server !is LoadState.Loading && it.keys !is LoadState.Loading }

@@ -7,7 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.TunesApi
-import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Optional
@@ -71,11 +70,12 @@ data class ConnectUiState(
  */
 @HiltViewModel
 class ConnectViewModel @Inject constructor(
-    private val api: TunesApi,
-    private val gate: ConnectionGate,
+    api: TunesApi,
+    gate: ConnectionGate,
     private val cleartext: CleartextPolicy,
     demo: Optional<DemoServer> = Optional.empty()
 ) : ViewModel() {
+    private val checker = ConnectChecker(api, gate)
     private val mutableState = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = mutableState.asStateFlow()
 
@@ -152,41 +152,18 @@ class ConnectViewModel @Inject constructor(
     /** Asks the server (when [validated] is valid) and ends the check. */
     private suspend fun finish(validated: Validated) {
         val result = when (validated) {
-            is Validated.Invalid -> CheckResult.Failed(validated.error)
-            is Validated.Valid -> check(validated.url, validated.key)
+            is Validated.Invalid -> ConnectCheck.Failed(validated.error)
+            is Validated.Valid -> checker.check(validated.url, validated.key)
         }
         mutableState.update {
             when (result) {
                 // The key is kept by the gate; the form forgets what was typed.
-                is CheckResult.Connected -> ConnectUiState(connectedTo = result.name)
+                is ConnectCheck.Connected -> ConnectUiState(connectedTo = result.name)
 
-                is CheckResult.Failed -> it.copy(checking = false, error = result.error)
+                is ConnectCheck.Failed -> it.copy(checking = false, error = result.error)
             }
         }
     }
-
-    private sealed interface CheckResult {
-        data class Connected(val name: String) : CheckResult
-
-        data class Failed(val error: ConnectError) : CheckResult
-    }
-
-    /** Checks the address, then the key (kept by [gate] only if it works). */
-    private suspend fun check(url: HttpUrl, key: ApiKeySecret): CheckResult =
-        when (val info = api.serverInfo(url)) {
-            is TunesResult.Success -> checkKey(url, key, info.value.name)
-            is TunesResult.NetworkError -> CheckResult.Failed(ConnectError.UNREACHABLE)
-            is TunesResult.ProtocolError -> CheckResult.Failed(ConnectError.NOT_A_SERVER)
-            is TunesResult.Failure -> CheckResult.Failed(ConnectError.SERVER_ERROR)
-        }
-
-    private suspend fun checkKey(url: HttpUrl, key: ApiKeySecret, serverName: String): CheckResult =
-        when (gate.tryConfig(ServerConfig(url, key)) { api.me() }) {
-            is TunesResult.Success -> CheckResult.Connected(serverName)
-            is TunesResult.Unauthorized -> CheckResult.Failed(ConnectError.KEY_REFUSED)
-            is TunesResult.NetworkError -> CheckResult.Failed(ConnectError.UNREACHABLE)
-            is TunesResult.Failure -> CheckResult.Failed(ConnectError.SERVER_ERROR)
-        }
 
     companion object {
         /**

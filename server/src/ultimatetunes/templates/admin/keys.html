@@ -8,7 +8,7 @@
 <div class="card">
   <h2>{{ _("New key for %(name)s", name=created.name) }}</h2>
   <p><strong>{{ _("Copy it or scan the code now: it is shown only once.") }}</strong></p>
-  <p class="hint">{{ _("In the app's Connect screen, type the server address and this key. The app cannot scan the QR code yet; it is here for a later version.") }}</p>
+  <p class="hint">{{ _("Android app: open the phone's camera and point it at this code. The camera offers to open UltimateTunes, which shows the server and asks before connecting. Other apps: type the server address and the key.") }}</p>
   {{ created.qr }}
   <p>{{ _("Server address") }}: <span class="secret">{{ created.server_url }}</span></p>
   <p>{{ _("API key") }}: <span class="secret">{{ created.secret }}</span></p>

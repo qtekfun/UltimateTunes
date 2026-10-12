@@ -127,6 +127,8 @@ def test_create_key_shows_it_once_with_a_qr(
         label="QR code to connect the app",
     )
     assert str(expected) in r.text
+    # How the Android app reads it: the phone's camera opens the connect link.
+    assert "point it at this code" in r.text
     # The key works for bob, and is never shown again.
     me = client.get("/ut/v1/me", headers={"X-Api-Key": secret.group(0)})
     assert me.status_code == 200
