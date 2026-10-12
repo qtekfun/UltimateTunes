@@ -11,7 +11,7 @@
 # Read README.md in this folder first: the pinned addresses of Traefik and cloudflared on the
 # shared network are what make every client address below trustworthy.
 #
-# Routed (Host = UT_HOST):
+# Routed (Host = UT_PUBLIC_HOST):
 #   /, /rest/*, /ut/v1/*   API keys, no Authelia; per-client rate limit and in-flight cap
 #   POST /ut/v1/keys       password login: LAN only (devices get their key at home)
 #   /admin                 LAN only, then Authelia, then the api's own allowlist and login
@@ -38,7 +38,7 @@ services:
       # real client first, so they are not affected.
       UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24},${UT_EGRESS_SUBNET:-10.213.45.0/24},${UT_TRAEFIK_SUBNET:?set UT_TRAEFIK_SUBNET}
       # Prefilled server address in the panel's QR code for new keys.
-      UT_ADMIN_PUBLIC_URL: https://${UT_HOST:?set UT_HOST}
+      UT_ADMIN_PUBLIC_URL: https://${UT_PUBLIC_HOST:?set UT_PUBLIC_HOST}
       UT_LOG_LEVEL: ${UT_LOG_LEVEL:-INFO}
       UT_MAX_TRACK_DURATION_S: ${UT_MAX_TRACK_DURATION_S:-1800}
       UT_MAX_DOWNLOAD_BYTES: ${UT_MAX_DOWNLOAD_BYTES:-209715200}
@@ -46,9 +46,9 @@ services:
       UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER: ${UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER:-5368709120}
       UT_MIN_FREE_BYTES: ${UT_MIN_FREE_BYTES:-2147483648}
       UT_ADMIN_NOTIFY_INTERVAL_S: ${UT_ADMIN_NOTIFY_INTERVAL_S:-60}
+    # The internal worker API (8045) listens only on the api's pinned address on `internal`
+    # (server/compose.yaml, UT_INTERNAL_HOST): neighbours on the Traefik network cannot reach it.
     networks:
-      default: {}
-      internal: {}
       traefik:
         aliases: [ultimatetunes-api]
     labels:
@@ -90,7 +90,7 @@ services:
       traefik.http.routers.ut-cf-admin.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-admin.tls: "true"
       traefik.http.routers.ut-cf-admin.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-admin.rule: Host(`${UT_HOST}`) && (Path(`/admin`) || PathPrefix(`/admin/`))
+      traefik.http.routers.ut-cf-admin.rule: Host(`${UT_PUBLIC_HOST}`) && (Path(`/admin`) || PathPrefix(`/admin/`))
       traefik.http.routers.ut-cf-admin.priority: "100"
       traefik.http.routers.ut-cf-admin.middlewares: ut-cf-lan-only,${UT_AUTHELIA_MIDDLEWARE:-authelia@file},ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit
       traefik.http.routers.ut-cf-admin.service: ut-cf-api
@@ -100,7 +100,7 @@ services:
       traefik.http.routers.ut-cf-keys-login.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-keys-login.tls: "true"
       traefik.http.routers.ut-cf-keys-login.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-keys-login.rule: Host(`${UT_HOST}`) && Path(`/ut/v1/keys`) && Method(`POST`)
+      traefik.http.routers.ut-cf-keys-login.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/ut/v1/keys`) && Method(`POST`)
       traefik.http.routers.ut-cf-keys-login.priority: "90"
       traefik.http.routers.ut-cf-keys-login.middlewares: ut-cf-lan-only,ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
       traefik.http.routers.ut-cf-keys-login.service: ut-cf-api
@@ -109,7 +109,7 @@ services:
       traefik.http.routers.ut-cf-readyz.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-readyz.tls: "true"
       traefik.http.routers.ut-cf-readyz.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-readyz.rule: Host(`${UT_HOST}`) && Path(`/readyz`)
+      traefik.http.routers.ut-cf-readyz.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/readyz`)
       traefik.http.routers.ut-cf-readyz.priority: "90"
       traefik.http.routers.ut-cf-readyz.middlewares: ut-cf-lan-only,ut-cf-headers
       traefik.http.routers.ut-cf-readyz.service: ut-cf-api
@@ -118,7 +118,7 @@ services:
       traefik.http.routers.ut-cf-write.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-write.tls: "true"
       traefik.http.routers.ut-cf-write.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-write.rule: Host(`${UT_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
+      traefik.http.routers.ut-cf-write.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
       traefik.http.routers.ut-cf-write.priority: "20"
       traefik.http.routers.ut-cf-write.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
       traefik.http.routers.ut-cf-write.service: ut-cf-api
@@ -128,7 +128,7 @@ services:
       traefik.http.routers.ut-cf-client.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-client.tls: "true"
       traefik.http.routers.ut-cf-client.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-client.rule: Host(`${UT_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
+      traefik.http.routers.ut-cf-client.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
       traefik.http.routers.ut-cf-client.priority: "10"
       traefik.http.routers.ut-cf-client.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit
       traefik.http.routers.ut-cf-client.service: ut-cf-api

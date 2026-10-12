@@ -19,13 +19,14 @@
 http:
   middlewares:
     # Authelia 4.38+ forward-auth endpoint, reached on the shared Traefik network.
-    # trustForwardHeader is safe because the entrypoint keeps X-Forwarded-* only from the
-    # addresses in forwardedHeaders.trustedIPs (cloudflared's pinned address, README.md) and
-    # rewrites them for everyone else before any middleware runs.
+    # trustForwardHeader: false. cloudflared is a trusted forwarder at the entrypoint and
+    # carries EVERY Internet request, so X-Forwarded-Host/-Uri/-Method coming through it are
+    # whatever the client chose. Trusting them would let a tunnel client make Authelia judge
+    # a different URL (one under a bypass rule) than the one Traefik routes.
     authelia:
       forwardAuth:
         address: "http://authelia:9091/api/authz/forward-auth"
-        trustForwardHeader: true
+        trustForwardHeader: false
         authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
         # Authelia's answers are small; never read an unbounded body from it.
         maxResponseBodySize: 65536

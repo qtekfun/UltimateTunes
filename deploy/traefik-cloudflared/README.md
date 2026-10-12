@@ -74,6 +74,14 @@ entryPoints:
       trustedIPs: ["172.30.0.250/32"]
 ```
 
+### Authelia: `trustForwardHeader: false`
+
+Authelia decides from `X-Forwarded-Host`, `-Uri` and `-Method`. With `trustForwardHeader: true`, Traefik passes on the values it received from a trusted forwarder instead of setting its own, and cloudflared is a trusted forwarder that carries **every** Internet request, so a tunnel client could make Authelia judge a URL under a `bypass` rule while Traefik routes it to `/admin`. `dynamic.example.yml` sets it to `false`. **If you reuse an existing Authelia middleware** (one that already protects other services) for anything behind this tunnel, check it: with `trustForwardHeader: true` it is open to the same trick for every service it guards, so change it to `false`.
+
+### The internal worker API is not on Traefik's network
+
+The api joins Traefik's network, where other homelab containers live. `server/compose.yaml` pins the api's address on the api-worker network (`UT_API_INTERNAL_ADDRESS`) and binds the internal listener (8045) to it (`UT_INTERNAL_HOST`), so a neighbour on Traefik's network gets "connection refused" on `api:8045`; only the client port (8044) answers there.
+
 ### Why the admin allowlist must not include 172.16.0.0/12
 
 `UT_ADMIN_ALLOWED_NETWORKS` and `UT_EDGE_LAN_RANGES` hold your LAN's /24 and your tailnet, never the Docker ranges. Traefik, cloudflared, Authelia and every other container sit inside `172.16.0.0/12`, and so does the gateway Docker's userland proxy connects from. With that range allowed, any request that resolves to one of those addresses (anything through the tunnel at Traefik's LAN-only check, a misconfigured proxy, a compromised neighbour container) would be treated as your LAN and reach the admin login. The api also denies `/admin` to the whole Traefik subnet (`UT_WORKER_NETWORKS`, set by the overlay).
@@ -95,7 +103,7 @@ From the repository root, on the host:
    export UT_VERSION=$(cat VERSION)
    docker build -f server/Dockerfile -t ghcr.io/qtekfun/ultimatetunes-server:$UT_VERSION .
    ```
-2. **Settings**: `cp deploy/traefik-cloudflared/.env.example deploy/traefik-cloudflared/.env`, then set every value (at least `UT_VERSION`, `UT_MUSIC_PATH`, `UT_HOST`, the Traefik network, subnet and pinned addresses, your LAN ranges).
+2. **Settings**: `cp deploy/traefik-cloudflared/.env.example deploy/traefik-cloudflared/.env`, then set every value (at least `UT_VERSION`, `UT_MUSIC_PATH`, `UT_PUBLIC_HOST`, the Traefik network, subnet and pinned addresses, your LAN ranges).
 3. **Secrets**, fresh, owner-only, never committed:
    ```sh
    mkdir -p server/secrets && chmod 700 server/secrets
