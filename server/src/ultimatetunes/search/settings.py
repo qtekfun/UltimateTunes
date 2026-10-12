@@ -31,3 +31,9 @@ class SearchSettings(AreaSettings):
     # only until tokens refill, so one user cannot spend the shared YouTube Music budget.
     search_user_rate_per_s: float = Field(default=0.2, gt=0)
     search_user_burst: float = Field(default=20.0, ge=1)
+    # Per-user budget of catalog lookups that miss the cache (album, artist, track, radio,
+    # playlist; covers of `yt:` items, keep, radio): `catalog:user:<id>`, anonymous callers share
+    # `catalog:user:-` (core/caller.py). Searches use the bucket above instead. Past it the
+    # lookup is refused with 429 until tokens refill.
+    catalog_user_rate_per_s: float = Field(default=0.5, gt=0)
+    catalog_user_burst: float = Field(default=60.0, ge=1)

@@ -15,6 +15,7 @@ from ultimatetunes.core.authn import Authenticator
 from ultimatetunes.core.cache import SqliteTtlCache, TtlCache
 from ultimatetunes.core.clock import Clock, SystemClock
 from ultimatetunes.core.inflight import InFlight, MemoryInFlight
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.ratelimit import RateLimiter, SqliteRateLimiter
 from ultimatetunes.core.storage import (
     LibraryStore,
@@ -23,6 +24,7 @@ from ultimatetunes.core.storage import (
     StagingStore,
 )
 from ultimatetunes.db.database import Database
+from ultimatetunes.jobs.gate import DownloadGate
 from ultimatetunes.jobs.queue import JobQueue, SqliteJobQueue
 from ultimatetunes.search.catalog import MusicCatalog, build_catalog
 from ultimatetunes.settings import Settings
@@ -51,6 +53,9 @@ def build_services(settings: Settings, clock: Clock | None = None) -> Services:
     cache = SqliteTtlCache(db, clock)
     rate_limiter = SqliteRateLimiter(db, clock)
     inflight = MemoryInFlight()
+    library = LocalLibraryStore(settings.music_dir)
+    staging = LocalStagingStore(settings.staging_dir)
+    gate = DownloadGate(DownloadLimits(), clock, (library, staging))
     services = Services(
         settings=settings,
         clock=clock,
@@ -58,11 +63,11 @@ def build_services(settings: Settings, clock: Clock | None = None) -> Services:
         cache=cache,
         rate_limiter=rate_limiter,
         inflight=inflight,
-        library=LocalLibraryStore(settings.music_dir),
-        staging=LocalStagingStore(settings.staging_dir),
+        library=library,
+        staging=staging,
         # One database handle and one single-flight registry for the whole api.
         catalog=build_catalog(settings, cache=cache, limiter=rate_limiter, inflight=inflight),
-        jobs=SqliteJobQueue(db, clock),
+        jobs=SqliteJobQueue(db, clock, gate=gate),
         authenticator=PendingAuthenticator(),
     )
     services.authenticator = build_authenticator(services)
