@@ -176,7 +176,10 @@ Notes:
 What can reach what:
 
 - **Clients to the api**: only the published 8044, through `tailscale serve`, Caddy or Traefik.
-  8045 is never published; on 8044, `/internal/*` is a 404.
+  8045 is never published and listens only on the api's pinned address on `internal`
+  (`UT_INTERNAL_HOST` = `UT_API_INTERNAL_ADDRESS`, default `10.213.44.250`), so containers on the
+  api's other networks (a reverse proxy's shared network) cannot connect to it; on 8044,
+  `/internal/*` is a 404.
 - **Worker to the api**: `api:8045` over `internal`. The worker could also open 8044 on the api
   (same network), so the api refuses `/admin` and the `/readyz` detail to the worker's subnets
   (below).

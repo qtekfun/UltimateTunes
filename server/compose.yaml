@@ -7,6 +7,7 @@
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
 #   UT_TRUSTED_PROXIES=...           only behind a reverse proxy (deploy/README.md)
 #   UT_INTERNAL_SUBNET=10.213.44.0/24 the api-worker network (change it if it overlaps yours)
+#   UT_API_INTERNAL_ADDRESS=10.213.44.250 the api's pinned address on it (inside that subnet)
 #   UT_EGRESS_SUBNET=10.213.45.0/24   the worker's way out (change it if it overlaps yours)
 # and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
@@ -58,6 +59,10 @@ services:
       # 503; idle keep-alive connections close after UT_KEEPALIVE_TIMEOUT_S.
       UT_LIMIT_CONCURRENCY: ${UT_LIMIT_CONCURRENCY:-128}
       UT_KEEPALIVE_TIMEOUT_S: ${UT_KEEPALIVE_TIMEOUT_S:-5}
+      # The internal worker API (8045) listens only on the api's pinned address on `internal`,
+      # so nothing on the api's other networks (`default`, a reverse proxy's shared network)
+      # can even connect to it. The client port (8044) still listens everywhere.
+      UT_INTERNAL_HOST: ${UT_API_INTERNAL_ADDRESS:-10.213.44.250}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,7 +91,12 @@ services:
       # and the file (the api warns while it is still set). Never put the password in .env.
       # - source: bootstrap_admin_password
       #   target: ut_bootstrap_admin_password
-    networks: [default, internal]
+    networks:
+      default: {}
+      internal:
+        # Pinned (UT_INTERNAL_HOST above). High in the subnet, away from the addresses Docker
+        # hands out in order; keep it inside UT_INTERNAL_SUBNET.
+        ipv4_address: ${UT_API_INTERNAL_ADDRESS:-10.213.44.250}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
       interval: 30s
@@ -111,7 +121,8 @@ services:
       - staging:/staging
       - ytdlp:/opt/ytdlp
     environment:
-      # The api's internal listener (UT_INTERNAL_PORT), not the client port.
+      # The api's internal listener (UT_INTERNAL_PORT), not the client port. `api` resolves to
+      # its address on `internal`, the only network the worker shares with it.
       UT_API_URL: http://api:8045
     secrets:
       - source: worker_token

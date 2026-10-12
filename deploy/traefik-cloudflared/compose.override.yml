@@ -1,0 +1,148 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY: overlay for server/compose.yaml behind an existing Traefik v3 that is reached
+# from the Internet through Cloudflare Tunnel (cloudflared) and protects /admin with Authelia.
+# Everything specific to your homelab comes from `.env` (copy .env.example): nothing in this
+# file needs editing. From the repository root:
+#   docker compose --env-file deploy/traefik-cloudflared/.env \
+#     -f server/compose.yaml -f deploy/traefik-cloudflared/compose.override.yml up -d
+# (the project directory stays server/, so the secrets are read from server/secrets/).
+# Read README.md in this folder first: the pinned addresses of Traefik and cloudflared on the
+# shared network are what make every client address below trustworthy.
+#
+# Routed (Host = UT_PUBLIC_HOST):
+#   /, /rest/*, /ut/v1/*   API keys, no Authelia; per-client rate limit and in-flight cap
+#   POST /ut/v1/keys       password login: LAN only (devices get their key at home)
+#   /admin                 LAN only, then Authelia, then the api's own allowlist and login
+#   /readyz                LAN only
+# Not routed (Traefik answers 404): /internal/*, /healthz and anything else.
+
+services:
+  api:
+    # No host port: the api is reached only through Traefik on the shared network. Its own
+    # healthcheck runs inside the container. Needs Docker Compose 2.24+ for `!reset`.
+    ports: !reset []
+    environment:
+      # Traefik's and cloudflared's pinned addresses on the shared network, as /32s. Both are
+      # needed: a request through the tunnel reaches the api as
+      #   X-Forwarded-For: <client>, <cloudflared>   (peer: Traefik)
+      # and the api walks that list from the right, skipping trusted hops, to the client.
+      UT_TRUSTED_PROXIES: ${UT_TRUSTED_PROXIES:?set UT_TRUSTED_PROXIES (Traefik /32 and cloudflared /32)}
+      # Who may open /admin and read the /readyz detail: your LAN (and tailnet), as resolved
+      # from X-Forwarded-For. NEVER the Docker or tunnel ranges (172.16.0.0/12, the shared
+      # network): every container, and the tunnel itself, lives there (README.md).
+      UT_ADMIN_ALLOWED_NETWORKS: ${UT_ADMIN_ALLOWED_NETWORKS:?set UT_ADMIN_ALLOWED_NETWORKS (your LAN, never 172.16.0.0/12)}
+      # Denied /admin and the /readyz detail: the worker's two networks and the shared Traefik
+      # network (other homelab containers live there). Requests through Traefik resolve to the
+      # real client first, so they are not affected.
+      UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24},${UT_EGRESS_SUBNET:-10.213.45.0/24},${UT_TRAEFIK_SUBNET:?set UT_TRAEFIK_SUBNET}
+      # Prefilled server address in the panel's QR code for new keys.
+      UT_ADMIN_PUBLIC_URL: https://${UT_PUBLIC_HOST:?set UT_PUBLIC_HOST}
+      UT_LOG_LEVEL: ${UT_LOG_LEVEL:-INFO}
+      UT_MAX_TRACK_DURATION_S: ${UT_MAX_TRACK_DURATION_S:-1800}
+      UT_MAX_DOWNLOAD_BYTES: ${UT_MAX_DOWNLOAD_BYTES:-209715200}
+      UT_MAX_QUEUED_JOBS_PER_USER: ${UT_MAX_QUEUED_JOBS_PER_USER:-200}
+      UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER: ${UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER:-5368709120}
+      UT_MIN_FREE_BYTES: ${UT_MIN_FREE_BYTES:-2147483648}
+      UT_ADMIN_NOTIFY_INTERVAL_S: ${UT_ADMIN_NOTIFY_INTERVAL_S:-60}
+    # The internal worker API (8045) listens only on the api's pinned address on `internal`
+    # (server/compose.yaml, UT_INTERNAL_HOST): neighbours on the Traefik network cannot reach it.
+    networks:
+      traefik:
+        aliases: [ultimatetunes-api]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${UT_TRAEFIK_NETWORK:-traefik}
+      traefik.http.services.ut-cf-api.loadbalancer.server.port: "8044"
+
+      # ---- middlewares (labels, so they read .env) ---------------------------------------
+      # Per client. Through the tunnel, Traefik's TCP peer is always cloudflared, so the
+      # client comes from X-Forwarded-For. Cloudflare's edge APPENDS the address it saw to
+      # whatever the client sent, and cloudflared passes the header on unchanged, so its LAST
+      # entry (depth 1) is the real client; anything before it may be forged. The entrypoint
+      # must trust cloudflared's address (forwardedHeaders.trustedIPs, README.md), or Traefik
+      # drops the header and all tunnel clients share one bucket.
+      traefik.http.middlewares.ut-cf-ratelimit.ratelimit.average: "20"
+      traefik.http.middlewares.ut-cf-ratelimit.ratelimit.period: 1s
+      traefik.http.middlewares.ut-cf-ratelimit.ratelimit.burst: "100"
+      traefik.http.middlewares.ut-cf-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth: "1"
+      # Concurrent requests per client (a stream holds one while it plays).
+      traefik.http.middlewares.ut-cf-inflight.inflightreq.amount: "16"
+      traefik.http.middlewares.ut-cf-inflight.inflightreq.sourcecriterion.ipstrategy.depth: "1"
+      # LAN only. NO ipStrategy on purpose: it checks the TCP peer, so a request through the
+      # tunnel (peer = cloudflared) never passes, whatever X-Forwarded-For says. LAN devices
+      # reach Traefik directly (split DNS, README.md).
+      traefik.http.middlewares.ut-cf-lan-only.ipallowlist.sourcerange: ${UT_EDGE_LAN_RANGES:?set UT_EDGE_LAN_RANGES}
+      # Bodies of non-GET requests up to 2 MB (imports are at most 1 MiB). Never on GET/HEAD:
+      # buffering also holds back the response (audio streams).
+      traefik.http.middlewares.ut-cf-body-limit.buffering.maxrequestbodybytes: "2000000"
+      traefik.http.middlewares.ut-cf-body-limit.buffering.memrequestbodybytes: "1048576"
+      traefik.http.middlewares.ut-cf-headers.headers.stsseconds: "31536000"
+      traefik.http.middlewares.ut-cf-headers.headers.stsincludesubdomains: "true"
+      traefik.http.middlewares.ut-cf-headers.headers.forcestsheader: "true"
+      traefik.http.middlewares.ut-cf-headers.headers.contenttypenosniff: "true"
+      traefik.http.middlewares.ut-cf-headers.headers.referrerpolicy: no-referrer
+
+      # ---- routers ---------------------------------------------------------------------
+      # Admin panel: LAN only, then Authelia (a `forwardAuth` middleware you define in
+      # Traefik's file provider, see dynamic.example.yml), then the api's own checks.
+      traefik.http.routers.ut-cf-admin.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-admin.tls: "true"
+      traefik.http.routers.ut-cf-admin.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-admin.rule: Host(`${UT_PUBLIC_HOST}`) && (Path(`/admin`) || PathPrefix(`/admin/`))
+      traefik.http.routers.ut-cf-admin.priority: "100"
+      traefik.http.routers.ut-cf-admin.middlewares: ut-cf-lan-only,${UT_AUTHELIA_MIDDLEWARE:-authelia@file},ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit
+      traefik.http.routers.ut-cf-admin.service: ut-cf-api
+
+      # Password login: LAN only. Drop ut-cf-lan-only to allow it from anywhere (the api
+      # still rate-limits it and locks out per IP and username).
+      traefik.http.routers.ut-cf-keys-login.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-keys-login.tls: "true"
+      traefik.http.routers.ut-cf-keys-login.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-keys-login.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/ut/v1/keys`) && Method(`POST`)
+      traefik.http.routers.ut-cf-keys-login.priority: "90"
+      traefik.http.routers.ut-cf-keys-login.middlewares: ut-cf-lan-only,ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
+      traefik.http.routers.ut-cf-keys-login.service: ut-cf-api
+
+      # Readiness detail: LAN only (the api hides the detail from others anyway).
+      traefik.http.routers.ut-cf-readyz.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-readyz.tls: "true"
+      traefik.http.routers.ut-cf-readyz.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-readyz.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/readyz`)
+      traefik.http.routers.ut-cf-readyz.priority: "90"
+      traefik.http.routers.ut-cf-readyz.middlewares: ut-cf-lan-only,ut-cf-headers
+      traefik.http.routers.ut-cf-readyz.service: ut-cf-api
+
+      # Requests with a body (form posts, imports, key revocation): buffered and capped.
+      traefik.http.routers.ut-cf-write.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-write.tls: "true"
+      traefik.http.routers.ut-cf-write.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-write.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
+      traefik.http.routers.ut-cf-write.priority: "20"
+      traefik.http.routers.ut-cf-write.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
+      traefik.http.routers.ut-cf-write.service: ut-cf-api
+
+      # Clients: OpenSubsonic (/rest), the app (/ut/v1) and the landing page. API keys, NO
+      # Authelia (a login redirect would break every client).
+      traefik.http.routers.ut-cf-client.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-client.tls: "true"
+      traefik.http.routers.ut-cf-client.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-client.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
+      traefik.http.routers.ut-cf-client.priority: "10"
+      traefik.http.routers.ut-cf-client.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit
+      traefik.http.routers.ut-cf-client.service: ut-cf-api
+
+  worker:
+    environment:
+      # The worker applies the duration and size limits to yt-dlp itself.
+      UT_LOG_LEVEL: ${UT_LOG_LEVEL:-INFO}
+      UT_MAX_TRACK_DURATION_S: ${UT_MAX_TRACK_DURATION_S:-1800}
+      UT_MAX_DOWNLOAD_BYTES: ${UT_MAX_DOWNLOAD_BYTES:-209715200}
+
+networks:
+  # Traefik's existing network (created by its own stack, README.md). Only the api joins it;
+  # the worker never does.
+  traefik:
+    name: ${UT_TRAEFIK_NETWORK:-traefik}
+    external: true

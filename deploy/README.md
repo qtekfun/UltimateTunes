@@ -14,6 +14,7 @@ The container layout, networks and every connection in and out are described in 
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
 | `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` LAN/Tailscale-only. |
 | `traefik/` | The same with Traefik v3 + Authelia: static config (`traefik.yml`), routers and middlewares (`dynamic/ultimatetunes.yml`), Traefik's stack with a pinned `proxy` network (`compose.traefik.yaml`) and an overlay for `server/compose.yaml` with the labels variant (`compose.labels.yaml`). |
+| `traefik-cloudflared/` | Traefik v3 + Authelia reached through Cloudflare Tunnel (`cloudflared`): `.env.example` with every variable, an overlay with the routers as labels, Traefik and cloudflared pinned and trusted by address. Read its README for the Cloudflare caveats. |
 
 ## Exposing UltimateTunes
 
@@ -77,7 +78,7 @@ With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`,
 
 ## The two listeners
 
-The api serves clients on **8044** and the internal worker API on **8045** (`UT_INTERNAL_PORT`). Publish only 8044. The worker reaches 8045 over the Docker networks (`UT_API_URL=http://api:8045`); the client port answers 404 for `/internal/*`.
+The api serves clients on **8044** and the internal worker API on **8045** (`UT_INTERNAL_PORT`). Publish only 8044. The worker reaches 8045 over the pinned `internal` network (`UT_API_URL=http://api:8045`), and 8045 listens only on the api's address there (`UT_INTERNAL_HOST` = `UT_API_INTERNAL_ADDRESS`, default `10.213.44.250`), so containers on the api's other networks (a reverse proxy's shared network) cannot connect to it; the client port answers 404 for `/internal/*`.
 
 ## Reverse proxies and the client address (`UT_TRUSTED_PROXIES`)
 

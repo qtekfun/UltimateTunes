@@ -18,9 +18,9 @@ services:
       # homelab containers live there). Requests through Traefik resolve to the real client
       # first, so they are not affected.
       UT_WORKER_NETWORKS: ${UT_INTERNAL_SUBNET:-10.213.44.0/24},${UT_EGRESS_SUBNET:-10.213.45.0/24},${UT_PROXY_SUBNET:-10.213.46.0/24}
+    # The internal worker API (8045) listens only on the api's pinned address on `internal`
+    # (server/compose.yaml, UT_INTERNAL_HOST): other containers on `proxy` cannot reach it.
     networks:
-      default: {}
-      internal: {}
       proxy:
         aliases: [ultimatetunes-api]
     labels:

@@ -22,9 +22,10 @@ leaves the bytes already downloaded with the first user.
 
 `claim` (`claimable_sql`) skips the jobs of users over their daily bytes, so queuing many jobs
 before the first one finishes cannot overshoot by more than the jobs already running. When
-another user asks for such a queued job and still has allowance left, the job moves to them
-(`adopt`), so a song one user cannot afford is never stuck for everyone else. `claim` also
-hands out nothing at all while space is low. The low-space state is kept in the `settings` table
+another user asks for such a queued job and still has allowance left and room under the
+queued-jobs cap, the job moves to them (`adopt`), so a song one user cannot afford is never
+stuck for everyone else, and adopting never takes anyone past the cap. `claim` also hands out
+nothing at all while space is low. The low-space state is kept in the `settings` table
 (`LOW_DISK_KEY`, the moment it began): it starts below `UT_MIN_FREE_BYTES` and ends only above
 it plus `RESUME_MARGIN` (hysteresis, so a disk hovering at the limit does not flap); it is
 logged once when it starts and once when it ends,
@@ -130,16 +131,19 @@ class DownloadGate:
             self._check_user(conn, requested_by)
 
     def _check_user(self, conn: Connection, user_id: str) -> None:
-        active = conn.execute(
-            f"SELECT COUNT(*) FROM jobs WHERE requested_by = ? AND state IN {_ACTIVE}",  # noqa: S608  # nosec B608
-            (user_id,),
-        ).scalar()
-        if int(str(active or 0)) >= self._limits.max_queued_jobs_per_user:
+        if self._at_queue_cap(conn, user_id):
             log.info("download refused: a user reached UT_MAX_QUEUED_JOBS_PER_USER")
             raise RateLimited(RETRY_QUEUED_S, "Too many downloads queued for this account")
         if self._over_allowance(conn, user_id):
             log.info("download refused: a user reached UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER")
             raise RateLimited(RETRY_BYTES_S, "This account's daily download allowance is used up")
+
+    def _at_queue_cap(self, conn: Connection, user_id: str) -> bool:
+        active = conn.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE requested_by = ? AND state IN {_ACTIVE}",  # noqa: S608  # nosec B608
+            (user_id,),
+        ).scalar()
+        return int(str(active or 0)) >= self._limits.max_queued_jobs_per_user
 
     def _over_allowance(self, conn: Connection, user_id: str) -> bool:
         spent = conn.execute(
@@ -150,11 +154,12 @@ class DownloadGate:
 
     def adopt(self, conn: Connection, job_id: str, user_id: str) -> bool:
         """Moves a queued job whose requester is over the daily bytes to `user_id`, when that
-        user has allowance left (module doc). True when it moved."""
+        user has allowance left and is below `UT_MAX_QUEUED_JOBS_PER_USER` (module doc), so
+        adopting never takes a user past the queued-jobs cap. True when it moved."""
         owner = conn.execute("SELECT requested_by FROM jobs WHERE id = ?", (job_id,)).scalar()
         if owner is None or owner == user_id or not self._over_allowance(conn, str(owner)):
             return False
-        if self._over_allowance(conn, user_id):
+        if self._over_allowance(conn, user_id) or self._at_queue_cap(conn, user_id):
             return False
         conn.execute(
             "UPDATE jobs SET requested_by = ? WHERE id = ? AND state = 'queued'", (user_id, job_id)

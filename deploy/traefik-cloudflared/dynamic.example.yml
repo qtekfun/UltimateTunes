@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY: the middleware that compose.override.yml references as `authelia@file`
+# (UT_AUTHELIA_MIDDLEWARE). Put it in Traefik's file-provider directory, or keep the one your
+# homelab already has under that name. Everything else (rate limit, in-flight cap, LAN-only
+# allowlist, headers, routers) is defined by the overlay's labels from .env.
+#
+# Give /admin a two_factor rule in Authelia's access_control, and bypass everything else on the
+# host (clients authenticate with API keys; a login redirect would break them):
+#   access_control:
+#     rules:
+#       - domain: tunes.example.com
+#         resources: ['^/admin([/?].*)?$']
+#         policy: two_factor
+#       - domain: tunes.example.com
+#         policy: bypass
+
+http:
+  middlewares:
+    # Authelia 4.38+ forward-auth endpoint, reached on the shared Traefik network.
+    # trustForwardHeader: false. cloudflared is a trusted forwarder at the entrypoint and
+    # carries EVERY Internet request, so X-Forwarded-Host/-Uri/-Method coming through it are
+    # whatever the client chose. Trusting them would let a tunnel client make Authelia judge
+    # a different URL (one under a bypass rule) than the one Traefik routes.
+    authelia:
+      forwardAuth:
+        address: "http://authelia:9091/api/authz/forward-auth"
+        trustForwardHeader: false
+        authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
+        # Authelia's answers are small; never read an unbounded body from it.
+        maxResponseBodySize: 65536
+
+    # Optional, for reference: the same LAN-only allowlist the labels build from
+    # UT_EDGE_LAN_RANGES, if you prefer to keep it in a file. No ipStrategy: it checks the TCP
+    # peer, so nothing that comes through the tunnel (peer = cloudflared) ever passes.
+    ut-lan-only:
+      ipAllowList:
+        sourceRange:
+          - "192.168.1.0/24"
+          - "100.64.0.0/10"
