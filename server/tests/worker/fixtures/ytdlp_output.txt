@@ -1,0 +1,16 @@
+[youtube] Extracting URL: https://www.youtube.com/watch?v=Qx7Lm2pZ0aB
+[youtube] Qx7Lm2pZ0aB: Downloading webpage
+[youtube] Qx7Lm2pZ0aB: Downloading visionos player API JSON
+[info] Qx7Lm2pZ0aB: Downloading 1 format(s): 251
+UTP {"status": "downloading", "downloaded_bytes": 1024, "total_bytes": 4310772, "tmpfilename": "/staging/J/1/Qx7Lm2pZ0aB.webm.part", "filename": "/staging/J/1/Qx7Lm2pZ0aB.webm"}	{"format_id": "251", "ext": "webm", "acodec": "opus", "filesize": 4310772}
+UTP {"status": "downloading", "downloaded_bytes": 1810524, "total_bytes": 4310772, "tmpfilename": "/staging/J/1/Qx7Lm2pZ0aB.webm.part", "filename": "/staging/J/1/Qx7Lm2pZ0aB.webm"}	{"format_id": "251", "ext": "webm", "acodec": "opus", "filesize": 4310772}
+UTP {"status": "downloading", "downloaded_bytes": 2048, "tmpfilename": "/staging/J/1/Rb4Tn8wKx1c.m4a.part", "filename": "/staging/J/1/Rb4Tn8wKx1c.m4a"}	{"format_id": "140", "ext": "m4a", "acodec": "mp4a.40.2"}
+UTP {"status": "finished", "downloaded_bytes": 4310772, "total_bytes": 4310772, "filename": "/staging/J/1/Qx7Lm2pZ0aB.webm"}	{"format_id": "251", "ext": "webm", "acodec": "opus", "filesize": 4310772}
+UTF {"id": "Qx7Lm2pZ0aB", "format_id": "251", "ext": "webm", "acodec": "opus", "abr": 131.2, "asr": 48000, "filesize": 4310772, "duration": 262.04, "filepath": "/staging/J/1/Qx7Lm2pZ0aB.webm"}
+WARNING: [youtube] Qx7Lm2pZ0aB: Some web client https formats have been skipped as they are missing a url
+ERROR: [youtube] Wq5Jd7HsKe2: Video unavailable. This video is private
+UTP {not json
+UTP []
+UTF {"id": "Qx7Lm2pZ0aB"}
+UTF ["not", "an", "object"]
+UTF {broken
