@@ -1,0 +1,21 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import song_list, play_buttons, star, empty with context %}
+{% block title %}{{ album.name }}{% endblock %}
+{% block content %}
+<header class="hero">
+  <img class="art hero-art" src="{{ cover(album.cover) }}" alt="" width="300" height="300">
+  <div class="hero-text">
+    <p class="kicker">{{ _("Album") }}{% if album.external %} · {{ _("YouTube Music") }}{% endif %}</p>
+    <h1 tabindex="-1">{{ album.name }}</h1>
+    <p class="hero-artist">{% if album.artistId %}<a href="/web/artist/{{ album.artistId|path_id }}">{{ album.artist }}</a>{% else %}{{ album.artist }}{% endif %}</p>
+    <p class="muted">{% if album.year %}{{ album.year }} · {% endif %}{{ _("%(count)s songs", count=songs|length) }} · {{ album.duration|duration }}</p>
+    <div class="hero-actions">
+      {{ play_buttons() }}
+      {% if not album.external %}{{ star("album", album.id, album.starred) }}{% endif %}
+    </div>
+  </div>
+</header>
+{% if songs %}{{ song_list(songs, show_album=False, label=album.name) }}{% else %}{{ empty(_("This album has no songs.")) }}{% endif %}
+{% endblock %}

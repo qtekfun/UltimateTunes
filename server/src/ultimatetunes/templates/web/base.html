@@ -1,0 +1,54 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# The shell: navigation, #content (swapped by HTMX) and the player, which never is. #}
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+{# No history snapshots in localStorage, no eval, no inline scripts; a history miss asks the server (never a full reload, which would stop the music). #}
+<meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":false,"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<meta name="ut-csrf" content="{{ csrf }}">
+<title>{% block title %}{% endblock %} · UltimateTunes</title>
+<link rel="icon" href="/web/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/web/static/web.css?v={{ version }}">
+{# Before the first paint: the theme chosen in Settings (light, dark or the system's). #}
+<script src="/web/static/theme.js?v={{ version }}"></script>
+<script src="/web/static/htmx.min.js?v={{ version }}" defer></script>
+<script src="/web/static/player.js?v={{ version }}" defer></script>
+</head>
+<body hx-headers='{{ {"X-CSRF-Token": csrf}|tojson }}'>
+<a class="skip" href="#content">{{ _("Skip to content") }}</a>
+<div id="loading" class="loading-bar" aria-hidden="true"></div>
+<div class="shell" hx-boost="true" hx-target="#content" hx-swap="innerHTML show:window:top" hx-indicator="#loading">
+  <header class="topbar">
+    <a class="brand" href="/">UltimateTunes</a>
+    <a class="icon-button" href="/web/settings" aria-label="{{ _("Settings") }}" title="{{ _("Settings") }}">{% include "_icon_settings.html" %}</a>
+  </header>
+  <nav class="sidebar" aria-label="{{ _("Sections") }}">
+    <a class="brand" href="/">UltimateTunes</a>
+    {% for href, label, icon in sections %}
+    <a class="tab" href="{{ href }}" data-nav>{% include icon %}<span>{{ _(label) }}</span></a>
+    {% endfor %}
+    <div class="side-extra">
+      <a class="tab" href="/web/library/playlists" data-nav>{% include "_icon_playlist.html" %}<span>{{ _("Playlists") }}</span></a>
+      <a class="tab" href="/web/imports" data-nav>{% include "_icon_import.html" %}<span>{{ _("Import a playlist") }}</span></a>
+      <a class="tab" href="/web/settings" data-nav>{% include "_icon_settings.html" %}<span>{{ _("Settings") }}</span></a>
+    </div>
+    <div class="account">
+      <span class="muted">{{ me.user.username }}</span>
+      <form method="post" hx-push-url="false" action="/web/logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link" type="submit">{{ _("Sign out") }}</button>
+      </form>
+    </div>
+  </nav>
+  <main id="content" tabindex="-1" hx-history-elt>
+{% block content %}{% endblock %}
+  </main>
+</div>
+{% include "_player.html" %}
+</body>
+</html>

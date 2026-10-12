@@ -1,0 +1,21 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid, artist_list, song_list, play_buttons, empty with context %}
+{% block title %}{{ _("Favourites") }}{% endblock %}
+{% block content %}
+<h1 class="large" tabindex="-1">{{ _("Library") }}</h1>
+{% include "_library_tabs.html" %}
+{% if songs %}
+<section aria-labelledby="h-fav-songs">
+  <h2 id="h-fav-songs">{{ _("Songs") }}</h2>
+  {{ play_buttons() }}
+  {{ song_list(songs) }}
+</section>
+{% endif %}
+{% if albums %}<section aria-labelledby="h-fav-albums"><h2 id="h-fav-albums">{{ _("Albums") }}</h2>{{ album_grid(albums) }}</section>{% endif %}
+{% if artists %}<section aria-labelledby="h-fav-artists"><h2 id="h-fav-artists">{{ _("Artists") }}</h2>{{ artist_list(artists) }}</section>{% endif %}
+{% if not (songs or albums or artists) %}
+{{ empty(_("Nothing in your favourites yet: tap the heart on a song, an album or an artist.")) }}
+{% endif %}
+{% endblock %}

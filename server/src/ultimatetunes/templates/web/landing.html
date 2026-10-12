@@ -1,0 +1,11 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# `/` with the web player turned off: says the server runs and where the panel is. Nothing else. #}
+{% extends "_bare.html" %}
+{% block title %}UltimateTunes{% endblock %}
+{% block content %}
+<h1>UltimateTunes</h1>
+<p>{{ _("UltimateTunes server is running.") }}</p>
+<p class="muted">{{ _("Version %(version)s", version=version) }}</p>
+<p><a href="/admin">{{ _("Admin panel") }}</a></p>
+{% endblock %}

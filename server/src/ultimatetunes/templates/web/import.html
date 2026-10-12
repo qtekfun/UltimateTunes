@@ -1,0 +1,22 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% block title %}{{ item.name or _("Imported playlist") }}{% endblock %}
+{% block content %}
+<section id="import-detail"{% if active %} hx-get="/web/imports/{{ item.id|path_id }}" hx-trigger="every 3s" hx-select="#import-detail" hx-target="#import-detail" hx-swap="outerHTML" hx-push-url="false" hx-indicator="none"{% endif %}>
+<p><a href="/web/imports">← {{ _("Your imports") }}</a></p>
+<h1 class="large" tabindex="-1">{{ item.name or _("Imported playlist") }}</h1>
+<p class="muted">{{ _(state_labels.get(item.state, item.state)) }} · {{ _("%(matched)s of %(total)s found", matched=item.matched, total=item.total) }}</p>
+<progress max="1" value="{{ item.progress }}" aria-label="{{ _("Progress") }}"></progress>
+{% if item.error %}<p class="error" role="alert">{{ item.error.message }}</p>{% endif %}
+{% if item.playlistId %}<p><a class="button primary" href="/web/playlist/{{ item.playlistId|path_id }}">{{ _("Open the playlist") }}</a></p>{% endif %}
+<ol class="import-items">
+{% for it in item["items"] %}
+  <li class="state-{{ it.state }}">
+    <span class="song-text"><span class="song-title">{{ it.sourceTitle }}</span><span class="muted">{{ it.sourceArtist }}</span></span>
+    <span class="badge">{% if it.state == "matched" %}{{ _("Found") }}{% elif it.state == "not_found" %}{{ _("Not found") }}{% else %}{{ _("Pending") }}{% endif %}</span>
+  </li>
+{% endfor %}
+</ol>
+</section>
+{% endblock %}

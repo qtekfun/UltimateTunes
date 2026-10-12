@@ -1,0 +1,34 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid, song_list, station_grid, empty with context %}
+{% block title %}{{ _("Listen Now") }}{% endblock %}
+{% block content %}
+<h1 class="large" tabindex="-1">{{ _("Listen Now") }}</h1>
+{% if recent %}
+<section aria-labelledby="h-recent">
+  <h2 id="h-recent">{{ _("Recently played") }}</h2>
+  {{ album_grid(recent) }}
+</section>
+{% endif %}
+{% if most %}
+<section aria-labelledby="h-most">
+  <h2 id="h-most">{{ _("Most played") }}</h2>
+  {{ song_list(most[:10]) }}
+</section>
+{% endif %}
+{% if stations %}
+<section aria-labelledby="h-stations">
+  <h2 id="h-stations">{{ _("Your stations") }}</h2>
+  {{ station_grid(stations[:6]) }}
+</section>
+{% endif %}
+<section aria-labelledby="h-added">
+  <h2 id="h-added">{{ _("Recently added") }}</h2>
+  {% if newest %}
+  {{ album_grid(newest) }}
+  {% else %}
+  {{ empty(_("Your library is empty. Search for music to start."), "/web/search", _("Search")) }}
+  {% endif %}
+</section>
+{% endblock %}

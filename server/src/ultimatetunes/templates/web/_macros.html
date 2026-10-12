@@ -1,0 +1,125 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# Lists shared by the pages. Import "with context" (they translate). #}
+
+{% macro star(kind, item_id, on) %}
+{% with kind=kind, item_id=item_id, on=on %}{% include "_star.html" %}{% endwith %}
+{% endmacro %}
+
+{% macro album_grid(albums, label=None) %}
+<ul class="grid"{% if label %} aria-label="{{ label }}"{% endif %}>
+{% for a in albums %}
+  <li>
+    <a class="tile" href="/web/album/{{ a.id|path_id }}">
+      <img class="art" src="{{ cover(a.cover) }}" alt="" loading="lazy" width="300" height="300">
+      <span class="tile-title">{{ a.name }}</span>
+      <span class="muted">{{ a.artist }}{% if a.year %} · {{ a.year }}{% endif %}</span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro artist_list(artists) %}
+<ul class="artists">
+{% for a in artists %}
+  <li>
+    <a href="/web/artist/{{ a.id|path_id }}">
+      <img class="avatar" src="{{ cover(a.cover) }}" alt="" loading="lazy" width="48" height="48">
+      <span>{{ a.name }}</span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro station_grid(items) %}
+<ul class="grid stations">
+{% for s in items %}
+  <li>
+    <button type="button" class="tile station" data-act="seed-radio" data-id="{{ s.seed }}">
+      <img class="art" src="{{ cover(s.cover) }}" alt="" loading="lazy" width="300" height="300">
+      <span class="tile-title">{{ s.title }}</span>
+      {% if s.subtitle %}<span class="muted">{{ s.subtitle }}</span>{% endif %}
+    </button>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{# The download state of a `yt:` song; player.js keeps it current while a download runs. #}
+{% macro state_badge(s) %}
+{% if s.external %}
+{% set st = s.state or "not_requested" %}
+<span class="badge state-{{ st }}" data-state="{{ st }}" title="{{ _("Not in your library yet: the first play fetches it") }}">{% if st == "queued" %}{{ _("Queued") }}{% elif st in ("downloading", "tagging") %}{{ _("Downloading") }}{% elif st == "ready" %}{{ _("In your library") }}{% elif st == "failed" %}{{ _("Download failed") }}{% else %}{{ _("Not downloaded") }}{% endif %}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro song_list(songs, show_album=True, editable=None, label=None) %}
+<ol class="songs" data-songlist{% if label %} aria-label="{{ label }}"{% endif %}>
+{% for s in songs %}
+  <li class="song{% if s.external %} external{% endif %}" data-song='{{ s|tojson }}' data-id="{{ s.id }}">
+    <button class="song-play" type="button" data-act="play" aria-label="{{ _("Play %(title)s", title=s.title) }}">
+      <img class="thumb" src="{{ cover(s.cover) }}" alt="" loading="lazy" width="44" height="44">
+      <span class="song-text">
+        <span class="song-title">{{ s.title }}</span>
+        <span class="muted">{{ s.artist }}{% if show_album and s.album %} · {{ s.album }}{% endif %}</span>
+      </span>
+    </button>
+    {{ state_badge(s) }}
+    <span class="dur muted">{{ s.duration|duration }}</span>
+    {{ star("song", s.id, s.starred) }}
+    <details class="menu">
+      <summary aria-label="{{ _("More for %(title)s", title=s.title) }}" title="{{ _("More") }}">···</summary>
+      <div class="menu-items">
+        <button type="button" data-act="next">{{ _("Play next") }}</button>
+        <button type="button" data-act="later">{{ _("Play later") }}</button>
+        <button type="button" data-act="radio">{{ _("Start radio") }}</button>
+        {% if s.external %}<button type="button" data-act="download">{{ _("Download to the library") }}</button>{% endif %}
+        <a href="/web/add/{{ s.id|path_id }}">{{ _("Add to a playlist") }}</a>
+        {% if s.albumId %}<a href="/web/album/{{ s.albumId|path_id }}">{{ _("Go to album") }}</a>{% endif %}
+        {% if s.artistId %}<a href="/web/artist/{{ s.artistId|path_id }}">{{ _("Go to artist") }}</a>{% endif %}
+        {% if editable %}
+        {% if not loop.first %}
+        <form method="post" hx-push-url="false" action="/web/playlists/{{ editable|path_id }}/move">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="index" value="{{ loop.index0 }}">
+          <input type="hidden" name="to" value="{{ loop.index0 - 1 }}">
+          <button type="submit">{{ _("Move up") }}</button>
+        </form>
+        {% endif %}
+        {% if not loop.last %}
+        <form method="post" hx-push-url="false" action="/web/playlists/{{ editable|path_id }}/move">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="index" value="{{ loop.index0 }}">
+          <input type="hidden" name="to" value="{{ loop.index0 + 1 }}">
+          <button type="submit">{{ _("Move down") }}</button>
+        </form>
+        {% endif %}
+        <form method="post" hx-push-url="false" action="/web/playlists/{{ editable|path_id }}/remove">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="index" value="{{ loop.index0 }}">
+          <button type="submit">{{ _("Remove from this playlist") }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </details>
+  </li>
+{% endfor %}
+</ol>
+{% endmacro %}
+
+{% macro play_buttons() %}
+<div class="actions">
+  <button class="primary" type="button" data-act="play-all"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg>{{ _("Play") }}</button>
+  <button class="secondary" type="button" data-act="shuffle-all"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3l4 4-4 4V8h-2.2l-8 10H3v-2h2.8l8-10H17zM3 6h3.8l2.6 3.2-1.3 1.6L5.8 8H3zm11.8 10H17v-3l4 4-4 4v-3h-3.2l-2.6-3.2 1.3-1.6z"/></svg>{{ _("Shuffle") }}</button>
+</div>
+{% endmacro %}
+
+{% macro empty(message, href=None, link=None) %}
+<div class="empty-state">
+  <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 20v18.5a5 5 0 1 0 3 4.6V27l10-2.2v10.7a5 5 0 1 0 3 4.6V17z"/></svg>
+  <p>{{ message }}</p>
+  {% if href %}<a class="button" href="{{ href }}">{{ link }}</a>{% endif %}
+</div>
+{% endmacro %}
