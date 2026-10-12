@@ -1,0 +1,8 @@
+[
+  {"category": "Artists", "resultType": "artist", "artist": "The Paper Lanterns", "browseId": "UCq8XbV1r0LwZ5mN3tYp7kQe",
+   "radioId": "RDEMfakeLanternsRadio0001", "shuffleId": "RDAOfakeLanternsShuffle01",
+   "thumbnails": [{"url": "https://lh3.googleusercontent.com/fakeLanternsAvatar=w120-h120-p-l90-rj", "width": 120, "height": 120}]},
+  {"category": "Artists", "resultType": "artist", "artist": "Lantern Look-alike", "browseId": "UCz1Xy2Wv3Ut4Sr5Qp6On7Ml",
+   "thumbnails": [{"url": "https://www.gstatic.com/youtube/media/ytm/images/sbg/artist_avatar@1200.png", "width": 1200, "height": 1200}]},
+  {"category": "Artists", "resultType": "artist", "artist": null, "browseId": "UCnoName0000000000000000"}
+]
