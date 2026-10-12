@@ -19,6 +19,7 @@ from ultimatetunes.auth.repository import ApiKey
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.web import auth_service
 from ultimatetunes.core.authn import Principal, current_principal
+from ultimatetunes.core.forwarded import trusted_origin
 from ultimatetunes.errors import InvalidParameter, PayloadTooLarge
 
 router = APIRouter()
@@ -103,6 +104,7 @@ async def create_key(request: Request, service: Service) -> Response:
         body.name,
         _client_ip(request),
         request.headers.get("x-api-key") or request.query_params.get("apiKey") or None,
+        trusted=trusted_origin(request),
     )
     return JSONResponse(
         {"key": key_json(created.key, None), "secret": created.secret},

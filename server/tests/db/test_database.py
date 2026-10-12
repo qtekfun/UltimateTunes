@@ -121,3 +121,50 @@ def test_wal_and_foreign_keys_are_on(tmp_path: Path) -> None:
 )
 def test_placeholders_become_format_style(portable: str, psycopg: str) -> None:
     assert to_format_style(portable) == psycopg
+
+
+def test_a_new_database_file_is_owner_only(tmp_path: Path) -> None:
+    """It holds password and key hashes: 0600 whatever the umask, WAL files included."""
+    path = tmp_path / "data" / "ut.db"
+    conn = connect_sqlite(path)
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    wal = path.with_name(path.name + "-wal")
+    assert wal.stat().st_mode & 0o777 == 0o600
+    conn.close()
+
+
+def test_an_existing_open_database_is_tightened_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A database created before 0600 (or by a restore with a loose umask) is tightened at
+    start, its WAL and shared-memory files too; the second start has nothing to say."""
+    path = tmp_path / "ut.db"
+    keep = connect_sqlite(path)
+    keep.execute("CREATE TABLE t (id INTEGER)")
+    files = [path, path.with_name("ut.db-wal"), path.with_name("ut.db-shm")]
+    for target in files:
+        target.chmod(0o644)
+    connect_sqlite(path).close()
+    assert [f.stat().st_mode & 0o777 for f in files] == [0o600] * 3
+    assert caplog.text.count("now 0600") == 3
+    caplog.clear()
+    connect_sqlite(path).close()
+    assert "0600" not in caplog.text
+    keep.close()
+
+
+def test_a_database_that_cannot_be_tightened_is_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "ut.db"
+    connect_sqlite(path).close()
+    path.chmod(0o640)
+
+    def refuse(self: Path, mode: int) -> None:
+        raise PermissionError("not the owner")
+
+    monkeypatch.setattr(Path, "chmod", refuse)
+    connect_sqlite(path).close()
+    assert "could not make database file ut.db owner-only" in caplog.text

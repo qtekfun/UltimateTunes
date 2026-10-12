@@ -30,7 +30,9 @@ if TYPE_CHECKING:
     from ultimatetunes.subsonic.router import SubsonicRequest
 
 CHUNK = 64 * 1024
-_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+# ASCII digits, at most 19 (any real offset fits): a huge number is ignored like any other
+# malformed range instead of reaching `int()` (Python refuses 4300+ digits with a traceback).
+_RANGE = re.compile(r"^bytes=([0-9]{0,19})-([0-9]{0,19})$")
 
 CONTENT_TYPES = {
     "opus": "audio/ogg",

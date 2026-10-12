@@ -3,6 +3,7 @@
 """Passwords, users, keys and the audit log of `AuthService` (RF-01; admin panel T15)."""
 
 import json
+import secrets
 
 import pytest
 from argon2 import PasswordHasher, Type
@@ -29,6 +30,10 @@ from ultimatetunes.errors import (
 )
 
 OTHER_IP = "198.51.100.7"
+# Callers on the Internet and on the LAN, and a wrong guess (random, never a real secret).
+STRANGERS = tuple(f"203.0.113.{n}" for n in range(1, 5))
+NEIGHBOURS = tuple(f"192.168.1.{n}" for n in range(10, 13))
+WRONG = secrets.token_hex(8)
 
 
 def actions(service: AuthService) -> list[str]:
@@ -77,9 +82,41 @@ def test_password_failures_lock_the_username_across_ips(
         service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.3")
     assert caught.value.retry_after_s == 60
     lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
-    assert [(e.target_type, e.target_id) for e in lockout] == [("user", "alice")]
+    assert [(e.target_type, e.target_id) for e in lockout] == [("user-out", "alice")]
     clock.advance(60)
     assert service.verify_password("alice", ADMIN_PASSWORD, IP).id == admin.user_id
+
+
+def test_strangers_cannot_lock_out_logins_from_trusted_networks(
+    service: AuthService, admin: Account
+) -> None:
+    """Audit M1: wrong passwords from the Internet (`POST /ut/v1/keys`) lock only the outside
+    counter; the admin still logs in from LAN/Tailscale."""
+    for stranger in STRANGERS[:2]:
+        with pytest.raises(AuthenticationFailed):
+            service.create_key_with_password("alice", WRONG, "Laptop", stranger)
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, STRANGERS[2])
+    inside = service.verify_password("alice", ADMIN_PASSWORD, IP, trusted=True)
+    assert inside.id == admin.user_id
+    created = service.create_key_with_password("alice", ADMIN_PASSWORD, "Phone", IP, trusted=True)
+    assert created.key.user_id == admin.user_id
+    # The outside counter is still locked: a success inside does not reset it.
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, STRANGERS[3])
+
+
+def test_failures_from_trusted_networks_lock_only_the_inside_counter(
+    service: AuthService, admin: Account
+) -> None:
+    for neighbour in NEIGHBOURS[:2]:
+        with pytest.raises(AuthenticationFailed):
+            service.verify_password("alice", WRONG, neighbour, trusted=True)
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, NEIGHBOURS[2], trusted=True)
+    lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
+    assert [(e.target_type, e.target_id) for e in lockout] == [("user", "alice")]
+    assert service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP).id == admin.user_id
 
 
 def test_password_failures_lock_the_ip(service: AuthService, admin: Account) -> None:

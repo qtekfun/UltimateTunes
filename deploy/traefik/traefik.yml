@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY: Traefik v3.6 static configuration for UltimateTunes behind Traefik + Authelia
+# (deploy/README.md, "Traefik + Authelia"). Nothing here is deployed by the project.
+# Mount it as /etc/traefik/traefik.yml and the dynamic/ directory as /etc/traefik/dynamic.
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+      # Request heads up to 16 KiB (the api refuses more anyway).
+      maxHeaderBytes: 16384
+      # Refuse encoded reserved characters in the path (%2F, %5C, %00, %3B, %25, %3F, %23):
+      # no route of the api needs them, and they are how a proxy and a backend end up seeing
+      # two different paths (split view, e.g. /admin%2F..).
+      encodedCharacters:
+        allowEncodedSlash: false
+        allowEncodedBackSlash: false
+        allowEncodedNullCharacter: false
+        allowEncodedSemicolon: false
+        allowEncodedPercent: false
+        allowEncodedQuestionMark: false
+        allowEncodedHash: false
+    transport:
+      respondingTimeouts:
+        # Slow clients (slowloris): the whole request (head and body) must arrive within
+        # readTimeout; idle keep-alive connections close after idleTimeout. writeTimeout stays 0:
+        # audio streams of long tracks (and streams that wait for a download) take minutes.
+        readTimeout: 30s
+        writeTimeout: 0s
+        idleTimeout: 120s
+    # Traefik is the edge: it believes nobody's X-Forwarded-* and sends the peer it saw. List
+    # an upstream here ONLY if it really sits in front (e.g. Cloudflare's proxy ranges from
+    # https://www.cloudflare.com/ips/); then set `depth: 1` in the rate limit (dynamic file).
+    # Never a tunnel (cloudflared, ngrok, an SSH forward) on this host: it would connect from a
+    # local address and every client would look local.
+    forwardedHeaders:
+      insecure: false
+      trustedIPs: []
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+  # Only for the labels variant (deploy/traefik/compose.labels.yaml).
+  docker:
+    exposedByDefault: false
+    network: proxy
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@example.org
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+
+log:
+  level: INFO
+accessLog:
+  # Never log query strings: OpenSubsonic clients may send `apiKey` there.
+  fields:
+    defaultMode: keep
+    names:
+      RequestPath: drop
+    headers:
+      defaultMode: drop

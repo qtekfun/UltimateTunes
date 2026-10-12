@@ -51,6 +51,7 @@ from ultimatetunes.auth.repository import User
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import format_ts
+from ultimatetunes.core.forwarded import trusted_origin
 from ultimatetunes.core.services import Services
 from ultimatetunes.errors import (
     AccountDisabled,
@@ -346,7 +347,7 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
         return _login_page(request, error="Wrong username or password.", status=400)
     ip = client_ip(request)
     try:
-        user = st.auth.verify_password(username, password, ip)
+        user = st.auth.verify_password(username, password, ip, trusted=trusted_origin(request))
     except RateLimited:
         return _login_page(request, error="Too many attempts. Wait and try again.", status=429)
     except (AuthenticationFailed, AccountDisabled, Forbidden, InvalidParameter):
