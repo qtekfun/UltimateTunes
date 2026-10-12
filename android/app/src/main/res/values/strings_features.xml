@@ -39,6 +39,8 @@
     </plurals>
     <string name="event_downloading">Downloading for offline listening</string>
     <string name="event_download_removed">Download removed</string>
+    <string name="event_favourite_added">Added to Favourites</string>
+    <string name="event_favourite_removed">Removed from Favourites</string>
     <plurals name="event_export_started">
         <item quantity="one">Exporting %1$d song…</item>
         <item quantity="other">Exporting %1$d songs…</item>

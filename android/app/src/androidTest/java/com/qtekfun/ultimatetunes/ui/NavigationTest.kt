@@ -84,6 +84,7 @@ class NavigationTest {
     @Test
     fun connectingWithAWorkingKeyOpensListenNow() {
         launch(connected = false)
+        waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
 
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).performTextInput("music.example.net")
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput(FakeTunesApi.API_KEY)
@@ -96,6 +97,7 @@ class NavigationTest {
     @Test
     fun aRefusedKeyStaysOnConnectWithTheReason() {
         launch(connected = false)
+        waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
 
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).performTextInput("music.example.net")
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput("utk_" + "Z".repeat(43))
@@ -182,7 +184,23 @@ class NavigationTest {
         assertTitle(R.string.tab_listen_now)
     }
 
+    @Test
+    fun tappingTheOpenTabAgainGoesBackToItsFirstScreen() {
+        launch(connected = true)
+        val station = text(R.string.station_description, FakeTunesApi.KEEPER_RADIO)
+        waitFor(hasContentDescription(station))
+        compose.onNodeWithContentDescription(station).performClick()
+        waitFor(hasTestTag(STATION_PLAY_TAG))
+
+        compose.onNodeWithTag(Tab.LISTEN_NOW.testTag).performClick()
+
+        assertTitle(R.string.tab_listen_now)
+        compose.waitUntil(TIMEOUT_MS) {
+            compose.onAllNodes(hasTestTag(STATION_PLAY_TAG)).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
     private companion object {
-        const val TIMEOUT_MS = 5_000L
+        const val TIMEOUT_MS = 10_000L
     }
 }

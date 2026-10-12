@@ -225,6 +225,10 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         ActionEvent.DownloadRemoved -> stringResource(R.string.event_download_removed)
 
+        is ActionEvent.FavouriteChanged -> stringResource(
+            if (event.added) R.string.event_favourite_added else R.string.event_favourite_removed
+        )
+
         is ActionEvent.ExportStarted ->
             pluralStringResource(R.plurals.event_export_started, event.count, event.count)
 

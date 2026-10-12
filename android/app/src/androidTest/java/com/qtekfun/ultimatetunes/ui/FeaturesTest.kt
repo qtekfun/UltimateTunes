@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -33,6 +34,7 @@ import com.qtekfun.ultimatetunes.ui.actions.TRACK_MENU_TAG
 import com.qtekfun.ultimatetunes.ui.actions.TrackMenuItem
 import com.qtekfun.ultimatetunes.ui.album.ALBUM_MENU_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.TITLE_TAG
+import com.qtekfun.ultimatetunes.ui.navigation.APP_SNACKBAR_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.NOTIFICATIONS_DIALOG_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
 import com.qtekfun.ultimatetunes.ui.player.FULL_PLAYER_TAG
@@ -157,6 +159,9 @@ class FeaturesTest {
 
         waitGone(hasTestTag(TRACK_MENU_TAG))
         compose.waitUntil(TIMEOUT_MS) { SongId("song-2") in fake.starredSongIds }
+        // The change is confirmed; the message goes away by itself (it may cover the song).
+        waitFor(hasText(text(R.string.event_favourite_added)))
+        waitGone(hasText(text(R.string.event_favourite_added)))
         longPressTidewater()
         waitFor(hasText(text(R.string.favourite_remove)))
     }
@@ -189,6 +194,14 @@ class FeaturesTest {
         compose.onNodeWithTag(PLAYER_MORE_TAG).performClick()
         waitFor(hasTestTag(TRACK_MENU_TAG))
         waitFor(hasText("Tidewater"))
+
+        // The answer to an action shows over the full player, not hidden under it.
+        compose.onNodeWithTag(TrackMenuItem.FAVOURITE.tag).performClick()
+        val added = hasText(text(R.string.event_favourite_added)) and
+            hasAnyAncestor(hasTestTag(APP_SNACKBAR_TAG))
+        waitFor(added)
+        compose.onNode(added, useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag(FULL_PLAYER_TAG).assertIsDisplayed()
     }
 
     @Test
