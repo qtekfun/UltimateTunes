@@ -291,3 +291,34 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - A merge needs `tools/ci-local.sh` green on the PR branch merged with master (it includes the Conventional Commit PR-title check, same rule as `pr-title.yml`), plus the independent review without blocking findings.
 - No publishing to GHCR or GitHub Releases and no release tags until the author decides otherwise; releases are built locally (RELEASING.md).
 - Open option: self-hosted GitHub Actions runners on the homelab.
+- *Update 2026-10-12:* the repo is now **public** (gitleaks over every commit of every branch was clean first), so GitHub-hosted minutes are free: CI, PR title and Dependabot verification are on again and a merge needs GitHub CI green plus the independent review. `tools/ci-local.sh` stays as the local gate. Release and Nightly stay disabled; publishing stays paused.
+
+### Taken in Wave 2 — T16 streaming while downloading (#44, 2026-10-12)
+- A **retryable** failure (job back to `queued`) keeps open streams waiting for the retry: the same format and size continue, others are cut. Only a final failure (`failed`/`cancelled`) cuts them at once; the client's read timeout decides how long to wait.
+- Chunked listeners follow any same-format retry and are aborted if they already passed the final length; any listener is aborted if the file grows past its announced size.
+- **HEAD** of a `yt:` id with no running download answers `200`, `Accept-Ranges: none` and no length; it never starts a download.
+- No server-side timeout before the first byte; a client that hangs up is noticed within 1 s and frees its listener slot. Caps: 8 listeners per job, 4 per API key; past a cap HTTP 503 with `Retry-After`.
+- Growth is learned from the job row (worker reports wake the process, else polling), never from the filesystem.
+- Settings: `UT_LISTENER_RETRY_AFTER_S` (5), `UT_STREAM_POLL_INTERVAL_S` (0.25, ≤ 0.5), `UT_STAGING_SWEEP_INTERVAL_S` (300; 0 = off).
+
+### Taken in Wave 2 — T17 Android playback (#47, 2026-10-12)
+- Playback reads offline downloads first (read-only, separate never-evicted cache), then the play cache (`SimpleCache` with an LRU evictor resized live, 2 GB default).
+- ReplayGain only attenuates (track gain, album gain when a queue neighbour is from the same album, peak-limited), applied as player volume.
+- First plays of unknown size are not cached by Media3; `yt:` cache entries are dropped once archived or after an incomplete first play.
+- Untrusted media controllers may control playback but not change the queue; items without a server resolve to an offline-only URI.
+- The server URL and API key are sealed with an AES-256-GCM Android Keystore key and restored at start.
+
+### Taken in Wave 2 — T18 Android features (#50, 2026-10-12)
+- **Export layout** = the server's library layout and sanitizer (`D-NN` from disc 2, `Untitled`/`Unknown Artist`/`Unknown Album` stand-ins); two songs of one export never share a file (a later one gets ` (<library id>)`).
+- **Export never deletes or overwrites** anything it did not write in that call: it writes a temporary `.ut-export-*.part` and renames it; a taken name is skipped as "already in the folder" (same size: an earlier export, left as is). Only library songs fully on the phone are exported, never `yt:`-keyed bytes. One export at a time.
+- **History**: a song counts as played after half of it or 4 min (songs over 30 s), position-based; a song repeated in place is not counted again.
+- **Queue sync**: another device's queue is restored only into an empty player and only after `getPlayQueue` succeeded; an empty queue is never saved.
+
+### Taken in Wave 2 — T19 contract tests and canary (#45, #49, 2026-10-12)
+- Contract tests run schemathesis against the real app, authenticated and anonymous, plus a real-data replay of every OpenSubsonic endpoint in JSON and XML.
+- Canary: catalog checks on the api (daily or on an admin `run_canary`, one replica by compare-and-set) and a download check of one fixed CC BY 4.0 track on the worker (Kevin MacLeod, "Sauropod Spotting", `6pEWHaIhxOg`; changeable with `UT_CANARY_*`), downloaded into `/staging/canary/`, always deleted, never archived; failures go through the admin notification sweep.
+- With `UT_FAKE_YOUTUBE`, lyrics come from a fake LRCLIB too, so the test stack makes no outbound call.
+
+### Taken in Wave 2 — track request and status (#49, integration, 2026-10-12)
+- `POST /ut/v1/tracks/{id}/request` checks a `yt:` id in the catalog before writing, enqueues at `keep` (or `prefetch`) priority, answers 202 (200 when `ready`); a failed or cancelled track is queued again with its attempts reset.
+- `GET /ut/v1/tracks/{id}/status`: `not_requested` for an unknown `yt:` id or a pending track without a job, `ready` for a library file without a job, else the job's state; `streamable` comes from the streaming state machine.
