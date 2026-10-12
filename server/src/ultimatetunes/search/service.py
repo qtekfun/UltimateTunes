@@ -13,7 +13,9 @@ keeps its `yt:` id and carries that state. External albums and artists already i
 library (same browse or channel id) become the library item.
 
 An empty query (`""`, also sent as two quote characters) lists the library page by page and
-never reaches YouTube Music.
+never reaches YouTube Music. Each user has a bucket of external searches (`search:user:<id>`,
+`UT_SEARCH_USER_RATE_PER_S`, `UT_SEARCH_USER_BURST`); an empty bucket means a library-only
+answer, never an error (T22).
 """
 
 import asyncio
@@ -25,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from starlette.concurrency import run_in_threadpool
 
+from ultimatetunes.core.ratelimit import Limit, RateLimiter
 from ultimatetunes.db.database import Database
 from ultimatetunes.errors import TunesError
 from ultimatetunes.ids.resolve import (
@@ -56,6 +59,7 @@ MAX_COUNT = 500
 # merge needs everything before the page). An empty query pages the library without limit.
 MAX_MERGED = 1000
 EMPTY_QUERIES = ("", '""')
+USER_BUCKET = "search:user:"
 
 
 @dataclass(frozen=True)
@@ -138,14 +142,31 @@ def search_settings() -> SearchSettings:
 
 
 class SearchService:
-    def __init__(self, db: Database, catalog: MusicCatalog, settings: SearchSettings) -> None:
+    def __init__(
+        self,
+        db: Database,
+        catalog: MusicCatalog,
+        settings: SearchSettings,
+        limiter: RateLimiter | None = None,
+    ) -> None:
         self._db = db
         self._catalog = catalog
         self._settings = settings
+        self._limiter = limiter
+        self._user_limit = Limit(settings.search_user_rate_per_s, settings.search_user_burst)
 
     @classmethod
     def of(cls, services: "Services") -> "SearchService":
-        return cls(services.db, services.catalog, search_settings())
+        return cls(services.db, services.catalog, search_settings(), services.rate_limiter)
+
+    def _external_allowed(self, user_id: str | None) -> bool:
+        """The caller's bucket of external searches (`search:user:<id>`) still has a token."""
+        if self._limiter is None or user_id is None:
+            return True
+        decision = self._limiter.hit(USER_BUCKET + user_id, self._user_limit)
+        if not decision.allowed:
+            log.info("external search limit reached for a user, answering from the library")
+        return decision.allowed
 
     async def search(  # noqa: PLR0913 - one page per kind
         self,
@@ -160,6 +181,8 @@ class SearchService:
         list_all = query.strip() in EMPTY_QUERIES
         words = tokens(query)
         use_external = external and self._settings.external_search and not list_all
+        if use_external:
+            use_external = await run_in_threadpool(self._external_allowed, user_id)
         pages = (artists, albums, songs)
         tasks = self._external(query, pages) if use_external else _Tasks(None, None, None)
         if list_all or words:
