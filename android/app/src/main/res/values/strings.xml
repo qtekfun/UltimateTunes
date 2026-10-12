@@ -28,6 +28,7 @@
     <string name="connect_link_title">Connect to %1$s?</string>
     <string name="connect_link_message">A link opened UltimateTunes with a server address and an API key. Only continue if it came from your own server\'s admin panel.</string>
     <string name="connect_link_replaces">This replaces your current connection once the new server and key work.</string>
+    <string name="connect_link_busy">Another link arrived while this one was open and was ignored. Finish with this one, then open the other link again.</string>
     <string name="connect_link_refused_title">Can\'t use this link</string>
     <string name="connect_link_error_malformed">This isn\'t an UltimateTunes connect link. Create a key in the admin panel and scan its QR code again.</string>
     <string name="connect_link_error_invalid_url">The server address in this link isn\'t valid.</string>

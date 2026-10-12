@@ -28,6 +28,7 @@
     <string name="connect_link_title">¿Conectar con %1$s?</string>
     <string name="connect_link_message">Un enlace ha abierto UltimateTunes con la dirección de un servidor y una clave de API. Continúa solo si viene del panel de administración de tu propio servidor.</string>
     <string name="connect_link_replaces">Sustituye a tu conexión actual en cuanto el servidor y la clave nuevos funcionen.</string>
+    <string name="connect_link_busy">Ha llegado otro enlace mientras este estaba abierto y se ha ignorado. Termina con este y vuelve a abrir el otro enlace.</string>
     <string name="connect_link_refused_title">No se puede usar este enlace</string>
     <string name="connect_link_error_malformed">Esto no es un enlace de conexión de UltimateTunes. Crea una clave en el panel de administración y vuelve a escanear su código QR.</string>
     <string name="connect_link_error_invalid_url">La dirección del servidor de este enlace no es válida.</string>

@@ -3,7 +3,6 @@
 
 package com.qtekfun.ultimatetunes.ui
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,7 +12,6 @@ import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.qtekfun.ultimatetunes.core.api.di.TunesHttpClient
-import com.qtekfun.ultimatetunes.ui.connect.ConnectLinkInbox
 import com.qtekfun.ultimatetunes.ui.navigation.AppRoot
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -30,13 +28,8 @@ class MainActivity : ComponentActivity() {
     @TunesHttpClient
     lateinit var httpClient: OkHttpClient
 
-    @Inject
-    lateinit var connectLinks: ConnectLinkInbox
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // A recreated activity gets its first intent again: its link was handled already.
-        if (savedInstanceState == null) takeConnectLink(intent)
         enableEdgeToEdge()
         setContent {
             setSingletonImageLoaderFactory { context ->
@@ -48,24 +41,6 @@ class MainActivity : ComponentActivity() {
             UltimateTunesTheme {
                 AppRoot()
             }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        takeConnectLink(intent)
-    }
-
-    /**
-     * Hands an `ultimatetunes://connect` link (the admin panel's QR code, opened by the camera
-     * app) to [connectLinks] and drops it from the intent, so the key is not kept there. A link
-     * replayed from Recents is ignored: it was confirmed or cancelled when it first came.
-     */
-    private fun takeConnectLink(intent: Intent?) {
-        val link = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString ?: return
-        intent.data = null
-        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
-            connectLinks.offer(link)
         }
     }
 }

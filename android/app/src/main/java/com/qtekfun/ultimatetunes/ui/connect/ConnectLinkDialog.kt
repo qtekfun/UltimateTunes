@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,7 +27,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
@@ -40,6 +44,11 @@ const val CONNECT_LINK_CANCEL_TAG = "connectLink.cancel"
 @Composable
 fun ConnectLinkRoute(viewModel: ConnectLinkViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Links are taken only while the app is visible: one opened in the background waits.
+    LaunchedEffect(viewModel, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.receiveLinks() }
+    }
     ConnectLinkDialog(state = state, onConfirm = viewModel::confirm, onDismiss = viewModel::dismiss)
 }
 
@@ -55,17 +64,22 @@ private fun ConnectLinkError.messageRes(): Int = when (this) {
 fun ConnectLinkDialog(state: ConnectLinkUiState, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     when (state) {
         ConnectLinkUiState.Idle -> Unit
-        is ConnectLinkUiState.Refused -> RefusedDialog(state.error, onDismiss)
+        is ConnectLinkUiState.Refused -> RefusedDialog(state, onDismiss)
         is ConnectLinkUiState.Confirm -> ConfirmLinkDialog(state, onConfirm, onDismiss)
     }
 }
 
 @Composable
-private fun RefusedDialog(error: ConnectLinkError, onDismiss: () -> Unit) {
+private fun RefusedDialog(state: ConnectLinkUiState.Refused, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.connect_link_refused_title)) },
-        text = { Text(stringResource(error.messageRes())) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
+                Text(stringResource(state.error.messageRes()))
+                IgnoredLinkNotice(state.anotherLinkIgnored)
+            }
+        },
         confirmButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.testTag(CONNECT_LINK_CANCEL_TAG)) {
                 Text(stringResource(R.string.close))
@@ -90,7 +104,7 @@ private fun ConfirmLinkDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                enabled = !state.checking,
+                enabled = state.canConfirm,
                 modifier = Modifier.testTag(CONNECT_LINK_CONFIRM_TAG)
             ) {
                 if (state.checking) {
@@ -138,6 +152,7 @@ private fun ConfirmLinkText(state: ConnectLinkUiState.Confirm) {
                 style = MaterialTheme.typography.bodyMedium
             )
         }
+        IgnoredLinkNotice(state.anotherLinkIgnored)
         state.error?.let { error ->
             Text(
                 text = stringResource(error.messageRes()),
@@ -146,6 +161,19 @@ private fun ConfirmLinkText(state: ConnectLinkUiState.Confirm) {
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
             )
         }
+    }
+}
+
+/** Another link came while this dialog was showing and was dropped: open it again later. */
+@Composable
+private fun IgnoredLinkNotice(shown: Boolean) {
+    if (shown) {
+        Text(
+            text = stringResource(R.string.connect_link_busy),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+        )
     }
 }
 
@@ -158,6 +186,8 @@ private fun ConnectLinkDialogPreview() {
                 serverUrl = "https://music.example.net/",
                 host = "music.example.net",
                 replacing = true,
+                armed = true,
+                anotherLinkIgnored = true,
                 error = ConnectError.KEY_REFUSED
             ),
             onConfirm = {},
