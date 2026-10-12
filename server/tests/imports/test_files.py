@@ -59,9 +59,14 @@ def test_the_fixtures_parse() -> None:
 
 
 def test_older_exportify_columns() -> None:
-    data = b"Track Name,Artist Name(s),Track Duration (ms)\nSong,A,61000\nOther,B,abc\nThird,C,\n"
+    data = (
+        b"Track Name,Artist Name(s),Track Duration (ms)\n"
+        + b"Song,A,61000\nOther,B,abc\nThird,C,\nHuge,D,"
+        + b"9" * 4000
+        + b"\n"
+    )
     items = parse_file(data, "exportify_csv").items
-    assert [i.duration_s for i in items] == [61, None, None]
+    assert [i.duration_s for i in items] == [61, None, None, None]
 
 
 @pytest.mark.parametrize(

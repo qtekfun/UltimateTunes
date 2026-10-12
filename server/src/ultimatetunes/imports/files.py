@@ -43,6 +43,7 @@ _ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 _CLOCK = re.compile(r"(?:(\d{1,2}):)?(\d{1,3}):(\d{2})")
 # A track longer than this is not a song (and not a sane duration).
 _MAX_DURATION_S = 24 * 3600
+_MAX_MS_DIGITS = 9
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,8 @@ def parse_duration(value: str | None) -> int | None:
 
 
 def _duration_ms(value: str | None) -> int | None:
-    if value is None:
+    # More digits than any duration has: refuse before converting (no huge ints or floats).
+    if value is None or len(value) > _MAX_MS_DIGITS:
         return None
     try:
         ms = int(value)

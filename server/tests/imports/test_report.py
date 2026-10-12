@@ -16,6 +16,8 @@ from ultimatetunes.imports.repository import ItemRow, TrackRow
     [
         ('=HYPERLINK("http://x")', '\'=HYPERLINK("http://x")'),
         ("+1+1", "'+1+1"),
+        ("  =1+1", "'  =1+1"),
+        (" \t-2", "' \t-2"),
         ("-2", "'-2"),
         ("@SUM(A1)", "'@SUM(A1)"),
         ("\tcmd", "'\tcmd"),

@@ -36,7 +36,9 @@ HEADER = (
 def escape_cell(value: str | None) -> str:
     if not value:
         return ""
-    return "'" + value if value.startswith(_FORMULA_START) else value
+    # Spreadsheets skip leading spaces before reading a formula: check after them too.
+    risky = value.startswith(_FORMULA_START) or value.lstrip().startswith(_FORMULA_START)
+    return "'" + value if risky else value
 
 
 def _number(value: float | None) -> str:
