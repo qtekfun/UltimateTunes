@@ -7,5 +7,8 @@
 !server/pyproject.toml
 !server/uv.lock
 !server/src
+!server/docker/fetch.py
+!server/docker/tools.sh
+!server/docker/yt-dlp-public.key
 !contracts/db/migrations
 **/__pycache__
