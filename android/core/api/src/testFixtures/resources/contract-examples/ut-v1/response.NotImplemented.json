@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#not_implemented",
+    "title": "Not implemented",
+    "status": 501,
+    "detail": "Not implemented yet",
+    "code": "not_implemented",
+    "instance": "/ut/v1/…"
+}

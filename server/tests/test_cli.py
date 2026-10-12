@@ -2,22 +2,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The `ultimatetunes` command and its roles."""
 
-import signal
 import subprocess
 import sys
-import threading
-from collections.abc import Callable
+from collections.abc import Sequence
 from pathlib import Path
-from types import FrameType
 from typing import Any
 
 import pytest
 
 from ultimatetunes import __version__, cli
+from ultimatetunes.commands import CommandRegistry
 from ultimatetunes.db import migrate
 from ultimatetunes.settings import Settings
-
-Handler = Callable[[int, FrameType | None], None]
 
 
 def test_migrate_role_applies_migrations(settings: Settings) -> None:
@@ -26,23 +22,6 @@ def test_migrate_role_applies_migrations(settings: Settings) -> None:
     conn = migrate.connect(settings.database_file)
     assert migrate.applied_versions(conn) == {1}
     conn.close()
-
-
-def test_worker_stops_on_sigterm(settings: Settings) -> None:
-    handlers: dict[int, Handler] = {}
-
-    def install(signum: int, handler: Handler) -> None:
-        handlers[signum] = handler
-
-    stop = threading.Event()
-    thread = threading.Thread(target=cli.run_worker, args=(settings, stop, install))
-    thread.start()
-    while signal.SIGTERM not in handlers:
-        thread.join(timeout=0.01)
-    handlers[signal.SIGTERM](signal.SIGTERM, None)
-    thread.join(timeout=5)
-    assert not thread.is_alive()
-    assert signal.SIGINT in handlers
 
 
 def test_api_role_runs_uvicorn_with_graceful_shutdown(
@@ -56,26 +35,43 @@ def test_api_role_runs_uvicorn_with_graceful_shutdown(
     assert calls[0]["log_config"] is None
 
 
-def test_main_dispatches_to_the_role(
+def test_main_dispatches_to_the_command_with_its_arguments(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, migrations_dir: Path
 ) -> None:
     monkeypatch.setenv("UT_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("UT_MIGRATIONS_DIR", str(migrations_dir))
     monkeypatch.setenv("UT_LOG_LEVEL", "WARNING")
-    seen: list[Settings] = []
+    seen: list[tuple[Settings, list[str]]] = []
 
-    def role(s: Settings) -> int:
-        seen.append(s)
+    def command(s: Settings, args: Sequence[str]) -> int:
+        seen.append((s, list(args)))
+        return 3
+
+    registry = CommandRegistry()
+    registry.add("echo", command, help="test")
+    assert cli.main(["echo", "a", "--flag"], registry) == 3
+    assert seen[0][0].data_dir == tmp_path / "data"
+    assert seen[0][1] == ["a", "--flag"]
+
+
+def test_main_builds_the_registry_of_every_area(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Settings] = []
+
+    def migrate_stub(s: Settings) -> int:
+        calls.append(s)
         return 0
 
-    monkeypatch.setitem(cli.ROLES, "migrate", role)
+    monkeypatch.setattr(cli, "run_migrate", migrate_stub)
+    monkeypatch.setenv("UT_LOG_LEVEL", "WARNING")
     assert cli.main(["migrate"]) == 0
-    assert seen[0].data_dir == tmp_path / "data"
+    assert len(calls) == 1
 
 
-def test_main_rejects_unknown_roles() -> None:
+def test_main_rejects_unknown_commands_and_extra_arguments() -> None:
     with pytest.raises(SystemExit):
         cli.main(["nope"])
+    with pytest.raises(SystemExit, match="unexpected arguments: x"):
+        cli.main(["migrate", "x"])
 
 
 def test_settings_default_database_lives_in_data_dir(tmp_path: Path) -> None:

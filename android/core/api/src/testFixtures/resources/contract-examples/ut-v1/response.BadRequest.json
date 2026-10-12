@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_id",
+    "title": "Invalid id",
+    "status": 400,
+    "detail": "'yt:abc' is not a valid video id",
+    "code": "invalid_id",
+    "instance": "/ut/v1/…"
+}

@@ -1,0 +1,13 @@
+{
+    "subsonic-response": {
+        "status": "failed",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "error": {
+            "code": 0,
+            "message": "Too many listeners for this song, retry in 5 seconds"
+        }
+    }
+}
