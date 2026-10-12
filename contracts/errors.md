@@ -13,12 +13,22 @@ Handlers raise typed errors. They never build envelopes or status codes by hand.
 
 ## HTTP status on `/rest/*`
 
-OpenSubsonic clients expect **HTTP 200** with a `failed` envelope, so every `/rest` error uses 200, except for:
-- `RateLimited` → **429** with the envelope as body (code `0`) and `Retry-After`;
-- `NotImplemented` → **501** with the envelope as body (code `0`). Only the T02 router stubs return it;
-- `stream`/`download` with an unsatisfiable `Range` → **416** without a body (plain HTTP semantics, needed by players).
+OpenSubsonic clients expect **HTTP 200** with a `failed` envelope, so every `/rest` error uses 200. These are the only other statuses `/rest/*` may answer with:
 
-The envelope format follows `f` (`json` or `xml`, default `xml`). Binary endpoints (`stream`, `download`, `getCoverArt`) answer errors with the envelope in the requested format instead of the binary. If a download fails **after** the audio response has started (streaming while downloading), the server ends the chunked response early (no final zero-length chunk), so the client sees a broken transfer, never silent truncation passed off as success.
+| HTTP | When | Body |
+| --- | --- | --- |
+| **429** | `RateLimited` (rate limit or lockout) | Envelope, code `0`, plus `Retry-After` |
+| **501** | `NotImplemented`. Only the T02 router stubs return it | Envelope, code `0` |
+| **206** | `stream`/`download` answering a `Range` request (library file, or the growing file of a `yt:` id whose exact size is known) | Audio |
+| **416** | `stream`/`download` with a `Range` past the (exact) size | None (plain HTTP semantics, needed by players) |
+| **404** | `stream`/`download` of a song whose download **failed** (`StreamFailed`), e.g. a player retrying after its stream was cut. Players only notice a failed retry through a non-2xx status | Envelope, code `70` |
+| **503** | `stream`/`download` of a `yt:` id in flight when its listener cap is reached (`TooManyListeners`: by default 8 listeners per job and 4 per API key) | Envelope, code `0`, plus `Retry-After` |
+
+The envelope format follows `f` (`json` or `xml`, default `xml`). Binary endpoints (`stream`, `download`, `getCoverArt`) answer errors with the envelope in the requested format instead of the binary. `HEAD` on them answers the same status and headers with no body.
+
+If a download fails **after** the audio response has started (streaming while downloading), the server aborts the response: with a `Content-Length`, it closes the connection before that many bytes were sent; when chunked, it closes it without the final zero-length chunk. Either way the client sees a broken transfer, never silent truncation passed off as success. The same happens to open streams when the final size differs from the announced one or a retry changes the format (contracts/openapi/internal-worker.yaml). Later requests for that song get the 404 above until the download is retried.
+
+An unknown endpoint (`/rest/<name>` that is not in contracts/openapi/opensubsonic-subset.yaml) answers HTTP 200 with a failed envelope, code `0`, in the requested format (`UnknownEndpoint`), before authentication.
 
 ## Mapping
 
@@ -44,6 +54,9 @@ The envelope format follows `f` (`json` or `xml`, default `xml`). Binary endpoin
 | `RateLimited` | Rate limit or temporary lockout (per IP, per key) | 0 (HTTP 429) | 429 | `rate_limited` |
 | `UpstreamUnavailable` | YouTube Music, MusicBrainz, Cover Art Archive or LRCLIB failed or timed out | 0 | 502 | `upstream_unavailable` |
 | `DownloadFailed` | The download job of the requested track failed for good | 0 | 502 | `download_failed` |
+| `StreamFailed` | `stream`/`download` of a song whose download failed (see above) | 70 (HTTP 404) | — | — |
+| `TooManyListeners` | Listener cap of an in-flight `yt:` stream reached (per job or per API key) | 0 (HTTP 503) | — | — |
+| `UnknownEndpoint` | `/rest/<name>` that we do not implement | 0 | — | — |
 | `NotImplemented` | Router stub (T02) or a feature not built yet | 0 (HTTP 501) | 501 | `not_implemented` |
 | `InternalError` | Anything unexpected | 0 | 500 | `internal_error` |
 | **Internal worker API only** | | | | |
@@ -57,7 +70,7 @@ Notes:
 - The `message` of `TokenAuthNotSupported` and `InvalidApiKey` carries a `helpUrl` pointing to the server's key page (`/admin/keys` for admins, the README section for users).
 - `AuthenticationFailed`, `InvalidApiKey` and `AccountDisabled` count as failures for the rate limiter's lockout. Messages never reveal whether a username exists.
 - `/ut/v1` problems use `type` = `https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#<code>` and `title` = the English short text. `detail` is human-readable and may change. Clients switch on `code` only.
-- `RateLimited` responses always carry `Retry-After` (seconds) on every API.
+- `RateLimited` and `TooManyListeners` responses always carry `Retry-After` (seconds) on every API.
 - Job failures are **not** HTTP errors on `/ut/v1/tracks/{id}/status`: that endpoint returns 200 with `state: failed` and an `error` object whose `code` is one of the worker error codes below.
 
 ## Worker error codes (`fail` → job `error.code`)
@@ -73,6 +86,7 @@ Reported by the worker in `POST /internal/v1/jobs/{jobId}/fail` and shown in `/u
 | `rate_limited_upstream` | yes | YouTube throttled or blocked (HTTP 429/403) |
 | `tagging_failed` | yes | mutagen or ffmpeg (ReplayGain) failed |
 | `storage_error` | yes | Disk full or I/O error on `/staging` or `/music` |
+| `invalid_video_id` | no | The job's video id fails `^[A-Za-z0-9_-]{11}$` (checked again right before the downloader runs). A bug or tampering, never retried |
 | `cancelled` | no | Cancelled by an admin (the job ends in `cancelled`, not `failed`) |
 | `lease_expired` | yes | Set by the api, never sent by a worker: the lease ran out (worker killed or hung) |
 | `internal_error` | yes | Anything else |

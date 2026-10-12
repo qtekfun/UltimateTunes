@@ -30,8 +30,13 @@ info:
     ## Response envelope
     Every non-binary response is a `subsonic-response` with `status` (`ok`/`failed`), `version` (`1.16.1`),
     `type` (`UltimateTunes`), `serverVersion` (the root `VERSION`, e.g. `0.1.0`) and `openSubsonic: true`.
-    Failures add `error` (`code`, `message`, optional `helpUrl`) and use HTTP 200, except 429 (rate limit) and
-    501 (not implemented stubs).
+    Failures add `error` (`code`, `message`, optional `helpUrl`) and use HTTP 200, except for the few statuses
+    listed in `contracts/errors.md` (429 rate limit, 501 stubs, and 206/404/416/503 on `stream`/`download`).
+
+    ## Unknown endpoints and HEAD
+    - A `/rest/<name>` that is not in this file answers HTTP 200 with a failed envelope, error `0`, in the
+      requested format (before authentication).
+    - `HEAD` is accepted on `stream`, `download` and `getCoverArt`: same status and headers as `GET`, no body.
 
     ## XML mapping rule
     `f=xml` (the default when `f` is absent) returns `application/xml` (UTF-8) with the same element names as
@@ -1553,7 +1558,10 @@ paths:
       tags:
       - media
       summary: Cover image
-      description: Cover image.
+      description: |-
+        Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
+        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) answer error 70 (no image) until SPEC §11's pending approval of the YouTube image hosts is granted: the server fetches no external image before that (contracts/ids.md).
+        v1 may ignore `size` and return the stored image unscaled (no image library is approved yet). `HEAD` is accepted (no body).
       parameters:
       - $ref: '#/components/parameters/v'
       - $ref: '#/components/parameters/c'
@@ -1573,7 +1581,7 @@ paths:
           type: integer
           minimum: 16
           maximum: 1200
-        description: Scale the longest side to this many pixels.
+        description: Requested longest side in pixels. A hint only, v1 may ignore it.
       responses:
         '200':
           description: The image (JPEG, PNG or WebP), or an error envelope.
@@ -1620,7 +1628,10 @@ paths:
       tags:
       - media
       summary: Cover image (form POST)
-      description: Cover image.
+      description: |-
+        Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
+        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) answer error 70 (no image) until SPEC §11's pending approval of the YouTube image hosts is granted: the server fetches no external image before that (contracts/ids.md).
+        v1 may ignore `size` and return the stored image unscaled (no image library is approved yet).
       parameters: []
       responses:
         '200':
@@ -1699,7 +1710,7 @@ paths:
                   type: integer
                   minimum: 16
                   maximum: 1200
-                  description: Scale the longest side to this many pixels.
+                  description: Requested longest side in pixels. A hint only, v1 may ignore it.
               required:
               - id
   /rest/stream:
@@ -1708,8 +1719,17 @@ paths:
       - media
       summary: Stream a song
       description: |-
-        Library songs: the file, original format, with HTTP Range (`206`) support.
-        External or pending songs (RF-05): the api requests the download (or joins the running one) and streams the growing file from staging: `200`, `Transfer-Encoding: chunked`, no `Content-Length`, `Accept-Ranges: none`. A `Range` header is ignored on this first play (no seek). If the job fails before the first byte, the response is an error envelope. If it fails afterwards, the transfer is cut (see contracts/errors.md).
+        Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
+
+        **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
+
+        **`yt:` id not archived yet (streaming while downloading, RF-05, SPEC §11).** The api requests the download (or joins the running one) and answers as soon as the first bytes exist, from the worker's progress reports (contracts/openapi/internal-worker.yaml):
+        - **Exact size known** (the normal case): `200` with the exact `Content-Length` and `Accept-Ranges: bytes`. A `Range` request gets `206` with `Content-Range: bytes a-b/<size>` at once, and the bytes are sent as the download advances (no server-side timeout: the client's read timeout governs). A range starting past the size gets `416`.
+        - **Size unknown**: `200` with `Transfer-Encoding: chunked`, no `Content-Length`, `Accept-Ranges: none`. A `Range` header is ignored (the answer starts at byte 0).
+        - Never an estimated `Content-Length`, never `bytes 0-*/*`. A format whose index is at the end of the file is served only once its download is complete.
+        - `Content-Type` is the downloaded format (`audio/webm`, `audio/mp4`), and `Cache-Control: no-store`. The bytes are the raw download, not the archived file (different size): clients key their cache by the requested id (contracts/ids.md).
+        - **Failure.** Before the first byte: the error envelope. After it (job failed, final size different from the announced one, or a retry with another format): the transfer is aborted without a clean end (connection closed before `Content-Length`, or no final chunk). Later requests get error `70` with **HTTP 404** until the download is retried (contracts/errors.md).
+        - **Listener cap.** At most 8 listeners per in-flight job and 4 per API key (defaults). Beyond that: **HTTP 503** with `Retry-After` and an error `0` envelope.
       parameters:
       - $ref: '#/components/parameters/v'
       - $ref: '#/components/parameters/c'
@@ -1761,10 +1781,13 @@ paths:
                 enum:
                 - bytes
                 - none
+              description: '`none` only while downloading with an unknown size.'
             Content-Length:
               schema:
                 type: integer
-              description: Absent while downloading.
+                minimum: 0
+              description: Exact size of the file. Absent only while downloading with an unknown size (chunked),
+                never estimated.
           content:
             audio/ogg:
               schema:
@@ -1808,17 +1831,27 @@ paths:
                   <error code="70" message="Song not found"/>
                 </subsonic-response>
         '206':
-          description: Partial content (library files only).
+          description: Partial content, for library files and for the growing file of a `yt:` id whose exact size
+            is known (bytes sent as the download advances).
           headers:
             Content-Range:
               schema:
                 type: string
               example: bytes 0-1048575/3489211
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+              description: Length of the range.
           content:
             audio/ogg:
               schema:
                 type: string
                 contentMediaType: audio/ogg
+            audio/webm:
+              schema:
+                type: string
+                contentMediaType: audio/webm
             audio/mp4:
               schema:
                 type: string
@@ -1831,8 +1864,17 @@ paths:
               schema:
                 type: string
                 contentMediaType: audio/flac
+        '404':
+          $ref: '#/components/responses/StreamFailed'
         '416':
-          description: Range not satisfiable (library files only). No body.
+          description: Range not satisfiable (it starts past the exact size). No body.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes */3489211
+        '503':
+          $ref: '#/components/responses/TooManyListeners'
         '429':
           $ref: '#/components/responses/RateLimited'
         '501':
@@ -1843,8 +1885,17 @@ paths:
       - media
       summary: Stream a song (form POST)
       description: |-
-        Library songs: the file, original format, with HTTP Range (`206`) support.
-        External or pending songs (RF-05): the api requests the download (or joins the running one) and streams the growing file from staging: `200`, `Transfer-Encoding: chunked`, no `Content-Length`, `Accept-Ranges: none`. A `Range` header is ignored on this first play (no seek). If the job fails before the first byte, the response is an error envelope. If it fails afterwards, the transfer is cut (see contracts/errors.md).
+        Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
+
+        **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
+
+        **`yt:` id not archived yet (streaming while downloading, RF-05, SPEC §11).** The api requests the download (or joins the running one) and answers as soon as the first bytes exist, from the worker's progress reports (contracts/openapi/internal-worker.yaml):
+        - **Exact size known** (the normal case): `200` with the exact `Content-Length` and `Accept-Ranges: bytes`. A `Range` request gets `206` with `Content-Range: bytes a-b/<size>` at once, and the bytes are sent as the download advances (no server-side timeout: the client's read timeout governs). A range starting past the size gets `416`.
+        - **Size unknown**: `200` with `Transfer-Encoding: chunked`, no `Content-Length`, `Accept-Ranges: none`. A `Range` header is ignored (the answer starts at byte 0).
+        - Never an estimated `Content-Length`, never `bytes 0-*/*`. A format whose index is at the end of the file is served only once its download is complete.
+        - `Content-Type` is the downloaded format (`audio/webm`, `audio/mp4`), and `Cache-Control: no-store`. The bytes are the raw download, not the archived file (different size): clients key their cache by the requested id (contracts/ids.md).
+        - **Failure.** Before the first byte: the error envelope. After it (job failed, final size different from the announced one, or a retry with another format): the transfer is aborted without a clean end (connection closed before `Content-Length`, or no final chunk). Later requests get error `70` with **HTTP 404** until the download is retried (contracts/errors.md).
+        - **Listener cap.** At most 8 listeners per in-flight job and 4 per API key (defaults). Beyond that: **HTTP 503** with `Retry-After` and an error `0` envelope.
       parameters: []
       responses:
         '200':
@@ -1857,10 +1908,13 @@ paths:
                 enum:
                 - bytes
                 - none
+              description: '`none` only while downloading with an unknown size.'
             Content-Length:
               schema:
                 type: integer
-              description: Absent while downloading.
+                minimum: 0
+              description: Exact size of the file. Absent only while downloading with an unknown size (chunked),
+                never estimated.
           content:
             audio/ogg:
               schema:
@@ -1904,17 +1958,27 @@ paths:
                   <error code="70" message="Song not found"/>
                 </subsonic-response>
         '206':
-          description: Partial content (library files only).
+          description: Partial content, for library files and for the growing file of a `yt:` id whose exact size
+            is known (bytes sent as the download advances).
           headers:
             Content-Range:
               schema:
                 type: string
               example: bytes 0-1048575/3489211
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+              description: Length of the range.
           content:
             audio/ogg:
               schema:
                 type: string
                 contentMediaType: audio/ogg
+            audio/webm:
+              schema:
+                type: string
+                contentMediaType: audio/webm
             audio/mp4:
               schema:
                 type: string
@@ -1927,8 +1991,17 @@ paths:
               schema:
                 type: string
                 contentMediaType: audio/flac
+        '404':
+          $ref: '#/components/responses/StreamFailed'
         '416':
-          description: Range not satisfiable (library files only). No body.
+          description: Range not satisfiable (it starts past the exact size). No body.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes */3489211
+        '503':
+          $ref: '#/components/responses/TooManyListeners'
         '429':
           $ref: '#/components/responses/RateLimited'
         '501':
@@ -1988,7 +2061,8 @@ paths:
       tags:
       - media
       summary: Download the original file
-      description: 'Same as `stream` (no transcoding ever), with `Content-Disposition: attachment`.'
+      description: 'Same as `stream` (no transcoding ever, the same rules while downloading, `HEAD` accepted),
+        with `Content-Disposition: attachment`.'
       parameters:
       - $ref: '#/components/parameters/v'
       - $ref: '#/components/parameters/c'
@@ -2012,10 +2086,13 @@ paths:
                 enum:
                 - bytes
                 - none
+              description: '`none` only while downloading with an unknown size.'
             Content-Length:
               schema:
                 type: integer
-              description: Absent while downloading.
+                minimum: 0
+              description: Exact size of the file. Absent only while downloading with an unknown size (chunked),
+                never estimated.
           content:
             audio/ogg:
               schema:
@@ -2059,17 +2136,27 @@ paths:
                   <error code="70" message="Song not found"/>
                 </subsonic-response>
         '206':
-          description: Partial content (library files only).
+          description: Partial content, for library files and for the growing file of a `yt:` id whose exact size
+            is known (bytes sent as the download advances).
           headers:
             Content-Range:
               schema:
                 type: string
               example: bytes 0-1048575/3489211
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+              description: Length of the range.
           content:
             audio/ogg:
               schema:
                 type: string
                 contentMediaType: audio/ogg
+            audio/webm:
+              schema:
+                type: string
+                contentMediaType: audio/webm
             audio/mp4:
               schema:
                 type: string
@@ -2082,8 +2169,17 @@ paths:
               schema:
                 type: string
                 contentMediaType: audio/flac
+        '404':
+          $ref: '#/components/responses/StreamFailed'
         '416':
-          description: Range not satisfiable (library files only). No body.
+          description: Range not satisfiable (it starts past the exact size). No body.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes */3489211
+        '503':
+          $ref: '#/components/responses/TooManyListeners'
         '429':
           $ref: '#/components/responses/RateLimited'
         '501':
@@ -2093,7 +2189,8 @@ paths:
       tags:
       - media
       summary: Download the original file (form POST)
-      description: 'Same as `stream` (no transcoding ever), with `Content-Disposition: attachment`.'
+      description: 'Same as `stream` (no transcoding ever, the same rules while downloading, `HEAD` accepted),
+        with `Content-Disposition: attachment`.'
       parameters: []
       responses:
         '200':
@@ -2106,10 +2203,13 @@ paths:
                 enum:
                 - bytes
                 - none
+              description: '`none` only while downloading with an unknown size.'
             Content-Length:
               schema:
                 type: integer
-              description: Absent while downloading.
+                minimum: 0
+              description: Exact size of the file. Absent only while downloading with an unknown size (chunked),
+                never estimated.
           content:
             audio/ogg:
               schema:
@@ -2153,17 +2253,27 @@ paths:
                   <error code="70" message="Song not found"/>
                 </subsonic-response>
         '206':
-          description: Partial content (library files only).
+          description: Partial content, for library files and for the growing file of a `yt:` id whose exact size
+            is known (bytes sent as the download advances).
           headers:
             Content-Range:
               schema:
                 type: string
               example: bytes 0-1048575/3489211
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+              description: Length of the range.
           content:
             audio/ogg:
               schema:
                 type: string
                 contentMediaType: audio/ogg
+            audio/webm:
+              schema:
+                type: string
+                contentMediaType: audio/webm
             audio/mp4:
               schema:
                 type: string
@@ -2176,8 +2286,17 @@ paths:
               schema:
                 type: string
                 contentMediaType: audio/flac
+        '404':
+          $ref: '#/components/responses/StreamFailed'
         '416':
-          description: Range not satisfiable (library files only). No body.
+          description: Range not satisfiable (it starts past the exact size). No body.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes */3489211
+        '503':
+          $ref: '#/components/responses/TooManyListeners'
         '429':
           $ref: '#/components/responses/RateLimited'
         '501':
@@ -4020,6 +4139,62 @@ components:
             <?xml version="1.0" encoding="UTF-8"?>
             <subsonic-response xmlns="http://subsonic.org/restapi" status="failed" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
               <error code="0" message="Not implemented"/>
+            </subsonic-response>
+    StreamFailed:
+      description: 'The download of this song failed (`stream`/`download` only): error 70 with HTTP 404, so a
+        player retrying a cut stream sees a failed request (contracts/errors.md). Answered until the download is
+        retried.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FailedResponse'
+          example:
+            subsonic-response:
+              status: failed
+              version: 1.16.1
+              type: UltimateTunes
+              serverVersion: 0.1.0
+              openSubsonic: true
+              error:
+                code: 70
+                message: Download failed
+        application/xml:
+          schema:
+            type: string
+          example: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <subsonic-response xmlns="http://subsonic.org/restapi" status="failed" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
+              <error code="70" message="Download failed"/>
+            </subsonic-response>
+    TooManyListeners:
+      description: Listener cap of an in-flight `yt:` stream reached (per job or per API key). Envelope with code 0.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+          description: Seconds.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FailedResponse'
+          example:
+            subsonic-response:
+              status: failed
+              version: 1.16.1
+              type: UltimateTunes
+              serverVersion: 0.1.0
+              openSubsonic: true
+              error:
+                code: 0
+                message: Too many listeners for this song, retry in 5 seconds
+        application/xml:
+          schema:
+            type: string
+          example: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <subsonic-response xmlns="http://subsonic.org/restapi" status="failed" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
+              <error code="0" message="Too many listeners for this song, retry in 5 seconds"/>
             </subsonic-response>
     EnvelopeOnBinary:
       description: Error envelope instead of binary content.

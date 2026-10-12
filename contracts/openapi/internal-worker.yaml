@@ -10,36 +10,74 @@ info:
     download jobs, reports progress and registers archived files through these endpoints only.
 
     ## Network and authentication
-    - Served under `/internal/v1` by the api, on the internal Docker network only. The reverse proxy (and later a
-      Kubernetes NetworkPolicy) must not expose it, and the api refuses it from client-facing listeners.
+    - Served under `/internal/v1` by the api on its single listener (port 8044) in v1. Only the worker calls it,
+      over the internal Docker network. The reverse proxy (and later a Kubernetes NetworkPolicy) must not route
+      `/internal/` from outside. A separate internal listener is a PLAN T22 item (SPEC §11).
     - `Authorization: Bearer <worker token>`: a shared secret from an env var or Docker secret
-      (`UT_WORKER_TOKEN`), compared in constant time. Scoped to these endpoints only.
+      (`UT_WORKER_TOKEN`), compared in constant time. Scoped to these endpoints only. With no token configured
+      every call is refused, with the same generic `invalid_worker_token` problem as a wrong token.
 
     ## Leases
     - `claim` returns a job and a **lease** (`leaseId`, `expiresAt`). Every later call carries `leaseId`. A call
       with a stale lease gets `409 lease_lost`, and the worker must stop and discard that job's work.
     - Keep the lease alive with `heartbeat` or `progress` at least every `heartbeatSeconds`.
-    - An expired lease returns the job to `queued` on the next claim (attempt counted, error `lease_expired`). So a
-      killed worker never blocks a job, and another worker retries it (idempotent, `stagingDir` is cleaned first).
+    - An expired lease returns the job to `queued` on the next claim (attempt counted, error `lease_expired`), or
+      to `failed` when its attempts are used up (the track is then marked `failed` too), or to `cancelled` when an
+      admin asked for it. So a killed worker never blocks a job, and another worker retries it.
+    - **Each attempt has its own staging directory**, `stagingDir` = `<jobId>/<attempt>`. The worker writes only
+      there and never touches another attempt's directory, so a worker that lost its lease but is still running
+      can never write into the file of the next attempt. The api deletes old attempt directories once no listener
+      reads them (it owns staging cleanup).
 
     ## Job state machine (100 % coverage, PLAN T08)
     `queued → downloading → tagging → ready`. Any state with a lease can go to `failed`, or back to `queued` (retry
-    with backoff, max 3 attempts). An admin cancel makes the job `cancelled`. Duplicate requests for the same video
-    share one job.
+    with backoff, max 3 attempts). An admin cancel makes a queued job `cancelled` at once; a leased job gets
+    `cancelRequested: true` on its next `heartbeat`/`progress` and the worker ends it with `fail` (`cancelled`).
+    Duplicate requests for the same video share one job. A job row is never deleted while it can hold a lease.
+
+    ## Streaming while downloading (RF-05, SPEC §11)
+    The worker writes the raw audio sequentially and never rewrites it. From the first bytes on, it sends
+    `progress` at least every 0.5 s while the file grows, with `partPath` (the growing file), `finalPath` (where
+    the same file will be once complete), the **exact** `expectedSize` as soon as it is known (`null` before,
+    never an estimate), `formatId`, `contentType`, `progressive` and, once the download is complete and renamed
+    to `finalPath`, `finished: true`. The api learns about growth from these reports only (no filesystem
+    polling) and serves `/rest/stream` and `/rest/download` of the `yt:` id from them (see the OpenSubsonic
+    contract):
+    - it opens `partPath` while not `finished` and `finalPath` once `finished` (a reader that already has the
+      file open keeps reading it: the rename keeps the inode);
+    - a format with `progressive: false` (its index is at the end) is served only once `finished`;
+    - if the size at `finished` differs from `expectedSize`, or a retry reports another `formatId` or
+      `expectedSize`, every open stream of that job is aborted (cut without a clean end). A retry with the same
+      `formatId` and `expectedSize` produces the same bytes, so open streams continue from the new attempt's
+      file at their offset;
+    - when the job fails, open streams are aborted, and later requests get error 70 (HTTP 404) until a retry.
+
+    ## Archive and registration
+    After the download the worker builds the archive file in its staging directory (remux without transcoding,
+    tags, ReplayGain, SPEC §11). Then, still holding the lease:
+    1. `registerTrack` with the staging file and the `libraryPath` it wants under `/music` (not created yet).
+       The api either reserves `libraryPath` for this job (`merged: false`), or finds that the recording is
+       already in the library (`merged: true`, `trackId` of the existing track).
+    2. Only when `merged: false`: the worker moves the file into `/music` at `libraryPath` atomically (never
+       overwriting another file).
+    3. `complete`. The api checks the file (unless merged), sets the track `ready` (or applies the merge, see
+       `contracts/ids.md`) and the job `ready`.
+    A duplicate file never reaches `/music`; the api cleans the staging directory as usual.
 
     ## Idempotency
     Every call can be retried safely after a timeout: `heartbeat`, `progress` (last write wins, monotonic),
-    `registerTrack` (keyed by `jobId` + `libraryPath`), `complete` and `fail` (same lease returns the same
-    result), and the `PUT`s.
+    `registerTrack` (keyed by `jobId` + `libraryPath`), `complete` and `fail` (repeating the same call with the
+    same lease returns the stored result; the other call with that lease is `invalid_state_transition`), and the
+    `PUT`s.
 
     ## Paths
     All paths are relative to the volume roots (`/staging`, `/music`) and are checked by the path sanitizer on both
-    sides (`path_rejected`).
+    sides (`path_rejected`). Staging paths must lie inside the job's current `stagingDir`.
   license:
     name: GPL-3.0-or-later
     identifier: GPL-3.0-or-later
 servers:
-- url: http://api:8080
+- url: http://api:8044
   description: Internal Docker network only.
 security:
 - workerToken: []
@@ -55,7 +93,7 @@ paths:
       - jobs
       summary: Claim the next job with a lease
       description: |-
-        Before choosing, the api returns every job whose lease expired to `queued` (counting the attempt, error `lease_expired`, or `failed` when attempts are exhausted). It then picks the highest-priority `queued` job whose `notBefore` has passed, sets a new lease and moves it to `downloading`.
+        Before choosing, the api returns every job whose lease expired to `queued` (counting the attempt, error `lease_expired`), or to `failed` when attempts are exhausted (the track is marked `failed` too), or to `cancelled` when a cancel was requested. It then picks the highest-priority `queued` job whose `notBefore` has passed and takes it with a conditional update (`WHERE id = ? AND state = 'queued'`, checking the row count, so two api replicas never hand out the same job), sets a new lease, counts the attempt and moves it to `downloading`.
         Not idempotent by nature, but safe: a claim whose response is lost simply expires and the job goes back to the queue. Workers long-poll by calling again after `Retry-After` when they get 204.
       requestBody:
         required: true
@@ -84,7 +122,7 @@ paths:
                   attempt: 1
                   maxAttempts: 3
                   priority: 100
-                  stagingDir: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001
+                  stagingDir: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/1
                   hints:
                     title: Paper Moons (Live)
                     artist: The Paper Lanterns
@@ -118,8 +156,8 @@ paths:
       tags:
       - jobs
       summary: Extend the lease
-      description: 'Idempotent: extends the lease to now + `leaseSeconds`. Also tells the worker if the job was
-        cancelled.'
+      description: 'Idempotent: extends the lease to now + `leaseSeconds`. Also tells the worker if an admin asked
+        to cancel the job (`cancelRequested`, stored in `jobs.cancel_requested`).'
       parameters:
       - name: jobId
         in: path
@@ -163,8 +201,9 @@ paths:
       tags:
       - jobs
       summary: Report state and progress
-      description: Idempotent (last write wins, `progress` never decreases within a state). Extends the lease like
-        a heartbeat. The api uses `stagingPath` to stream the growing file (RF-05).
+      description: Idempotent (last write wins, `progress` and `bytesDownloaded` never decrease within an attempt).
+        Extends the lease like a heartbeat. Sent at least every 0.5 s while the file grows, and once with `finished`
+        true. The api streams the growing file from it (see "Streaming while downloading" above).
       parameters:
       - name: jobId
         in: path
@@ -183,9 +222,13 @@ paths:
               state: downloading
               progress: 0.42
               bytesDownloaded: 1810524
-              bytesTotal: 4310772
-              stagingPath: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/audio.webm
+              expectedSize: 4310772
+              partPath: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/1/Qx7Lm2pZ0aB.webm.part
+              finalPath: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/1/Qx7Lm2pZ0aB.webm
+              finished: false
+              formatId: '251'
               contentType: audio/webm
+              progressive: true
       responses:
         '200':
           description: OK.
@@ -214,10 +257,12 @@ paths:
       operationId: registerTrack
       tags:
       - library
-      summary: Register an archived file
+      summary: Register an archive file before it goes into the library
       description: |-
-        Called after the worker tagged the file and moved it atomically into `/music`. The api creates or reuses the artist and album (by MusicBrainz id, else YouTube id, else normalized name), sets the track `ready` and fills its file columns. If the recording is already in the library, the api merges: it points the alias at the existing track (`merged: true`).
-        Idempotent on (`jobId`, `libraryPath`): repeating it returns the same result. Another track already at `libraryPath` is `conflict` (409).
+        Called after the worker built and tagged the archive file in its staging directory (`stagingPath`), and **before** anything is written to `/music`.
+        - **Same recording already in the library** (same MusicBrainz recording id as a `ready` track): the api answers `merged: true` with that track's ids and records the decision on the job (`jobs.merge_into_track_id`). Nothing is reserved; the worker must **not** move the file into `/music`. The merge itself (alias, stars, playlist entries, history) is applied by `complete` (contracts/ids.md).
+        - **Otherwise**: the api creates or reuses the artist and album (by MusicBrainz id, else YouTube id, else normalized name), fills the pending track's metadata and file columns (status stays `pending`), and reserves `libraryPath` for this job (`jobs.library_path`, unique). Answer `merged: false`. The worker then moves the file there.
+        Idempotent on (`jobId`, `libraryPath`): repeating it returns the same result. Registering again with another `libraryPath` (a retry) replaces this job's reservation. A path that another track or job already holds, or a file that already exists there, is `conflict` (409). The reservation is released when the job goes back to `queued` or ends without `ready`.
       requestBody:
         required: true
         content:
@@ -228,6 +273,7 @@ paths:
               jobId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001
               leaseId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01aa01
               trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+              stagingPath: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/1/archive.opus
               libraryPath: The Paper Lanterns/Lanterns at Dusk/04 - Paper Moons (Live).opus
               file:
                 format: opus
@@ -306,8 +352,9 @@ paths:
       tags:
       - library
       summary: Report recomputed ReplayGain
-      description: After an album became complete, the worker rewrote the album gain/peak tags of each of its tracks.
-        Idempotent (PUT).
+      description: After an album became complete, the worker rewrote the album gain/peak tags of each of its tracks
+        (the files in `/music` atomically, through a temporary file and a rename; the current job's file while it is
+        still in staging, before the move). Idempotent (PUT).
       parameters:
       - name: trackId
         in: path
@@ -351,9 +398,11 @@ paths:
       tags:
       - jobs
       summary: Finish the job
-      description: 'Requires a prior successful `registerTrack` for this job (else `invalid_state_transition`).
-        Sets the job `ready`, releases the lease, and schedules staging cleanup once no listener is streaming. Idempotent:
-        repeating it with the same lease returns 200 and the same body.'
+      description: |-
+        Requires a prior successful `registerTrack` for this job (else `invalid_state_transition`).
+        - Not merged: the api checks that the file exists at the reserved `libraryPath` with the registered size (else `conflict`), sets the track `ready` (`path`, `archived_at`) and the job `ready`.
+        - Merged (`libraryPath: null`): the api applies the merge in one transaction (contracts/ids.md): the `yt:` alias points at the existing track, the pending track's stars, playlist entries and history move there, the pending track becomes `merged` with `merged_into`, and the job becomes `ready`. Nothing is deleted, so no job row or lease is ever cascaded away.
+        Then the api releases the lease and deletes the staging directories once no listener is streaming from them. Idempotent: repeating it with the same lease returns 200 and the stored body; a `fail` with that lease afterwards is `invalid_state_transition`.
       parameters:
       - name: jobId
         in: path
@@ -372,7 +421,7 @@ paths:
               trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
               libraryPath: The Paper Lanterns/Lanterns at Dusk/04 - Paper Moons (Live).opus
               staging:
-                path: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/audio.webm
+                path: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019001/1/Qx7Lm2pZ0aB.webm
                 sizeBytes: 4302118
                 sha256: null
       responses:
@@ -405,10 +454,11 @@ paths:
       tags:
       - jobs
       summary: Report a failure
-      description: Releases the lease. A retryable failure with attempts left goes back to `queued` with backoff
-        (`notBefore`). Otherwise the job ends `failed` (or `cancelled` for `cancelled`) and the track is marked
-        `failed`. Listeners of a streaming download get their transfer cut (contracts/errors.md). Idempotent with
-        the same lease.
+      description: Releases the lease and this job's `libraryPath` reservation or merge decision. A retryable failure
+        with attempts left goes back to `queued` with backoff (`notBefore`). Otherwise the job ends `failed` (or
+        `cancelled` for `cancelled`) and the track is marked `failed`. Listeners of a streaming download get their
+        transfer cut (contracts/errors.md). Idempotent. Repeating it with the same lease returns the stored body; a
+        `complete` with that lease afterwards is `invalid_state_transition`.
       parameters:
       - name: jobId
         in: path
@@ -455,8 +505,11 @@ paths:
       tags:
       - workers
       summary: Report worker status
-      description: 'Sent on start and every few minutes: versions and the last canary result (admin panel, RF-10).
-        The response carries pending admin commands. Idempotent (PUT).'
+      description: 'Sent on start and every few minutes: versions and the last canary result (stored in
+        `worker_status` and `canary_runs`, shown in the admin panel, RF-10). The response carries the pending admin
+        commands (`worker_commands`). Idempotent (PUT): a repeated canary result (same `at`) is stored once, and a
+        command is delivered once, so a worker that lost the response gets it again only if it was not marked
+        delivered.'
       parameters:
       - name: workerId
         in: path
@@ -679,7 +732,8 @@ components:
           - string
           - 'null'
           format: uri
-          description: YouTube image host only (contracts/ids.md).
+          description: Stored with the pending track (`tracks.yt_thumbnail_url`) but **never fetched** by the api or
+            the worker until SPEC §11's pending approval of the YouTube image hosts is granted (contracts/ids.md).
     Lease:
       type: object
       required:
@@ -733,8 +787,8 @@ components:
           type: integer
         stagingDir:
           $ref: '#/components/schemas/RelativePath'
-          description: Directory under `/staging` reserved for this job (`<jobId>`). The worker writes only there
-            and empties it before a retry.
+          description: Directory under `/staging` reserved for this attempt (`<jobId>/<attempt>`). The worker writes
+            only there, and never into another attempt's directory.
         hints:
           $ref: '#/components/schemas/JobHints'
     Claimed:
@@ -773,13 +827,25 @@ components:
           format: date-time
         cancelRequested:
           type: boolean
-          description: An admin cancelled the job. Stop, clean the staging dir, then call `fail` with `cancelled`.
+          description: An admin asked to cancel the job (`jobs.cancel_requested`). Stop, then call `fail` with
+            `cancelled`.
     Progress:
       type: object
+      description: State of the current attempt's download (see "Streaming while downloading"). Stored on the job
+        row (`jobs.bytes_downloaded`, `expected_size`, `part_path`, `final_path`, `finished`, `progressive`,
+        `format_id`, `content_type`).
       required:
       - leaseId
       - state
       - progress
+      - bytesDownloaded
+      - expectedSize
+      - partPath
+      - finalPath
+      - finished
+      - formatId
+      - contentType
+      - progressive
       properties:
         leaseId:
           type: string
@@ -795,26 +861,46 @@ components:
           minimum: 0
           maximum: 1
         bytesDownloaded:
+          type: integer
+          minimum: 0
+          description: Bytes written so far to `partPath` (all of them once `finished`). Never decreases within an
+            attempt.
+        expectedSize:
           type:
           - integer
           - 'null'
-          minimum: 0
-        bytesTotal:
-          type:
-          - integer
-          - 'null'
-          minimum: 0
-        stagingPath:
-          oneOf:
-          - $ref: '#/components/schemas/RelativePath'
-          - type: 'null'
-          description: 'The growing audio file under `/staging` (inside `stagingDir`). Required from the first `downloading`
-            report on: the api streams it to listeners (RF-05).'
+          minimum: 1
+          description: '**Exact** final size of the downloaded file (the `filesize` the downloader reports), as soon
+            as it is known. `null` until then, and for good when only an estimate exists: never an estimate. Once
+            set it must not change within the attempt.'
+        partPath:
+          $ref: '#/components/schemas/RelativePath'
+          description: The growing file (inside `stagingDir`), written sequentially and never rewritten.
+        finalPath:
+          $ref: '#/components/schemas/RelativePath'
+          description: Where the same file is once the download is complete (renamed from `partPath`, same inode,
+            inside `stagingDir`). Known from the first report.
+        finished:
+          type: boolean
+          description: The download is complete and the file is at `finalPath` with its final size. From then on
+            the api opens `finalPath`. If the size differs from `expectedSize`, the api aborts the open streams.
+        formatId:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Downloaded format (the downloader's format id, e.g. `251`, `140`). A retry with another
+            `formatId` (or another `expectedSize`) aborts the open streams of the job.
         contentType:
-          type:
-          - string
-          - 'null'
-          description: MIME type of the staging file (e.g. `audio/webm`).
+          type: string
+          description: MIME type of the file (e.g. `audio/webm`, `audio/mp4`).
+          examples:
+          - audio/webm
+          - audio/mp4
+        progressive:
+          type: boolean
+          description: 'True when the file can be played while it grows (its index is at the front: WebM with Cues
+            at the front, fragmented MP4, Ogg). False otherwise (e.g. MP4 with the `moov` at the end): the api then
+            serves it only once `finished`.'
     FileInfo:
       type: object
       required:
@@ -984,13 +1070,16 @@ components:
           oneOf:
           - $ref: '#/components/schemas/RelativePath'
           - type: 'null'
-          description: Album cover under `/music` (e.g. `<Artist>/<Album>/cover.jpg`).
+          description: Album cover under `/music` (e.g. `<Artist>/<Album>/cover.jpg`), written by the worker next to
+            the audio file when it moves it (an existing cover is kept). From Cover Art Archive only until SPEC
+            §11 approves the YouTube image hosts.
     RegisterTrack:
       type: object
       required:
       - jobId
       - leaseId
       - trackId
+      - stagingPath
       - libraryPath
       - file
       - metadata
@@ -1001,9 +1090,14 @@ components:
           type: string
         trackId:
           type: string
+          description: The job's pending track.
+        stagingPath:
+          $ref: '#/components/schemas/RelativePath'
+          description: The finished archive file (tagged, ReplayGain written) inside the job's `stagingDir`.
         libraryPath:
           $ref: '#/components/schemas/RelativePath'
-          description: Final file under `/music`, already moved atomically there by the worker.
+          description: Where the worker wants to put the file under `/music`. Must not exist yet. Reserved for
+            this job when register answers `merged` false.
         file:
           $ref: '#/components/schemas/FileInfo'
         metadata:
@@ -1029,22 +1123,27 @@ components:
       properties:
         trackId:
           type: string
-          description: Final library id. Differs from the request when the api merged the file into an existing
-            track (same recording).
+          description: Final library id. Differs from the request when the recording is already in the library
+            (`merged` true).
         albumId:
           type: string
         artistId:
           type: string
         merged:
           type: boolean
+          description: 'True: the recording is already in the library as `trackId`. The worker must not move its
+            file into `/music`, and calls `complete` with `libraryPath: null`.'
         album:
-          type: object
+          type:
+          - object
+          - 'null'
           required:
           - totalTracks
           - tracks
           - complete
-          description: Album state after registration. When `complete` becomes true, the worker computes album ReplayGain
-            over `tracks` (still holding this lease), rewrites their tags and reports them with `PUT /internal/v1/library/tracks/{trackId}/replaygain`.
+          description: Album state counting this track at its reserved path (`null` when merged). When `complete`
+            is true, the worker computes album ReplayGain over `tracks` (still holding this lease; this track's
+            file is still in staging), rewrites their tags and reports them with `PUT /internal/v1/library/tracks/{trackId}/replaygain`.
           properties:
             totalTracks:
               type:
@@ -1097,14 +1196,18 @@ components:
           type: string
           description: As returned by register.
         libraryPath:
-          $ref: '#/components/schemas/RelativePath'
+          oneOf:
+          - $ref: '#/components/schemas/RelativePath'
+          - type: 'null'
+          description: 'The reserved path, where the worker moved the file. `null` when register answered
+            `merged: true`.'
         staging:
           type: object
           required:
           - path
           - sizeBytes
-          description: The streamed staging file. It stays in place until the api has closed the last listener's
-            stream. Then the api deletes it (it owns staging cleanup).
+          description: The streamed download file (`finalPath`). It stays in place until the api has closed the
+            last listener's stream. Then the api deletes the staging directories (it owns staging cleanup).
           properties:
             path:
               $ref: '#/components/schemas/RelativePath'
@@ -1162,6 +1265,7 @@ components:
           - rate_limited_upstream
           - tagging_failed
           - storage_error
+          - invalid_video_id
           - cancelled
           - internal_error
         retryable:
@@ -1212,4 +1316,5 @@ components:
             enum:
             - update_ytdlp
             - run_canary
-          description: Requested from the admin panel. Each command is delivered once.
+          description: Requested from the admin panel (`worker_commands`). Each command is delivered once, to the
+            worker it names or, if none, to the first worker that reports after the request.

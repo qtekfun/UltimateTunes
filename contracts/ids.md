@@ -42,37 +42,49 @@ Why v7 and not v4:
 
 ## Materialization and aliasing
 
-A `yt:` id becomes a library track in two steps:
+A `yt:` id becomes a library track in two steps, or is merged into one that already exists:
 
-1. **Materialization.** On the first action that means "keep this" (`stream`, `download`, `POST /ut/v1/tracks/{id}/request`, `star`, adding to a playlist, a matched import item, a `scrobble`), the api creates a `tracks` row with a new UUIDv7, `status = pending`, the YouTube Music metadata, and `yt_video_id`. It also creates the alias `track_aliases('yt:<videoId>' → <uuid>)` and, unless one already exists, the download job (deduplicated per video id: one job row per track). All of this happens in one transaction, so two concurrent requests end up with the same track and the same job.
-2. **Archive.** When the worker registers the archived file (internal API), the track gets `status = ready`, `artist_id`, `album_id`, `path` and the file columns. If MusicBrainz shows that the video is the same recording as a track already in the library, the api keeps the existing track. It points the new alias at it and deletes the pending duplicate, after moving its stars, playlist entries and history to the existing track.
+1. **Materialization.** On the first action that means "keep this" (`stream`, `download`, `POST /ut/v1/tracks/{id}/request`, `star`, adding to a playlist, a matched import item, a `scrobble`), the api creates a `tracks` row with a new UUIDv7, `status = pending`, the YouTube Music metadata (title, artist, album, duration, album browse id, channel id, thumbnail URL), and `yt_video_id`. It also creates the alias `track_aliases('yt:<videoId>' → <uuid>)` and, unless one already exists, the download job (deduplicated per video id: one job row per track). All of this happens in one transaction, so two concurrent requests end up with the same track and the same job.
+2. **Archive** (internal worker API: register, move, complete). The worker registers the tagged file while it is still in staging. The api fills the pending track's `artist_id`, `album_id` and file columns and reserves the library path on the job. The worker moves the file into `/music`, and `complete` sets `path` and `status = ready`.
+3. **Duplicate recording.** If register finds that the video is the same recording (same MusicBrainz recording id) as a `ready` track already in the library, it answers `merged: true` with the existing track, and the file never goes into `/music`. `complete` then applies the merge in **one transaction**:
+   - the alias `yt:<videoId>` is pointed at the existing track (`track_aliases.track_id`);
+   - the pending track's stars, playlist entries, play history, play statistics and import items move to the existing track (a user who has both keeps one star and the summed statistics);
+   - the pending track becomes `status = merged` with `merged_into` = the existing track. Its row is **kept**: its job row still references it, so no job (leased or not) is ever deleted by a cascade, and `UNIQUE (kind, track_id)` on `jobs` stays valid;
+   - the job becomes `ready`.
+   The decision is recorded on the job at register and applied only at complete, so a job that fails after register changes nothing. Repeating `complete` with the same lease returns the stored result and does nothing else. `merged_into` always points at a track that is not itself merged.
 
 Saving a play queue (`savePlayQueue`) and viewing search results **never** materialize anything. The queue stores raw item ids and resolves them when read.
 
 ### Resolution rules (server)
 - `yt:<v>` → `track_aliases` hit → library track (any status). Miss → external item, answered from the catalog (`MusicCatalog`, cached).
+- A library UUID of a `merged` track resolves to its `merged_into` track (one hop). Clients that kept the old UUID keep working.
 - Responses always prefer the library id once the track is `ready`. `search3`, radio and `getAlbum(ytalbum:…)` replace a `yt:` result with the library item, so the same song never appears twice in a list. While the track is `pending`, responses keep the `yt:` id (`/ut/v1` adds `isExternal: true` and `libraryState: pending`).
 - Aliases are kept forever. A `yt:` id that was ever returned keeps working, and it plays the archived file once it is ready.
 
 ### Client rules (Android and third-party clients)
 - **Treat every id as an opaque string.** Never parse it, except that the Android app may check the `yt:` prefix to show "not in library yet" when `isExternal` is missing (third-party responses).
 - After `GET /ut/v1/tracks/{id}/status` returns `state: ready` with a `trackId`, the app **should** replace the `yt:` id with `trackId` in its own database (favourites, offline downloads, queue). Keeping the old id still works.
-- **Cache keys.** The bytes streamed while downloading (`yt:` id, untagged, unknown length) are **not** the archived file (tagged, with ReplayGain, a different size). The Media3 cache key is the id that was requested. The client never mixes byte ranges of a `yt:` entry with the library id. When it switches to the library id, it starts a new cache entry, and the old one simply ages out of the LRU.
+- **Cache keys.** The bytes streamed while downloading (`yt:` id, the raw download, untagged) are **not** the archived file (tagged, with ReplayGain, a different size). The Media3 cache key is the id that was requested. The client never mixes byte ranges of a `yt:` entry with the library id. When it switches to the library id, it starts a new cache entry, and the old one simply ages out of the LRU.
 
 ## Cover art ids
 
-`coverArt` values are opaque too. They are accepted by `getCoverArt` (with `size`) and are never file paths.
+`coverArt` values are opaque too. They are accepted by `getCoverArt` and are never file paths. In v1 `getCoverArt` may ignore `size` and return the stored image as is (no image library is approved yet).
 
 | Form | Image |
 | --- | --- |
 | `al-<albumUuid>` | Album cover (`cover.jpg` next to the album in `/music`). Library songs use their album's id. |
 | `ar-<artistUuid>` | Artist image |
 | `pl-<playlistUuid>` | Playlist mosaic or first track's cover |
-| `yt:<videoId>` | Thumbnail of the video (pending or external songs) |
-| `ytalbum:<browseId>` | External album thumbnail |
-| `ytartist:<channelId>` | External artist thumbnail |
+| `yt:<videoId>` | Thumbnail of the video (pending or external songs). **Error 70 in v1 for now**, see below |
+| `ytalbum:<browseId>` | External album thumbnail. **Error 70 for now** |
+| `ytartist:<channelId>` | External artist thumbnail. **Error 70 for now** |
 
-External images are fetched by the api only from YouTube image hosts (`i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`) and cached on disk. The worker takes covers from Cover Art Archive or those hosts. No other host is contacted (SSRF rule, SECURITY.md).
+**YouTube image hosts are not approved yet.** SPEC §11 lists `i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com` and `yt3.googleusercontent.com` as *pending the author's approval*. Until that approval is recorded there:
+- `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) answers error `70` (no image). Clients show their placeholder.
+- Thumbnail URLs from YouTube Music (`thumbnailUrl` in job hints, `tracks.yt_thumbnail_url`) may be **stored**, but neither the api nor the worker ever fetches them.
+- The worker takes album covers from Cover Art Archive only.
+
+Once approved, the api fetches external images only from those hosts and caches them on disk, and the worker may use them as a cover fallback. No other host is ever contacted (SSRF rule, SECURITY.md).
 
 ## API key format
 
