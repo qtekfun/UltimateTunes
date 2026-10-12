@@ -48,7 +48,7 @@ class ExportWorker(context: Context, params: WorkerParameters) :
         createChannel()
         showProgress(0, 0)
         val report = inputData.getString(KEY_REQUEST)?.let { path ->
-            withContext(Dispatchers.IO) { manager.run(File(path), ::showProgress) }
+            withContext(Dispatchers.IO) { manager.run(File(path), { isStopped }, ::showProgress) }
         }
         report?.let { notify(SUMMARY_ID, summary(it)) }
         return if (report == null) Result.failure() else Result.success()

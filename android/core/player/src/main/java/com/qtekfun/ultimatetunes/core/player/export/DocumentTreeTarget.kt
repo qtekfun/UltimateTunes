@@ -52,7 +52,10 @@ interface DocumentTree {
  *
  * It deletes only its own temporary files: the one of a write that fails, and, the first time an
  * export (one instance) uses a folder, the `.ut-export-<uuid>.part` files an interrupted export
- * left there. Exports run one at a time (ExportManager), so no other export is writing them.
+ * left there. Exports are queued one after another (ExportManager) and a stopped one ends between
+ * two songs (Exporter), but a stopped worker's thread may still be finishing one song when the
+ * next attempt sweeps: that song's temporary file may then be deleted under it, its write or
+ * rename fails, and it is reported as not written. Nothing is left behind either way.
  */
 class DocumentTreeTarget(private val tree: DocumentTree) : ExportTarget {
     private val folders = HashMap<List<String>, String>()
