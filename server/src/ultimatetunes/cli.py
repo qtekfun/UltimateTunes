@@ -38,12 +38,19 @@ def run_api(settings: Settings) -> int:
         "proxy_headers": False,
         "server_header": False,
         "timeout_graceful_shutdown": settings.shutdown_timeout_s,
+        # Slow and idle connections (audit M2); no header timeout exists in uvicorn, so a
+        # public deployment keeps Caddy in front (deploy/README.md).
+        "http": "h11",
+        "timeout_keep_alive": settings.keepalive_timeout_s,
+        "backlog": settings.backlog,
+        "h11_max_incomplete_event_size": settings.max_header_bytes,
     }
     client = uvicorn.Config(
         listeners.Listener(app, internal=False),
         host=settings.host,
         port=settings.port,
         lifespan="on",
+        limit_concurrency=settings.limit_concurrency,
         **common,
     )
     internal = uvicorn.Config(
@@ -51,6 +58,7 @@ def run_api(settings: Settings) -> int:
         host=settings.internal_bind,
         port=settings.internal_port,
         lifespan="off",
+        limit_concurrency=settings.internal_limit_concurrency,
         **common,
     )
     asyncio.run(listeners.serve(client, internal))

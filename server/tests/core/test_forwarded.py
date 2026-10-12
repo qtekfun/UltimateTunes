@@ -9,8 +9,8 @@ from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from ultimatetunes.core.forwarded import (
-    UNKNOWN_CLIENT,
     TRUSTED_NETWORKS_STATE,
+    UNKNOWN_CLIENT,
     ClientAddress,
     client_from_chain,
     from_trusted_network,

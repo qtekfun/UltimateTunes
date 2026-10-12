@@ -93,9 +93,7 @@ def test_strangers_cannot_lock_out_logins_from_trusted_networks(
     with pytest.raises(RateLimited):
         service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.3")
     assert service.verify_password("alice", ADMIN_PASSWORD, IP, trusted=True).id == admin.user_id
-    created = service.create_key_with_password(
-        "alice", ADMIN_PASSWORD, "Phone", IP, trusted=True
-    )
+    created = service.create_key_with_password("alice", ADMIN_PASSWORD, "Phone", IP, trusted=True)
     assert created.key.user_id == admin.user_id
     # The outside counter is still locked: a success inside does not reset it.
     with pytest.raises(RateLimited):

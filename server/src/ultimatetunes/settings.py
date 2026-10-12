@@ -19,6 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ultimatetunes.core.netaddr import IpNetwork, parse_networks
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+MIN_WORKER_TOKEN_LENGTH = 32
 
 # Docker secrets; pydantic-settings warns when the directory is missing (local runs, tests).
 _SECRETS_DIR = Path("/run/secrets")
@@ -74,11 +75,34 @@ class Settings(BaseSettings):
     # Caps of the shared `TtlCache` (`cache_entries`): oldest entries go first past either.
     cache_max_entries: int = Field(default=200_000, ge=100)
     cache_max_bytes: int = Field(default=256 * 1024 * 1024, ge=1024 * 1024)
+    # Connection limits of the listeners (audit M2). Past `limit_concurrency` open connections
+    # or running requests uvicorn answers 503; streams hold a connection while they play.
+    # uvicorn has no request-header timeout: a public deployment puts Caddy in front
+    # (`read_header`, deploy/README.md), never the api directly.
+    limit_concurrency: int = Field(default=128, ge=8, le=10_000)
+    internal_limit_concurrency: int = Field(default=32, ge=4, le=1_000)
+    # Idle keep-alive connections are closed after this many seconds.
+    keepalive_timeout_s: int = Field(default=5, ge=1, le=120)
+    # Pending connections the kernel queues before refusing.
+    backlog: int = Field(default=256, ge=16, le=65_535)
+    # Largest request line + headers (h11), bytes.
+    max_header_bytes: int = Field(default=16 * 1024, ge=4 * 1024, le=256 * 1024)
     log_level: LogLevel = "INFO"
     shutdown_timeout_s: int = 10
+    # Shared by the api and the worker (Docker secret `ut_worker_token`); at least 32
+    # characters (`openssl rand -hex 32`). Empty means unset: the internal API refuses everyone.
     worker_token: SecretStr | None = None
     # Test stack only: the fake catalog and fake downloader instead of YouTube Music.
     fake_youtube: bool = False
+
+    @field_validator("worker_token")
+    @classmethod
+    def _long_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            return None
+        if len(value.get_secret_value().strip()) < MIN_WORKER_TOKEN_LENGTH:
+            raise ValueError(f"the worker token needs {MIN_WORKER_TOKEN_LENGTH}+ characters")
+        return value
 
     @field_validator("trusted_proxies", "worker_networks")
     @classmethod

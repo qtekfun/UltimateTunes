@@ -455,7 +455,7 @@ class AuthService:
         log.info("api key %s created for user %s", key.id, user_id)
         return CreatedKey(key, secret)
 
-    def create_key_with_password(
+    def create_key_with_password(  # noqa: PLR0913 - the fields of the request and its origin
         self,
         username: str,
         password: str,
