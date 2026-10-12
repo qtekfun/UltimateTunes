@@ -35,7 +35,7 @@ Third-party OpenSubsonic clients ─┘      │  ▲            /music (library
 api ──▶ YouTube Music (ytmusicapi), LRCLIB        worker ──▶ YouTube Music (yt-dlp), MusicBrainz, Cover Art Archive
 ```
 
-- **api**: OpenSubsonic + `/ut/v1` + admin panel `/admin`; owns the database; serves files; the only service clients reach.
+- **api**: OpenSubsonic + `/ut/v1` + web player (`/`, `/web`) + admin panel `/admin` on the client port (8044); the internal worker API only on a second, never-published port (8045); owns the database; serves files; the only service clients reach. Containers, networks and every connection: `docs/architecture.md`.
 - **worker**: claims download jobs from the api, downloads to `/staging`, tags, computes ReplayGain and moves the file to `/music`, reporting progress. **No database access**, no inbound port.
 - Same image, two commands. Interfaces `TtlCache`, `JobQueue`, `RateLimiter`, `InFlight` with in-process/SQLite implementations; **Redis is not used in v1** (decision 2026-10-12, §11).
 
@@ -128,16 +128,22 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - First sound of an **external** track: target ≤ 5 s on the home connection (measured in T03 and T21). Library track: ≤ 1 s.
 - `search3` with external results: ≤ 2 s p95 (TTL cache for repeated queries).
 - Server idle footprint: ≤ 200 MB RAM for api + worker.
+- *Result (T21, #57, 2026-10-12; method and machine in `docs/measurements.md`):*
+  - **Idle RAM**, api + worker: 92 MiB just started, 143 MiB after real searches, 158 MiB after browsing a 50,000-track library (mostly reclaimable SQLite page cache). Met.
+  - **`search3` with external results** (real YouTube Music, 30 searches): cold 722 ms p50 / 1,039 ms p95; TTL-cache hits 195 / 256 ms. Met.
+  - **First sound, library track**: server time to first audio byte 12 ms p50 / 18 ms p95. Met on the server side.
+  - **First sound, external track**: 3.0 s p50 / 3.4 s p95 server time to first audio byte, with the download modelled at T03c's 1.8 s to first byte and 1 MB/s. About 1 s of it was the idle worker's 2 s claim poll, removed by the long-poll claim (#59: enqueue → claim 1.3 ms p50). A manual first play on the Pixel 8 against a real local server sounded in about 4 s (#70); a timed phone measurement is still pending.
+  - **50,000-track library**: first scan 7 min 44 s, rescan 4.3 s, 43.7 MB database. As shipped `getArtists` took ~18–20 s because SQLite had no planner statistics; after `ANALYZE` every browse endpoint was ≤ 162 ms p95 (`getArtists` 43 / 46 ms). Fixed for good by #58 (`PRAGMA optimize` in the driver; 8.3 s → 9 ms for the artist query). Met after #58.
 - Approved server dependencies: fastapi, uvicorn, pydantic, pydantic-settings, httpx, ytmusicapi, yt-dlp, mutagen, argon2-cffi, jinja2, python-multipart, itsdangerous; phase 5 only: psycopg (PostgreSQL), redis; dev: pytest, pytest-cov, anyio, respx, schemathesis, openapi-spec-validator, ruff, mypy, bandit, pip-audit. System: ffmpeg, the JS runtime yt-dlp needs: **Deno** (MIT, pinned by version and SHA-256; T03c), and `gpgv` (runtime) / `gnupg` (build stage only) to verify yt-dlp releases (approved 2026-10-12).
 - Approved Android dependencies: the UltimateCalendar set (Compose, Material 3, Hilt, Room, DataStore, WorkManager, kotlinx-serialization, Coroutines) plus Media3 (exoplayer, session, datasource-okhttp, ui-compose if needed), OkHttp, Coil, androidx.palette. Anything else: ask.
 
 ## 7. Security
 - Threat model and checklist in `SECURITY.md` (T22 completes it). Highlights: API keys hashed and revocable; Argon2id; rate limit per IP and per key with temporary lockout; audit log; strict input validation (video ids, URLs allowlist, path sanitizer); subprocesses with argument lists; worker isolated from the DB and from inbound traffic; non-root, read-only containers; secrets from env/Docker secrets; logs redact secrets.
-- Transport: HTTPS everywhere outside localhost. PoC through `tailscale serve`. Public phase: reverse proxy (Caddy example) with TLS, HSTS, request limits; `/admin` stays LAN/Tailscale-only unless the admin opts in. The web player (`/`, `/web`) signs in with a password and a signed session cookie, never with an API key in the browser (§11, web player).
+- Transport: HTTPS everywhere outside localhost. PoC through `tailscale serve`. Public phase: reverse proxy with TLS, HSTS, request limits (examples in `deploy/`: Caddy, Traefik, Traefik behind Cloudflare Tunnel with Authelia); `/admin` stays LAN/Tailscale-only unless the admin opts in. The internal worker API listens on its own port (8045), never published (§11, T22). The web player (`/`, `/web`) signs in with a password and a signed session cookie, never with an API key in the browser (§11, web player).
 - Android: API key stored encrypted with the Android Keystore; cleartext traffic forbidden in release (debug allows the emulator host only); no secrets in logs.
 
 ## 8. Quality and CI
-(GitHub Actions are disabled and publishing is paused — the same gates run locally with `tools/ci-local.sh`, and releases are local; see §11, coordinator decisions in Wave 1.)
+(GitHub Actions CI is on again since the repo went public; Release and Nightly stay disabled and publishing is paused. The same gates run locally with `tools/ci-local.sh`, and releases are local; see §11, coordinator decisions in Wave 1.)
 - CI on every PR: server (ruff, mypy, pytest with coverage, bandit, pip-audit), contracts (OpenAPI validation, migrations apply, schemathesis against the app), Android (`./gradlew check assembleDebug`), Docker (build, Trivy scan, `compose.test.yaml` smoke), gitleaks, store texts, PR title.
 - Nightly: pip-audit, Android instrumented tests on an emulator against the test compose stack. The canary (real ytmusicapi search, radio, album and playlist read + yt-dlp download of one fixed Creative Commons track) runs **scheduled on the server** (api for ytmusicapi, worker for the download; reported in the admin panel); on GitHub it is manual only, because runner IPs get YouTube's bot wall (T03c).
 - Release on tag: signed APK + multi-arch (amd64, arm64) image on GHCR, GitHub Release with notes, APK SHA-256. Updates on the phone through Obtainium.
@@ -361,3 +367,60 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
    - The web player never creates API keys (a key is shown once and must not land in a page); it lists and revokes the user's own.
 7. **Same rules as every client**: every page and action calls the OpenSubsonic handler, or the `/ut/v1` imports/tracks handler, in-process as the signed-in user. Ownership, stars, "keep", the per-user search bucket, the catalog budget (`set_caller`), the download gates and the listener caps all apply. Each user also gets the request rate of one API key (`web:user:<id>`). Playlist "move" rewrites the playlist (`createPlaylist` with `playlistId`), since OpenSubsonic has no move.
 8. **Admin panel**: `AdminGate` covers `/admin` only. The proxies route `/` and `/web` through the client routers (`deploy/`); Authelia in front of the web player is optional.
+
+### Taken in Wave 3 — T20 end-to-end (#52, 2026-10-12)
+- The e2e suite runs on a fresh stack with its own Compose project (`ut-e2e`), image tag and port (`tools/e2e/run.sh`, overrides in `tools/e2e/compose.e2e.yaml`); `server/compose.test.yaml` is untouched. The server half runs in the manual/labelled `e2e` workflow; the device half (`adb reverse`, opt-in instrumentation arguments) is local only.
+- The fake downloader can be slowed for it (`UT_FAKE_DOWNLOAD_CHUNKS`/`UT_FAKE_DOWNLOAD_DELAY_S`, defaults unchanged). The e2e pytest runs without `--cov` (the code under test runs in the containers).
+
+### Taken in Wave 3 — T21 measurements (#57, 2026-10-12)
+- An external first sound is measured as server time to first audio byte plus the client, with the download modelled at T03c's 1.8 s to first byte and 1 MB/s, until real downloads are allowed. Results in §6 and `docs/measurements.md`; the two regressions found became #54 and #55 (fixed by #58 and #59).
+
+### Taken in Wave 3 — T22 hardening and public access (#56, 2026-10-12)
+- **Two listeners, one app**: clients on 8044; 8045 (`UT_INTERNAL_PORT`, never published) serves only `/internal/v1` and `/healthz`; 8044 serves clients and `/healthz` and answers 404 for `/internal/*`. The worker's default `UT_API_URL` is `http://api:8045`. `UT_INTERNAL_HOST` can bind 8045 to the api's address on the internal network only (the deployment examples do).
+- **Trusted proxies**: `X-Forwarded-For` is read (from the right) only from `UT_TRUSTED_PROXIES`, default empty. A request with forwarding headers from an untrusted peer, and any Tailscale Funnel request, is refused by `/admin`. The resolved address feeds the admin allowlist, `/readyz`, per-IP limits and lockout, and the audit log. `tailscale serve` adds `X-Forwarded-For`, so the panel needs `UT_TRUSTED_PROXIES` set to the Docker gateway behind it (`deploy/README.md`).
+- `/readyz` returns its `checks` detail only to loopback and the admin allowlist, never through an untrusted proxy.
+- Admin logout bumps a per-user session epoch (`admin.session_epoch.<user id>` in `settings`), so copied cookies stop working.
+- The api re-hashes the staging file on `registerTrack` and refuses a mismatch.
+- Per-user external-search bucket: `UT_SEARCH_USER_RATE_PER_S` 0.2, `UT_SEARCH_USER_BURST` 20; past it the answer is library-only. Api housekeeping every `UT_HOUSEKEEPING_INTERVAL_S` (600) purges expired cache entries and idle rate-limit buckets and trims the cache to `UT_CACHE_MAX_ENTRIES` (200,000) / `UT_CACHE_MAX_BYTES` (256 MiB), oldest first.
+- Api-wide body cap `UT_MAX_BODY_BYTES` (4 MiB, problem+json 413); `nosniff` on every answer. `httpx`/`httpcore` log at WARNING or above (outbound URLs can carry secrets).
+- ZAP baseline (`tools/zap-baseline.sh`, image pinned by digest; manual `zap.yml`) against the test stack: 0 FAIL, 0 WARN; ignored rules only with a written reason.
+
+### Taken in Wave 3 — T23 identity and store assets (#53, 2026-10-12)
+- Our own eighth-note icon (GPL) is the launcher icon (adaptive + monochrome), in-app logo and artwork placeholder. Store screenshots come from `ScreenshotsTest` against the debug demo server (invented music), opt-in (`-e screenshots true`), via `fastlane/screenshots.sh`.
+- The store listing and README do not name "Apple Music" (trademark). The demo audio is FLAC with each song's real length, so demo songs can be exported.
+- Export reuses an existing folder whatever its case (an exact match wins), and the first export into a folder deletes our stale `.ut-export-<uuid>.part` files there. A stopped export ends between two songs and is resumed later.
+
+### Taken in Wave 3 — database statistics (#58, 2026-10-12)
+- The SQLite driver keeps planner statistics fresh with `PRAGMA optimize` (PostgreSQL: `ANALYZE`): `migrate` ends with it, and the api's writer refreshes on first use, every 1000 write transactions and on close (which covers `scan-library` and every CLI). Stale readers are replaced by new connections after a refresh. A failed refresh is logged, never fails a request.
+
+### Taken in Wave 3 — long-poll job claims (#59, 2026-10-12)
+- Idle workers long-poll the claim (`ClaimRequest.waitSeconds`, 0–30; worker `UT_CLAIM_WAIT_S` 8, below Docker's 10 s stop grace). The api holds an empty claim up to `UT_CLAIM_MAX_WAIT_S` (25; 0 turns it off), woken by an in-process `JobSignal` and re-checking the database every `UT_CLAIM_POLL_S` (1), which keeps it correct with several replicas; then 204 with `Retry-After: 0`.
+- Accepted as a coordinator integration exception to the frozen internal worker contract (backward compatible). Known limit: held claims are not capped (internal, token-protected, one per worker process).
+
+### Taken in Wave 3 — exposure hardening (#61, 2026-10-12)
+- The per-username password lockout is split by origin: `auth:user:<name>` for the admin networks (allowlist minus the worker's networks, not through an untrusted proxy or Funnel; `core.forwarded.from_trusted_network`, also used by `AdminGate`) and `auth:user-out:<name>` for everything else. Outside failures never lock trusted logins.
+- uvicorn limits: `UT_LIMIT_CONCURRENCY` 128, `UT_INTERNAL_LIMIT_CONCURRENCY` 32, `UT_KEEPALIVE_TIMEOUT_S` 5, `UT_BACKLOG` 256, `UT_MAX_HEADER_BYTES` 16 KiB, h11. uvicorn has no request-header timeout, so public exposure always has a reverse proxy in front. `compose.yaml` sets memory, CPU and file limits.
+- The worker's `egress` network is pinned (`UT_EGRESS_SUBNET`, default 10.213.45.0/24, bridge `ut-egress`) and listed in `UT_WORKER_NETWORKS`; host firewall rules for it are in `deploy/README.md`.
+- The Caddy `/admin` rule uses explicit LAN and tailnet ranges, never `private_ranges` or loopback; the proxy examples do not route `/readyz` or `/internal`. `/readyz` caches its result for 5 s per process.
+- The worker token has at least 32 characters. The bootstrap password may come from the `ut_bootstrap_admin_password` secret, and a warning is logged while it lingers. New SQLite files are created 0600 (directory 0700).
+- Notification targets are resolved right before each send; loopback, link-local, unspecified and multicast addresses are refused (LAN allowed).
+
+### Taken in Wave 3 — download limits, catalog budget and auth brakes (#63, #65, 2026-10-12)
+- Download limits apply to every requester, admins included (requests without a user skip only the per-user quotas): `UT_MAX_TRACK_DURATION_S` 1800 (refused before anything is materialized; hidden from radios unless archived; unknown durations left to yt-dlp's strict `duration<=N` filter, which also refuses live streams), `UT_MAX_DOWNLOAD_BYTES` 200 MiB per file, `UT_MAX_QUEUED_JOBS_PER_USER` 200, `UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER` 5 GiB (rolling 24 h, charged per downloaded byte to the job's requester at that moment, migration 0700), `UT_MIN_FREE_BYTES` 2 GiB on either store (enqueue refused, claims paused, resumed above 1.1×, shown in the `/readyz` detail and notified). At most 50 downloads per keep request. Refusals map to existing errors (`InvalidParameter`, `RateLimited` + `Retry-After`, `PayloadTooLarge`); import runs pause on them without failing items.
+- A queued job whose requester is over the daily allowance moves to the next requester who has allowance and is under the queued-jobs cap (#65).
+- Per-user catalog budget `catalog:user:<id>` (`UT_CATALOG_USER_RATE_PER_S` 0.5, `UT_CATALOG_USER_BURST` 60) on cache misses and uncached cover images; searches keep their own bucket; imports are not charged to it.
+- Auth: IPv6 counted per /64; `UT_AUTH_ARGON2_CONCURRENCY` 2 concurrent Argon2 checks per process (wait `UT_AUTH_ARGON2_WAIT_S` 2 s, then 429); global budget `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN` 100 → `UT_AUTH_GLOBAL_LOCKOUT_S` 60 lock of outside password checks and unknown keys; valid keys and trusted-network password checks are never refused by it.
+
+### Taken by the coordinator — architecture and deployment examples (#67, #68, 2026-10-12)
+- `docs/architecture.md` is the reference for containers, networks and every connection; the internal worker contract's `servers` names `http://api:8045` (docs-only contract change).
+- **Cloudflare Tunnel is a supported edge** (`deploy/traefik-cloudflared/`) only when cloudflared and Traefik have pinned addresses, Traefik trusts `X-Forwarded-For` only from cloudflared, `UT_TRUSTED_PROXIES` lists exactly those two /32s and `UT_ADMIN_ALLOWED_NETWORKS` excludes the Docker and tunnel ranges. An unpinned or untrusted tunnel stays unsupported.
+- In that example `/admin` is LAN-only plus Authelia (`trustForwardHeader: false`, since cloudflared carries every Internet request); `POST /ut/v1/keys` and `/readyz` are LAN-only; `/internal` and `/healthz` are not routed.
+
+### Taken by the coordinator — authenticated notifications (#69, 2026-10-12)
+- ntfy/webhook credentials (`UT_NOTIFY_TOKEN` → Bearer, or `UT_NOTIFY_USERNAME` + `UT_NOTIFY_PASSWORD` → Basic) come only from env vars or Docker secrets: the dependency set has no AEAD, so they are never stored in the database; the panel only shows whether they are set. Revisit if an AEAD library is approved.
+- They are bound to `UT_NOTIFY_HOST` (required with them) and sent only on the one non-redirected request to a matching https target; other hosts get the message without credentials and a warning. A 401/403 is reported as rejected credentials; the audit log records only the credential kind and outcome.
+- Every settings class hides refused input in validation errors (`hide_input_in_errors`).
+
+### Taken by the coordinator — Android polish (#70, 2026-10-12)
+- One app-wide snackbar host, above the mini player and tab bar, or at the top of the open full player. Re-tapping the open tab pops it to its first screen. A dark window theme in dark mode (no white flash at launch).
+- No R8/ProGuard rules beyond the libraries' consumer rules: a minified build was checked on the Pixel 8 (cold start 260 ms).
