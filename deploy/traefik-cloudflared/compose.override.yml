@@ -14,6 +14,7 @@
 # Routed (Host = UT_PUBLIC_HOST):
 #   /rest/*, /ut/v1/*      API keys, no Authelia; per-client rate limit and in-flight cap
 #   /, /web/*              the web player (its own sign-in and session cookie), same limits
+#   POST /web/login        the web player's sign-in: 1/s, burst 5 per client, then the api
 #   POST /ut/v1/keys       password login: LAN only (devices get their key at home)
 #   /admin                 LAN only, then Authelia, then the api's own allowlist and login
 #   /readyz                LAN only
@@ -68,9 +69,23 @@ services:
       traefik.http.middlewares.ut-cf-ratelimit.ratelimit.period: 1s
       traefik.http.middlewares.ut-cf-ratelimit.ratelimit.burst: "100"
       traefik.http.middlewares.ut-cf-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth: "1"
-      # Concurrent requests per client (a stream holds one while it plays).
+      # IPv6 clients by their /64 (one subscriber's block; the api groups them the same way).
+      traefik.http.middlewares.ut-cf-ratelimit.ratelimit.sourcecriterion.ipstrategy.ipv6subnet: "64"
+      # Password sign-ins (POST /web/login, POST /ut/v1/keys): 1 per second per client, burst 5.
+      traefik.http.middlewares.ut-cf-login-ratelimit.ratelimit.average: "1"
+      traefik.http.middlewares.ut-cf-login-ratelimit.ratelimit.period: 1s
+      traefik.http.middlewares.ut-cf-login-ratelimit.ratelimit.burst: "5"
+      traefik.http.middlewares.ut-cf-login-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth: "1"
+      traefik.http.middlewares.ut-cf-login-ratelimit.ratelimit.sourcecriterion.ipstrategy.ipv6subnet: "64"
+      # Concurrent requests per client (a stream holds one while it plays). With the api's 128
+      # connections (UT_LIMIT_CONCURRENCY), 16 per client leaves room for 7 other clients.
       traefik.http.middlewares.ut-cf-inflight.inflightreq.amount: "16"
       traefik.http.middlewares.ut-cf-inflight.inflightreq.sourcecriterion.ipstrategy.depth: "1"
+      traefik.http.middlewares.ut-cf-inflight.inflightreq.sourcecriterion.ipstrategy.ipv6subnet: "64"
+      # Sign-ins are short: a smaller share, so a guesser never holds many api connections.
+      traefik.http.middlewares.ut-cf-inflight-login.inflightreq.amount: "4"
+      traefik.http.middlewares.ut-cf-inflight-login.inflightreq.sourcecriterion.ipstrategy.depth: "1"
+      traefik.http.middlewares.ut-cf-inflight-login.inflightreq.sourcecriterion.ipstrategy.ipv6subnet: "64"
       # LAN only. NO ipStrategy on purpose: it checks the TCP peer, so a request through the
       # tunnel (peer = cloudflared) never passes, whatever X-Forwarded-For says. LAN devices
       # reach Traefik directly (split DNS, README.md).
@@ -103,8 +118,19 @@ services:
       traefik.http.routers.ut-cf-keys-login.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
       traefik.http.routers.ut-cf-keys-login.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/ut/v1/keys`) && Method(`POST`)
       traefik.http.routers.ut-cf-keys-login.priority: "90"
-      traefik.http.routers.ut-cf-keys-login.middlewares: ut-cf-lan-only,ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
+      traefik.http.routers.ut-cf-keys-login.middlewares: ut-cf-lan-only,ut-cf-login-ratelimit,ut-cf-headers,ut-cf-inflight-login,ut-cf-ratelimit,ut-cf-body-limit
       traefik.http.routers.ut-cf-keys-login.service: ut-cf-api
+
+      # The web player's sign-in form: a password check open to the Internet, so a strict
+      # per-client rate limit before the api's own per-IP limit and per-username delay. Add
+      # ut-cf-lan-only to keep it at home, or put / and /web behind Authelia (../README.md).
+      traefik.http.routers.ut-cf-web-login.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.ut-cf-web-login.tls: "true"
+      traefik.http.routers.ut-cf-web-login.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.ut-cf-web-login.rule: Host(`${UT_PUBLIC_HOST}`) && Path(`/web/login`) && Method(`POST`)
+      traefik.http.routers.ut-cf-web-login.priority: "95"
+      traefik.http.routers.ut-cf-web-login.middlewares: ut-cf-login-ratelimit,ut-cf-headers,ut-cf-inflight-login,ut-cf-ratelimit,ut-cf-body-limit
+      traefik.http.routers.ut-cf-web-login.service: ut-cf-api
 
       # Readiness detail: LAN only (the api hides the detail from others anyway).
       traefik.http.routers.ut-cf-readyz.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}

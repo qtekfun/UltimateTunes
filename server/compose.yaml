@@ -43,6 +43,10 @@ services:
   api:
     <<: *hardening
     command: ["api"]
+    # The api never runs anything from /tmp (only Python's spooled upload files may land
+    # there): no exec, no setuid, and a size cap. The worker keeps the plain tmpfs of the
+    # anchor: yt-dlp and Deno get their HOME/TMPDIR under it.
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     environment:
       # Behind `tailscale serve` or Caddy on the host, clients reach the api through Docker's
       # port publishing: set the proxy's address as the container sees it, the single bridge

@@ -64,15 +64,17 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_BOOTSTRAP_ADMIN_USERNAME` | (unset) | api | With `UT_BOOTSTRAP_ADMIN_PASSWORD`: creates the first admin when the api starts with no users. There is never a default password. |
 | `UT_BOOTSTRAP_ADMIN_PASSWORD` | (unset) | api | Password of that first admin (12 characters or more). Remove it once the admin exists (deploy/README.md, "Bootstrap admin password"); `docker compose run --rm api bootstrap-admin <name>` asks for it instead. |
 | `UT_AUTH_MAX_FAILURES_PER_IP` | `10` | api | Failed sign-ins or key checks from one IP (IPv6: its /64) before that IP is locked for `UT_AUTH_LOCKOUT_S`. |
-| `UT_AUTH_MAX_FAILURES_PER_USER` | `5` | api | Failed password checks of one username before it is locked for `UT_AUTH_LOCKOUT_S`. |
-| `UT_AUTH_LOCKOUT_S` | `900` | api | How long a locked IP or username stays locked. |
+| `UT_AUTH_MAX_FAILURES_PER_USER` | `5` | api | Failed password checks of one username **from the admin networks** (LAN/Tailscale) before it is locked there for `UT_AUTH_LOCKOUT_S`. From outside, a username is never locked: it gets a growing delay (below); this count only decides when the streak is logged and audited. |
+| `UT_AUTH_LOCKOUT_S` | `900` | api | How long a locked IP, or a username locked from the admin networks, stays locked. |
+| `UT_AUTH_OUTSIDE_BACKOFF_BASE_S` | `1` | api | Delay after one failed password check of a username from outside the admin networks (web sign-in, `POST /ut/v1/keys`); it doubles with each consecutive failure and a success resets it. |
+| `UT_AUTH_OUTSIDE_BACKOFF_MAX_S` | `300` | api | Longest such delay. A stranger sending one wrong password per window can keep a user's outside sign-in waiting; sessions, API keys and LAN/Tailscale sign-ins are not affected (SECURITY.md). |
 | `UT_AUTH_KEY_RATE_PER_S` | `50` | api | Requests per second each API key may make (token bucket refill). |
 | `UT_AUTH_KEY_BURST` | `200` | api | Burst of requests each API key may make at once. |
 | `UT_AUTH_LOGIN_RATE_PER_S` | `0.2` | api | Password checks per second per IP (refill). |
 | `UT_AUTH_LOGIN_BURST` | `5` | api | Burst of password checks per IP. |
 | `UT_AUTH_ARGON2_CONCURRENCY` | `2` | api | Password hashes computed at once (each takes memory and CPU). |
 | `UT_AUTH_ARGON2_WAIT_S` | `2` | api | How long a password check waits for a free slot before answering "try again". |
-| `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN` | `100` | api | Failures per minute from anywhere before password checks and unknown keys are locked for everyone except the admin networks. |
+| `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN` | `100` | api | Failures per minute from outside the admin networks before unknown keys, and the outside password checks of usernames that failed recently, are locked. Usernames with no recent outside failure, valid keys and the admin networks are never held back by it. |
 | `UT_AUTH_GLOBAL_LOCKOUT_S` | `60` | api | Length of that global lock. |
 
 ## Downloads and their limits

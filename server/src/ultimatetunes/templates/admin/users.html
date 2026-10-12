@@ -45,6 +45,12 @@
         <input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="{{ _("New password") }}" aria-label="{{ _("New password for %(name)s", name=user.username) }}" required>
         <button class="secondary" type="submit">{{ _("Set password") }}</button>
       </form>
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="sign_out">
+        <label><input type="checkbox" name="confirm" value="yes" required> {{ _("Confirm") }}</label>
+        <button class="secondary" type="submit" title="{{ _("Revokes every API key and ends every session of this user") }}">{{ _("Sign out every device") }}</button>
+      </form>
     </td>
   </tr>
   {% else %}

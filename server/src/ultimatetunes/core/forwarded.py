@@ -7,8 +7,9 @@ address (admin allowlist, `/readyz` detail, the per-IP rate limit and lockout of
 log) reads `scope["client"]`, so this is the one place that decides it:
 
 - The TCP peer is inside `UT_TRUSTED_PROXIES`: `X-Forwarded-For` is read **from the right**,
-  skipping hops that are trusted proxies too; the first other hop is the client. A hop that is
-  not an IP address makes the client `unknown` (no allowlist accepts it). Without the header the
+  skipping hops that are trusted proxies too; the first other hop is the client, however many
+  entries come before it. A hop on the way that is not an IP address, or more than `MAX_HOPS`
+  trusted hops in a row, make the client `unknown` (no allowlist accepts it). Without the header the
   proxy itself is the client (its own health checks). `Forwarded` and `X-Real-IP` are ignored:
   one header, one rule.
 - Any other peer is the client, whatever it sends. When it sends forwarding headers anyway, the
@@ -83,16 +84,23 @@ def trusted_origin(conn: HTTPConnection) -> bool:
 
 
 def client_from_chain(hops: list[str], proxies: tuple[IpNetwork, ...]) -> str:
-    """The client in an `X-Forwarded-For` chain whose last sender is a trusted proxy."""
-    if not hops or len(hops) > MAX_HOPS:
-        return UNKNOWN_CLIENT
-    for hop in reversed(hops):
+    """The client in an `X-Forwarded-For` chain whose last sender is a trusted proxy.
+
+    Walked from the right; the first hop that is not a trusted proxy is the client, whatever
+    comes before it (a client may prepend any number of forged entries: they are never read,
+    so a long forged chain cannot turn the client `unknown`). `unknown` only when a hop on the
+    way is not an IP address, or when more than `MAX_HOPS` trusted hops follow each other."""
+    for trusted, hop in enumerate(reversed(hops), start=1):
         address = parse_ip(hop)
         if address is None:
             return UNKNOWN_CLIENT
         if not in_networks(str(address), proxies):
             return str(address)
-    # Every hop is a trusted proxy: the leftmost one started the chain.
+        if trusted > MAX_HOPS:
+            return UNKNOWN_CLIENT
+    if not hops:
+        return UNKNOWN_CLIENT
+    # Every hop (at most MAX_HOPS) is a trusted proxy: the leftmost one started the chain.
     return str(parse_ip(hops[0]))
 
 

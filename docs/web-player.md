@@ -26,7 +26,7 @@ The api serves a web player for browsers. Open the server's address (`https://mu
   - language: English or Spanish, or the browser's;
   - change your password (signs out your other devices);
   - your API keys, listed and revoked (new keys are created in the app or by an administrator; the browser never sees a key);
-  - sign out.
+  - sign out, or sign out every device (every API key revoked and every session ended).
 
 ### Keyboard shortcuts
 
@@ -46,11 +46,12 @@ Shortcuts are off while you type in a field.
 
 ## Security
 
-- **Sign-in**: username and password at `POST /web/login`, checked by `AuthService.verify_password` exactly like `POST /ut/v1/keys`: rate limit, lockout per IP and per username, with the counters for the admin's networks and for everyone else kept apart. The web player is not limited to the admin networks.
+- **Sign-in**: username and password at `POST /web/login`, checked by `AuthService.verify_password` exactly like `POST /ut/v1/keys`: rate limit and lockout per IP, and per username a lockout for the admin's networks and a growing delay for everyone else (1 s doubling to 5 min, never a lockout), the two counters kept apart. The Traefik examples put a strict per-client rate limit on the form (1/s, burst 5). The web player is not limited to the admin networks.
 - **Session**: a signed cookie `ut_web_session`, sent only by this site:
   - flags `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`; lifetime `UT_WEB_SESSION_TTL_S`, 7 days by default;
   - signed with `UT_ADMIN_SESSION_SECRET` under its own salt, so an admin cookie is never a web cookie;
   - "Sign out" ends every web session of the user, copies included (a per-user epoch); a new password ends them too.
+  - "Sign out every device" (Settings, after a confirmation box) also revokes every API key of the user and ends its admin sessions; the panel offers the same per user (Users).
 - **No API key in the browser**: audio and covers (`/web/stream/{id}`, `/web/cover/{id}`) use the session cookie. Nothing secret is kept in `localStorage` (only the volume and the theme).
 - **CSRF**: every change carries the session's token (form field or `X-CSRF-Token` header) and must come from this site (`Sec-Fetch-Site`).
 - **Headers** on `/` and `/web/*`:

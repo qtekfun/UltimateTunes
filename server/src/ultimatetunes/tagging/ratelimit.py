@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from ultimatetunes.core.clock import Clock
-from ultimatetunes.core.ratelimit import ALLOWED, Decision, Limit, RateLimiter
+from ultimatetunes.core.ratelimit import ALLOWED, Decision, Limit, RateLimiter, backoff_delay
 
 
 @dataclass
@@ -90,10 +90,27 @@ class MemoryRateLimiter:
         bucket.locked_until = now + lockout_s
         return Decision(allowed=False, retry_after_s=_ceil_s(lockout_s))
 
+    def reserve_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+        backoff_delay(1, base_s=base_s, max_s=max_s)  # refuses bad parameters before counting
+        now = self._clock.monotonic()
+        running = self._lockout(self._buckets.get(key), now)
+        if not running.allowed:
+            return running
+        bucket = self._buckets.setdefault(key, _Bucket(tokens=math.inf, updated=now, touched=now))
+        bucket.touched = now
+        bucket.failures += 1
+        bucket.locked_until = now + backoff_delay(bucket.failures, base_s=base_s, max_s=max_s)
+        return ALLOWED
+
+    def failures(self, key: str) -> int:
+        bucket = self._buckets.get(key)
+        return 0 if bucket is None else bucket.failures
+
     def record_success(self, key: str) -> None:
         bucket = self._buckets.get(key)
         if bucket is not None:
             bucket.failures = 0
+            bucket.locked_until = None
             bucket.touched = self._clock.monotonic()
 
     def purge_idle(self, idle_s: float) -> int:
