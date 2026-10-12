@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.buildlogic
 import app.cash.licensee.LicenseeExtension
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalog
@@ -19,14 +20,51 @@ import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.withType
 import org.jlleitschuh.gradle.ktlint.KtlintExtension
 
-/** Google Play Services, Firebase, Crashlytics and Sentry: banned outright (CLAUDE.md). */
-private val FORBIDDEN_GROUP_PREFIXES = listOf(
+/**
+ * Google Play Services and Play Core, Firebase, and every crash-reporting, analytics or telemetry
+ * SDK: banned outright (CLAUDE.md). Group ids, matched whole or as a parent (`io.sentry` also bans
+ * `io.sentry.android`, but `io.fabric` does not ban `io.fabric8`).
+ */
+private val FORBIDDEN_GROUPS = listOf(
     "com.google.android.gms",
+    "com.google.android.play",
     "com.google.firebase",
     "com.crashlytics",
     "io.fabric",
-    "io.sentry"
+    "io.sentry",
+    "ch.acra",
+    "com.bugsnag",
+    "com.datadoghq",
+    "com.newrelic",
+    "com.mixpanel",
+    "com.posthog",
+    "com.segment",
+    "com.rollbar",
+    "io.opentelemetry"
 )
+
+/**
+ * What ships (debug, release) and what runs in tests, on a JVM or on a device. Every module has
+ * these; a missing one fails the check instead of being skipped silently.
+ */
+private val REQUIRED_CLASSPATHS = listOf(
+    "debugRuntimeClasspath",
+    "releaseRuntimeClasspath",
+    "debugUnitTestRuntimeClasspath",
+    "debugAndroidTestRuntimeClasspath"
+)
+
+/** Scanned where present (AGP creates no release unit tests for :app); logged when absent. */
+private val OPTIONAL_CLASSPATHS = listOf("releaseUnitTestRuntimeClasspath")
+
+/** True if the module (group:name) belongs to a forbidden group or one of its subgroups. */
+internal fun isForbidden(module: String): Boolean {
+    val group = module.substringBefore(':')
+    return FORBIDDEN_GROUPS.any { group == it || group.startsWith("$it.") }
+}
+
+/** Kover variant on which :app verifies the 100 % packages. */
+const val CRITICAL_COVERAGE_VARIANT = "critical"
 
 internal val Project.libs: VersionCatalog
     get() = extensions.getByType<VersionCatalogsExtension>().named("libs")
@@ -73,6 +111,16 @@ internal fun Project.configureQuality() {
         allow("Apache-2.0")
     }
 
+    // The "critical" coverage variant (debug build) of every module: :app merges them and verifies
+    // the 100 % packages of CLAUDE.md on it (koverVerifyCritical, see app/build.gradle.kts).
+    extensions.configure<KoverProjectExtension> {
+        currentProject {
+            createVariant(CRITICAL_COVERAGE_VARIANT) {
+                add("debug")
+            }
+        }
+    }
+
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
     }
@@ -88,15 +136,19 @@ internal fun Project.configureQuality() {
 private fun Project.registerForbiddenDependencyCheck() {
     val check = tasks.register("checkForbiddenDependencies") {
         group = "verification"
-        description = "Fails if a runtime classpath contains Google Play Services, Firebase, " +
-            "Crashlytics or Sentry."
-        val roots = listOf("debugRuntimeClasspath", "releaseRuntimeClasspath").map { name ->
+        description = "Fails if a runtime or test classpath contains Play Services, Firebase " +
+            "or a crash-reporting, analytics or telemetry SDK."
+        val (present, absent) =
+            OPTIONAL_CLASSPATHS.partition { name -> name in configurations.names }
+        val names = REQUIRED_CLASSPATHS + present
+        val roots = names.map { name ->
             configurations.named(name).flatMap { it.incoming.resolutionResult.rootComponent }
         }
+        val scanned = "scanned ${names.joinToString()}; " +
+            "not present: ${absent.ifEmpty { listOf("none") }.joinToString()}"
         doLast {
-            val offenders = modulesOf(roots.map { it.get() })
-                .filter { module -> FORBIDDEN_GROUP_PREFIXES.any { module.startsWith(it) } }
-                .sorted()
+            logger.lifecycle("checkForbiddenDependencies $scanned")
+            val offenders = modulesOf(roots.map { it.get() }).filter(::isForbidden).sorted()
             if (offenders.isNotEmpty()) {
                 throw GradleException(
                     "Forbidden non-free dependencies found: ${offenders.joinToString()}"

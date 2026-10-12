@@ -3,6 +3,8 @@
 
 version: 2
 updates:
+  # android/build-logic (an included build) has no versions of its own: it reads the main build's
+  # catalog, android/gradle/libs.versions.toml, so this entry updates it too.
   - package-ecosystem: gradle
     directory: /android
     schedule:
@@ -25,6 +27,7 @@ updates:
     commit-message:
       prefix: build
 
+  # The Dockerfile lives in server/ (CI builds it with the repository root as context).
   - package-ecosystem: docker
     directory: /server
     schedule:

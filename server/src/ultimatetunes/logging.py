@@ -18,9 +18,11 @@ _PARAM = re.compile(
     re.IGNORECASE,
 )
 # Key/value pairs in headers, JSON or free text: "Authorization: Bearer x", '"apiKey": "x"'.
+# A value _PARAM already redacted is skipped, so "apiKey=[REDACTED]&f=json" keeps "&f=json".
 _PAIR = re.compile(
     r"(?P<key>\b(?:authorization|x-api-key|api[-_]?key|password|passwd|token|secret)\b"
-    r"[\"']?\s*[:=]\s*[\"']?)(?P<value>(?:bearer\s+|basic\s+)?[^\s,;\"']+)",
+    r"[\"']?\s*[:=]\s*[\"']?)(?!\[REDACTED\])"
+    r"(?P<value>(?:bearer\s+|basic\s+)?[^\s,;\"']+)",
     re.IGNORECASE,
 )
 # A cookie header holds several cookies: hide all of them, up to the end of the line.
