@@ -209,8 +209,13 @@ def test_queue_pages_keep_the_filter(client: TestClient, admin_csrf: str, people
     # A page out of range shows an empty page; nonsense is page 1.
     assert "No downloads in this state." in client.get("/admin/jobs?state=queued&page=9").text
     assert client.get("/admin/jobs?page=-3").text.count('<code class="muted">v') == PAGE_SIZE
-    assert "Page 1000" in client.get("/admin/jobs?page=99999").text
-    assert "No downloads here." in client.get("/admin/jobs?page=99999").text
+    assert "Page 1000" in client.get("/admin/jobs?page=9999").text
+    assert "No downloads here." in client.get("/admin/jobs?page=9999").text
+    # Not ASCII digits, or too long to be a page: page 1.
+    for raw in ("\N{SUPERSCRIPT TWO}", "9" * 5000, "12345", "\N{ARABIC-INDIC DIGIT TWO}"):
+        listed = client.get("/admin/jobs", params={"page": raw}).text
+        assert "Page 1" in listed
+        assert listed.count('<code class="muted">v') == PAGE_SIZE
 
 
 def test_mark_reviewed(client: TestClient, admin_csrf: str) -> None:
@@ -233,7 +238,7 @@ def test_mark_reviewed(client: TestClient, admin_csrf: str) -> None:
         assert again.status_code == 404
         assert "No such track needs review" in again.text
     entries = admin_state(client).auth.recent_audit(10)
-    assert [e.target_id for e in entries if e.action == "track.reviewed"] == ["t1"]
+    assert [e.target_id for e in entries if e.action == "track.review"] == ["t1"]
 
 
 def test_needs_review_is_paged(client: TestClient, admin_csrf: str) -> None:
@@ -253,12 +258,12 @@ def test_audit_log_filters_and_pages(client: TestClient, admin_csrf: str, people
     add_track(services, "t1", needs_review=True)
     client.post("/admin/library/tracks/t1/reviewed", data={"csrf": admin_csrf})
     page = client.get("/admin/audit").text
-    assert '<option value="track.reviewed">track.reviewed</option>' in page
+    assert '<option value="track.review">track.review</option>' in page
     assert f'<option value="{people.bob.id}">bob</option>' in page
-    only = client.get("/admin/audit", params={"action": "track.reviewed"}).text
-    assert "<code>track.reviewed</code>" in only
+    only = client.get("/admin/audit", params={"action": "track.review"}).text
+    assert "<code>track.review</code>" in only
     assert "<code>admin.login</code>" not in only
-    assert '<option value="track.reviewed" selected>' in only
+    assert '<option value="track.review" selected>' in only
     assert 'href="/admin/audit">Clear' in only
     nobody = client.get("/admin/audit", params={"actor": people.bob.id}).text
     assert "Nothing here." in nobody

@@ -299,7 +299,9 @@ class Pager:
     @staticmethod
     def wanted(request: Request) -> int:
         raw = request.query_params.get("page", "1")
-        number = int(raw) if raw.isdigit() else 1
+        # ASCII digits only ("²" is a digit to `isdigit`), and short enough to never be huge.
+        valid = raw.isascii() and raw.isdigit() and len(raw) <= len(str(MAX_PAGE))
+        number = int(raw) if valid else 1
         return min(max(number, 1), MAX_PAGE)
 
     def href(self, number: int) -> str:
@@ -884,7 +886,7 @@ def mark_reviewed(request: Request, item_id: str, post: PostedDep) -> Response:
                 services.clock,
                 actor_id=post.admin.user.id,
                 ip=post.admin.ip,
-                action="track.reviewed",
+                action="track.review",
                 target_type="track",
                 target_id=item_id,
             )
