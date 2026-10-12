@@ -144,6 +144,8 @@ paths:
               schema:
                 type: integer
                 minimum: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -185,6 +187,8 @@ paths:
                 leaseId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01aa01
                 expiresAt: '2026-10-12T08:16:30.123Z'
                 cancelRequested: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -240,6 +244,8 @@ paths:
                 leaseId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01aa01
                 expiresAt: '2026-10-12T08:16:30.123Z'
                 cancelRequested: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -334,6 +340,8 @@ paths:
                   tracks:
                   - trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
                     libraryPath: The Paper Lanterns/Lanterns at Dusk/04 - Paper Moons (Live).opus
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -382,6 +390,8 @@ paths:
       responses:
         '204':
           description: Stored.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -436,6 +446,8 @@ paths:
                 state: ready
                 attempts: 1
                 notBefore: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -489,6 +501,8 @@ paths:
                 state: queued
                 attempts: 1
                 notBefore: '2026-10-12T08:16:05.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -541,6 +555,8 @@ paths:
               example:
                 commands:
                 - update_ytdlp
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -554,6 +570,19 @@ components:
       scheme: bearer
       description: Shared worker token (`UT_WORKER_TOKEN`).
   responses:
+    BadRequest:
+      description: '`invalid_parameter` (the body does not match the schema; checked after the token).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_parameter
+            title: Invalid parameter
+            status: 400
+            detail: 'leaseId: field required'
+            code: invalid_parameter
+            instance: /internal/v1/jobs/claim
     Unauthorized:
       description: '`invalid_worker_token`.'
       content:
