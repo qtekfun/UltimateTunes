@@ -17,9 +17,9 @@ Thanks for helping! A few rules keep UltimateTunes free, safe and easy to review
 
 ## Workflow
 
-1. One task or fix per branch (`feat/tNN-…`, `fix/…`) from `master`; changes land only through pull requests with green checks, squash-merged.
+1. One task or fix per branch (`feat/tNN-…`, `fix/…`) from `master`; changes land only through pull requests with green checks, squash-merged. GitHub Actions are disabled for now, so "green checks" means `tools/ci-local.sh` green on the branch merged with master, plus the independent review.
 2. The **PR title** is a [Conventional Commit](https://www.conventionalcommits.org): it becomes the squash commit.
-3. Before pushing: `make -C server check` and/or `cd android && ./gradlew check`.
+3. Before pushing: `make -C server check` and/or `cd android && ./gradlew check`; before merging, `tools/ci-local.sh` on a clean tree (`--all`, or the groups you touched).
 4. `VERSION` and `CHANGELOG.md` change only in a release PR: see RELEASING.md.
 5. Contracts (`contracts/`) change in their own PR, before the code that needs them.
 
@@ -43,8 +43,8 @@ Android Lint runs with warnings as errors, including its network-backed version 
 
 ## Quality gates
 
-`make -C server check` and `./gradlew check` run the same gates as CI:
+`make -C server check` and `./gradlew check` run the same gates as CI; `tools/ci-local.sh` runs all of CI locally:
 
 - Coverage ≥ 85 % overall, and 100 % lines and branches on the critical areas. Server: `server/tools/critical_coverage.py` (patterns in `CRITICAL`). Android: `criticalPackages` in `android/app/build.gradle.kts` (`koverVerifyCritical`). An area with no code yet passes and is enforced from its first file. A critical file missing from the coverage report fails, and so does a coverage exclusion (`# pragma: no cover`, `# pragma: no branch`) inside one: critical code is covered by tests, never excluded.
 - Forbidden dependencies. Server: `server/tools/forbidden_deps.py` reads every package in `uv.lock`. Android: `checkForbiddenDependencies` walks the shipped and test runtime classpaths of every module.
-- In CI only: gitleaks over the PR's commits, Trivy on the image, and the Conventional Commit PR title.
+- In CI (`tools/ci-local.sh` groups `secrets` and `docker`): gitleaks over the branch's commits, Trivy on the image. The Conventional Commit PR title is checked by review while GitHub Actions are disabled.
