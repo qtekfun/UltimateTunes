@@ -652,3 +652,22 @@ def test_a_write_that_matches_no_row_is_a_lost_lease(queue: SqliteJobQueue, db: 
         queue.release(job.id, claimed.lease.lease_id, state="failed", finalize=finalize)
     assert seen == [job.id]
     assert track_status(db, "t1") == "pending"
+
+
+class RollbackError(Exception):
+    pass
+
+
+def enqueue_then_fail(queue: SqliteJobQueue, db: Database) -> None:
+    with db.transaction() as conn:
+        queue.enqueue_in(conn, track_id="t2", video_id="Wq5Jd7HsKe2", priority=PRIORITY_KEEP)
+        raise RollbackError
+
+
+def test_enqueue_in_is_part_of_the_callers_transaction(queue: SqliteJobQueue, db: Database) -> None:
+    with pytest.raises(RollbackError):
+        enqueue_then_fail(queue, db)
+    assert queue.by_video("Wq5Jd7HsKe2") is None
+    with db.transaction() as conn:
+        job = queue.enqueue_in(conn, track_id="t2", video_id="Wq5Jd7HsKe2", priority=PRIORITY_KEEP)
+    assert queue.get(job.id) == job

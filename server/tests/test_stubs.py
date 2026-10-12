@@ -118,11 +118,13 @@ def test_internal_api_is_closed_without_a_configured_token(settings: Settings) -
     assert r.json()["detail"] == "Bearer token missing or wrong"
 
 
-def test_admin_placeholder(client: TestClient) -> None:
+def test_admin_is_routed(client: TestClient) -> None:
+    """`/admin` is routed: the T02 placeholder (501) or the real panel, which may refuse the
+    test client's address (allowlist, 403) or ask for a login, but never 404/405 or a crash."""
     for path in ("/admin", "/admin/users"):
-        r = client.get(path)
-        assert r.status_code == 501
-        assert r.headers["content-type"].startswith("text/html")
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code not in (404, 405)
+        assert r.status_code < 500 or r.status_code == 501
 
 
 def test_validation_and_unexpected_errors_are_problems(settings: Settings) -> None:

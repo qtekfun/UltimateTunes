@@ -16,6 +16,7 @@ import os
 import secrets
 import shutil
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Protocol
@@ -42,6 +43,11 @@ class FileStore(Protocol):
     def size(self, rel: str) -> int: ...
 
     def open_read(self, rel: str) -> BinaryIO: ...
+
+    def walk(self) -> Iterator[str]:
+        """Every regular file in the store as a relative path, sorted per directory. Symlinks
+        (to files or directories) are skipped, never followed."""
+        ...
 
     def open_write(self, rel: str, *, append: bool = False) -> BinaryIO:
         """Creates parent directories as needed."""
@@ -117,6 +123,20 @@ class LocalStore:
 
     def open_read(self, rel: str) -> BinaryIO:
         return self.local_path(rel).open("rb")
+
+    def walk(self) -> Iterator[str]:
+        root = self.root.resolve()
+        if not root.is_dir():
+            return
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            base = Path(dirpath)
+            # Never descend into symlinked directories (os.walk lists them as dirs).
+            dirnames[:] = sorted(d for d in dirnames if not (base / d).is_symlink())
+            for name in sorted(filenames):
+                path = base / name
+                if path.is_symlink() or not path.is_file():
+                    continue
+                yield path.relative_to(root).as_posix()
 
     def open_write(self, rel: str, *, append: bool = False) -> BinaryIO:
         path = self.local_path(rel)
