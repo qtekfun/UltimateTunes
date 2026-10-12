@@ -31,6 +31,7 @@ services:
         condition: service_completed_successfully
     environment:
       UT_LOG_LEVEL: DEBUG
+      UT_FAKE_YOUTUBE: "true"
     ports: ["127.0.0.1:8044:8044"]
     volumes: [data:/data, music:/music, staging:/staging]
     networks: [default, internal]
@@ -46,6 +47,8 @@ services:
     build: *build
     image: ultimatetunes-server:test
     command: ["worker"]
+    environment:
+      UT_FAKE_YOUTUBE: "true"
     depends_on:
       api:
         condition: service_healthy
