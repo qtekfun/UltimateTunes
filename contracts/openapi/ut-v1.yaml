@@ -1,0 +1,1722 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Maintained by hand. Every example uses invented data only.
+openapi: 3.1.0
+info:
+  title: UltimateTunes API
+  version: 1.0.0
+  description: |
+    UltimateTunes' own API, used by the Android app next to the OpenSubsonic API (`/rest`). JSON only,
+    `camelCase` properties, timestamps in ISO 8601 UTC, ids per `contracts/ids.md`.
+
+    ## Authentication
+    Send the API key in the **`X-Api-Key` header** (preferred). The `apiKey` query parameter is accepted as an
+    equivalent for places where headers are awkward (it ends up in URLs, so avoid it). Sending both with different
+    values gives `conflicting_auth`. Keys are created with `POST /ut/v1/keys` (username and password) or in the
+    admin panel (QR code). `GET /ut/v1/server` and `POST /ut/v1/keys` need no key.
+
+    ## Errors
+    Every error is an RFC 9457 problem (`application/problem+json`) with a stable `code`. See
+    `contracts/errors.md`. Rate-limited responses (429) carry `Retry-After`. Router stubs answer 501
+    `not_implemented` until their PLAN task lands.
+
+    ## Admin
+    There are no admin JSON endpoints in v1. The admin panel is server-rendered HTML at `/admin` (RF-10).
+
+    ## Examples
+    All data in the examples is invented. The examples feed the Android fake server and schemathesis.
+  license:
+    name: GPL-3.0-or-later
+    identifier: GPL-3.0-or-later
+servers:
+- url: https://music.example.net
+security:
+- ApiKeyHeader: []
+- ApiKeyQuery: []
+tags:
+- name: system
+- name: keys
+- name: tracks
+- name: discovery
+- name: imports
+paths:
+  /ut/v1/server:
+    get:
+      operationId: getServerInfo
+      tags:
+      - system
+      summary: Server info and capabilities
+      description: 'Public (no API key): the app calls it on the Connect screen to check the URL.'
+      security: []
+      responses:
+        '200':
+          description: Server info.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerInfo'
+              example:
+                name: UltimateTunes
+                version: 0.1.0
+                apiVersion: '1'
+                openSubsonic:
+                  apiVersion: 1.16.1
+                  extensions:
+                  - apiKeyAuthentication
+                  - formPost
+                  - songLyrics
+                capabilities:
+                  externalSearch: true
+                  radio: true
+                  lyrics: true
+                  youtubeMusicImport: true
+                  spotifyImport: false
+                  streamingWhileDownloading: true
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/me:
+    get:
+      operationId: getMe
+      tags:
+      - system
+      summary: The authenticated user
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01d001
+                username: alice
+                role: admin
+                apiKeyId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01f001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/keys:
+    get:
+      operationId: listKeys
+      tags:
+      - keys
+      summary: API keys of the current user
+      responses:
+        '200':
+          description: Keys, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyList'
+              example:
+                keys:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01f001
+                  name: Pixel 9
+                  prefix: utk_EXAMPLEe
+                  createdAt: '2026-10-01T17:20:00.000Z'
+                  lastUsedAt: '2026-10-12T08:15:30.123Z'
+                  revokedAt: null
+                  current: true
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01f002
+                  name: Old tablet
+                  prefix: utk_3fT9aQ1z
+                  createdAt: '2026-09-14T09:02:11.000Z'
+                  lastUsedAt: '2026-09-30T21:44:05.000Z'
+                  revokedAt: '2026-10-01T17:21:40.000Z'
+                  current: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createKey
+      tags:
+      - keys
+      summary: Create an API key (needs the password)
+      description: |-
+        Creates a key for a new device (RF-01). Authenticates with **username and password** in the body, so a fresh install can get its first key. No API key is needed. If one is sent, it must belong to the same user (`conflicting_auth` otherwise).
+        The full key is returned **once** in `secret`. Only its SHA-256 hash is stored. The response has `Cache-Control: no-store`. Failures count towards the per-IP and per-username lockout. A wrong password and an unknown user give the same `authentication_failed`.
+      security:
+      - {}
+      - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKeyRequest'
+            example:
+              username: alice
+              password: correct horse battery staple
+              name: Pixel 9
+      responses:
+        '201':
+          description: 'Created. Store `secret` now: it is never shown again.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedKey'
+              example:
+                key:
+                  id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01f001
+                  name: Pixel 9
+                  prefix: utk_EXAMPLEe
+                  createdAt: '2026-10-01T17:20:00.000Z'
+                  lastUsedAt: null
+                  revokedAt: null
+                  current: false
+                secret: utk_EXAMPLEexampleEXAMPLEexampleEXAMPLEexampleE
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/keys/{keyId}:
+    delete:
+      operationId: revokeKey
+      tags:
+      - keys
+      summary: Revoke an API key
+      description: 'Idempotent: revoking an already revoked key also returns 204. Revoking the key that makes the
+        request is allowed (the app then disconnects). Admins revoke other users'' keys in `/admin`, not here.'
+      parameters:
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01f002
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/tracks/{id}/request:
+    post:
+      operationId: requestTrack
+      tags:
+      - tracks
+      summary: Keep a track in the library
+      description: 'RF-04. Materializes a `yt:` id (contracts/ids.md) and queues its download (deduplicated per
+        video id). Also used by the app''s queue prefetch (`reason: prefetch`). For a track that is already `ready`,
+        nothing is queued and the answer is 200. A `failed` or `cancelled` track is queued again (attempts reset).'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        description: Library UUID or `yt:<videoId>` (contracts/ids.md).
+        example: yt:Qx7Lm2pZ0aB
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestTrack'
+            example:
+              reason: prefetch
+      responses:
+        '200':
+          description: Already in the library.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackStatus'
+              example:
+                id: yt:Qx7Lm2pZ0aB
+                trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+                state: ready
+                progress: 1
+                attempts: 1
+                maxAttempts: 3
+                error: null
+                streamable: true
+                updatedAt: '2026-10-12T08:15:41.900Z'
+        '202':
+          description: Queued (or already queued or downloading).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackStatus'
+              examples:
+                queued:
+                  value:
+                    id: yt:Qx7Lm2pZ0aB
+                    trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+                    state: queued
+                    progress: 0
+                    attempts: 0
+                    maxAttempts: 3
+                    error: null
+                    streamable: false
+                    updatedAt: '2026-10-12T08:15:30.123Z'
+                downloading:
+                  value:
+                    id: yt:Qx7Lm2pZ0aB
+                    trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+                    state: downloading
+                    progress: 0.42
+                    attempts: 1
+                    maxAttempts: 3
+                    error: null
+                    streamable: true
+                    updatedAt: '2026-10-12T08:15:30.123Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/tracks/{id}/status:
+    get:
+      operationId: getTrackStatus
+      tags:
+      - tracks
+      summary: Download state of a track
+      description: 'Poll (every 1–2 s while `queued`/`downloading`/`tagging`) to show progress and to learn the
+        library id. A job failure is not an HTTP error: `state: failed` with `error`.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        description: Library UUID or `yt:<videoId>` (contracts/ids.md).
+        example: yt:Qx7Lm2pZ0aB
+      responses:
+        '200':
+          description: Current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackStatus'
+              examples:
+                downloading:
+                  value:
+                    id: yt:Qx7Lm2pZ0aB
+                    trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+                    state: downloading
+                    progress: 0.42
+                    attempts: 1
+                    maxAttempts: 3
+                    error: null
+                    streamable: true
+                    updatedAt: '2026-10-12T08:15:30.123Z'
+                ready:
+                  value:
+                    id: yt:Qx7Lm2pZ0aB
+                    trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
+                    state: ready
+                    progress: 1
+                    attempts: 1
+                    maxAttempts: 3
+                    error: null
+                    streamable: true
+                    updatedAt: '2026-10-12T08:15:41.900Z'
+                failed:
+                  value:
+                    id: yt:Rb4Tn8wKx1c
+                    trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c006
+                    state: failed
+                    progress: 0.1
+                    attempts: 3
+                    maxAttempts: 3
+                    error:
+                      code: video_unavailable
+                      message: Video unavailable in this country
+                    streamable: false
+                    updatedAt: '2026-10-12T08:20:02.000Z'
+                notRequested:
+                  value:
+                    id: yt:Rb4Tn8wKx1c
+                    trackId: null
+                    state: not_requested
+                    progress: 0
+                    attempts: 0
+                    maxAttempts: 3
+                    error: null
+                    streamable: false
+                    updatedAt: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/radio:
+    get:
+      operationId: getRadio
+      tags:
+      - discovery
+      summary: Radio from a seed song
+      description: 'RF-06. YouTube Music watch playlist for the seed, local-first: songs already archived come with
+        their library ids. Same source as `/rest/getSimilarSongs2`.'
+      parameters:
+      - name: seed
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        description: Library UUID or `yt:` id of the seed song.
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: Radio queue (seed first).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Radio'
+              example:
+                seed:
+                  id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                  title: Lighthouse Keeper
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 214
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                items:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002
+                  title: Tidewater
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 187
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: yt:Rb4Tn8wKx1c
+                  title: Copper Fields
+                  artist: Marisol Vega
+                  artistId: ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA
+                  album: Copper Fields
+                  albumId: ytalbum:MPREb_W2pZ7nQx4Ld
+                  durationSec: 198
+                  year: null
+                  coverArt: yt:Rb4Tn8wKx1c
+                  isExternal: true
+                  libraryState: null
+                - id: yt:Qx7Lm2pZ0aB
+                  title: Paper Moons (Live)
+                  artist: The Paper Lanterns
+                  artistId: ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe
+                  album: Lanterns at Dusk
+                  albumId: ytalbum:MPREb_k3Vd9QmT2xL
+                  durationSec: 262
+                  year: null
+                  coverArt: yt:Qx7Lm2pZ0aB
+                  isExternal: true
+                  libraryState: pending
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003
+                  title: Brasas
+                  artist: Marisol Vega
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002
+                  album: Salt & Ember
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  durationSec: 201
+                  year: 2025
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  isExternal: false
+                  libraryState: ready
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/search:
+    get:
+      operationId: search
+      tags:
+      - discovery
+      summary: Search library and YouTube Music
+      description: 'RF-03. Library results first, then external ones (`isExternal: true`), deduplicated (an archived
+        video appears once, with its library id). External results are cached with a TTL. If YouTube Music fails,
+        library results are still returned (no 502).'
+      parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+        example: lanterns
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        description: Max items per type.
+      - name: external
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+        description: '`false`: library only.'
+      responses:
+        '200':
+          description: Results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResult'
+              example:
+                query: lanterns
+                artists:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  name: The Paper Lanterns
+                  coverArt: ar-0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  isExternal: false
+                - id: ytartist:UCh5Kp2Wq7Zt3Lm9Xv1Nb4Rs
+                  name: Copper Coast
+                  coverArt: ytartist:UCh5Kp2Wq7Zt3Lm9Xv1Nb4Rs
+                  isExternal: true
+                albums:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  name: Harbour Lights
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  year: 2023
+                  songCount: 10
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                - id: ytalbum:MPREb_k3Vd9QmT2xL
+                  name: Lanterns at Dusk
+                  artist: The Paper Lanterns
+                  artistId: ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe
+                  year: 2024
+                  songCount: 9
+                  coverArt: ytalbum:MPREb_k3Vd9QmT2xL
+                  isExternal: true
+                tracks:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                  title: Lighthouse Keeper
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 214
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002
+                  title: Tidewater
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 187
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: yt:Qx7Lm2pZ0aB
+                  title: Paper Moons (Live)
+                  artist: The Paper Lanterns
+                  artistId: ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe
+                  album: Lanterns at Dusk
+                  albumId: ytalbum:MPREb_k3Vd9QmT2xL
+                  durationSec: 262
+                  year: null
+                  coverArt: yt:Qx7Lm2pZ0aB
+                  isExternal: true
+                  libraryState: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/imports:
+    get:
+      operationId: listImports
+      tags:
+      - imports
+      summary: Imports of the current user
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: Newest first, without items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportList'
+              example:
+                imports:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+                  source: ytmusic
+                  sourceUrl: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
+                  name: Road Trip 2026
+                  createdAt: '2026-10-12T08:00:00.000Z'
+                  state: done
+                  total: 3
+                  matched: 2
+                  notFound: 1
+                  progress: 1
+                  playlistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001
+                  error: null
+                  updatedAt: '2026-10-12T08:01:12.000Z'
+                  finishedAt: '2026-10-12T08:01:12.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createImport
+      tags:
+      - imports
+      summary: Import a playlist
+      description: RF-08. Reads the playlist, matches each track on YouTube Music, requests the matches and creates
+        a user playlist. Runs in the background. Poll `GET /ut/v1/imports/{importId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImport'
+            example:
+              url: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
+              name: Road Trip 2026
+      responses:
+        '202':
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Import'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+                source: ytmusic
+                sourceUrl: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
+                name: Road Trip 2026
+                createdAt: '2026-10-12T08:00:00.000Z'
+                state: queued
+                total: 0
+                matched: 0
+                notFound: 0
+                progress: 0
+                playlistId: null
+                error: null
+                updatedAt: '2026-10-12T08:00:00.000Z'
+                finishedAt: null
+                items: []
+          headers:
+            Location:
+              schema:
+                type: string
+              example: /ut/v1/imports/0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/imports/{importId}:
+    get:
+      operationId: getImport
+      tags:
+      - imports
+      summary: Import progress and match report
+      parameters:
+      - name: importId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+      responses:
+        '200':
+          description: The import with its items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Import'
+              examples:
+                queued:
+                  value:
+                    id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+                    source: ytmusic
+                    sourceUrl: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
+                    name: Road Trip 2026
+                    createdAt: '2026-10-12T08:00:00.000Z'
+                    state: queued
+                    total: 0
+                    matched: 0
+                    notFound: 0
+                    progress: 0
+                    playlistId: null
+                    error: null
+                    updatedAt: '2026-10-12T08:00:00.000Z'
+                    finishedAt: null
+                    items: []
+                done:
+                  value:
+                    id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e017001
+                    source: ytmusic
+                    sourceUrl: https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga
+                    name: Road Trip 2026
+                    createdAt: '2026-10-12T08:00:00.000Z'
+                    state: done
+                    total: 3
+                    matched: 2
+                    notFound: 1
+                    progress: 1
+                    playlistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001
+                    error: null
+                    updatedAt: '2026-10-12T08:01:12.000Z'
+                    finishedAt: '2026-10-12T08:01:12.000Z'
+                    items:
+                    - position: 0
+                      sourceTitle: Lighthouse Keeper
+                      sourceArtist: The Paper Lanterns
+                      sourceAlbum: Harbour Lights
+                      sourceDurationSec: 214
+                      state: matched
+                      matchScore: 0.97
+                      track:
+                        id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                        title: Lighthouse Keeper
+                        artist: The Paper Lanterns
+                        artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                        album: Harbour Lights
+                        albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                        durationSec: 214
+                        year: 2023
+                        coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                        isExternal: false
+                        libraryState: ready
+                      error: null
+                    - position: 1
+                      sourceTitle: Copper Fields
+                      sourceArtist: Marisol Vega
+                      sourceAlbum: null
+                      sourceDurationSec: 199
+                      state: matched
+                      matchScore: 0.88
+                      track:
+                        id: yt:Rb4Tn8wKx1c
+                        title: Copper Fields
+                        artist: Marisol Vega
+                        artistId: ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA
+                        album: Copper Fields
+                        albumId: ytalbum:MPREb_W2pZ7nQx4Ld
+                        durationSec: 198
+                        year: null
+                        coverArt: yt:Rb4Tn8wKx1c
+                        isExternal: true
+                        libraryState: pending
+                      error: null
+                    - position: 2
+                      sourceTitle: Untitled Demo 4
+                      sourceArtist: Northbound Static
+                      sourceAlbum: null
+                      sourceDurationSec: 95
+                      state: not_found
+                      matchScore: null
+                      track: null
+                      error: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/listen-now:
+    get:
+      operationId: getListenNow
+      tags:
+      - discovery
+      summary: Listen Now shelves
+      description: RF-06 and RF-11. Library only (no request to YouTube Music), cheap to call on every app start.
+      responses:
+        '200':
+          description: Shelves (each may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListenNow'
+              example:
+                recentlyPlayed:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  name: Salt & Ember
+                  artist: Marisol Vega
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002
+                  year: 2025
+                  songCount: 12
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  isExternal: false
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  name: Harbour Lights
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  year: 2023
+                  songCount: 10
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                recentlyAdded:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003
+                  name: Low Orbit
+                  artist: Northbound Static
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003
+                  year: 2021
+                  songCount: 8
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003
+                  isExternal: false
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  name: Salt & Ember
+                  artist: Marisol Vega
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002
+                  year: 2025
+                  songCount: 12
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  isExternal: false
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  name: Harbour Lights
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  year: 2023
+                  songCount: 10
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                mostPlayed:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                  title: Lighthouse Keeper
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 214
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002
+                  title: Tidewater
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 187
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003
+                  title: Brasas
+                  artist: Marisol Vega
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002
+                  album: Salt & Ember
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  durationSec: 201
+                  year: 2025
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  isExternal: false
+                  libraryState: ready
+                favouriteRadios:
+                - seedId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                  title: Lighthouse Keeper Radio
+                  subtitle: The Paper Lanterns
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: API key (`utk_…`). Preferred.
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: apiKey
+      description: Same key as a query parameter. Equivalent to the header.
+  responses:
+    BadRequest:
+      description: Invalid input (`missing_parameter`, `invalid_parameter`, `invalid_id`, `unsupported_url`, `conflicting_auth`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_id
+            title: Invalid id
+            status: 400
+            detail: '''yt:abc'' is not a valid video id'
+            code: invalid_id
+            instance: /ut/v1/…
+    Unauthorized:
+      description: '`authentication_required`, `authentication_failed` or `invalid_api_key`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_api_key
+            title: Invalid API key
+            status: 401
+            detail: The API key is unknown or revoked
+            code: invalid_api_key
+            instance: /ut/v1/…
+    Forbidden:
+      description: '`forbidden` or `account_disabled`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#forbidden
+            title: Forbidden
+            status: 403
+            detail: Not allowed for this user
+            code: forbidden
+            instance: /ut/v1/…
+    NotFound:
+      description: '`not_found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#not_found
+            title: Not found
+            status: 404
+            detail: No such track
+            code: not_found
+            instance: /ut/v1/…
+    Conflict:
+      description: '`conflict` or `feature_disabled`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#feature_disabled
+            title: Feature disabled
+            status: 409
+            detail: Spotify import is not configured on this server
+            code: feature_disabled
+            instance: /ut/v1/…
+    TooLarge:
+      description: '`payload_too_large`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#payload_too_large
+            title: Payload too large
+            status: 413
+            detail: Body over 64 KiB
+            code: payload_too_large
+            instance: /ut/v1/…
+    RateLimited:
+      description: '`rate_limited` (rate limit or temporary lockout).'
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+          description: Seconds.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#rate_limited
+            title: Too many requests
+            status: 429
+            detail: Retry in 60 seconds
+            code: rate_limited
+            instance: /ut/v1/…
+            retryAfter: 60
+    Upstream:
+      description: '`upstream_unavailable` (YouTube Music, Spotify, LRCLIB).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#upstream_unavailable
+            title: Upstream unavailable
+            status: 502
+            detail: YouTube Music did not answer in time
+            code: upstream_unavailable
+            instance: /ut/v1/…
+    NotImplemented:
+      description: '`not_implemented` (router stubs of PLAN T02).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#not_implemented
+            title: Not implemented
+            status: 501
+            detail: Not implemented yet
+            code: not_implemented
+            instance: /ut/v1/…
+    Internal:
+      description: '`internal_error`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#internal_error
+            title: Internal error
+            status: 500
+            detail: Correlation id 7f3a9c2e
+            code: internal_error
+            instance: /ut/v1/…
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details (`application/problem+json`). Clients switch on `code` only; the mapping
+        from `TunesError` is in contracts/errors.md.
+      required:
+      - type
+      - title
+      - status
+      - code
+      properties:
+        type:
+          type: string
+          format: uri
+          description: '`https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#<code>`'
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum:
+          - missing_parameter
+          - invalid_parameter
+          - invalid_id
+          - authentication_required
+          - authentication_failed
+          - conflicting_auth
+          - invalid_api_key
+          - account_disabled
+          - forbidden
+          - not_found
+          - conflict
+          - feature_disabled
+          - unsupported_url
+          - payload_too_large
+          - rate_limited
+          - upstream_unavailable
+          - download_failed
+          - not_implemented
+          - internal_error
+        retryAfter:
+          type: integer
+          minimum: 1
+          description: Seconds, only with `rate_limited` (same as the `Retry-After` header).
+    LibraryState:
+      type:
+      - string
+      - 'null'
+      enum:
+      - pending
+      - ready
+      - failed
+      - null
+      description: 'State of the library track behind the item: `ready` (archived), `pending` (requested, downloading),
+        `failed`. `null` for external items never requested.'
+    TrackItem:
+      type: object
+      description: A song, from the library or from YouTube Music (`isExternal`).
+      required:
+      - id
+      - title
+      - artist
+      - coverArt
+      - isExternal
+      - libraryState
+      properties:
+        id:
+          type: string
+          description: Library UUID, or `yt:<videoId>` while not archived.
+        title:
+          type: string
+        artist:
+          type: string
+        artistId:
+          type:
+          - string
+          - 'null'
+          description: Library UUID or `ytartist:` id.
+        album:
+          type:
+          - string
+          - 'null'
+        albumId:
+          type:
+          - string
+          - 'null'
+          description: Library UUID or `ytalbum:` id.
+        durationSec:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        year:
+          type:
+          - integer
+          - 'null'
+        coverArt:
+          type: string
+          description: Cover art id for `/rest/getCoverArt`.
+        isExternal:
+          type: boolean
+          description: True when the song is not archived in the library yet.
+        libraryState:
+          $ref: '#/components/schemas/LibraryState'
+    AlbumItem:
+      type: object
+      required:
+      - id
+      - name
+      - artist
+      - coverArt
+      - isExternal
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        artist:
+          type: string
+        artistId:
+          type:
+          - string
+          - 'null'
+        year:
+          type:
+          - integer
+          - 'null'
+        songCount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        coverArt:
+          type: string
+        isExternal:
+          type: boolean
+    ArtistItem:
+      type: object
+      required:
+      - id
+      - name
+      - coverArt
+      - isExternal
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        coverArt:
+          type: string
+        isExternal:
+          type: boolean
+    ServerInfo:
+      type: object
+      required:
+      - name
+      - version
+      - apiVersion
+      - openSubsonic
+      - capabilities
+      properties:
+        name:
+          type: string
+          const: UltimateTunes
+        version:
+          type: string
+          description: Root `VERSION` file.
+        apiVersion:
+          type: string
+          const: '1'
+          description: Major version of this API (`/ut/v1`).
+        openSubsonic:
+          type: object
+          required:
+          - apiVersion
+          - extensions
+          properties:
+            apiVersion:
+              type: string
+            extensions:
+              type: array
+              items:
+                type: string
+        capabilities:
+          type: object
+          description: Feature flags. The app hides what is false.
+          required:
+          - externalSearch
+          - radio
+          - lyrics
+          - youtubeMusicImport
+          - spotifyImport
+          - streamingWhileDownloading
+          properties:
+            externalSearch:
+              type: boolean
+            radio:
+              type: boolean
+            lyrics:
+              type: boolean
+            youtubeMusicImport:
+              type: boolean
+            spotifyImport:
+              type: boolean
+              description: True only when the admin configured Spotify credentials (RF-08).
+            streamingWhileDownloading:
+              type: boolean
+    Me:
+      type: object
+      required:
+      - id
+      - username
+      - role
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum:
+          - admin
+          - user
+        apiKeyId:
+          type: string
+          description: Key used for this request.
+    ApiKey:
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - createdAt
+      - lastUsedAt
+      - revokedAt
+      - current
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Device name.
+        prefix:
+          type: string
+          description: First 12 characters of the key, for recognising it.
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revokedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current:
+          type: boolean
+          description: True for the key that made this request.
+    ApiKeyList:
+      type: object
+      required:
+      - keys
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKey'
+          description: Newest first, revoked keys included.
+    CreateKeyRequest:
+      type: object
+      required:
+      - username
+      - password
+      - name
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          format: password
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Device name, e.g. `Pixel 9`.
+    CreatedKey:
+      type: object
+      required:
+      - key
+      - secret
+      properties:
+        key:
+          $ref: '#/components/schemas/ApiKey'
+        secret:
+          type: string
+          pattern: ^utk_[A-Za-z0-9_-]{43}$
+          description: The full API key. Shown **only in this response**, never again (only a hash is stored).
+    TrackError:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          description: Worker error code (contracts/errors.md, worker table).
+        message:
+          type: string
+    TrackStatus:
+      type: object
+      required:
+      - id
+      - trackId
+      - state
+      - progress
+      - attempts
+      - maxAttempts
+      - error
+      - streamable
+      - updatedAt
+      properties:
+        id:
+          type: string
+          description: The id as requested (may be a `yt:` id).
+        trackId:
+          type:
+          - string
+          - 'null'
+          description: Library UUID once the item is materialized. Clients should switch to it once `state` is `ready`
+            (contracts/ids.md).
+        state:
+          type: string
+          enum:
+          - not_requested
+          - queued
+          - downloading
+          - tagging
+          - ready
+          - failed
+          - cancelled
+          description: 'Job state (RF-04). `not_requested`: an external id nobody asked for yet. `cancelled`: an
+            admin cancelled the job.'
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Download progress (1 once ready).
+        attempts:
+          type: integer
+          minimum: 0
+        maxAttempts:
+          type: integer
+          minimum: 1
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/TrackError'
+          - type: 'null'
+          description: Last error, set when `failed` (or retrying).
+        streamable:
+          type: boolean
+          description: '`/rest/stream` would start playing now (ready, or downloading with data in staging).'
+        updatedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    RequestTrack:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum:
+          - keep
+          - prefetch
+          default: keep
+          description: '`prefetch`: the next track of the play queue (higher priority than `keep`, lower than `stream`).'
+    Radio:
+      type: object
+      required:
+      - seed
+      - items
+      properties:
+        seed:
+          $ref: '#/components/schemas/TrackItem'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          description: Library items use library ids (local-first).
+    SearchResult:
+      type: object
+      required:
+      - query
+      - artists
+      - albums
+      - tracks
+      properties:
+        query:
+          type: string
+        artists:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtistItem'
+        albums:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlbumItem'
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+    CreateImport:
+      type: object
+      required:
+      - url
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: 'Playlist URL. Allowed hosts: `music.youtube.com`, `www.youtube.com`, `youtube.com`, `m.youtube.com`
+            (with `list=`), and `open.spotify.com` (`/playlist/<id>`) when `spotifyImport` is enabled. Anything
+            else: `unsupported_url`.'
+        name:
+          type: string
+          maxLength: 200
+          description: 'Name of the resulting playlist (default: the source playlist''s name).'
+    ImportItem:
+      type: object
+      required:
+      - position
+      - sourceTitle
+      - state
+      properties:
+        position:
+          type: integer
+          minimum: 0
+        sourceTitle:
+          type: string
+        sourceArtist:
+          type:
+          - string
+          - 'null'
+        sourceAlbum:
+          type:
+          - string
+          - 'null'
+        sourceDurationSec:
+          type:
+          - integer
+          - 'null'
+        state:
+          type: string
+          enum:
+          - pending
+          - matched
+          - not_found
+          - failed
+        matchScore:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+        track:
+          oneOf:
+          - $ref: '#/components/schemas/TrackItem'
+          - type: 'null'
+        error:
+          type:
+          - string
+          - 'null'
+    ImportSummary:
+      type: object
+      required:
+      - id
+      - source
+      - sourceUrl
+      - name
+      - state
+      - total
+      - matched
+      - notFound
+      - progress
+      - playlistId
+      - error
+      - createdAt
+      - updatedAt
+      - finishedAt
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+          enum:
+          - ytmusic
+          - spotify
+        sourceUrl:
+          type: string
+        name:
+          type:
+          - string
+          - 'null'
+        state:
+          type: string
+          enum:
+          - queued
+          - reading
+          - matching
+          - done
+          - failed
+          description: '`done` once every item is matched or not found and the playlist exists. Track downloads
+            continue in the background (see each track''s status).'
+        total:
+          type: integer
+          minimum: 0
+        matched:
+          type: integer
+          minimum: 0
+        notFound:
+          type: integer
+          minimum: 0
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        playlistId:
+          type:
+          - string
+          - 'null'
+          description: The user playlist created from the import.
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/TrackError'
+          - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    Import:
+      allOf:
+      - $ref: '#/components/schemas/ImportSummary'
+      - type: object
+        required:
+        - items
+        properties:
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/ImportItem'
+            description: Match report, in source order.
+    ImportList:
+      type: object
+      required:
+      - imports
+      properties:
+        imports:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportSummary'
+    RadioStation:
+      type: object
+      required:
+      - seedId
+      - title
+      - coverArt
+      properties:
+        seedId:
+          type: string
+          description: Pass to `GET /ut/v1/radio?seed=`.
+        title:
+          type: string
+        subtitle:
+          type:
+          - string
+          - 'null'
+        coverArt:
+          type: string
+    ListenNow:
+      type: object
+      required:
+      - recentlyPlayed
+      - recentlyAdded
+      - mostPlayed
+      - favouriteRadios
+      properties:
+        recentlyPlayed:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlbumItem'
+          maxItems: 20
+          description: Albums of the user's latest plays, most recent first.
+        recentlyAdded:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlbumItem'
+          maxItems: 20
+        mostPlayed:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 20
+        favouriteRadios:
+          type: array
+          items:
+            $ref: '#/components/schemas/RadioStation'
+          maxItems: 10
+          description: Radios seeded from the user's starred songs.
