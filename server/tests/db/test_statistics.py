@@ -11,6 +11,7 @@ and after `migrate`.
 """
 
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
@@ -18,11 +19,19 @@ from pathlib import Path
 import pytest
 
 from ultimatetunes.db import Database, DatabaseError, migrate
-from ultimatetunes.db.driver import Connection, Dialect, Params, Result, connect_sqlite
+from ultimatetunes.db.driver import (
+    SQLITE_BUSY_TIMEOUT_MS,
+    Connection,
+    Dialect,
+    Params,
+    Result,
+    connect_sqlite,
+)
 from ultimatetunes.library.repository import _ARTISTS, _ARTISTS_GROUP
 
 CONTRACT_MIGRATIONS = Path(__file__).resolve().parents[3] / "contracts" / "db" / "migrations"
 TS = "2026-01-01T00:00:00Z"
+BUSY_S = SQLITE_BUSY_TIMEOUT_MS / 1000
 ARTISTS_SQL = _ARTISTS + _ARTISTS_GROUP + " ORDER BY ar.name_norm, ar.id"
 
 
@@ -124,7 +133,7 @@ def test_migrate_leaves_statistics_behind(path: Path) -> None:
         conn.close()
 
 
-def test_readers_reload_statistics_the_writer_refreshed_while_running(path: Path) -> None:
+def test_readers_pick_up_statistics_the_writer_refreshed_while_running(path: Path) -> None:
     conn = connect_sqlite(path)
     migrate.migrate(conn, CONTRACT_MIGRATIONS)  # statistics of an empty library
     conn.close()
@@ -161,14 +170,55 @@ def test_close_refreshes_statistics_of_what_the_writer_wrote(path: Path) -> None
         conn.close()
 
 
+def test_a_stale_reader_is_replaced_while_another_connection_writes(path: Path) -> None:
+    # Reloading statistics in place (`ANALYZE sqlite_schema`) waits for the write lock, up to
+    # the 5 s busy timeout; a new connection only reads them.
+    migrated_without_stats(path)
+    db = Database.sqlite(path, readers=1, optimize_every=1)
+    other = sqlite3.connect(path, isolation_level=None)
+    try:
+        with db.read():
+            pass
+        with db.transaction() as writer:  # refreshes after it: the reader is now stale
+            writer.execute("DELETE FROM tracks WHERE id = 't0_0'")
+        other.execute("BEGIN IMMEDIATE")  # e.g. `scan-library` writing meanwhile
+        started = time.monotonic()
+        with db.read() as reader:
+            assert album_lookup_index(reader) == "ix_tracks_album"
+        assert time.monotonic() - started < BUSY_S / 2
+    finally:
+        other.close()
+        db.close()
+
+
+def test_close_does_not_wait_for_another_writer(
+    path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    conn = connect_sqlite(path)
+    migrate.migrate(conn, CONTRACT_MIGRATIONS)
+    conn.close()
+    db = Database.sqlite(path, readers=1)
+    seed(db.transaction)  # statistics are stale: the refresh on close has to write
+    other = sqlite3.connect(path, isolation_level=None)
+    try:
+        other.execute("BEGIN IMMEDIATE")
+        started = time.monotonic()
+        db.close()
+        assert time.monotonic() - started < BUSY_S / 2
+    finally:
+        other.close()
+    assert "statistics failed" in caplog.text
+
+
 class FlakyStats:
-    """A connection whose statistics calls fail, counting the calls."""
+    """A connection whose refresh fails, recording what happens to it in `log`."""
 
     dialect: Dialect = "sqlite"
 
-    def __init__(self) -> None:
+    def __init__(self, log: list[str] | None = None) -> None:
+        self.log = log if log is not None else []
         self.optimized = 0
-        self.reloaded = 0
+        self.log.append("open")
 
     def execute(self, sql: str, params: Params = ()) -> Result:
         return Result([], 0)
@@ -179,31 +229,24 @@ class FlakyStats:
     def table_exists(self, name: str) -> bool:
         return False
 
-    def optimize(self) -> None:
+    def optimize(self, *, wait_ms: int | None = None) -> None:
         self.optimized += 1
         raise DatabaseError("database is locked")
 
-    def reload_statistics(self) -> None:
-        self.reloaded += 1
-        raise DatabaseError("database is locked")
-
     def close(self) -> None:
-        pass
-
-
-def flaky_db(conns: list[FlakyStats], **kwargs: int) -> Database:
-    def opener() -> Connection:
-        conns.append(FlakyStats())
-        return conns[-1]
-
-    return Database(opener, **kwargs)
+        self.log.append("close")
 
 
 def test_failed_refreshes_are_logged_and_never_fail_the_caller(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     conns: list[FlakyStats] = []
-    db = flaky_db(conns, readers=1, optimize_every=1)
+
+    def opener() -> Connection:
+        conns.append(FlakyStats())
+        return conns[-1]
+
+    db = Database(opener, readers=1, optimize_every=1)
     with db.read() as conn:
         assert conn.execute("SELECT 1").fetchall() == []
     with db.read():
@@ -212,41 +255,52 @@ def test_failed_refreshes_are_logged_and_never_fail_the_caller(
         pass
     db.optimize()
     db.close()
+    # First use, after the write, explicit, close; nothing refreshed: the reader is kept.
     writer, reader = conns
-    # First use, after the write, explicit, close; the reader retries its failed reload.
     assert writer.optimized == 4
-    assert reader.reloaded == 2
+    assert reader.log == ["open", "close"]
     assert "statistics failed" in caplog.text
 
 
-def test_statistics_are_refreshed_once_on_first_use_then_every_n_writes() -> None:
-    calls: list[str] = []
+def test_statistics_are_refreshed_on_first_use_every_n_writes_and_on_close() -> None:
+    log: list[str] = []
 
     class Counting(FlakyStats):
-        def optimize(self) -> None:
-            calls.append("optimize")
-
-        def reload_statistics(self) -> None:
-            calls.append("reload")
+        def optimize(self, *, wait_ms: int | None = None) -> None:
+            self.log.append(f"optimize {wait_ms}")
 
     def opener() -> Connection:
-        return Counting()
+        return Counting(log)
 
     db = Database(opener, readers=1, optimize_every=3)
     with db.read():
         pass
     with db.read():
         pass
-    assert calls == ["optimize", "reload"]  # the reader loads them once
+    assert log == ["open", "optimize None", "open"]  # writer, its refresh, the reader
     for _ in range(3):
         with db.transaction():
             pass
     with db.read():
         pass
-    assert calls == ["optimize", "reload", "optimize", "reload"]
+    # The stale reader is closed and replaced by one that loads the new statistics.
+    assert log[3:] == ["optimize None", "close", "open"]
     db.close()
     db.close()  # closing twice does not refresh again
-    assert calls.count("optimize") == 3
+    assert log[6:] == ["optimize 200", "close", "close"]
+
+
+def test_close_skips_the_refresh_while_the_writer_is_busy() -> None:
+    log: list[str] = []
+    db = Database(lambda: FlakyStats(log), readers=1)
+    with db.transaction():
+        pass
+    assert db._write_lock.acquire(timeout=1)  # a write still running in another thread
+    try:
+        db.close()
+    finally:
+        db._write_lock.release()
+    assert log == ["open", "close"]  # the first-use refresh only (it failed, not logged here)
 
 
 def test_optimize_every_must_be_positive() -> None:

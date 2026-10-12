@@ -57,10 +57,9 @@ def test_contract_migrations_apply_on_postgres(pg: PostgresConnection) -> None:
 
 
 def test_statistics_hooks_run_on_postgres(pg: PostgresConnection) -> None:
-    # `migrate` ended with ANALYZE (issue #54); both hooks also run on their own.
+    # `migrate` ended with ANALYZE (issue #54); the hook also runs on its own.
     migrate.migrate(pg, CONTRACT_MIGRATIONS, FakeClock())
-    pg.optimize()
-    pg.reload_statistics()
+    pg.optimize(wait_ms=100)  # no lock wait bound on PostgreSQL: the same ANALYZE
     # reltuples is -1 until the table is first analyzed (or vacuumed).
     reltuples = pg.execute("SELECT reltuples FROM pg_class WHERE oid = 'tracks'::regclass").scalar()
     assert reltuples == 0

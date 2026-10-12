@@ -73,14 +73,10 @@ class Connection(Protocol):
 
     def table_exists(self, name: str) -> bool: ...
 
-    def optimize(self) -> None:
+    def optimize(self, *, wait_ms: int | None = None) -> None:
         """Refreshes the query planner statistics of the tables that need it (SQLite
-        `PRAGMA optimize`, PostgreSQL `ANALYZE`). Writes statistics: writer connections only."""
-        ...
-
-    def reload_statistics(self) -> None:
-        """Makes this connection use statistics another connection refreshed (SQLite caches
-        them per connection; a no-op on PostgreSQL)."""
+        `PRAGMA optimize`, PostgreSQL `ANALYZE`). Writes statistics: writer connections only.
+        `wait_ms` bounds the wait for another writer (SQLite), e.g. while shutting down."""
         ...
 
     def close(self) -> None: ...
@@ -137,12 +133,15 @@ class SqliteConnection:
         ).fetchone()
         return found is not None
 
-    def optimize(self) -> None:
-        self.execute(SQLITE_OPTIMIZE)
-
-    def reload_statistics(self) -> None:
-        # Documented way to make a connection re-read sqlite_stat1 written by another one.
-        self.execute("ANALYZE sqlite_schema")
+    def optimize(self, *, wait_ms: int | None = None) -> None:
+        if wait_ms is None:
+            self.execute(SQLITE_OPTIMIZE)
+            return
+        self.execute(f"PRAGMA busy_timeout={int(wait_ms)}")
+        try:
+            self.execute(SQLITE_OPTIMIZE)
+        finally:
+            self.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
 
     def close(self) -> None:
         self.raw.close()
@@ -216,11 +215,8 @@ class PostgresConnection:
         ).fetchone()
         return found is not None
 
-    def optimize(self) -> None:
+    def optimize(self, *, wait_ms: int | None = None) -> None:
         self.execute("ANALYZE")
-
-    def reload_statistics(self) -> None:
-        """PostgreSQL shares statistics between sessions."""
 
     def close(self) -> None:
         self.raw.close()

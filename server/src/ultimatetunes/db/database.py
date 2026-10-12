@@ -14,8 +14,10 @@ reader connections. Nothing is opened until first use, so `/healthz` works witho
 
 Planner statistics (issue #54): the writer refreshes them (`Connection.optimize`) on first use,
 every `optimize_every` write transactions and on close, as SQLite recommends for long-lived
-connections; readers reload them before their next use after a refresh, because SQLite caches
-statistics per connection. A failed refresh is logged and never fails the caller.
+connections. SQLite loads statistics per connection when it opens, and reloading them in place
+needs the write lock, so after a refresh each reader is replaced by a new connection before its
+next use. A failed refresh is logged and never fails the caller; on close it waits for another
+writer at most `CLOSE_WAIT_S`, so a busy database never delays shutdown by the busy timeout.
 """
 
 import logging
@@ -31,6 +33,8 @@ DEFAULT_READERS = 4
 # Write transactions between two statistics refreshes. `PRAGMA optimize` is a no-op in a few
 # microseconds when no table changed much, and analyzes with a row limit when one did.
 DEFAULT_OPTIMIZE_EVERY = 1000
+# Longest `close()` waits for the writer before it skips the final statistics refresh.
+CLOSE_WAIT_S = 0.2
 
 log = logging.getLogger(__name__)
 
@@ -86,12 +90,12 @@ class Database:
             self._writer = self._new()
         return self._writer
 
-    def _optimize_locked(self) -> None:
+    def _optimize_locked(self, *, wait_ms: int | None = None) -> None:
         """Refreshes the statistics through the writer; the caller holds the write lock."""
         self._optimized_once = True
         self._writes_since_optimize = 0
         try:
-            self._writer_conn().optimize()
+            self._writer_conn().optimize(wait_ms=wait_ms)
         except DatabaseError:
             log.warning("refreshing the query planner statistics failed", exc_info=True)
             return
@@ -122,17 +126,23 @@ class Database:
             if self._writes_since_optimize >= self._optimize_every:
                 self._optimize_locked()
 
-    def _fresh(self, conn: Connection) -> Connection:
-        """`conn` with the current statistics loaded."""
-        generation = self._stats_generation
-        if self._reader_generation.get(id(conn)) != generation:
-            try:
-                conn.reload_statistics()
-            except DatabaseError:
-                log.warning("reloading the query planner statistics failed", exc_info=True)
-            else:
-                self._reader_generation[id(conn)] = generation
+    def _new_reader(self) -> Connection:
+        generation = self._stats_generation  # read before opening: never newer than its stats
+        conn = self._new()
+        self._reader_generation[id(conn)] = generation
         return conn
+
+    def _fresh(self, conn: Connection) -> Connection:
+        """`conn`, or a new reader in its place when the statistics were refreshed since it
+        opened (it loads them on open; `ANALYZE sqlite_schema` would take the write lock)."""
+        if self._reader_generation.get(id(conn)) == self._stats_generation:
+            return conn
+        with self._all_lock:
+            if conn in self._all:
+                self._all.remove(conn)
+        self._reader_generation.pop(id(conn), None)
+        conn.close()
+        return self._new_reader()
 
     @contextmanager
     def read(self) -> Iterator[Connection]:
@@ -142,18 +152,22 @@ class Database:
             try:
                 conn = self._readers.get_nowait()
             except queue.Empty:
-                conn = self._new()
+                conn = self._new_reader()
+            conn = self._fresh(conn)
             try:
-                yield self._fresh(conn)
+                yield conn
             finally:
                 self._readers.put(conn)
 
     def close(self) -> None:
         """Refreshes the statistics (SQLite's advice before closing a long-lived connection),
         then closes every connection opened so far. The database cannot be used afterwards."""
-        with self._write_lock:
-            if self._writer is not None and not self._closed:
-                self._optimize_locked()
+        if self._write_lock.acquire(timeout=CLOSE_WAIT_S):
+            try:
+                if self._writer is not None and not self._closed:
+                    self._optimize_locked(wait_ms=int(CLOSE_WAIT_S * 1000))
+            finally:
+                self._write_lock.release()
         self._closed = True
         with self._all_lock:
             conns, self._all = self._all, []
