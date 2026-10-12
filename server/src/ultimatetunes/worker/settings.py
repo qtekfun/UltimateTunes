@@ -16,8 +16,10 @@ from ultimatetunes.settings import AreaSettings
 
 # yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`).
 CLIENTS_PATTERN = r"^[a-z0-9_]+(,[a-z0-9_]+)*$"
-# Fingerprint of the yt-dlp release signing key (spike T03c), 40 hex digits, no spaces.
-YTDLP_KEY_FINGERPRINT = "AC0CBBE6848D6A873464AF4E57CF65933B5A7581"
+# Fingerprint of the yt-dlp release signing key (spike T03c; the Dockerfile pins the same
+# one), written in gpg's groups of four and compared without spaces.
+YTDLP_SIGNER = "AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581"
+YTDLP_KEY_FINGERPRINT = YTDLP_SIGNER.replace(" ", "")
 
 
 class WorkerSettings(AreaSettings):
