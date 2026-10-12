@@ -1,0 +1,13 @@
+{
+  "id": 4242001,
+  "name": "Lighthouse Keeper",
+  "trackName": "Lighthouse Keeper",
+  "artistName": "The Paper Lanterns",
+  "albumName": "Harbour Lights",
+  "duration": 212,
+  "instrumental": false,
+  "hasWordSync": false,
+  "plainLyrics": "Salt on the window, the night coming in\nI keep the light for the ships that never were\nTurning and turning, the harbour asleep\n",
+  "syncedLyrics": "[00:00.00] Salt on the window, the night coming in\n[00:04.21] I keep the light for the ships that never were\n[00:09.875] Turning and turning, the harbour asleep\n",
+  "lyricsfile": "version: '1.0'\n"
+}
