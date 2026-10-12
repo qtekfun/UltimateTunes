@@ -6,7 +6,7 @@ Async and typed: implementations return these frozen records, never raw ytmusica
 (spike T03b). Ids are validated against contracts/ids.md before any call. Errors are
 `TunesError`s, so the routers map them without knowing the catalog:
 `CatalogNotFound` (→ not found), `CatalogThrottled` / `CatalogUnavailable` /
-`CatalogParseError` (→ upstream unavailable).
+`CatalogClientError` / `CatalogParseError` (→ upstream unavailable).
 """
 
 from dataclasses import dataclass
@@ -33,6 +33,14 @@ class CatalogUnavailable(UpstreamUnavailable):
 
 class CatalogThrottled(CatalogUnavailable):
     default_message = "YouTube Music is throttling requests"
+
+
+class CatalogClientError(CatalogUnavailable):
+    """YouTube Music refused the request itself (a 4xx other than 403/404/429): asking again
+    gets the same answer, so it is never retried, and callers such as imports fail at once.
+    Still an `UpstreamUnavailable` on the wire."""
+
+    default_message = "YouTube Music refused the request"
 
 
 class CatalogParseError(CatalogUnavailable):

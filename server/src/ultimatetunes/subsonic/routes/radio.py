@@ -5,10 +5,12 @@
 Same source as `/ut/v1/radio` (`radio.service`), local-first: archived songs come with their
 library ids, the others with `yt:` ids (plain clients play them like any song). The songs are
 *similar* ones, so a song seed is left out; for an artist seed the list starts with the
-artist's top song. `count` (default 50) is capped at `MAX_RADIO`.
+artist's top song. `count` (default 50) is capped at `MAX_RADIO`; `count=0` answers an empty
+list without asking YouTube Music.
 """
 
 from ultimatetunes.errors import InvalidParameter
+from ultimatetunes.ids.virtual import parse_id
 from ultimatetunes.radio.service import MAX_RADIO, RadioService
 from ultimatetunes.search import render
 from ultimatetunes.search.service import Song
@@ -25,8 +27,12 @@ async def get_similar_songs2(req: SubsonicRequest) -> Payload:
     if count is None or count < 0:
         raise InvalidParameter("count must be zero or more")
     count = min(count, MAX_RADIO)
+    if count == 0:
+        # Nothing asked for: check the id's form only, never call the catalog.
+        parse_id(seed_id)
+        return {"similarSongs2": {"song": []}}
     radio = await RadioService.of(req.services).radio(
-        req.user.user_id, seed_id, max(count, 1), artists=True
+        req.user.user_id, seed_id, count, artists=True
     )
     songs: list[Song] = [radio.seed] if radio.from_artist else []
     songs = [*songs, *radio.items][:count]
