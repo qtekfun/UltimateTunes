@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Secrets never reach the log output (CLAUDE.md, Security rules)."""
 
+import base64
 import io
 import json
 import logging
+import secrets
+import string
 from collections.abc import Iterator
 
 import pytest
@@ -163,3 +166,32 @@ def test_outbound_request_urls_are_not_logged(
     assert "topic-1" not in out
     assert "connect_tcp" not in out
     assert "transport failed" in out
+
+
+def _ntfy_token() -> str:
+    """Shaped like an ntfy access token, made at run time (no secret-looking literal here)."""
+    alphabet = string.ascii_lowercase + string.digits
+    return "tk_" + "".join(secrets.choice(alphabet) for _ in range(29))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "token {} created",
+        "Authorization: Bearer {}",
+        '{{"note": "{}"}}',
+        "UT_NOTIFY_TOKEN={}",
+    ],
+)
+def test_ntfy_tokens_are_redacted_anywhere(template: str) -> None:
+    token = _ntfy_token()
+    out = redact(template.format(token))
+    assert token not in out
+    assert REDACTED in out
+
+
+def test_basic_authorization_is_redacted() -> None:
+    pair = base64.b64encode(f"alerts:{secrets.token_urlsafe(16)}".encode()).decode()
+    out = redact(f"Authorization: Basic {pair}")
+    assert pair not in out
+    assert REDACTED in out

@@ -33,6 +33,8 @@ _COOKIE = re.compile(
 )
 # An API key anywhere, whatever surrounds it (contracts/ids.md: `utk_` + 43 base64url chars).
 _API_KEY = re.compile(r"utk_[A-Za-z0-9_-]{43}")
+# An ntfy access token anywhere (`tk_` + 29 letters and digits; `UT_NOTIFY_TOKEN`).
+_NTFY_TOKEN = re.compile(r"\btk_[A-Za-z0-9]{29}\b")
 _SECRET_KEY = re.compile(
     r"apikey|api_key|password|passwd|token|secret|cookie|authorization", re.IGNORECASE
 )
@@ -41,6 +43,7 @@ _SECRET_KEY = re.compile(
 def redact(text: str) -> str:
     """Hides credential values in free text (URLs, headers, JSON, key=value pairs)."""
     text = _API_KEY.sub(REDACTED, text)
+    text = _NTFY_TOKEN.sub(REDACTED, text)
     text = _COOKIE.sub(lambda m: m.group("key") + REDACTED, text)
     text = _PARAM.sub(lambda m: m.group("key") + REDACTED, text)
     return _PAIR.sub(lambda m: m.group("key") + REDACTED, text)
