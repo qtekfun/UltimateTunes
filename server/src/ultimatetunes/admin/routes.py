@@ -49,7 +49,7 @@ from ultimatetunes.admin.security import (
 )
 from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.repository import User
-from ultimatetunes.auth.service import AuthService
+from ultimatetunes.auth.service import ADMIN_EPOCH_PREFIX, AuthService
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.forwarded import trusted_origin
@@ -90,7 +90,7 @@ MAX_SERVER_URL = 120
 _SIZING_KEY = "utk_" + "A" * 43
 QR_SCHEME = "ultimatetunes://connect"
 # Per-user counter in the `settings` table; part of every session's fingerprint.
-SESSION_EPOCH_KEY = "admin.session_epoch."
+SESSION_EPOCH_KEY = ADMIN_EPOCH_PREFIX
 # Fixed confirmation messages of `?done=`: nothing from the query string is ever echoed.
 DONE = {
     "user_created": "User created.",

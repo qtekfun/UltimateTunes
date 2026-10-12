@@ -10,12 +10,14 @@ the limits; this module only does the arithmetic and keeps the state in `rate_li
   A locked key is refused until the lockout ends.
 - `record_failure(key, ...)` counts a failure (wrong password, invalid key); reaching
   `max_failures` locks the key for `lockout_s` and starts a new count.
-- `record_failure_backoff(key, base_s=..., max_s=...)` counts a failure and locks the key for
-  a delay that doubles with each consecutive failure (`base_s`, `2 * base_s`, ... at most
-  `max_s`). The count is kept until `record_success` (or an idle purge): it slows a guesser
-  down without ever locking the key for long.
+- `reserve_backoff(key, base_s=..., max_s=...)` is the check and the reservation of one attempt
+  in one step: refused while the key's delay runs; otherwise it counts a (provisional) failure
+  and starts the next delay, which doubles with each consecutive failure (`base_s`,
+  `2 * base_s`, ... at most `max_s`), and allows the attempt. So however many attempts arrive
+  at once when a delay ends, only one gets through. A success then clears it
+  (`record_success`); the count is otherwise kept until an idle purge.
 - `failures(key)` is the current failure count (0 for an unknown key).
-- `record_success(key)` clears the failure count.
+- `record_success(key)` clears the failure count and any running lock or delay of the key.
 - `peek(key, limit)` says how many tokens `key` holds now (a full bucket when unknown), without
   taking any or touching the key (the admin panel's view of a budget).
 - `purge_idle(idle_s)` forgets keys with no activity (hit, failure or success) for `idle_s`
@@ -64,8 +66,9 @@ class RateLimiter(Protocol):
         """Refused when this failure locked the key."""
         ...
 
-    def record_failure_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
-        """Counts a failure and locks the key for the backoff delay of that count."""
+    def reserve_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+        """Refused while the key's delay runs; else counts one failure, starts the delay of that
+        count and allows the attempt (atomically)."""
         ...
 
     def failures(self, key: str) -> int: ...
@@ -203,16 +206,20 @@ class SqliteRateLimiter:
             self._save(conn, key, bucket)
         return decision
 
-    def record_failure_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+    def reserve_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
         backoff_delay(1, base_s=base_s, max_s=max_s)  # refuses bad parameters before writing
         now = self._clock.now()
-        with self._db.transaction() as conn:
-            bucket = self._load(conn, key) or _Bucket(_FULL, format_ts(now), 0, None)
+        with self._db.transaction() as conn:  # the single writer: check and reserve as one
+            bucket = self._load(conn, key)
+            running = self._lockout(bucket)
+            if not running.allowed:
+                return running
+            bucket = bucket or _Bucket(_FULL, format_ts(now), 0, None)
             bucket.failures += 1
             delay = backoff_delay(bucket.failures, base_s=base_s, max_s=max_s)
             bucket.locked_until = format_ts(now + timedelta(seconds=delay))
             self._save(conn, key, bucket)
-        return Decision(allowed=False, retry_after_s=_ceil_s(delay))
+        return ALLOWED
 
     def failures(self, key: str) -> int:
         with self._db.read() as conn:
@@ -222,7 +229,8 @@ class SqliteRateLimiter:
     def record_success(self, key: str) -> None:
         with self._db.transaction() as conn:
             conn.execute(
-                "UPDATE rate_limit_buckets SET failures = 0, touched_at = ? WHERE key = ?",
+                "UPDATE rate_limit_buckets SET failures = 0, locked_until = NULL, touched_at = ?"
+                " WHERE key = ?",
                 (format_ts(self._clock.now()), key),
             )
 

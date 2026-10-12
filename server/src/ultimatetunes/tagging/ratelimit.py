@@ -90,15 +90,17 @@ class MemoryRateLimiter:
         bucket.locked_until = now + lockout_s
         return Decision(allowed=False, retry_after_s=_ceil_s(lockout_s))
 
-    def record_failure_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+    def reserve_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
         backoff_delay(1, base_s=base_s, max_s=max_s)  # refuses bad parameters before counting
         now = self._clock.monotonic()
+        running = self._lockout(self._buckets.get(key), now)
+        if not running.allowed:
+            return running
         bucket = self._buckets.setdefault(key, _Bucket(tokens=math.inf, updated=now, touched=now))
         bucket.touched = now
         bucket.failures += 1
-        delay = backoff_delay(bucket.failures, base_s=base_s, max_s=max_s)
-        bucket.locked_until = now + delay
-        return Decision(allowed=False, retry_after_s=_ceil_s(delay))
+        bucket.locked_until = now + backoff_delay(bucket.failures, base_s=base_s, max_s=max_s)
+        return ALLOWED
 
     def failures(self, key: str) -> int:
         bucket = self._buckets.get(key)
@@ -108,6 +110,7 @@ class MemoryRateLimiter:
         bucket = self._buckets.get(key)
         if bucket is not None:
             bucket.failures = 0
+            bucket.locked_until = None
             bucket.touched = self._clock.monotonic()
 
     def purge_idle(self, idle_s: float) -> int:

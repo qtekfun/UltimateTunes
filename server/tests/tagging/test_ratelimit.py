@@ -92,28 +92,33 @@ async def test_wait_for_token_sleeps_until_allowed() -> None:
     assert slept == [1, 1]
 
 
-def test_backoff_doubles_up_to_the_cap_and_success_resets_it() -> None:
+def test_backoff_reserves_one_attempt_per_window_and_success_resets_it() -> None:
     clock = FakeClock()
     limiter = MemoryRateLimiter(clock)
     assert limiter.failures("k") == 0
     delays = []
     for _ in range(6):
-        delays.append(limiter.record_failure_backoff("k", base_s=1, max_s=10).retry_after_s)
-        assert not limiter.locked("k").allowed
-        clock.advance(delays[-1])
+        assert limiter.reserve_backoff("k", base_s=1, max_s=10).allowed
+        refused = limiter.reserve_backoff("k", base_s=1, max_s=10)
+        assert not refused.allowed
+        delays.append(refused.retry_after_s)
+        clock.advance(refused.retry_after_s)
         assert limiter.locked("k").allowed
     assert delays == [1, 2, 4, 8, 10, 10]
     assert limiter.failures("k") == 6
+    limiter.reserve_backoff("k", base_s=1, max_s=10)
     limiter.record_success("k")
     assert limiter.failures("k") == 0
-    assert limiter.record_failure_backoff("k", base_s=1, max_s=10) == Decision(False, 1)
+    assert limiter.locked("k").allowed
+    assert limiter.reserve_backoff("k", base_s=1, max_s=10).allowed
+    assert limiter.locked("k") == Decision(False, 1)
 
 
 @pytest.mark.parametrize(("base", "cap"), [(0.0, 1.0), (1.0, 0.0)])
 def test_backoff_parameters_must_be_positive(base: float, cap: float) -> None:
     limiter = MemoryRateLimiter(FakeClock())
     with pytest.raises(ValueError, match="positive"):
-        limiter.record_failure_backoff("k", base_s=base, max_s=cap)
+        limiter.reserve_backoff("k", base_s=base, max_s=cap)
     assert limiter.failures("k") == 0
 
 

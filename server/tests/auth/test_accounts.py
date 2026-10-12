@@ -4,6 +4,7 @@
 
 import json
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from argon2 import PasswordHasher, Type
@@ -425,3 +426,35 @@ def test_create_key_with_password_failures(
     with pytest.raises(InvalidApiKey):
         service.create_key_with_password("alice", ADMIN_PASSWORD, "Laptop", OTHER_IP, "utk_x")
     assert len(service.list_keys(admin.user_id)) == 2
+
+
+def test_concurrent_outside_attempts_get_one_guess_per_delay(
+    service: AuthService, admin: Account, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security review of #74: the delay is checked and the attempt reserved atomically before
+    Argon2, so a burst of parallel guesses when a delay ends yields one guess, not one each."""
+    checked: list[str] = []
+    real_verify = Passwords.verify
+
+    def counting(self: Passwords, stored: str, password: str) -> bool:
+        checked.append("x")
+        return real_verify(self, stored, password)
+
+    monkeypatch.setattr(Passwords, "verify", counting)
+
+    def attempt(n: int) -> str:
+        try:
+            service.verify_password("alice", WRONG, FAR[n % len(FAR)])
+        except AuthenticationFailed:
+            return "guessed"
+        except RateLimited:
+            return "waited"
+        return "signed in"
+
+    for _ in range(3):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(attempt, range(8)))
+        assert outcomes.count("guessed") == 1
+        assert outcomes.count("waited") == 7
+        clock.advance(300)
+    assert len(checked) == 3
