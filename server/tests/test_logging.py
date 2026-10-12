@@ -45,6 +45,30 @@ def test_redact_hides_credentials(text: str) -> None:
     assert REDACTED in out
 
 
+API_KEY = "utk_" + "Ab3_-" * 8 + "xyz"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"key {API_KEY} created",
+        f"/rest/stream?id=1&q={API_KEY}",
+        f'{{"note": "{API_KEY}"}}',
+        f"path=/x/{API_KEY}/y",
+    ],
+)
+def test_api_keys_are_redacted_anywhere(text: str) -> None:
+    assert len(API_KEY) == 47
+    out = redact(text)
+    assert API_KEY not in out
+    assert "utk_" not in out
+    assert REDACTED in out
+
+
+def test_short_utk_strings_are_not_keys() -> None:
+    assert redact("utk_short") == "utk_short"
+
+
 def test_redact_keeps_the_parameters_after_a_redacted_one() -> None:
     text = f"GET /rest/stream?id=1&apiKey={SECRET}&f=json 200"
     assert redact(text) == f"GET /rest/stream?id=1&apiKey={REDACTED}&f=json 200"
