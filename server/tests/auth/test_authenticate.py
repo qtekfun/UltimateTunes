@@ -4,7 +4,7 @@
 
 import pytest
 
-from tests.auth.conftest import IP, Account
+from tests.auth.conftest import ADMIN_PASSWORD, IP, Account
 from ultimatetunes.auth import keys
 from ultimatetunes.auth.service import HELP_URL, AuthService
 from ultimatetunes.core.clock import FakeClock, format_ts
@@ -126,7 +126,7 @@ def test_key_as_password_in_clear_and_enc(service: AuthService, admin: Account) 
 @pytest.mark.parametrize(
     "password",
     [
-        "correct horse battery staple",  # the account password is never accepted on /rest
+        ADMIN_PASSWORD,  # the account password is never accepted on /rest
         UNKNOWN_KEY,
         "enc:zz",
         "enc:" + UNKNOWN_KEY.encode().hex(),
