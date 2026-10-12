@@ -1,17 +1,40 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# For a version tag (vX.Y.Z or vX.Y.Z-rc.N): builds the signed APK and the multi-arch server
-# image, pushes the image to GHCR and publishes a GitHub Release with the notes of that version
-# from CHANGELOG.md. See RELEASING.md.
+# Release (see RELEASING.md).
+# - Tag vX.Y.Z or vX.Y.Z-rc.N (push): checks the tag against VERSION, CHANGELOG.md and the store
+#   changelogs, builds and checks the signed APK, builds the multi-arch server image and pushes it
+#   to GHCR (`X.Y.Z`, plus `latest` for finals only), then publishes a GitHub Release with the
+#   notes of that version, `UltimateTunes-X.Y.Z.apk` and its SHA-256. Candidates are pre-releases.
+# - Dry run (manual dispatch on any branch, and PRs that touch the release pipeline or VERSION):
+#   builds and checks everything the same way and publishes nothing (no image push, no Release).
+#   Without the signing secrets (Dependabot PRs) the dry-run APK is unsigned.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and check everything, publish nothing (the only mode; publishing needs a tag push)
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - tools/check-store-texts.sh
+      - tools/release-notes.sh
+      - tools/version-code.sh
+      - tools/tests/**
+      - VERSION
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -19,19 +42,78 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.v.outputs.version }}
+      version-code: ${{ steps.v.outputs.version-code }}
       prerelease: ${{ steps.v.outputs.prerelease }}
+      publish: ${{ steps.v.outputs.publish }}
+      image: ${{ steps.v.outputs.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Check that the tag matches VERSION
+      - name: Test the release tools
+        run: tools/tests/run.sh
+
+      - name: Version, mode and tag
         id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           version=$(tr -d '[:space:]' < VERSION)
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match VERSION $version"; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          case "$version" in *-rc.*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+          code=$(tools/version-code.sh "$version")
+          if [[ "$EVENT" == push && "$REF_TYPE" == tag ]]; then
+            publish=true
+            test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::Tag $GITHUB_REF_NAME does not match VERSION $version"; exit 1; }
+          else
+            if [[ "$EVENT" == workflow_dispatch && "$DRY_RUN" != true ]]; then
+              echo "::error::A manual run is always a dry run: publish by pushing the tag (RELEASING.md)"; exit 1
+            fi
+            publish=false
+            echo "::notice::Dry run of $version (versionCode $code): builds everything, publishes nothing"
+          fi
+          case "$version" in *-rc.*) prerelease=true ;; *) prerelease=false ;; esac
+          {
+            echo "version=$version"
+            echo "version-code=$code"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+            # GHCR repository names must be lowercase.
+            echo "image=ghcr.io/${OWNER,,}/ultimatetunes-server"
+          } >> "$GITHUB_OUTPUT"
+
+      # A tag, a release PR (branch release/*) and a manual dry run on a release/* branch must carry
+      # the CHANGELOG section and the store changelogs of the version. Other dry runs only warn.
+      - name: Release notes and store changelogs
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          PUBLISH: ${{ steps.v.outputs.publish }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$PUBLISH" == true || "${HEAD_REF:-$GITHUB_REF_NAME}" == release/* ]]; then
+            tools/check-store-texts.sh --release
+            tools/release-notes.sh "$VERSION" > notes.md
+          else
+            tools/check-store-texts.sh
+            # Downgrade its ::error:: lines: here they are warnings, not failures.
+            if ! out=$(tools/check-store-texts.sh --release); then
+              sed 's/^::error::/::warning::Dry run: /' <<< "$out"
+              echo "::warning::Dry run: store changelogs for $VERSION are missing (required for a tag)"
+            fi
+            tools/release-notes.sh "$VERSION" > notes.md || {
+              echo "::warning::Dry run: CHANGELOG.md has no section for $VERSION (required for a tag)"
+              echo "_Dry run: no CHANGELOG section for $VERSION._" > notes.md
+            }
+          fi
+          { echo "### Notes of $VERSION"; echo; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: notes.md
+          retention-days: 7
 
   apk:
     needs: verify
@@ -49,41 +131,72 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
-      - name: Check and build the signed APK
+      # android/app/build.gradle.kts signs the release build when UT_KEYSTORE_FILE is set.
+      - name: Check and build the release APK
         working-directory: android
         env:
           UT_KEYSTORE_BASE64: ${{ secrets.UT_KEYSTORE_BASE64 }}
           UT_KEYSTORE_PASSWORD: ${{ secrets.UT_KEYSTORE_PASSWORD }}
           UT_KEY_ALIAS: ${{ secrets.UT_KEY_ALIAS }}
           UT_KEY_PASSWORD: ${{ secrets.UT_KEY_PASSWORD }}
+          PUBLISH: ${{ needs.verify.outputs.publish }}
         run: |
-          test -n "$UT_KEYSTORE_BASE64" || { echo "Missing signing secrets"; exit 1; }
-          export UT_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
-          echo "$UT_KEYSTORE_BASE64" | base64 -d > "$UT_KEYSTORE_FILE"
+          if [[ -n "$UT_KEYSTORE_BASE64" ]]; then
+            export UT_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+            trap 'rm -f "$UT_KEYSTORE_FILE"' EXIT
+            (umask 077 && base64 -d <<< "$UT_KEYSTORE_BASE64" > "$UT_KEYSTORE_FILE")
+          elif [[ "$PUBLISH" == true ]]; then
+            echo "::error::Missing signing secrets (UT_KEYSTORE_BASE64, see RELEASING.md)"; exit 1
+          else
+            echo "::warning::Dry run without signing secrets: the APK is unsigned"
+          fi
           ./gradlew check assembleRelease
-          rm -f "$UT_KEYSTORE_FILE"
 
-      - name: Name and hash the APK
+      # The default `bash -e` has no pipefail: commands that must fail the step are not piped.
+      - name: Verify, name and hash the APK
         env:
           VERSION: ${{ needs.verify.outputs.version }}
+          CODE: ${{ needs.verify.outputs.version-code }}
+          PUBLISH: ${{ needs.verify.outputs.publish }}
         run: |
+          out=android/app/build/outputs/apk/release
+          ls -l "$out"
+          bt=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          if [[ -f "$out/app-release.apk" ]]; then
+            src="$out/app-release.apk"
+            certs=$("$bt/apksigner" verify --print-certs "$src")
+            { echo '```'; grep -v WARNING <<< "$certs" || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$PUBLISH" != true && -f "$out/app-release-unsigned.apk" ]]; then
+            src="$out/app-release-unsigned.apk"
+          else
+            echo "::error::No signed release APK in $out"; exit 1
+          fi
+          badging=$("$bt/aapt2" dump badging "$src")
+          head -n 1 <<< "$badging"
+          [[ "$badging" == *"versionCode='$CODE'"* && "$badging" == *"versionName='$VERSION'"* ]] \
+            || { echo "::error::The APK is not version $VERSION (versionCode $CODE)"; exit 1; }
           apk="UltimateTunes-$VERSION.apk"
-          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          cp "$src" "$apk"
           sha256sum "$apk" > "$apk.sha256"
+          cat "$apk.sha256" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: apk
           path: UltimateTunes-*.apk*
+          if-no-files-found: error
           retention-days: 7
 
   image:
-    needs: verify
+    # After the APK: a failed APK build never leaves a pushed image tag behind.
+    needs: [verify, apk]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,7 +205,8 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - if: needs.verify.outputs.publish == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -101,26 +215,39 @@ jobs:
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository_owner }}/ultimatetunes-server
+          images: ${{ needs.verify.outputs.image }}
           # Release candidates never move `latest`.
           flavor: latest=false
           tags: |
             type=raw,value=${{ needs.verify.outputs.version }}
             type=raw,value=latest,enable=${{ needs.verify.outputs.prerelease == 'false' }}
 
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      # Built from the repository root: the image needs VERSION and contracts/db/migrations.
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: server/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ needs.verify.outputs.publish == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
 
+      - name: Check the pushed image
+        if: needs.verify.outputs.publish == 'true'
+        env:
+          REF: ${{ needs.verify.outputs.image }}:${{ needs.verify.outputs.version }}
+        run: |
+          manifest=$(docker buildx imagetools inspect "$REF")
+          echo "$manifest"
+          [[ "$manifest" == *linux/amd64* && "$manifest" == *linux/arm64* ]] \
+            || { echo "::error::$REF is not multi-arch (amd64 + arm64)"; exit 1; }
+
   publish:
     needs: [verify, apk, image]
+    if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -134,14 +261,21 @@ jobs:
         with:
           name: apk
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+
       - name: Publish the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.verify.outputs.version }}
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          IMAGE: ${{ needs.verify.outputs.image }}
+          DIGEST: ${{ needs.image.outputs.digest }}
         run: |
-          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {found=1; next} found && /^## \[/ {exit} found {print}' CHANGELOG.md > notes.md
-          printf '\nServer image: `ghcr.io/%s/ultimatetunes-server:%s`\n' "$GITHUB_REPOSITORY_OWNER" "$VERSION" >> notes.md
-          flag=""; [[ "$PRERELEASE" == "true" ]] && flag="--prerelease"
-          gh release create "$GITHUB_REF_NAME" UltimateTunes-*.apk UltimateTunes-*.apk.sha256 \
-            --title "UltimateTunes $VERSION" --notes-file notes.md $flag
+          apk="UltimateTunes-$VERSION.apk"
+          sha256sum -c "$apk.sha256"
+          printf '\nServer image: `%s:%s` (`%s`)\n' "$IMAGE" "$VERSION" "$DIGEST" >> notes.md
+          if [[ "$PRERELEASE" == true ]]; then flag=--prerelease; else flag=--latest; fi
+          gh release create "$GITHUB_REF_NAME" "$apk" "$apk.sha256" --verify-tag \
+            --title "UltimateTunes $VERSION" --notes-file notes.md "$flag"

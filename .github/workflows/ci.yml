@@ -180,6 +180,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test the release tools
+        run: tools/tests/run.sh
+
       - name: Check store texts
         env:
           HEAD_REF: ${{ github.head_ref }}
