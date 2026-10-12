@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Debug builds only: the demo button of the Connect screen (src/debug, never in release).
+-->
+<resources>
+    <string name="demo_try">Probar la demo</string>
+</resources>
