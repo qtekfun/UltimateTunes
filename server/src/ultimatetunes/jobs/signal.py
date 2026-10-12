@@ -20,6 +20,10 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 
 
+class ClaimAbandoned(Exception):  # noqa: N818 - a signal, not an error
+    """Raised by an `attempt` to end the wait at once (the worker hung up)."""
+
+
 class JobSignal:
     """Wakes the claims waiting in this process. `notify` is safe from any thread."""
 
@@ -56,7 +60,8 @@ async def claim_waiting[T](
     poll_s: float,
 ) -> T | None:
     """`attempt()` at once and, while it finds nothing, again whenever `signal` fires and at
-    least every `poll_s`, until `wait_s` have passed (event loop time). None when nothing came."""
+    least every `poll_s`, until `wait_s` have passed (event loop time). None when nothing came.
+    An `attempt` that raises `ClaimAbandoned` (or anything else) ends the wait at once."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + wait_s
     while True:

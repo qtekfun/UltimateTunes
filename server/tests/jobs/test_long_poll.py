@@ -92,14 +92,24 @@ async def test_a_notify_from_another_thread_wakes_the_claim() -> None:
     assert (found, attempts.calls) == ("job", 2)
 
 
-async def test_without_a_signal_the_queue_is_polled_until_the_wait_ends() -> None:
+async def test_without_a_signal_the_wait_ends_with_one_last_attempt() -> None:
     attempts = Attempts()
-    started = time.monotonic()
     with anyio.fail_after(5):
-        found = await claim_waiting(attempts, JobSignal(), wait_s=0.2, poll_s=0.04)
+        found = await claim_waiting(attempts, JobSignal(), wait_s=0.05, poll_s=LONG)
     assert found is None
-    assert attempts.calls >= 4  # once at the start, then about every poll_s
-    assert time.monotonic() - started >= 0.2
+    assert attempts.calls >= 2  # at the start and once the wait is over
+
+
+async def test_without_a_signal_the_queue_is_polled() -> None:
+    class ReadyOnFourth(Attempts):
+        async def __call__(self) -> str | None:
+            self.ready = self.calls >= 3  # three empty polls first
+            return await super().__call__()
+
+    attempts = ReadyOnFourth()
+    with anyio.fail_after(5):  # poll_s is the only thing that can bring the 4th attempt
+        found = await claim_waiting(attempts, JobSignal(), wait_s=LONG, poll_s=0.01)
+    assert (found, attempts.calls) == ("job", 4)
 
 
 async def test_a_job_queued_behind_its_back_is_found_by_polling() -> None:
@@ -198,13 +208,9 @@ def test_the_wait_is_validated(client: TestClient) -> None:
     assert claim(client, -1).status_code == 400
 
 
-async def test_a_worker_that_hung_up_is_handed_no_job(
-    services: Services, db: Database, clock: FakeClock
-) -> None:
-    add_track(db, clock, "t1", VIDEO)
-    job = services.jobs.enqueue(track_id="t1", video_id=VIDEO, priority=100)
-    app = app_with(services, claim_poll_s=LONG)
-    body = json.dumps({"workerId": "w1", "waitSeconds": 0}).encode()
+async def hang_up(app: FastAPI, wait: int) -> list[Message]:
+    """A claim whose worker hangs up right after sending it, through the raw ASGI app."""
+    body = json.dumps({"workerId": "w1", "waitSeconds": wait}).encode()
     messages: list[Message] = [
         {"type": "http.request", "body": body, "more_body": False},
         {"type": "http.disconnect"},
@@ -234,11 +240,30 @@ async def test_a_worker_that_hung_up_is_handed_no_job(
         "client": ("127.0.0.1", 50000),
         "server": ("api", 8044),
     }
-    try:
-        await app(scope, receive, send)  # no lifespan: the database is closed below
+    await app(scope, receive, send)
+    return sent
+
+
+async def test_a_worker_that_hung_up_is_handed_no_job(
+    services: Services, db: Database, clock: FakeClock
+) -> None:
+    add_track(db, clock, "t1", VIDEO)
+    job = services.jobs.enqueue(track_id="t1", video_id=VIDEO, priority=100)
+    try:  # no lifespan: the database is closed here
+        sent = await hang_up(app_with(services, claim_poll_s=LONG), 0)
     finally:
         services.db.close()
     assert sent[0]["status"] == 204
     with db.read() as conn:
         state = conn.execute("SELECT state FROM jobs WHERE id = ?", (job.id,)).scalar()
     assert state == "queued"
+
+
+async def test_a_worker_that_hung_up_ends_the_long_poll(services: Services) -> None:
+    app = app_with(services, claim_poll_s=0.01)  # the wait would last 25 s
+    try:
+        with anyio.fail_after(5):
+            sent = await hang_up(app, 25)
+    finally:
+        services.db.close()
+    assert sent[0]["status"] == 204

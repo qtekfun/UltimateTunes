@@ -23,7 +23,7 @@ from ultimatetunes.errors import InvalidParameter
 from ultimatetunes.jobs.archive import archive_finalizer
 from ultimatetunes.jobs.queue import Claimed, JobResult, Lease, ProgressReport
 from ultimatetunes.jobs.settings import JobsSettings
-from ultimatetunes.jobs.signal import claim_waiting
+from ultimatetunes.jobs.signal import ClaimAbandoned, claim_waiting
 from ultimatetunes.jobs.workers import CanaryResult, WorkerRegistry
 
 router = APIRouter()
@@ -196,13 +196,19 @@ async def claim_job(request: Request) -> Response:
     )
 
     async def attempt() -> Claimed | None:
-        # A worker that hung up (e.g. it is stopping) must not be handed a job it never sees.
+        # A worker that hung up (e.g. it is stopping) must not be handed a job it never sees,
+        # and nobody waits for the answer any more: the long poll ends here.
         if await request.is_disconnected():
-            return None
+            raise ClaimAbandoned
         return await run_in_threadpool(claim)
 
     wait_s = min(float(body.wait_seconds), settings.claim_max_wait_s)
-    claimed = await claim_waiting(attempt, jobs.signal, wait_s=wait_s, poll_s=settings.claim_poll_s)
+    try:
+        claimed = await claim_waiting(
+            attempt, jobs.signal, wait_s=wait_s, poll_s=settings.claim_poll_s
+        )
+    except ClaimAbandoned:
+        claimed = None
     if claimed is None:
         # After a long poll the worker asks again at once; otherwise it waits a little.
         retry = "0" if wait_s > 0 else str(settings.claim_retry_after_s)
