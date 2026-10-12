@@ -80,8 +80,9 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 | `ytartist:<channelId>` | External artist thumbnail |
 
 **YouTube image hosts** (approved by the author on 2026-10-12, SPEC §11): `i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com` and `yt3.googleusercontent.com`, over HTTPS only.
-- `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) fetches the thumbnail URL the catalog returned (never a URL built from client input), only if its host is on that exact list, and caches it on disk through `TtlCache`/the staging store. Any other host, a redirect off the list, a non-image content type or more than 5 MiB answers error `70`.
-- The worker may use the YouTube thumbnail as a cover fallback when Cover Art Archive has none; Cover Art Archive stays first.
+- `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) fetches the thumbnail URL the catalog returned (never a URL built from client input), only over HTTPS and only if its host is on that exact list. **Redirects are not followed** (any 3xx answers error `70`); a non-`image/*` content type or a body over 5 MiB (enforced while streaming, not only from `Content-Length`) also answers error `70`.
+- Fetched images are cached on disk in one dedicated directory under `/data` (owned by the api, not the staging store), keyed by the virtual id, with a TTL (default 30 days) and a total-size cap (default 512 MiB, oldest evicted first). Both are settings of the area that implements `getCoverArt` (T05).
+- The worker may use the YouTube thumbnail as a cover fallback when Cover Art Archive has none, with the same rules (HTTPS, exact hosts, no redirects, image type, 5 MiB); Cover Art Archive stays first.
 - No other host is ever contacted (SSRF rule, SECURITY.md).
 
 ## API key format

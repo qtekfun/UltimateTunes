@@ -733,7 +733,7 @@ components:
           - 'null'
           format: uri
           description: Stored with the pending track (`tracks.yt_thumbnail_url`); fetched only from the approved YouTube
-            image hosts (contracts/ids.md).
+            image hosts, with the same rules as `getCoverArt` (contracts/ids.md).
     Lease:
       type: object
       required:
@@ -1072,7 +1072,7 @@ components:
           - type: 'null'
           description: Album cover under `/music` (e.g. `<Artist>/<Album>/cover.jpg`), written by the worker next to
             the audio file when it moves it (an existing cover is kept). From Cover Art Archive first, else the
-            YouTube thumbnail from the approved hosts (contracts/ids.md).
+            YouTube thumbnail from the approved hosts, same rules as `getCoverArt` (contracts/ids.md).
     RegisterTrack:
       type: object
       required:
