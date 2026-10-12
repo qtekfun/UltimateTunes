@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.admin.conftest import RecordingTransport
+from tests.admin.conftest import RecordingTransport, public_dns
 from ultimatetunes.admin import notify
 from ultimatetunes.admin.notify import (
     KEY_CURSOR,
@@ -106,7 +106,7 @@ def _run(coro: object) -> object:
 
 def test_sender_ntfy_and_webhook() -> None:
     transport = RecordingTransport()
-    sender = Sender(transport)
+    sender = Sender(transport, public_dns)
     message = Message("Ünïcode\ntitle", "body text")
     assert _run(sender.send(Target("ntfy", NTFY), message)) is True
     ntfy = transport.requests[-1]
@@ -124,21 +124,82 @@ def test_sender_ntfy_and_webhook() -> None:
 
 def test_sender_failures_are_logged_not_raised(caplog: pytest.LogCaptureFixture) -> None:
     redirect = RecordingTransport(status=302)
-    assert _run(Sender(redirect).send(Target("ntfy", NTFY), Message("t", "b"))) is False
+    assert _run(Sender(redirect, public_dns).send(Target("ntfy", NTFY), Message("t", "b"))) is False
     assert len(redirect.requests) == 1  # redirects are never followed
 
     class Broken(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("down")
 
-    assert _run(Sender(Broken()).send(Target("ntfy", NTFY), Message("t", "b"))) is False
-    assert _run(Sender(redirect).send(Target("ntfy", "http://x"), Message("t", "b"))) is False
+    assert _run(Sender(Broken(), public_dns).send(Target("ntfy", NTFY), Message("t", "b"))) is False
+    assert (
+        _run(Sender(redirect, public_dns).send(Target("ntfy", "http://x"), Message("t", "b")))
+        is False
+    )
     # Checked again at send time (e.g. a row written before the rule): nothing goes out.
     loopback = Target("ntfy", "https://127.0.0.1/x")
-    assert _run(Sender(redirect).send(loopback, Message("t", "b"))) is False
+    assert _run(Sender(redirect, public_dns).send(loopback, Message("t", "b"))) is False
     assert len(redirect.requests) == 1
     assert "ntfy.example.net" in caplog.text
     assert "ut-alerts-1234" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "addresses",
+    [
+        ["127.0.0.1"],
+        ["203.0.113.80", "::1"],
+        ["169.254.169.254"],
+        ["0.0.0.0"],  # noqa: S104 - what a hostile name may resolve to
+        ["fe80::1%eth0"],
+        ["::ffff:127.0.0.1"],
+        ["224.0.0.1"],
+        [],
+        ["not-an-address"],
+    ],
+)
+def test_sender_refuses_names_resolving_to_its_own_network(
+    addresses: list[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Audit L6: a public name pointed at loopback or cloud metadata is caught at send time."""
+    transport = RecordingTransport()
+
+    async def resolve(host: str) -> list[str]:
+        assert host == "ntfy.example.net"
+        return addresses
+
+    sender = Sender(transport, resolve)
+    assert _run(sender.send(Target("ntfy", NTFY), Message("t", "b"))) is False
+    assert transport.requests == []
+    assert "ntfy.example.net" in caplog.text
+    assert "ut-alerts-1234" not in caplog.text
+
+
+def test_sender_resolution_failures_and_lan_targets(caplog: pytest.LogCaptureFixture) -> None:
+    transport = RecordingTransport()
+
+    async def nxdomain(host: str) -> list[str]:
+        raise OSError("no such name")
+
+    assert _run(Sender(transport, nxdomain).send(Target("ntfy", NTFY), Message("t", "b"))) is False
+    assert "does not resolve" in caplog.text
+
+    async def lan(host: str) -> list[str]:
+        return ["192.168.1.30", "fd00::30"]
+
+    # A self-hosted ntfy on the LAN is fine; an IP literal is not resolved at all.
+    assert _run(Sender(transport, lan).send(Target("ntfy", NTFY), Message("t", "b"))) is True
+
+    async def never(host: str) -> list[str]:
+        raise AssertionError("IP literals are not resolved")
+
+    literal = Target("ntfy", "https://192.168.1.30/alerts")
+    assert _run(Sender(transport, never).send(literal, Message("t", "b"))) is True
+    assert len(transport.requests) == 2
+
+
+def test_system_resolver_reads_numeric_hosts() -> None:
+    assert _run(notify.system_resolve("127.0.0.1")) == ["127.0.0.1"]
 
 
 def _fail_job(services: Services, track: str, video: str) -> None:
@@ -161,7 +222,7 @@ def _fail_job(services: Services, track: str, video: str) -> None:
 
 def test_sweep_sends_new_failures_once(services: Services, clock: FakeClock) -> None:
     transport = RecordingTransport()
-    sweep = NotificationSweep(services.db, clock, Sender(transport))
+    sweep = NotificationSweep(services.db, clock, Sender(transport, public_dns))
     _fail_job(services, "t0", "aaaaaaaaaaa")
     assert _run(sweep.run_once()) is False  # no target: nothing at all
     save_target(services.db, clock, Target("ntfy", NTFY))
@@ -186,7 +247,7 @@ def test_sweep_sends_new_failures_once(services: Services, clock: FakeClock) -> 
 
 
 def test_sweep_restarts_a_lost_cursor(services: Services, clock: FakeClock) -> None:
-    sweep = NotificationSweep(services.db, clock, Sender(RecordingTransport()))
+    sweep = NotificationSweep(services.db, clock, Sender(RecordingTransport(), public_dns))
     save_target(services.db, clock, Target("ntfy", NTFY))
     with services.db.transaction() as conn:
         AdminRepository(conn).delete_setting(KEY_CURSOR)
@@ -198,7 +259,7 @@ def test_sweep_restarts_a_lost_cursor(services: Services, clock: FakeClock) -> N
 def test_sweep_loop_survives_errors(
     services: Services, clock: FakeClock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    sweep = NotificationSweep(services.db, clock, Sender(RecordingTransport()))
+    sweep = NotificationSweep(services.db, clock, Sender(RecordingTransport(), public_dns))
     calls: list[int] = []
 
     async def flaky() -> bool:
