@@ -9,6 +9,10 @@
   the IP / username for `UT_AUTH_LOCKOUT_S` seconds.
 - Rate limits: `UT_AUTH_KEY_RATE_PER_S` / `UT_AUTH_KEY_BURST` per API key on every request;
   `UT_AUTH_LOGIN_RATE_PER_S` / `UT_AUTH_LOGIN_BURST` per IP on password checks.
+- Brakes (auth/throttle.py): `UT_AUTH_ARGON2_CONCURRENCY` password verifications at once,
+  waiting at most `UT_AUTH_ARGON2_WAIT_S` for a slot; `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN`
+  failures per minute from anywhere lock password checks and unknown keys for
+  `UT_AUTH_GLOBAL_LOCKOUT_S`. IPv6 clients are counted by their /64.
 """
 
 from pydantic import Field, SecretStr
@@ -26,3 +30,7 @@ class AuthSettings(AreaSettings):
     auth_key_burst: float = Field(default=200.0, gt=0)
     auth_login_rate_per_s: float = Field(default=0.2, gt=0)
     auth_login_burst: float = Field(default=5.0, gt=0)
+    auth_argon2_concurrency: int = Field(default=2, ge=1, le=16)
+    auth_argon2_wait_s: float = Field(default=2.0, ge=0, le=30)
+    auth_max_failures_global_per_min: int = Field(default=100, ge=1)
+    auth_global_lockout_s: int = Field(default=60, ge=1)
