@@ -90,16 +90,14 @@ Per user: stars, playlists, play history (scrobble), play queue saved across dev
 `/admin`, admin role only: users (create, disable, role), API keys (list, last use, revoke), download queue (state, retry, cancel), library (space used/free, `needs_review`, delete track/album), yt-dlp (version, last canary result, update now), audit log, notifications (optional ntfy topic or webhook on failed download/canary). Jinja + vendored HTMX, en/es.
 
 ### RF-11 Android client
-Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info). Details in §5.
+Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info), export to the phone (RF-14). Details in §5.
 
 ### RF-12 Client cache and offline
 Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). Offline: only cached and downloaded content is browsable; search needs the server.
 
-### RF-14 Export to the phone
-The user can **export** tracks, albums or playlists that are fully available on the phone (offline downloads, or tracks completely in the cache) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 
 ### RF-13 Notifications from the server
-Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows playback notification only (MediaSession).
+Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows no server-pushed notifications: only playback (MediaSession), download/sync and export progress notifications (POST_NOTIFICATIONS on Android 13+ is the one permission this adds).
 
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
@@ -108,7 +106,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Full player: big artwork, **colours from the artwork** (Palette) and a blurred artwork background, scrubber, queue sheet.
 - Lyrics full-screen, active line highlighted, auto-scroll, tap a line to seek (when the track is in the library).
 - Light and dark themes; English and Spanish; large fonts and TalkBack.
-- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, go to album/artist).
+- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, export, go to album/artist).
 
 ## 6. Non-functional requirements
 - First sound of an **external** track: target ≤ 5 s on the home connection (measured in T03 and T21). Library track: ≤ 1 s.
@@ -141,6 +139,8 @@ Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/L
 
 ## 11. Decisions
 
+### RF-14 Export to the phone
+The user can **export** tracks, albums or playlists that are fully available on the phone as **library tracks** (offline downloads, or library tracks completely in the cache; bytes cached under a `yt:` id from a first play are not exported because they predate tagging) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 ### Open
 - License: GPL-3.0-or-later like the family, or **AGPL-3.0-or-later** for the server (it is network software)? For now GPL-3.0-or-later.
 - How to treat versions of the same song (live, remix, radio edit)? For now: different tracks.
