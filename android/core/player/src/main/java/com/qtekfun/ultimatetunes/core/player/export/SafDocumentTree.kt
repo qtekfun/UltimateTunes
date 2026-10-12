@@ -22,7 +22,7 @@ class SafDocumentTree(private val resolver: ContentResolver, private val tree: U
             .toString()
     }
 
-    override fun child(folder: String, name: String): DocumentTree.Entry? = guarded {
+    override fun children(folder: String): List<DocumentTree.Entry> = guarded {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(
             tree,
             DocumentsContract.getDocumentId(folder.toUri())
@@ -33,20 +33,19 @@ class SafDocumentTree(private val resolver: ContentResolver, private val tree: U
             Document.COLUMN_MIME_TYPE,
             Document.COLUMN_SIZE
         )
+        val entries = mutableListOf<DocumentTree.Entry>()
         resolver.query(children, columns, null, null, null)?.use { cursor ->
             while (cursor.moveToNext()) {
-                if (cursor.getString(1) == name) {
-                    return@guarded DocumentTree.Entry(
-                        id = DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
-                            .toString(),
-                        name = name,
-                        isFolder = cursor.getString(2) == Document.MIME_TYPE_DIR,
-                        size = if (cursor.isNull(SIZE)) null else cursor.getLong(SIZE)
-                    )
-                }
+                entries += DocumentTree.Entry(
+                    id = DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
+                        .toString(),
+                    name = cursor.getString(1).orEmpty(),
+                    isFolder = cursor.getString(2) == Document.MIME_TYPE_DIR,
+                    size = if (cursor.isNull(SIZE)) null else cursor.getLong(SIZE)
+                )
             }
         }
-        null
+        entries
     }
 
     override fun create(folder: String, name: String, isFolder: Boolean): String = guarded {

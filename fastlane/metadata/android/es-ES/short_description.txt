@@ -1,1 +1,1 @@
-Tu propio servidor de música, con un reproductor estilo Apple Music y caché
+Reproductor para tu servidor de música: busca, escucha y quédatelo

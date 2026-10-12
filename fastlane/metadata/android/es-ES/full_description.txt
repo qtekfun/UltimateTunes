@@ -1,8 +1,24 @@
-UltimateTunes es el reproductor de tu propio servidor UltimateTunes: busca cualquier canción, escúchala al momento y quédatela en tu biblioteca.
+UltimateTunes es el reproductor Android de tu propio servidor UltimateTunes. Busca cualquier canción y suena al momento; desde entonces vive en tu biblioteca, en tu servidor, con sus etiquetas y su carátula.
 
-• Interfaz al estilo de Apple Music: Escuchar ahora, Radio, Biblioteca y Buscar.
-• Cada canción que reproduces queda en caché en el móvil para ahorrar datos; descarga álbumes y listas para escuchar sin conexión.
-• Letras sincronizadas, radio a partir de cualquier canción, importación de listas y ReplayGain para un volumen uniforme.
-• Solo habla con tu servidor, con una clave revocable por dispositivo. Sin anuncios ni rastreo, software libre (GPL-3.0-or-later).
+<b>Escucha</b>
+• Cuatro pestañas: Escuchar, Radio, Biblioteca y Buscar, con carátulas grandes y títulos claros.
+• Reproductor a pantalla completa con los colores de la carátula, la cola de lo que suena después y letras sincronizadas: la línea actual se ilumina y tocar una línea salta a ella.
+• Crea una emisora de radio a partir de cualquier canción.
+• ReplayGain para un volumen uniforme entre canciones.
 
-Necesita un servidor UltimateTunes (Docker).
+<b>Ahorra datos</b>
+• Cada canción que escuchas queda en caché en el móvil: la segunda vez no gasta datos.
+• Las siguientes canciones de la cola se descargan por adelantado.
+• Guarda álbumes, listas o canciones sueltas sin conexión, solo con Wi-Fi si quieres.
+• Exporta a la carpeta que elijas las canciones que tienes en el móvil, con sus etiquetas.
+
+<b>Tu biblioteca</b>
+• Listas, favoritos, artistas y álbumes, compartidos con todos los dispositivos que conectes.
+• Importa listas desde un enlace o un archivo.
+• Tema claro y oscuro, inglés y español, letra grande y TalkBack.
+
+<b>Privado por diseño</b>
+• La app solo habla con tu servidor, con una clave que puedes revocar por dispositivo. La clave se guarda cifrada en el móvil.
+• Sin anuncios, sin rastreo, sin analíticas. Software libre (GPL-3.0-or-later).
+
+Necesita un servidor UltimateTunes, que montas tú (Docker). También funciona como cliente de la API OpenSubsonic del servidor.
