@@ -38,12 +38,12 @@ services:
       traefik.http.routers.ut-keys-login.middlewares: ut-lan-only@file,ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
       traefik.http.routers.ut-keys-login.service: ut-api
       traefik.http.routers.ut-api-write.entrypoints: websecure
-      traefik.http.routers.ut-api-write.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
+      traefik.http.routers.ut-api-write.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`)) && !Method(`GET`) && !Method(`HEAD`)
       traefik.http.routers.ut-api-write.priority: "200"
       traefik.http.routers.ut-api-write.middlewares: ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
       traefik.http.routers.ut-api-write.service: ut-api
       traefik.http.routers.ut-api.entrypoints: websecure
-      traefik.http.routers.ut-api.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
+      traefik.http.routers.ut-api.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`) || Path(`/`))
       traefik.http.routers.ut-api.priority: "100"
       traefik.http.routers.ut-api.middlewares: ut-headers@file,ut-inflight@file,ut-ratelimit@file
       traefik.http.routers.ut-api.service: ut-api
