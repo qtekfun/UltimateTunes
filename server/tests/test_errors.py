@@ -34,7 +34,7 @@ def contract_rows() -> dict[str, tuple[str, str, str]]:
 def test_mapping_matches_the_contract_table() -> None:
     rows = contract_rows()
     renamed = {"NotImplemented": "FeatureNotImplemented"}
-    assert len(rows) == len(MAPPING) == 26
+    assert len(rows) == len(MAPPING) == 29
     for name, (os_code, http, problem) in rows.items():
         spec = MAPPING[getattr(errors, renamed.get(name, name))]
         if os_code != "—":  # worker-only errors never reach /rest

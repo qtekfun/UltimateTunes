@@ -99,12 +99,27 @@ class PayloadTooLarge(TunesError):
     default_message = "Payload too large"
 
 
-class RateLimited(TunesError):
-    default_message = "Too many requests"
+class RetryLater(TunesError):
+    """An error that tells the client when to try again (`Retry-After`, in seconds)."""
+
+    default_message = "Try again later"
 
     def __init__(self, retry_after_s: int, message: str | None = None) -> None:
         self.retry_after_s = max(1, retry_after_s)
-        super().__init__(message or f"Too many requests, retry in {self.retry_after_s} seconds")
+        super().__init__(message or self.retry_message())
+
+    def retry_message(self) -> str:
+        return f"{self.default_message}, retry in {self.retry_after_s} seconds"
+
+
+class RateLimited(RetryLater):
+    default_message = "Too many requests"
+
+
+class TooManyListeners(RetryLater):
+    """Listener cap of an in-flight `yt:` stream (per job or per API key): HTTP 503 on `/rest`."""
+
+    default_message = "Too many listeners for this song"
 
 
 class UpstreamUnavailable(TunesError):
@@ -113,6 +128,17 @@ class UpstreamUnavailable(TunesError):
 
 class DownloadFailed(TunesError):
     default_message = "Download failed"
+
+
+class StreamFailed(TunesError):
+    """`stream`/`download` of a song whose download failed: error 70 with HTTP 404, so a player
+    retrying a cut stream sees a failed request (contracts/errors.md)."""
+
+    default_message = "Download failed"
+
+
+class UnknownEndpoint(TunesError):
+    default_message = "Unknown endpoint"
 
 
 class FeatureNotImplemented(TunesError):
@@ -177,6 +203,9 @@ MAPPING: dict[type[TunesError], ErrorSpec] = {
     RateLimited: ErrorSpec(0, 429, "rate_limited", "Rate limited", subsonic_http_status=429),
     UpstreamUnavailable: ErrorSpec(0, 502, "upstream_unavailable", "Upstream unavailable"),
     DownloadFailed: ErrorSpec(0, 502, "download_failed", "Download failed"),
+    StreamFailed: ErrorSpec(70, None, None, "Download failed", subsonic_http_status=404),
+    TooManyListeners: ErrorSpec(0, None, None, "Too many listeners", subsonic_http_status=503),
+    UnknownEndpoint: ErrorSpec(0, None, None, "Unknown endpoint"),
     FeatureNotImplemented: ErrorSpec(
         0, 501, "not_implemented", "Not implemented", subsonic_http_status=501
     ),
@@ -209,6 +238,7 @@ class WorkerErrorCode(StrEnum):
     RATE_LIMITED_UPSTREAM = "rate_limited_upstream"
     TAGGING_FAILED = "tagging_failed"
     STORAGE_ERROR = "storage_error"
+    INVALID_VIDEO_ID = "invalid_video_id"
     CANCELLED = "cancelled"
     LEASE_EXPIRED = "lease_expired"
     INTERNAL_ERROR = "internal_error"
@@ -222,6 +252,7 @@ _NOT_RETRYABLE = frozenset(
     {
         WorkerErrorCode.VIDEO_UNAVAILABLE,
         WorkerErrorCode.FORMAT_UNAVAILABLE,
+        WorkerErrorCode.INVALID_VIDEO_ID,
         WorkerErrorCode.CANCELLED,
     }
 )

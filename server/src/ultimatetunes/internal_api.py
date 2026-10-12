@@ -3,7 +3,10 @@
 """The internal worker API under `/internal/v1` (contracts/openapi/internal-worker.yaml).
 
 Every route needs `Authorization: Bearer <UT_WORKER_TOKEN>`, compared in constant time. With no
-token configured, every call is refused: the worker API is never open. Routes live with their
+token configured, every call is refused with the same generic problem as a wrong token (no hint
+about the configuration): the worker API is never open. v1 serves it on the api's single
+listener, reachable only over the internal network (a separate listener is a PLAN T22 item).
+Routes live with their
 owners: `jobs/internal_api.py` (T08: jobs and worker status) and `library/internal_api.py`
 (registration of archived files and ReplayGain updates).
 """
@@ -21,7 +24,7 @@ from ultimatetunes.library import internal_api as library_api
 def require_worker_token(request: Request) -> None:
     expected = services(request).settings.worker_token
     if expected is None or not expected.get_secret_value():
-        raise InvalidWorkerToken("The worker token is not configured")
+        raise InvalidWorkerToken()
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not hmac.compare_digest(
         token.strip().encode(), expected.get_secret_value().encode()

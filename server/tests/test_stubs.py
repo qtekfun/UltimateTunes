@@ -72,6 +72,13 @@ def test_opensubsonic_stubs(client: TestClient, method: str, path: str, fmt: str
             assert '<error code="0"' in r.text
 
 
+@pytest.mark.parametrize("name", ["stream", "download", "getCoverArt"])
+def test_binary_stubs_answer_head(client: TestClient, name: str) -> None:
+    r = client.head(f"/rest/{name}", params={"apiKey": "utk_x", "id": "yt:Qx7Lm2pZ0aB"})
+    assert r.status_code == 501
+    assert r.content == b""
+
+
 @pytest.mark.parametrize(("method", "path"), operations("ut-v1.yaml"))
 def test_ut_v1_stubs(client: TestClient, method: str, path: str) -> None:
     r = client.request(method, path, headers={"X-Api-Key": "utk_x"})
@@ -95,7 +102,7 @@ def test_internal_api_is_closed_without_a_configured_token(settings: Settings) -
     with TestClient(create_app(settings)) as c:
         r = c.post("/internal/v1/jobs/claim", headers={"Authorization": "Bearer "})
     assert r.status_code == 401
-    assert r.json()["detail"] == "The worker token is not configured"
+    assert r.json()["detail"] == "Bearer token missing or wrong"
 
 
 def test_admin_placeholder(client: TestClient) -> None:

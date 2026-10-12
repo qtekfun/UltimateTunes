@@ -8,7 +8,14 @@ from typing import Any
 import pytest
 import yaml  # type: ignore[import-untyped]  # dev-only, via schemathesis
 
-from ultimatetunes.errors import FeatureNotImplemented, InvalidApiKey, NotFound, RateLimited
+from ultimatetunes.errors import (
+    FeatureNotImplemented,
+    InvalidApiKey,
+    NotFound,
+    RateLimited,
+    StreamFailed,
+    TooManyListeners,
+)
 from ultimatetunes.subsonic.envelope import envelope, render_error, to_xml
 
 CONTRACT = (
@@ -58,3 +65,20 @@ def test_failed_envelope_and_statuses() -> None:
     limited = render_error(RateLimited(30), "json")
     assert limited.status_code == 429
     assert limited.headers["Retry-After"] == "30"
+
+
+def test_stream_statuses_follow_the_contract() -> None:
+    """errors.md: 404 for a failed download on stream/download, 503 + Retry-After for the cap."""
+    failed = render_error(StreamFailed(), "json")
+    assert failed.status_code == 404
+    assert b'"code":70' in bytes(failed.body)
+    capped = render_error(TooManyListeners(5), "xml")
+    assert capped.status_code == 503
+    assert capped.headers["Retry-After"] == "5"
+    assert b'message="Too many listeners for this song, retry in 5 seconds"' in bytes(capped.body)
+    responses = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))["components"]["responses"]
+    example = responses["TooManyListeners"]["content"]["application/json"]["example"]
+    assert example["subsonic-response"]["error"] == {
+        "code": 0,
+        "message": TooManyListeners(5).message,
+    }

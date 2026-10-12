@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The OpenSubsonic pipeline: parameters, format, version, auth and error rendering."""
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.services import build_services
@@ -60,9 +60,21 @@ async def open_endpoint(req: SubsonicRequest) -> Mapping[str, object]:
     return {"open": {"ok": True}}
 
 
-@router.endpoint("raw")
+@router.endpoint("raw", head=True)
 async def raw(req: SubsonicRequest) -> Response:
     return Response(b"bytes", media_type="audio/ogg")
+
+
+BODIES_STARTED: list[str] = []
+
+
+@router.endpoint("growing", head=True)
+async def growing(req: SubsonicRequest) -> Response:
+    async def body() -> AsyncIterator[bytes]:
+        BODIES_STARTED.append(req.request.method)
+        yield b"audio"
+
+    return StreamingResponse(body(), media_type="audio/webm", headers={"Accept-Ranges": "none"})
 
 
 @router.endpoint("missing")
@@ -173,3 +185,39 @@ def test_duplicate_endpoints_are_refused() -> None:
         other.endpoint("echo")(echo)
     with pytest.raises(ValueError, match="twice"):
         build_rest_router([router, router])
+
+
+def test_head_on_binary_endpoints_has_headers_and_no_body(client: TestClient) -> None:
+    r = client.head("/rest/raw", params={"apiKey": "utk_good"})
+    assert r.status_code == 200
+    assert r.content == b""
+    assert r.headers["content-length"] == "5"
+    assert r.headers["content-type"] == "audio/ogg"
+    r = client.head("/rest/growing.view", params={"apiKey": "utk_good"})
+    assert r.status_code == 200
+    assert r.headers["accept-ranges"] == "none"
+    assert "content-length" not in r.headers
+    assert BODIES_STARTED == []
+    assert client.get("/rest/growing", params={"apiKey": "utk_good"}).content == b"audio"
+    assert BODIES_STARTED == ["GET"]
+    r = client.head("/rest/raw", params={"apiKey": "bad"})
+    assert r.status_code == 200
+    assert r.content == b""
+
+
+def test_head_is_refused_on_other_endpoints(client: TestClient) -> None:
+    assert client.head("/rest/open").status_code == 405
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_unknown_endpoints_answer_error_0_in_the_requested_format(
+    client: TestClient, method: str
+) -> None:
+    r = client.request(method, "/rest/getNowPlaying", params={"f": "json"})
+    assert r.status_code == 200
+    assert ok_body(r)["error"] == {"code": 0, "message": "Unknown endpoint: getNowPlaying"}
+    r = client.request(method, "/rest/a/b.view")
+    assert r.status_code == 200
+    assert '<error code="0" message="Unknown endpoint: a/b.view"/>' in r.text
+    r = client.request(method, "/rest/x", params={"f": "yaml"})
+    assert '<error code="0"' in r.text

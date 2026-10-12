@@ -19,11 +19,16 @@ string, plus the `application/x-www-form-urlencoded` body of a POST, the `formPo
 extension), picks the format from `f`, checks `v`, and authenticates through
 `Services.authenticator` unless the endpoint is public. Every error, expected or not, becomes
 the failed envelope in the requested format.
+
+Binary endpoints registered with `head=True` (`stream`, `download`, `getCoverArt`) also answer
+`HEAD`: the same status and headers, no body. A `/rest/<name>` that no route file registers
+answers the failed envelope with error 0 (`UnknownEndpoint`), before authentication.
 """
 
 import logging
 import secrets
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from inspect import iscoroutinefunction
 from typing import cast
@@ -42,6 +47,7 @@ from ultimatetunes.errors import (
     PayloadTooLarge,
     ServerTooOld,
     TunesError,
+    UnknownEndpoint,
 )
 from ultimatetunes.subsonic.envelope import Format, envelope, render, render_error
 
@@ -99,17 +105,22 @@ class Endpoint:
     name: str
     handler: Handler
     public: bool = False
+    head: bool = False
 
 
 @dataclass
 class SubsonicRouter:
     endpoints: dict[str, Endpoint] = field(default_factory=dict)
 
-    def endpoint(self, name: str, *, public: bool = False) -> Callable[[Handler], Handler]:
+    def endpoint(
+        self, name: str, *, public: bool = False, head: bool = False
+    ) -> Callable[[Handler], Handler]:
+        """Registers a handler. `head=True` also routes `HEAD` (binary endpoints only)."""
+
         def register(handler: Handler) -> Handler:
             if name in self.endpoints:
                 raise ValueError(f"endpoint {name} registered twice")
-            self.endpoints[name] = Endpoint(name, handler, public)
+            self.endpoints[name] = Endpoint(name, handler, public, head)
             return handler
 
         return register
@@ -152,7 +163,21 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def _for_method(request: Request, response: Response) -> Response:
+    """`HEAD` gets the status and headers of the response, never its body (a streaming body is
+    not even started)."""
+    if request.method != "HEAD":
+        return response
+    head = Response(status_code=response.status_code)
+    head.raw_headers = list(response.raw_headers)
+    return head
+
+
 async def _run(endpoint: Endpoint, request: Request) -> Response:
+    return _for_method(request, await _dispatch(endpoint, request))
+
+
+async def _dispatch(endpoint: Endpoint, request: Request) -> Response:
     fmt: Format = "xml"
     try:
         params = await read_params(request)
@@ -189,8 +214,18 @@ def _route(endpoint: Endpoint) -> Callable[[Request], Awaitable[Response]]:
     return route
 
 
+async def unknown_endpoint(request: Request) -> Response:
+    """Any other `/rest/...` path: error 0 in the requested format (xml when it is unreadable)."""
+    fmt: Format = "xml"
+    with suppress(TunesError):
+        fmt = response_format(await read_params(request))
+    name = request.path_params.get("name", "")[:40]
+    return render_error(UnknownEndpoint(f"Unknown endpoint: {name}"), fmt)
+
+
 def build_rest_router(routers: Sequence[SubsonicRouter]) -> APIRouter:
-    """One FastAPI route per endpoint and suffix; duplicate names across files are an error."""
+    """One FastAPI route per endpoint and suffix; duplicate names across files are an error. The
+    catch-all for unknown endpoints is added last."""
     api = APIRouter()
     seen: dict[str, Endpoint] = {}
     for router in routers:
@@ -199,12 +234,20 @@ def build_rest_router(routers: Sequence[SubsonicRouter]) -> APIRouter:
                 raise ValueError(f"endpoint {name} registered twice")
             seen[name] = endpoint
             route = _route(endpoint)
+            methods = ["GET", "POST", "HEAD"] if endpoint.head else ["GET", "POST"]
             for path in (f"/rest/{name}", f"/rest/{name}.view"):
                 api.add_api_route(
                     path,
                     route,
-                    methods=["GET", "POST"],
+                    methods=methods,
                     include_in_schema=False,
                     name=f"{name}:{path}",
                 )
+    api.add_api_route(
+        "/rest/{name:path}",
+        unknown_endpoint,
+        methods=["GET", "POST"],
+        include_in_schema=False,
+        name="unknown-endpoint",
+    )
     return api

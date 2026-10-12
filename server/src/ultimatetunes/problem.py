@@ -10,7 +10,7 @@ from ultimatetunes.errors import (
     MAPPING,
     PROBLEM_TYPE_BASE,
     InternalError,
-    RateLimited,
+    RetryLater,
     TunesError,
     spec_for,
 )
@@ -34,7 +34,7 @@ def problem_response(error: TunesError, instance: str) -> Response:
         "code": code,
     }
     headers: dict[str, str] = {}
-    if isinstance(error, RateLimited):
+    if isinstance(error, RetryLater):
         body["retryAfter"] = error.retry_after_s
         headers["Retry-After"] = str(error.retry_after_s)
     return Response(

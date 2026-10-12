@@ -17,7 +17,7 @@ from typing import Literal
 from starlette.responses import Response
 
 from ultimatetunes import __version__
-from ultimatetunes.errors import RateLimited, TunesError, spec_for
+from ultimatetunes.errors import RetryLater, TunesError, spec_for
 
 Format = Literal["json", "xml"]
 API_VERSION = "1.16.1"
@@ -127,9 +127,10 @@ def render(document: Mapping[str, object], fmt: Format, status_code: int = 200) 
 
 
 def render_error(error: TunesError, fmt: Format) -> Response:
-    """The failed envelope with the HTTP status of contracts/errors.md (200, 429 or 501)."""
+    """The failed envelope with the HTTP status of contracts/errors.md (200, or 404, 429, 501,
+    503), plus `Retry-After` when the error carries one."""
 
     response = render(envelope(error=error), fmt, spec_for(error).subsonic_http_status)
-    if isinstance(error, RateLimited):
+    if isinstance(error, RetryLater):
         response.headers["Retry-After"] = str(error.retry_after_s)
     return response
