@@ -5,8 +5,8 @@
 The largest legitimate body is a playlist import file (1 MiB, `imports/upload.py`); areas keep
 their own tighter caps (the admin panel 64 KiB). This one holds when no proxy limits bodies
 (`tailscale serve` does not): a declared length above the cap gets 413 (`payload_too_large`)
-before the app runs, and a chunked body is cut off at the cap (the app sees the client
-disconnect).
+before the app runs; a body without a declared length (chunked) is read here up to the cap
+and answered 413 the same way past it, otherwise handed to the app whole.
 
 `NoSniff` adds `X-Content-Type-Options: nosniff` to every answer (the admin panel already sets
 its own, stricter set of headers).
@@ -29,24 +29,43 @@ class BodyLimit:
             await self._app(scope, receive, send)
             return
         declared = _content_length(scope)
-        if declared is not None and declared > self._max:
-            refusal = problem_response(
-                PayloadTooLarge("The request body is too large"), scope["path"]
-            )
-            await refusal(scope, receive, send)
+        if declared is not None:
+            if declared > self._max:
+                await _too_large(scope, receive, send)
+                return
+            # The server enforces the declared length, so the body cannot grow past it.
+            await self._app(scope, receive, send)
             return
-        received = 0
-
-        async def limited() -> Message:
-            nonlocal received
+        # No declared length (chunked): read it here, up to the cap, before the app runs.
+        chunks: list[bytes] = []
+        size = 0
+        while True:
             message = await receive()
-            if message["type"] == "http.request":
-                received += len(message.get("body", b""))
-                if received > self._max:
-                    return {"type": "http.disconnect"}
-            return message
+            if message["type"] != "http.request":
+                return  # the client went away before sending its body
+            chunk: bytes = message.get("body", b"")
+            size += len(chunk)
+            if size > self._max:
+                await _too_large(scope, receive, send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        replayed = False
 
-        await self._app(scope, limited, send)
+        async def replay() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+            return await receive()
+
+        await self._app(scope, replay, send)
+
+
+async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
+    refusal = problem_response(PayloadTooLarge("The request body is too large"), scope["path"])
+    await refusal(scope, receive, send)
 
 
 def _content_length(scope: Scope) -> int | None:
