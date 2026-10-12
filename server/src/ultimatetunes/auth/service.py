@@ -1,0 +1,524 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Users, API keys and authentication (SPEC RF-01, RF-02; contracts/errors.md).
+
+`AuthService` is the one place that checks credentials. It implements `core.authn.Authenticator`
+for the routers and gives the admin panel (T15) and the CLI what they need: users (create,
+disable, role, password), keys (create, list, revoke) and the audit log.
+
+Rules on `/rest` (contracts/openapi/opensubsonic-subset.yaml):
+- `apiKey` alone; with `u`, `p`, `t` or `s` it is error 43; unknown, malformed or revoked: 44.
+- `t`/`s` token auth: error 42 (only Argon2id hashes are kept).
+- `u` + `p` (clear or `enc:` hex): `p` must be an API key **of that user**; account passwords
+  are never accepted there. Anything wrong is error 40, whatever the reason.
+- Nothing usable: error 10.
+On `/ut/v1`: `X-Api-Key` or `apiKey`, both only when equal (`conflicting_auth`).
+
+Rate limit and lockout (`core.ratelimit`):
+- Every request with a valid key takes a token from `auth:key:<id>`.
+- Failures (40, 44, 50) count per IP (`auth:ip:<ip>`), and password failures also per username
+  (`auth:user:<name>`). Reaching the limit locks that bucket for `auth_lockout_s`.
+- A locked IP gets 429 instead of 40/44 for bad credentials, and password checks are refused
+  before Argon2 runs. A **valid API key is never refused for its IP's lockout**: one stale device
+  behind a shared home IP must not lock out the whole household, and a 256-bit key cannot be
+  guessed, so the lockout there only stops the noise.
+- Password checks also take a token from `auth:login:<ip>`.
+
+Secrets (keys, passwords, hashes) never reach a log line, an audit entry or an error message.
+"""
+
+import logging
+import re
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import TYPE_CHECKING, NoReturn
+
+from ultimatetunes.auth import keys
+from ultimatetunes.auth.passwords import Passwords, check_policy
+from ultimatetunes.auth.repository import (
+    ApiKey,
+    ApiKeyRepository,
+    AuditEntry,
+    AuditRepository,
+    KeyOwner,
+    User,
+    UserRepository,
+    audit_detail,
+)
+from ultimatetunes.auth.settings import AuthSettings
+from ultimatetunes.core.authn import Principal, Role
+from ultimatetunes.core.clock import Clock, format_ts, parse_ts
+from ultimatetunes.core.ratelimit import Limit, RateLimiter
+from ultimatetunes.db.database import Database
+from ultimatetunes.db.driver import Connection, IntegrityError
+from ultimatetunes.errors import (
+    AccountDisabled,
+    AuthenticationFailed,
+    AuthenticationRequired,
+    Conflict,
+    ConflictingAuth,
+    InvalidApiKey,
+    InvalidParameter,
+    NotFound,
+    RateLimited,
+    TokenAuthNotSupported,
+    TunesError,
+)
+from ultimatetunes.ids import new_id
+
+if TYPE_CHECKING:
+    from ultimatetunes.core.services import Services
+
+log = logging.getLogger(__name__)
+
+# Where a client learns how to get an API key (contracts/errors.md: `helpUrl` of 42 and 44).
+HELP_URL = "https://github.com/qtekfun/UltimateTunes#api-keys"
+# `last_used_at`/`last_used_ip` are written at most this often per key (one write per request
+# would serialize every request on the single SQLite writer).
+TOUCH_EVERY_S = 60
+ROLES: tuple[Role, ...] = ("admin", "user")
+_USERNAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+MAX_KEY_NAME = 100
+
+
+def normalize_username(username: str) -> str:
+    """Usernames are case-insensitive: stored and looked up in lower case."""
+    return username.strip().lower()
+
+
+def check_username(username: str) -> str:
+    name = normalize_username(username)
+    if not _USERNAME.fullmatch(name):
+        raise InvalidParameter(
+            "The username must have 1 to 64 characters: letters, digits, '.', '_' or '-'"
+        )
+    return name
+
+
+def check_key_name(name: str) -> str:
+    cleaned = name.strip()
+    if not 1 <= len(cleaned) <= MAX_KEY_NAME or not cleaned.isprintable():
+        raise InvalidParameter(f"The device name must have 1 to {MAX_KEY_NAME} characters")
+    return cleaned
+
+
+def _first(params: Mapping[str, Sequence[str]], name: str) -> str | None:
+    """The first value of a parameter; an empty value counts as absent."""
+    values = params.get(name)
+    return values[0] if values and values[0] else None
+
+
+def _role(value: str) -> Role:
+    for role in ROLES:
+        if value == role:
+            return role
+    raise InvalidParameter("The role must be admin or user")
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    """What an audit entry records besides who, from where and when. No secrets in `detail`."""
+
+    action: str
+    target_type: str | None = None
+    target_id: str | None = None
+    detail: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class CreatedKey:
+    key: ApiKey
+    # The full key: returned once to the caller, never stored or logged.
+    secret: str
+
+
+class AuthService:
+    def __init__(
+        self,
+        db: Database,
+        clock: Clock,
+        limiter: RateLimiter,
+        settings: AuthSettings | None = None,
+        passwords: Passwords | None = None,
+    ) -> None:
+        self._db = db
+        self._clock = clock
+        self._limiter = limiter
+        self._settings = settings or AuthSettings()
+        self._passwords = passwords or Passwords()
+
+    @classmethod
+    def from_services(
+        cls, services: "Services", passwords: Passwords | None = None
+    ) -> "AuthService":
+        return cls(services.db, services.clock, services.rate_limiter, passwords=passwords)
+
+    # ------------------------------------------------------------------ Authenticator
+
+    def authenticate_subsonic(
+        self, params: Mapping[str, Sequence[str]], client_ip: str | None
+    ) -> Principal:
+        api_key = _first(params, "apiKey")
+        username, password = _first(params, "u"), _first(params, "p")
+        token, salt = _first(params, "t"), _first(params, "s")
+        if api_key is not None:
+            if username or password or token or salt:
+                raise ConflictingAuth()
+            return self._by_key(api_key, client_ip, InvalidApiKey(help_url=HELP_URL))
+        if token is not None or salt is not None:
+            raise TokenAuthNotSupported(help_url=HELP_URL)
+        if username is None or password is None:
+            raise AuthenticationRequired()
+        key = keys.decode_password(password)
+        return self._by_key(
+            key or "", client_ip, AuthenticationFailed(), username=normalize_username(username)
+        )
+
+    def authenticate_api_key(
+        self, header_key: str | None, query_key: str | None, client_ip: str | None
+    ) -> Principal:
+        key = self._one_key(header_key, query_key)
+        if key is None:
+            raise AuthenticationRequired()
+        return self._by_key(key, client_ip, InvalidApiKey())
+
+    def identify(self, header_key: str | None, query_key: str | None) -> Principal:
+        """The caller of a request whose key `authenticate_api_key` already accepted: no rate
+        limit, no failure count, no last-use update (a route needing the `Principal` again)."""
+        key = self._one_key(header_key, query_key)
+        owner = self._owner(key or "")
+        if owner is None or owner.revoked_at is not None:
+            raise InvalidApiKey()
+        if owner.is_disabled:
+            raise AccountDisabled()
+        return self._principal(owner)
+
+    @staticmethod
+    def _one_key(header_key: str | None, query_key: str | None) -> str | None:
+        if header_key and query_key and header_key != query_key:
+            raise ConflictingAuth()
+        return header_key or query_key or None
+
+    def _owner(self, key: str) -> KeyOwner | None:
+        if not keys.is_well_formed(key):
+            return None
+        with self._db.read() as conn:
+            return ApiKeyRepository(conn).owner_by_hash(keys.digest(key))
+
+    @staticmethod
+    def _principal(owner: KeyOwner) -> Principal:
+        return Principal(owner.user_id, owner.username, _role(owner.role), owner.key_id)
+
+    def _by_key(
+        self,
+        key: str,
+        client_ip: str | None,
+        invalid: TunesError,
+        *,
+        username: str | None = None,
+    ) -> Principal:
+        owner = self._owner(key)
+        if (
+            owner is None
+            or owner.revoked_at is not None
+            or (username is not None and owner.username != username)
+        ):
+            self._refuse_locked(self._ip_bucket(client_ip))
+            self._fail(invalid, client_ip)
+        if owner.is_disabled:
+            self._fail(AccountDisabled(), client_ip)
+        limit = Limit(self._settings.auth_key_rate_per_s, self._settings.auth_key_burst)
+        decision = self._limiter.hit(f"auth:key:{owner.key_id}", limit)
+        if not decision.allowed:
+            raise RateLimited(decision.retry_after_s)
+        self._touch(owner, client_ip)
+        return self._principal(owner)
+
+    def _touch(self, owner: KeyOwner, client_ip: str | None) -> None:
+        now = self._clock.now()
+        fresh = (
+            owner.last_used_at is not None
+            and owner.last_used_ip == client_ip
+            and now - parse_ts(owner.last_used_at) < timedelta(seconds=TOUCH_EVERY_S)
+        )
+        if not fresh:
+            with self._db.transaction() as conn:
+                ApiKeyRepository(conn).touch(owner.key_id, format_ts(now), client_ip)
+
+    # ------------------------------------------------------------------ lockout
+
+    @staticmethod
+    def _ip_bucket(client_ip: str | None) -> str:
+        return f"auth:ip:{client_ip or 'unknown'}"
+
+    @staticmethod
+    def _user_bucket(username: str) -> str:
+        return f"auth:user:{username}"
+
+    def _refuse_locked(self, *buckets: str) -> None:
+        for bucket in buckets:
+            decision = self._limiter.locked(bucket)
+            if not decision.allowed:
+                raise RateLimited(decision.retry_after_s)
+
+    def _fail(
+        self, error: TunesError, client_ip: str | None, username: str | None = None
+    ) -> NoReturn:
+        """Counts the failure (per IP, and per username for passwords), then raises `error`.
+        Locking a bucket is logged and audited."""
+        buckets = [(self._ip_bucket(client_ip), self._settings.auth_max_failures_per_ip)]
+        if username is not None:
+            buckets.append((self._user_bucket(username), self._settings.auth_max_failures_per_user))
+        for bucket, max_failures in buckets:
+            decision = self._limiter.record_failure(
+                bucket, max_failures=max_failures, lockout_s=self._settings.auth_lockout_s
+            )
+            if not decision.allowed:
+                _, kind, target = bucket.split(":", 2)
+                log.warning("auth lockout of %s %s for %d s", kind, target, decision.retry_after_s)
+                self._audit(None, client_ip, AuditEvent("auth.lockout", kind, target))
+        raise error
+
+    # ------------------------------------------------------------------ passwords
+
+    def verify_password(self, username: str, password: str, client_ip: str | None) -> User:
+        """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
+        and unknown user give the same `AuthenticationFailed` in the same time."""
+        name = normalize_username(username)
+        self._refuse_locked(self._ip_bucket(client_ip), self._user_bucket(name))
+        limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
+        decision = self._limiter.hit(f"auth:login:{client_ip or 'unknown'}", limit)
+        if not decision.allowed:
+            raise RateLimited(decision.retry_after_s)
+        with self._db.read() as conn:
+            user = UserRepository(conn).by_username(name)
+        if user is None:
+            self._passwords.burn(password)
+            self._fail(AuthenticationFailed(), client_ip, name)
+        if not self._passwords.verify(user.password_hash, password):
+            self._fail(AuthenticationFailed(), client_ip, name)
+        if user.is_disabled:
+            self._fail(AccountDisabled(), client_ip, name)
+        self._limiter.record_success(self._ip_bucket(client_ip))
+        self._limiter.record_success(self._user_bucket(name))
+        new_hash = (
+            self._passwords.hash(password)
+            if self._passwords.needs_rehash(user.password_hash)
+            else None
+        )
+        now = format_ts(self._clock.now())
+        with self._db.transaction() as conn:
+            users = UserRepository(conn)
+            users.touch_login(user.id, now)
+            if new_hash is not None:
+                users.set_password_hash(user.id, new_hash, now)
+        return user
+
+    # ------------------------------------------------------------------ users
+
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        actor: Principal | None,
+        client_ip: str | None = None,
+    ) -> User:
+        name = check_username(username)
+        check_policy(password)
+        user = self._new_user(name, password, _role(role))
+        with self._db.transaction() as conn:
+            self._insert_user(conn, user, actor, client_ip)
+        return user
+
+    def bootstrap_admin(self, username: str, password: str, client_ip: str | None = None) -> bool:
+        """Creates the first admin, only while there is no user at all. False when users exist
+        (nothing changes: a bootstrap never resets a password)."""
+        name = check_username(username)
+        check_policy(password)
+        user = self._new_user(name, password, "admin")
+        with self._db.transaction() as conn:
+            if UserRepository(conn).count() > 0:
+                return False
+            self._insert_user(conn, user, None, client_ip)
+        return True
+
+    def _new_user(self, name: str, password: str, role: Role) -> User:
+        """Hashes outside the write transaction: Argon2 must not hold the single writer."""
+        now = format_ts(self._clock.now())
+        password_hash = self._passwords.hash(password)
+        return User(new_id(self._clock), name, password_hash, role, False, now, now, None)
+
+    def _insert_user(
+        self, conn: Connection, user: User, actor: Principal | None, client_ip: str | None
+    ) -> None:
+        users = UserRepository(conn)
+        if users.by_username(user.username) is not None:
+            raise Conflict("That username is taken")
+        users.insert(user)
+        detail: dict[str, object] = {"username": user.username, "role": user.role}
+        self._audit_in(conn, actor, client_ip, AuditEvent("user.create", "user", user.id, detail))
+        log.info("user %s created with role %s", user.id, user.role)
+
+    def get_user(self, user_id: str) -> User:
+        with self._db.read() as conn:
+            user = UserRepository(conn).get(user_id)
+        if user is None:
+            raise NotFound("No such user")
+        return user
+
+    def list_users(self) -> list[User]:
+        with self._db.read() as conn:
+            return UserRepository(conn).all_users()
+
+    def set_password(
+        self, user_id: str, password: str, *, actor: Principal | None, client_ip: str | None = None
+    ) -> None:
+        check_policy(password)
+        password_hash = self._passwords.hash(password)
+        self._update_user(
+            user_id,
+            lambda users, now: users.set_password_hash(user_id, password_hash, now),
+            AuditEvent("user.password", "user", user_id),
+            actor,
+            client_ip,
+        )
+
+    def set_disabled(
+        self, user_id: str, disabled: bool, *, actor: Principal | None, client_ip: str | None = None
+    ) -> None:
+        """A disabled user keeps its keys, but every request with them gets error 50."""
+        self._update_user(
+            user_id,
+            lambda users, now: users.set_disabled(user_id, disabled, now),
+            AuditEvent("user.disable" if disabled else "user.enable", "user", user_id),
+            actor,
+            client_ip,
+        )
+
+    def set_role(
+        self, user_id: str, role: str, *, actor: Principal | None, client_ip: str | None = None
+    ) -> None:
+        checked = _role(role)
+        self._update_user(
+            user_id,
+            lambda users, now: users.set_role(user_id, checked, now),
+            AuditEvent("user.role", "user", user_id, {"role": checked}),
+            actor,
+            client_ip,
+        )
+
+    def _update_user(
+        self,
+        user_id: str,
+        change: Callable[[UserRepository, str], int],
+        event: AuditEvent,
+        actor: Principal | None,
+        client_ip: str | None,
+    ) -> None:
+        now = format_ts(self._clock.now())
+        with self._db.transaction() as conn:
+            if change(UserRepository(conn), now) == 0:
+                raise NotFound("No such user")
+            self._audit_in(conn, actor, client_ip, event)
+
+    # ------------------------------------------------------------------ keys
+
+    def create_key(
+        self, user_id: str, name: str, *, actor: Principal | None, client_ip: str | None = None
+    ) -> CreatedKey:
+        """A new key for `user_id` (admin panel, or `create_key_with_password`)."""
+        device = check_key_name(name)
+        secret = keys.generate()
+        now = format_ts(self._clock.now())
+        key = ApiKey(
+            new_id(self._clock), user_id, device, keys.prefix(secret), now, None, None, None
+        )
+        with self._db.transaction() as conn:
+            if UserRepository(conn).get(user_id) is None:
+                raise NotFound("No such user")
+            try:
+                ApiKeyRepository(conn).insert(key, keys.digest(secret))
+            except IntegrityError as exc:
+                # 256 random bits never collide; refuse rather than reuse a hash.
+                raise Conflict("Could not create the key, try again") from exc
+            event = AuditEvent("key.create", "api_key", key.id, {"name": device})
+            self._audit_in(conn, actor, client_ip, event)
+        log.info("api key %s created for user %s", key.id, user_id)
+        return CreatedKey(key, secret)
+
+    def create_key_with_password(
+        self,
+        username: str,
+        password: str,
+        name: str,
+        client_ip: str | None,
+        presented_key: str | None = None,
+    ) -> CreatedKey:
+        """`POST /ut/v1/keys`: username and password, no key needed. A key sent along must be
+        valid and belong to the same user (`conflicting_auth` otherwise)."""
+        check_key_name(name)
+        presenter = (
+            None
+            if presented_key is None
+            else self._by_key(presented_key, client_ip, InvalidApiKey())
+        )
+        user = self.verify_password(username, password, client_ip)
+        if presenter is not None and presenter.user_id != user.id:
+            raise ConflictingAuth()
+        actor = Principal(user.id, user.username, _role(user.role))
+        return self.create_key(user.id, name, actor=actor, client_ip=client_ip)
+
+    def list_keys(self, user_id: str) -> list[ApiKey]:
+        with self._db.read() as conn:
+            return ApiKeyRepository(conn).of_user(user_id)
+
+    def revoke_own_key(self, principal: Principal, key_id: str, client_ip: str | None) -> None:
+        """`DELETE /ut/v1/keys/{keyId}`: only the caller's keys; someone else's is not found.
+        Idempotent."""
+        with self._db.read() as conn:
+            key = ApiKeyRepository(conn).get(key_id)
+        if key is None or key.user_id != principal.user_id:
+            raise NotFound("No such key")
+        self.revoke_key(key_id, actor=principal, client_ip=client_ip)
+
+    def revoke_key(
+        self, key_id: str, *, actor: Principal | None, client_ip: str | None = None
+    ) -> None:
+        """Any key (admin panel). Revoking a revoked key changes nothing and is not an error."""
+        now = format_ts(self._clock.now())
+        with self._db.transaction() as conn:
+            repo = ApiKeyRepository(conn)
+            if repo.get(key_id) is None:
+                raise NotFound("No such key")
+            if repo.revoke(key_id, now):
+                self._audit_in(conn, actor, client_ip, AuditEvent("key.revoke", "api_key", key_id))
+                log.info("api key %s revoked", key_id)
+
+    # ------------------------------------------------------------------ audit
+
+    def recent_audit(self, limit: int = 100) -> list[AuditEntry]:
+        with self._db.read() as conn:
+            return AuditRepository(conn).recent(limit)
+
+    def _audit(self, actor: Principal | None, client_ip: str | None, event: AuditEvent) -> None:
+        with self._db.transaction() as conn:
+            self._audit_in(conn, actor, client_ip, event)
+
+    def _audit_in(
+        self, conn: Connection, actor: Principal | None, client_ip: str | None, event: AuditEvent
+    ) -> None:
+        AuditRepository(conn).add(
+            AuditEntry(
+                id=new_id(self._clock),
+                occurred_at=format_ts(self._clock.now()),
+                actor_user_id=actor.user_id if actor else None,
+                actor_ip=client_ip,
+                action=event.action,
+                target_type=event.target_type,
+                target_id=event.target_id,
+                detail=audit_detail(event.detail),
+            )
+        )
