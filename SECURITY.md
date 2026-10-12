@@ -24,27 +24,30 @@ Music library, user accounts, API keys, admin panel, the host running the contai
 | Path traversal from metadata | Path sanitizer (100 % coverage), storage interfaces confined to `/music` and `/staging` | T09 |
 | SSRF through imports or covers | Host allowlist for import URLs; covers only from Cover Art Archive / YouTube image hosts | T09, T11 |
 | Admin panel abuse | Admin role, CSRF tokens, `SameSite=Strict` cookies, LAN/Tailscale allowlist by default | T15 |
-| Compromised worker (yt-dlp runs untrusted extractor code paths) | No DB access, no inbound port, internal token scoped to job endpoints, separate volume for its updates | T08 |
-| Container escape impact | Non-root, read-only root filesystem, dropped capabilities, no privileged mounts | T00, T22 |
+| Compromised worker (yt-dlp runs untrusted extractor code paths) | No DB access, no inbound port, internal token scoped to job endpoints on their own listener (8045, never published), the api re-hashes registered files, separate volume for its updates | T08, T22 |
+| Container escape impact | Non-root, read-only root filesystem, dropped capabilities, `no-new-privileges`, PID limit, no privileged mounts | T00, T22 |
 | Vulnerable dependencies | Dependabot, pip-audit, Trivy, gitleaks in CI; nightly audit | T01 |
 | Malicious audio/cover files | Files only produced by our own pipeline; mutagen/ffmpeg up to date; never execute content | T09 |
-| Public exposure | Reverse proxy with TLS + HSTS + request limits; ZAP baseline scan | T22 |
+| Public exposure | Reverse proxy with TLS + HSTS + request limits (`deploy/caddy/`), client address only from trusted proxies, `/readyz` detail internal; ZAP baseline scan (`tools/zap-baseline.sh`) | T22 |
+| Resource exhaustion by one user | Per-user limit on external searches, capped and purged search cache, purged rate-limit state | T22 |
 | Future multi-replica deployment (k8s) | Shared state only through interfaces (Redis later), NetworkPolicies, PodSecurity restricted | Phase 5 |
 
-## Notes for T22 (collected in Wave 1 reviews)
-- **Admin allowlist trusts the TCP peer address.** Behind a reverse proxy, `tailscale serve` on the host, Tailscale Funnel or Docker's userland proxy, every client looks local or private. Public exposure needs a trusted-proxy rule (forwarded client IP from known proxies only) or a separate admin listener. The same applies to the client IP that password checks and the lockout use.
-- **Admin logout is stateless**: it clears the signed cookie, but a copied cookie stays valid until it expires (default 8 h); a password change, disabling the user or a role change ends it at once. Options: a server-side revocation list or a shorter TTL. Without `UT_ADMIN_SESSION_SECRET` each process uses a random key.
-- **Internal worker API on a separate listener** (or equivalent isolation) before any public exposure; in v1 it shares port 8044, reachable only over the internal Docker network.
-- **`/readyz` detail**: decide what a public probe may reveal (database, schema, storage state); keep details internal.
-- **Signing secrets** (if GitHub Actions return): keep the `UT_*` secrets in an environment limited to release tags, and check the APK signer certificate digest against a pinned value before publishing.
-- **The api trusts the worker's SHA-256**: register compares the reported hash with the file at the path but does not hash the staging file itself, so a compromised worker could make it adopt an unowned file. Consider hashing on the api side.
-- **Search cache and limits**: cap the size of the catalog cache (entries per kind, bytes) and add a per-user limit on external searches, so one user cannot fill `/data` or spend the shared 2 req/s catalog budget.
+## Notes for T22 (collected in Wave 1 reviews) and what T22 did
+- **Admin allowlist trusted the TCP peer address.** Done: `core/forwarded.py` is the outermost middleware and decides the client address for everything (admin allowlist, `/readyz`, per-IP limits and lockout, audit log). `X-Forwarded-For` is read only from peers in `UT_TRUSTED_PROXIES` (from the right, skipping trusted hops); with the default (empty), a request that carries forwarding headers is refused by `/admin` (403), and a Tailscale Funnel request (`Tailscale-Funnel-Request`) always is. `tailscale serve` and Caddy add `X-Forwarded-For`, so behind them the admin sets `UT_TRUSTED_PROXIES` to the Docker bridge gateway (`deploy/README.md`). Tests: `tests/core/test_forwarded.py`, `tests/admin/test_proxies_and_logout.py`.
+- **Admin logout was stateless.** Done: each admin has a session epoch (row `admin.session_epoch.<user id>` in `settings`) mixed into the cookie fingerprint; logout bumps it, so every copy of that admin's session cookie stops working at once (other admins are untouched). Without `UT_ADMIN_SESSION_SECRET` each process still uses a random key (logged as a warning); `server/compose.yaml` sets it as a Docker secret.
+- **Internal worker API on a separate listener.** Done: the api serves one app on two ports (`listeners.py`): clients on 8044, `/internal/v1` only on 8045 (`UT_INTERNAL_PORT`), which compose never publishes; the client port answers a plain 404 for `/internal/*`. The worker uses `UT_API_URL=http://api:8045`. Tests: `tests/test_listeners.py`.
+- **`/readyz` detail.** Done: everyone gets the status code and `{"status": ...}`; the per-check detail only goes to loopback and the admin allowlist, never through an untrusted proxy (`tests/test_health.py`).
+- **Signing secrets** (if GitHub Actions return): still open, for when releases are published (RELEASING.md); nothing is published while publishing is paused.
+- **The api trusted the worker's SHA-256.** Done: `registerTrack` hashes the staging file itself and refuses a mismatch (`409 conflict`), so a worker cannot make it adopt a file by reporting that file's hash (`tests/register/test_register.py`). The worker still mounts `/music` read-write to move files (by design, T08); the ReplayGain report's hash of an album-gain rewrite is still the worker's.
+- **Search cache and limits.** Done: a per-user bucket of external searches (`UT_SEARCH_USER_RATE_PER_S` 0.2/s, `UT_SEARCH_USER_BURST` 20; past it, search is library-only, never an error), and api housekeeping every 10 min (`core/housekeeping.py`): expired cache entries removed, the cache trimmed to `UT_CACHE_MAX_ENTRIES` (200 000) and `UT_CACHE_MAX_BYTES` (256 MiB) oldest first, idle rate-limit buckets forgotten. Neither table was ever purged before.
+- **Found during T22:** httpx logged every outbound request URL at INFO, which put the ntfy topic (a secret) and webhook paths in the logs; `httpx`/`httpcore` now log from WARNING up (`tests/test_logging.py`). The panel and landing page also send `Permissions-Policy` and `Cross-Origin-Embedder-Policy`, and every answer `X-Content-Type-Options: nosniff` (ZAP baseline). Request bodies are capped api-wide (`UT_MAX_BODY_BYTES`, 4 MiB; `core/bodylimit.py`), since `tailscale serve` has no limit of its own.
 
 ## Checklist before opening to the Internet (T22)
-- [ ] All controls above implemented and tested.
-- [ ] `/admin` reachable only from LAN/Tailscale (or explicitly opted in).
-- [ ] TLS with a valid certificate; HSTS; HTTP → HTTPS.
-- [ ] Rate limits verified from outside.
-- [ ] No default or bootstrap credentials left.
-- [ ] Image and dependency scans clean; ZAP baseline clean.
-- [ ] Backups of `/data` tested by restoring them.
+Evidence for each item; the ones marked *author* depend on the homelab and are done there, not in this repository (nothing is deployed or published by the project).
+- [x] All controls above implemented and tested. Every row of the table has tests in `server/tests` (`make -C server check`: ruff, mypy strict, pytest with 100 % on the critical modules, bandit, pip-audit, forbidden dependencies); the T22 notes above are closed except release signing, which waits for publishing.
+- [x] `/admin` reachable only from LAN/Tailscale (or explicitly opted in). Default `UT_ADMIN_ALLOWED_NETWORKS`, client address from trusted proxies only, forwarded/Funnel requests refused; `deploy/caddy/Caddyfile` refuses `/admin` from outside private and Tailscale ranges too.
+- [ ] TLS with a valid certificate; HSTS; HTTP → HTTPS. *Author*: `tailscale serve` (`deploy/tailscale/README.md`) gives HTTPS inside the tailnet; for public access, Caddy (`deploy/caddy/Caddyfile`: automatic certificate, HTTP → HTTPS redirect, HSTS one year).
+- [ ] Rate limits verified from outside. Verified against the local test stack (repeated wrong keys get error 44 then a lockout, see the T22 PR); *author*: repeat through the real proxy once `UT_TRUSTED_PROXIES` is set, so the limits key on the real client.
+- [x] No default or bootstrap credentials left. `bootstrap-admin` has no default password (env, Docker secret or terminal only); compose requires the worker token and session secret as Docker secrets; the only fixed token is the test stack's, documented as worthless.
+- [x] Image and dependency scans clean; ZAP baseline clean. `pip-audit` and Trivy (CRITICAL/HIGH, `tools/ci-local.sh docker`) clean; `tools/zap-baseline.sh` (ZAP 2.17.0, pinned digest) clean against the test stack: no FAIL or WARN, informational rules ignored with their reasons in `tools/zap/baseline.conf`. Manual GitHub job: `.github/workflows/zap.yml`.
+- [ ] Backups of `/data` tested by restoring them. *Author*: procedure in `deploy/README.md` (online SQLite backup, restore into a throwaway volume, `migrate`, `integrity_check`).
