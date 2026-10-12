@@ -6,4 +6,75 @@
 <resources>
     <string name="app_name">UltimateTunes</string>
     <string name="app_tagline">Tu música, desde tu propio servidor</string>
+
+    <!-- Pestañas -->
+    <string name="tab_listen_now">Escuchar</string>
+    <string name="tab_radio">Radio</string>
+    <string name="tab_library">Biblioteca</string>
+    <string name="tab_search">Buscar</string>
+
+    <!-- Conectar -->
+    <string name="connect_title">Conéctate a tu servidor</string>
+    <string name="connect_server_url">Dirección del servidor</string>
+    <string name="connect_server_url_hint">music.example.net</string>
+    <string name="connect_api_key">Clave de API</string>
+    <string name="connect_api_key_hint">utk_…</string>
+    <string name="connect_show_key">Mostrar clave</string>
+    <string name="connect_hide_key">Ocultar clave</string>
+    <string name="connect_button">Conectar</string>
+    <string name="connect_checking">Comprobando…</string>
+    <string name="connect_scan_qr">Escanear código QR</string>
+    <string name="connect_qr_unavailable">Escanear el código QR del panel de administración llegará en una versión posterior. De momento, copia la clave desde el panel.</string>
+    <string name="connect_help">Crea una clave para este dispositivo en el panel de administración de tu servidor. Solo se muestra una vez.</string>
+    <string name="connect_error_invalid_url">Eso no parece la dirección de un servidor.</string>
+    <string name="connect_error_invalid_key">Una clave de UltimateTunes empieza por utk_ y tiene 47 caracteres.</string>
+    <string name="connect_error_unreachable">Nada responde en esa dirección. Revísala y comprueba tu conexión.</string>
+    <string name="connect_error_not_a_server">Algo responde, pero no es un servidor de UltimateTunes.</string>
+    <string name="connect_error_key_refused">El servidor ha rechazado esta clave. Puede que se haya revocado.</string>
+    <string name="connect_error_server">El servidor ha tenido un problema. Inténtalo de nuevo en un momento.</string>
+
+    <!-- Escuchar -->
+    <string name="listen_now_stations">Tus emisoras</string>
+    <string name="listen_now_recently_played">Escuchado recientemente</string>
+    <string name="listen_now_top_songs">Canciones más escuchadas</string>
+    <string name="listen_now_recently_added">Añadido recientemente</string>
+    <string name="listen_now_empty">Todavía no hay nada. Reproduce algo y aparecerá aquí.</string>
+
+    <!-- Radio -->
+    <string name="radio_from_songs">Emisoras de tus canciones favoritas</string>
+    <string name="radio_empty">Aún no hay emisoras. Reproduce unas cuantas canciones y aparecerán aquí.</string>
+    <string name="station_label">Emisora</string>
+    <string name="station_play">Reproducir</string>
+    <string name="station_up_next">A continuación</string>
+    <string name="station_description">%1$s, emisora</string>
+
+    <!-- Biblioteca y Buscar (las completa PLAN T13) -->
+    <string name="library_placeholder">Aquí aparecerán tus artistas, álbumes, listas y descargas.</string>
+    <string name="search_placeholder">Busca en tu biblioteca y en YouTube Music.</string>
+
+    <!-- Comunes -->
+    <string name="loading">Cargando</string>
+    <string name="retry">Reintentar</string>
+    <string name="back">Atrás</string>
+    <string name="error_network">No se puede contactar con tu servidor. Comprueba tu conexión.</string>
+    <string name="error_unauthorized">Tu servidor ha rechazado la clave de este dispositivo. Vuelve a conectarte.</string>
+    <string name="error_not_configured">No hay ningún servidor conectado.</string>
+    <string name="error_server">El servidor ha tenido un problema. Inténtalo más tarde.</string>
+    <string name="not_in_library">Aún no está en la biblioteca</string>
+    <string name="track_description">%1$s de %2$s</string>
+    <string name="album_description">%1$s de %2$s, álbum</string>
+
+    <!-- Reproductor -->
+    <string name="player_open">Abrir reproductor</string>
+    <string name="player_close">Cerrar reproductor</string>
+    <string name="player_play">Reproducir</string>
+    <string name="player_pause">Pausar</string>
+    <string name="player_next">Siguiente</string>
+    <string name="player_previous">Anterior</string>
+    <string name="player_queue">A continuación</string>
+    <string name="player_show_queue">Mostrar cola</string>
+    <string name="player_queue_empty">No hay nada más en la cola.</string>
+    <string name="player_position">Posición en la canción</string>
+    <string name="player_position_state">%1$s de %2$s</string>
+    <string name="player_remaining">-%1$s</string>
 </resources>
