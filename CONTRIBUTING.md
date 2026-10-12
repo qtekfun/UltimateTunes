@@ -45,6 +45,6 @@ Android Lint runs with warnings as errors, including its network-backed version 
 
 `make -C server check` and `./gradlew check` run the same gates as CI:
 
-- Coverage ≥ 85 % overall, and 100 % lines and branches on the critical areas. Server: `server/tools/critical_coverage.py` (patterns in `CRITICAL`). Android: `criticalPackages` in `android/app/build.gradle.kts` (`koverVerifyCritical`). An area with no code yet passes and is enforced from its first file.
+- Coverage ≥ 85 % overall, and 100 % lines and branches on the critical areas. Server: `server/tools/critical_coverage.py` (patterns in `CRITICAL`). Android: `criticalPackages` in `android/app/build.gradle.kts` (`koverVerifyCritical`). An area with no code yet passes and is enforced from its first file. A critical file missing from the coverage report fails, and so does a coverage exclusion (`# pragma: no cover`, `# pragma: no branch`) inside one: critical code is covered by tests, never excluded.
 - Forbidden dependencies. Server: `server/tools/forbidden_deps.py` reads every package in `uv.lock`. Android: `checkForbiddenDependencies` walks the shipped and test runtime classpaths of every module.
 - In CI only: gitleaks over the PR's commits, Trivy on the image, and the Conventional Commit PR title.

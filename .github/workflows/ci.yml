@@ -5,6 +5,8 @@ name: CI
 
 on:
   pull_request:
+    # "edited" too: changing a PR's base changes the range gitleaks scans.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [master]
 
