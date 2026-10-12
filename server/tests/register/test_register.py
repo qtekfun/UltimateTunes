@@ -26,7 +26,7 @@ from ultimatetunes.library.register import Registrar
 from ultimatetunes.settings import Settings
 
 pytestmark = pytest.mark.anyio
-TOKEN = "worker-token-for-tests"
+TOKEN = "worker-token-for-tests-0123456789abcdef"
 VIDEO = "Rb8Tn3ZcYv0"
 PATH = "The Paper Lanterns/Lanterns at Dusk/04 - Paper Moons (Live).opus"
 RECORDING = "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d01"

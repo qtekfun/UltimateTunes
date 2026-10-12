@@ -17,7 +17,7 @@ from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.db import Database
 from ultimatetunes.settings import Settings
 
-TOKEN = "worker-token-for-tests"
+TOKEN = "worker-token-for-tests-0123456789abcdef"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 VIDEO = "Rb8Tn3ZcYv0"
 

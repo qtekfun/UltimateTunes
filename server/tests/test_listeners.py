@@ -18,7 +18,7 @@ from ultimatetunes import cli, listeners
 from ultimatetunes.app import create_app
 from ultimatetunes.settings import Settings
 
-TOKEN = "listener-test-token"
+TOKEN = "listener-test-token-0123456789abcdef"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
