@@ -393,6 +393,33 @@ def test_a_job_moves_only_to_a_requester_with_allowance_left(
         assert gate.adopt(conn, job_id, BOB) is False
 
 
+def test_a_job_never_moves_to_a_requester_at_the_queued_jobs_cap(
+    db: Database, clock: FakeClock, queue: SqliteJobQueue
+) -> None:
+    keep(queue, add_track(db, clock, 1))
+    clock.advance(1)
+    waiting = add_track(db, clock, 2)
+    job_id = keep(queue, waiting)
+    download(queue, 10_000)  # Alice is now over her allowance
+    # Bob has allowance left but already UT_MAX_QUEUED_JOBS_PER_USER (3) jobs queued.
+    bobs = [keep(queue, add_track(db, clock, n), user=BOB) for n in (3, 4, 5)]
+    gate = queue._gate
+    assert gate is not None
+    with db.transaction() as conn:
+        assert gate.adopt(conn, job_id, BOB) is False
+    # Asking for the song through the queue does not move it either: it stays with Alice.
+    queue.enqueue(
+        track_id=waiting[0], video_id=waiting[1], priority=PRIORITY_STREAM, requested_by=BOB
+    )
+    with db.read() as conn:
+        owner = conn.execute("SELECT requested_by FROM jobs WHERE id = ?", (job_id,)).scalar()
+    assert owner == ALICE
+    # Once one of Bob's jobs is no longer active, he may take it over.
+    with db.transaction() as conn:
+        conn.execute("UPDATE jobs SET state = 'cancelled' WHERE id = ?", (bobs[0],))
+        assert gate.adopt(conn, job_id, BOB) is True
+
+
 def test_downloads_resume_only_with_a_margin_above_the_threshold(
     db: Database, clock: FakeClock, queue: SqliteJobQueue, music: Disk
 ) -> None:
