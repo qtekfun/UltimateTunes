@@ -123,7 +123,9 @@ internal object DemoAudio {
     /** The frame number in FLAC's UTF-8-like coding (16 bits are all a demo needs). */
     private fun utf8(n: Int): ByteArray = when {
         n < 0x80 -> byteArrayOf(n.toByte())
+
         n < 0x800 -> byteArrayOf((0xC0 or (n shr 6)).toByte(), (0x80 or (n and 0x3F)).toByte())
+
         else -> byteArrayOf(
             (0xE0 or (n shr 12)).toByte(),
             (0x80 or ((n shr 6) and 0x3F)).toByte(),

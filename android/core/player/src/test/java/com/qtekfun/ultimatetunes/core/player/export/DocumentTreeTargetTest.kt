@@ -52,7 +52,12 @@ class MemoryTree : DocumentTree {
 
     override fun children(folder: String): List<DocumentTree.Entry> =
         docs.entries.filter { it.value.parent == folder }.map {
-            DocumentTree.Entry(it.key, it.value.name, it.value.isFolder, it.value.bytes.size.toLong())
+            DocumentTree.Entry(
+                it.key,
+                it.value.name,
+                it.value.isFolder,
+                it.value.bytes.size.toLong()
+            )
         }
 
     private fun named(folder: String, name: String): DocumentTree.Entry? =
@@ -223,7 +228,10 @@ class DocumentTreeTargetTest {
 
         assertEquals(WriteOutcome.WRITTEN, write())
 
-        assertEquals(setOf("artist/ALBUM/cover.jpg", "artist/ALBUM/01 - Song.opus"), tree.files.keys)
+        assertEquals(
+            setOf("artist/ALBUM/cover.jpg", "artist/ALBUM/01 - Song.opus"),
+            tree.files.keys
+        )
         assertEquals(2, tree.docs.values.count { it.isFolder && it.parent != null })
     }
 
