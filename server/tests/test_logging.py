@@ -45,6 +45,11 @@ def test_redact_hides_credentials(text: str) -> None:
     assert REDACTED in out
 
 
+def test_redact_keeps_the_parameters_after_a_redacted_one() -> None:
+    text = f"GET /rest/stream?id=1&apiKey={SECRET}&f=json 200"
+    assert redact(text) == f"GET /rest/stream?id=1&apiKey={REDACTED}&f=json 200"
+
+
 def test_redact_keeps_harmless_text() -> None:
     text = "GET /rest/getAlbum?id=42&f=json 200"
     assert redact(text) == text
