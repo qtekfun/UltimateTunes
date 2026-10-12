@@ -26,8 +26,12 @@ Plain SQL files applied in order by `ultimatetunes migrate` (our own small migra
    - Schema changes: `CREATE TABLE`, `CREATE INDEX`, `DROP INDEX`, `ALTER TABLE … ADD COLUMN` (nullable or with a constant default). Anything else, such as changing or dropping a column, is a new table plus a data copy plus a rename, and needs the coordinator to sign off.
    - Avoid reserved words as names (`user`, `order`, `offset`, `key` is fine, `value` is fine). When in doubt, add a suffix (`offset_ms`).
    - No `PRAGMA`, no `BEGIN`/`COMMIT` (the migrator wraps each file in a transaction), no `VACUUM`, no triggers, no views in v1.
-6. **The migrator splits each file on `;`.** No semicolon may appear inside a statement, a string literal or a comment.
-7. **`--` comments only, each on its own line.** No trailing comments after SQL on the same line and no `/* */` blocks.
+6. **Statement layout: the migrator splits each file on a `;` that ends a line.** So:
+   - every statement ends with `;` as the **last character of a line** (trailing spaces are fine);
+   - **no line inside a statement ends with `;`** (not in a string literal, not in a `CHECK`, nowhere);
+   - a `;` in the middle of a line (e.g. `DEFAULT ';'`) is left alone, but avoid it anyway.
+   `server/tests/test_migrate.py` checks every file in this directory against these rules.
+7. **`--` comments only, each on its own line** (the migrator drops whole-line `--` comments before splitting). No trailing comments after SQL on the same line and no `/* */` blocks.
 8. Check locally before pushing:
    ```sh
    sqlite3 :memory: < contracts/db/migrations/NNNN_x.sql

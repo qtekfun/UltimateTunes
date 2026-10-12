@@ -3,13 +3,13 @@
 """Liveness and readiness probes (Docker healthcheck now, Kubernetes probes later)."""
 
 import logging
-import sqlite3
 import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Response, status
 
-from ultimatetunes.db import migrate
+from ultimatetunes.db import DatabaseError, migrate
+from ultimatetunes.db.driver import connect_sqlite
 from ultimatetunes.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -41,12 +41,12 @@ def _check_database(settings: Settings) -> str:
     if not settings.database_file.is_file():
         return "missing"
     try:
-        conn = sqlite3.connect(f"file:{settings.database_file}?mode=ro", uri=True)
+        conn = connect_sqlite(settings.database_file, read_only=True)
         try:
             todo = migrate.pending(conn, settings.migrations_dir)
         finally:
             conn.close()
-    except (sqlite3.Error, OSError, ValueError) as exc:
+    except (DatabaseError, OSError, ValueError) as exc:
         log.warning("readiness: database check failed: %s", exc)
         return "error"
     return "ok" if not todo else "migrations pending"
