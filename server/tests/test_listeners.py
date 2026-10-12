@@ -3,8 +3,11 @@
 """The client and internal listeners (listeners.py, T22): `/internal/v1` never on the client
 port, nothing else on the internal one, one signal stops both."""
 
+import asyncio
+from types import SimpleNamespace
 from typing import Any
 
+import anyio
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
@@ -114,3 +117,55 @@ def test_internal_host_defaults_to_the_host(settings: Settings) -> None:
 def test_trusted_proxies_must_be_networks() -> None:
     with pytest.raises(ValueError, match="does not appear to be an IPv4 or IPv6 network"):
         Settings(trusted_proxies="proxy.example")
+
+
+@pytest.mark.anyio
+async def test_the_lifespan_ends_only_after_the_internal_listener_drained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    order: list[str] = []
+
+    async def base_shutdown(self: uvicorn.Server, sockets: Any = None) -> None:
+        order.append("lifespan shutdown")
+
+    monkeypatch.setattr(uvicorn.Server, "shutdown", base_shutdown)
+
+    async def drain() -> None:
+        await asyncio.sleep(0.01)
+        order.append("internal drained")
+
+    leader = listeners.Leader(uvicorn.Config(_app))
+    closed: list[bool] = []
+    leader.servers = [SimpleNamespace(close=lambda: closed.append(True))]  # type: ignore[list-item]
+    leader.follower = asyncio.ensure_future(drain())
+    await leader.shutdown()
+    assert closed == [True]  # stopped accepting first
+    assert order == ["internal drained", "lifespan shutdown"]
+
+
+@pytest.mark.anyio
+async def test_a_failing_internal_listener_stops_the_client_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def follower_fails(self: listeners.Follower, sockets: Any = None) -> None:
+        raise RuntimeError("port 8045 in use")
+
+    stopped: list[bool] = []
+
+    async def leader_runs(self: listeners.Leader, sockets: Any = None) -> None:
+        assert self.follower is not None
+        with anyio.fail_after(5):
+            await asyncio.wait([self.follower])
+        await asyncio.sleep(0)  # the done callback runs on the next loop turn
+        stopped.append(self.should_exit)
+
+    monkeypatch.setattr(listeners.Follower, "serve", follower_fails)
+    monkeypatch.setattr(listeners.Leader, "serve", leader_runs)
+    with pytest.raises(RuntimeError, match="8045"):
+        await listeners.serve(uvicorn.Config(_app), uvicorn.Config(_app))
+    assert stopped == [True]
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"

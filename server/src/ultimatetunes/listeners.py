@@ -13,11 +13,14 @@ where the worker reaches it (`UT_API_URL=http://api:8045`). Both share the same 
 so worker reports still wake the streams of the client listener at once.
 
 uvicorn installs its own SIGTERM handler per server; only the client listener does that here
-and the internal listener follows it (`Follower`), so one signal stops both gracefully.
+and the internal listener follows it (`Follower`), so one signal stops both gracefully. The
+client listener (`Leader`) runs the lifespan and ends it only after the internal listener has
+drained; if the internal listener cannot start, the client one stops too.
 """
 
 import asyncio
 import contextlib
+import socket
 from collections.abc import Iterator
 
 import uvicorn
@@ -69,7 +72,34 @@ class Follower(uvicorn.Server):
         return await super().on_tick(counter)
 
 
+class Leader(uvicorn.Server):
+    """The client listener: owns the signals and the lifespan. On shutdown it stops accepting,
+    then waits for the internal listener to drain before its own shutdown runs the lifespan's
+    end (which closes the database), so no worker call is cut off mid-transaction."""
+
+    follower: "asyncio.Future[None] | None" = None
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        for server in self.servers:
+            server.close()
+        if self.follower is not None:
+            with contextlib.suppress(Exception):
+                await self.follower
+        await super().shutdown(sockets)
+
+
 async def serve(client: uvicorn.Config, internal: uvicorn.Config) -> None:
     """Serves both listeners until a signal stops the client one (and with it the other)."""
-    leader = uvicorn.Server(client)
-    await asyncio.gather(leader.serve(), Follower(internal, leader).serve())
+    leader = Leader(client)
+    follower = asyncio.ensure_future(Follower(internal, leader).serve())
+
+    def stop_if_failed(task: "asyncio.Future[None]") -> None:
+        if task.cancelled() or task.exception() is not None:
+            leader.should_exit = True
+
+    follower.add_done_callback(stop_if_failed)
+    leader.follower = follower
+    try:
+        await leader.serve()
+    finally:
+        await follower
