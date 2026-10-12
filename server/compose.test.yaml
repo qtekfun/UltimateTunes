@@ -29,9 +29,12 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    environment:
+    environment: &test-env
       UT_LOG_LEVEL: DEBUG
       UT_FAKE_YOUTUBE: "true"
+      # Test stack only: a fixed, public, worthless value so the worker can reach the internal
+      # API. Never reuse it; real deployments pass a random token as a Docker secret (compose.yaml).
+      UT_WORKER_TOKEN: test-stack-worker-token-not-a-secret
     ports: ["127.0.0.1:8044:8044"]
     volumes: [data:/data, music:/music, staging:/staging]
     networks: [default, internal]
@@ -47,8 +50,7 @@ services:
     build: *build
     image: ultimatetunes-server:test
     command: ["worker"]
-    environment:
-      UT_FAKE_YOUTUBE: "true"
+    environment: *test-env
     depends_on:
       api:
         condition: service_healthy

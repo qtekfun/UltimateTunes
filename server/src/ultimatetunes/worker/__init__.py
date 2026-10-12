@@ -4,7 +4,10 @@
 
 T02 ships:
 - `downloader`: the `Downloader` protocol, progress/result records, `DownloadError`, and
-  `build_downloader(settings, staging)`, which T08 points at the yt-dlp implementation.
-- `fake`: `FakeDownloader`, which writes a short generated WAV file slowly into staging.
-T08 adds the worker loop on the internal worker API, yt-dlp and its self-update here.
+  `build_downloader(settings, staging)`, which T08 points at the real implementation.
+- `fake`: `FakeDownloader`, which writes a short silent Ogg/Opus file (`assets/`) slowly into
+  staging.
+- `loop`: the worker main loop (idles until SIGTERM for now), `cli`: the `worker` command,
+  `settings`: `WorkerSettings` (`UT_*` env vars).
+T08 adds the loop on the internal worker API, the real downloader and its self-update here.
 """

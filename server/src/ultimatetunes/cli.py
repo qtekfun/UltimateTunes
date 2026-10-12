@@ -1,17 +1,19 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""`ultimatetunes` command: one image, several roles (api, worker, migrate)."""
+"""`ultimatetunes` command: one image, several roles and commands.
+
+The commands come from the registry (`commands.py`): this module registers the coordinator's
+own (`api`, `migrate`); areas register theirs in their own `cli.py` (e.g. `worker`, T08).
+"""
 
 import argparse
 import logging
-import signal
-import threading
-from collections.abc import Callable, Sequence
-from types import FrameType
+from collections.abc import Sequence
 
 import uvicorn
 
 from ultimatetunes import __version__
+from ultimatetunes.commands import CommandRegistry, build_registry, no_args
 from ultimatetunes.db import migrate as migrations
 from ultimatetunes.logging import configure_logging
 from ultimatetunes.settings import Settings
@@ -35,28 +37,6 @@ def run_api(settings: Settings) -> int:
     return 0
 
 
-def run_worker(
-    settings: Settings,
-    stop: threading.Event | None = None,
-    install: Callable[[int, Callable[[int, FrameType | None], None]], object] = signal.signal,
-) -> int:
-    """Worker loop. Claiming and running download jobs comes in PLAN T08; for now it idles
-    until SIGTERM/SIGINT, which is the shutdown path T08 keeps."""
-    stop = stop or threading.Event()
-
-    def _on_signal(signum: int, _frame: FrameType | None) -> None:
-        log.info("worker: signal %s received, stopping", signum)
-        stop.set()
-
-    install(signal.SIGTERM, _on_signal)
-    install(signal.SIGINT, _on_signal)
-    log.info("worker started (staging=%s)", settings.staging_dir)
-    while not stop.wait(timeout=5.0):
-        pass
-    log.info("worker stopped")
-    return 0
-
-
 def run_migrate(settings: Settings) -> int:
     conn = migrations.connect(settings.database_file)
     try:
@@ -67,18 +47,23 @@ def run_migrate(settings: Settings) -> int:
     return 0
 
 
-ROLES: dict[str, Callable[[Settings], int]] = {
-    "api": run_api,
-    "worker": run_worker,
-    "migrate": run_migrate,
-}
+def register(registry: CommandRegistry) -> None:
+    registry.add("api", no_args(run_api), help="Serve the api (OpenSubsonic, /ut/v1, internal)")
+    registry.add("migrate", no_args(run_migrate), help="Apply the database migrations")
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="ultimatetunes", description=__doc__)
+def main(argv: Sequence[str] | None = None, registry: CommandRegistry | None = None) -> int:
+    registry = registry or build_registry()
+    specs = registry.specs()
+    parser = argparse.ArgumentParser(
+        prog="ultimatetunes",
+        description=__doc__,
+        epilog="commands: " + "; ".join(f"{s.name}: {s.help}" for s in specs),
+    )
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("role", choices=sorted(ROLES))
-    args = parser.parse_args(argv)
+    parser.add_argument("command", choices=[s.name for s in specs])
+    parser.add_argument("args", nargs=argparse.REMAINDER, help="arguments of the command")
+    parsed = parser.parse_args(argv)
     settings = Settings()
     configure_logging(settings.log_level)
-    return ROLES[args.role](settings)
+    return registry.get(parsed.command).run(settings, parsed.args)

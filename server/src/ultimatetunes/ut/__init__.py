@@ -8,7 +8,7 @@ where the contract allows anonymous calls, `public_router`:
 
 | Module | Paths | Owner |
 | --- | --- | --- |
-| `ut/system.py` | `GET /ut/v1/server` | unassigned (coordinator) |
+| `ut/system.py` | `GET /ut/v1/server` | T05 |
 | `auth/routes.py` | `/ut/v1/me`, `/ut/v1/keys` | T04 |
 | `jobs/routes.py` | `/ut/v1/tracks/{id}/request`, `/status` | T08 |
 | `search/routes.py` | `/ut/v1/search` | T06 |

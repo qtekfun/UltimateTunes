@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""`GET /ut/v1/server` (public). Not assigned to a PLAN task yet: the coordinator decides.
+"""`GET /ut/v1/server` (public). Owner: PLAN T05 (.claude/ownership.json).
 
 T02 stub: answers `not_implemented` (501).
 """

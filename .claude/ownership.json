@@ -27,7 +27,7 @@
     "t16": ["server/src/ultimatetunes/streaming/*", "server/tests/streaming/*", "contracts/db/migrations/06??_*"],
     "t17": ["android/core/player/*", "android/app/src/main/java/com/qtekfun/ultimatetunes/playback/*", "android/app/src/main/res/values/strings_player.xml", "android/app/src/main/res/values-es/strings_player.xml", "android/app/src/test/java/com/qtekfun/ultimatetunes/playback/*", "android/app/src/androidTest/java/com/qtekfun/ultimatetunes/playback/*"],
     "t18": ["android/app/src/main/java/com/qtekfun/ultimatetunes/*", "android/app/src/main/res/*", "android/app/src/test/*", "android/app/src/androidTest/*", "android/core/player/*"],
-    "t19": ["server/tests/contract/*", "docs/compat.md", ".github/workflows/nightly.yml"],
+    "t19": ["server/tests/contract/*", "server/src/ultimatetunes/canary/*", "server/tests/canary/*", "docs/compat.md", ".github/workflows/nightly.yml"],
     "t20": ["*"],
     "t21": ["*"],
     "t22": ["*"],
