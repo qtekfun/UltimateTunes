@@ -10,9 +10,10 @@ info:
     download jobs, reports progress and registers archived files through these endpoints only.
 
     ## Network and authentication
-    - Served under `/internal/v1` by the api on its single listener (port 8044) in v1. Only the worker calls it,
-      over the internal Docker network. The reverse proxy (and later a Kubernetes NetworkPolicy) must not route
-      `/internal/` from outside. A separate internal listener is a PLAN T22 item (SPEC §11).
+    - Served under `/internal/v1` only by the api's internal listener (port 8045, `UT_INTERNAL_PORT`; PLAN T22),
+      never published; the client listener (8044) answers 404 for `/internal/*`. Only the worker calls it, over
+      the internal Docker network. The reverse proxy (and later a Kubernetes NetworkPolicy) must not route
+      `/internal/` from outside.
     - `Authorization: Bearer <worker token>`: a shared secret from an env var or Docker secret
       (`UT_WORKER_TOKEN`), compared in constant time. Scoped to these endpoints only. With no token configured
       every call is refused, with the same generic `invalid_worker_token` problem as a wrong token.
@@ -80,8 +81,8 @@ info:
     name: GPL-3.0-or-later
     identifier: GPL-3.0-or-later
 servers:
-- url: http://api:8044
-  description: Internal Docker network only.
+- url: http://api:8045
+  description: The api's internal listener, internal Docker network only.
 security:
 - workerToken: []
 tags:

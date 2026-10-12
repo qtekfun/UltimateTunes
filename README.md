@@ -39,6 +39,8 @@ UltimateTunes is meant for one household on hardware you control, reached over y
 4. Reach it over HTTPS from your devices, for example with `tailscale serve --bg 8044`. Keep it off the open Internet.
 5. In the admin panel (`/admin`), create an API key for each device (it can show it as a QR code), build the app (`cd android && ./gradlew assembleDebug`, or a signed release, see [RELEASING.md](RELEASING.md)) and connect it with the server address and the key.
 
+How the containers, networks and every connection fit together: [docs/architecture.md](docs/architecture.md).
+
 Without a server, a debug build of the app has a demo mode (Connect screen, "Try the demo") with invented music.
 
 ## Contributing
