@@ -292,3 +292,26 @@ async def test_a_staging_dir_that_cannot_be_deleted_is_only_logged(
     report = await DownloadCanary(downloader, staging, "Fk2Lp9QwXa1", clock, 5).run()
     assert report.ok
     assert "could not delete canary/" in caplog.text
+
+
+async def test_reports_are_stamped_when_the_run_ends(
+    staging: LocalStagingStore, clock: FakeClock
+) -> None:
+    class Slow(FakeMusicCatalog):
+        async def playlist(self, playlist_id: str) -> CatalogPlaylist:
+            clock.advance(90)
+            return await super().playlist(playlist_id)
+
+    report = await catalog_canary(Slow(), clock).run()
+    assert report.ran_at == "2026-10-12T08:01:30.000Z"
+
+    class SlowDownloader(FakeDownloader):
+        async def download(
+            self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        ) -> DownloadResult:
+            clock.advance(30)
+            return await super().download(video_id, job_dir, on_progress)
+
+    slow = SlowDownloader(staging, chunks=1, delay_s=0)
+    report = await DownloadCanary(slow, staging, "Fk2Lp9QwXa1", clock, 5).run()
+    assert report.ran_at == "2026-10-12T08:02:00.000Z"
