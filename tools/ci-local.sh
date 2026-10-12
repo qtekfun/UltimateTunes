@@ -30,7 +30,8 @@ cleanup() {
   docker stop "$pg_name" >/dev/null 2>&1 || true
   docker compose -p "$compose_project" -f server/compose.test.yaml down -v >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 declare -a results=()
 fail=0
 
