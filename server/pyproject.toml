@@ -47,12 +47,14 @@ packages = ["src/ultimatetunes"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["src", "tests"]
+src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
 select = [
   "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "S", "BLE",
   "T20", "PT", "RUF", "ASYNC", "TRY", "PL", "DTZ", "LOG", "G",
+  # A directory without __init__.py is a namespace package that coverage.py never measures.
+  "INP",
 ]
 ignore = [
   # Exception messages are written inline; a custom class per message adds nothing.
@@ -62,11 +64,13 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests use assert and fixed fake values by nature.
 "tests/**" = ["S101", "S105", "S106", "PLR2004"]
+# Standalone scripts run by the Makefile, not a package.
+"tools/**" = ["INP001"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests"]
-mypy_path = "src"
+files = ["src", "tests", "tools"]
+mypy_path = ["src", "tools"]
 plugins = ["pydantic.mypy"]
 
 [tool.bandit]
@@ -74,6 +78,8 @@ exclude_dirs = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The quality-gate scripts of tools/ are tested too (tests/tools).
+pythonpath = ["tools"]
 addopts = [
   "--strict-markers",
   "--cov=ultimatetunes",
