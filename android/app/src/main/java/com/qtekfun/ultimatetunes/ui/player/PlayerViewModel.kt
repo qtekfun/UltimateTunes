@@ -4,6 +4,8 @@
 package com.qtekfun.ultimatetunes.ui.player
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /** What the mini player and the full player show. */
 data class PlayerUiState(
@@ -29,12 +32,17 @@ data class PlayerUiState(
 /**
  * The player's state for the UI: queue, current song, play/pause and position. PLAN T12 has no
  * real playback, so this only keeps the state the controls change; PLAN T17 connects it to the
- * Media3 session.
+ * Media3 session. It lives as long as the activity, so the queue is dropped whenever the app
+ * goes back to the Connect screen (another server or key must not inherit it).
  */
 @HiltViewModel
-class PlayerViewModel @Inject constructor() : ViewModel() {
+class PlayerViewModel @Inject constructor(gate: ConnectionGate) : ViewModel() {
     private val mutableState = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = mutableState.asStateFlow()
+
+    init {
+        viewModelScope.launch { gate.reconnects.collect { mutableState.value = PlayerUiState() } }
+    }
 
     /** Replaces the queue with [queue] and starts at [startIndex]. */
     fun play(queue: List<TrackTile>, startIndex: Int = 0) {
