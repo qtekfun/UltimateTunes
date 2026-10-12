@@ -326,6 +326,33 @@ async def test_the_staging_file_must_match(api: Api) -> None:
     assert (r.status_code, r.json()["code"]) == (409, "conflict")
 
 
+async def test_the_api_hashes_the_staging_file_itself(api: Api) -> None:
+    """A worker cannot make the api adopt a file it does not own by reporting that file's
+    hash: the hash must be the staging file's (SECURITY.md, T22)."""
+    c = claim(api)
+    unowned = b"OggS" + b"\x02" * 100  # same size as the staged audio
+    with api.services.library.open_write(PATH) as out:
+        out.write(unowned)
+    lying = body(c)
+    lying["file"]["sha256"] = hashlib.sha256(unowned).hexdigest()
+    r = await api.register(lying)
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+    assert "sha256" in r.json()["detail"]
+    with api.services.library.open_read(PATH) as kept:
+        assert kept.read() == unowned
+
+
+async def test_an_unreadable_staging_file_is_a_conflict(api: Api) -> None:
+    c = claim(api)
+    staged = api.services.staging.local_path(f"{c.staging_dir}/archive.opus")
+    staged.chmod(0)
+    try:
+        r = await api.register(body(c))
+    finally:
+        staged.chmod(0o600)
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+
+
 async def test_artists_and_albums_are_reused(api: Api) -> None:
     c = claim(api)
     first = (await api.register(body(c))).json()

@@ -14,6 +14,8 @@
   held by another track or job is `conflict`. A file already at the path is **adopted** when no
   track owns the path and its SHA-256 equals the registered one (this job's own file, moved by
   an attempt that died before `complete`); any other file there is `conflict`.
+- The staging file must be inside the job's staging directory, have the registered size and
+  the registered SHA-256, which the api computes itself (it never trusts the worker's hash).
 - The answer carries the album state: when every track of the album is in the library
   (`totalTracks` known and reached), the worker computes album ReplayGain.
 
@@ -30,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from ultimatetunes.core.clock import Clock, format_ts
-from ultimatetunes.core.storage import LibraryStore, StagingStore, check_relative
+from ultimatetunes.core.storage import FileStore, LibraryStore, StagingStore, check_relative
 from ultimatetunes.db.database import Database
 from ultimatetunes.db.driver import Connection, IntegrityError
 from ultimatetunes.errors import Conflict, LeaseLost, NotFound, PathRejected
@@ -176,7 +178,7 @@ class _Job:
     placed_sha256: str | None = None
 
 
-def file_sha256(store: LibraryStore, rel: str) -> str:
+def file_sha256(store: FileStore, rel: str) -> str:
     sha = hashlib.sha256()
     with store.open_read(rel) as reader:
         while chunk := reader.read(_CHUNK):
@@ -480,6 +482,14 @@ class Registrar:
             self._staging.size(staging_path) != body.file.size_bytes
         ):
             raise Conflict("the staging file is missing or has another size")
+        # The api hashes the staging file itself: a compromised worker cannot make it adopt
+        # another file by reporting that file's hash (SECURITY.md, T22).
+        try:
+            staged_sha = file_sha256(self._staging, staging_path)
+        except OSError as exc:
+            raise Conflict("the staging file is not readable") from exc
+        if staged_sha != body.file.sha256:
+            raise Conflict("the staging file does not match sha256")
         meta = body.metadata
         target = self._merge_target(conn, job, meta.musicbrainz.recording_id)
         if target is not None:
