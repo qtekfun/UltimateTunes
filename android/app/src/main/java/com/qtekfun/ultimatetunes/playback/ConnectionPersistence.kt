@@ -24,9 +24,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Keeps the connection across restarts (SPEC §7): restores the saved server and key before the
- * first screen decides between Connect and the app, then saves every configuration the Connect
- * screen confirmed (never one still being checked) and forgets it on "Disconnect".
+ * Keeps the connection across restarts (SPEC §7): restores the saved server and key at start, off
+ * the main thread (the Connect screen may show for that moment), then saves every configuration
+ * the Connect screen confirmed (never one still being checked) and forgets it on "Disconnect".
  */
 class ConnectionPersistence(
     private val source: InMemoryServerConfigSource,
@@ -35,14 +35,15 @@ class ConnectionPersistence(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher
 ) {
-    /** Restores the saved configuration if none is set yet; call once, at app start. */
-    fun restore() {
-        if (source.config.value == null) vault.load()?.let(source::set)
-    }
-
-    /** Saves confirmed changes from now on. */
+    /**
+     * Restores the saved configuration (unless one is set already) off the main thread, then saves
+     * confirmed changes from then on. Restoring first keeps the initial "no configuration" from
+     * erasing the saved one.
+     */
     fun start() {
         scope.launch {
+            val saved = withContext(io) { vault.load() }
+            if (saved != null && source.config.value == null) source.set(saved)
             combine(source.config, gate.needsConnect) { config, needsConnect ->
                 Saved(config).takeIf { config == null || !needsConnect }
             }
@@ -60,6 +61,10 @@ class ConnectionPersistence(
                 // Not saved: the app asks to connect again after the next restart.
             } catch (ignored: GeneralSecurityException) {
                 // Keystore unavailable: same as above, and the key never touches the disk.
+            } catch (
+                @Suppress("TooGenericExceptionCaught") ignored: RuntimeException
+            ) {
+                // Keystore providers also throw ProviderException and friends: same as above.
             }
         }
     }
@@ -69,7 +74,7 @@ class ConnectionPersistence(
 
 /**
  * The playback side's work at app start; `UltimateTunesApp.onCreate` calls [onAppCreate] (see the
- * PR notes: that file belongs to another task).
+ * PR notes: that file belongs to another task). The Keystore work runs off the main thread.
  */
 @Singleton
 class PlaybackStartup @Inject constructor(
@@ -84,10 +89,7 @@ class PlaybackStartup @Inject constructor(
             File(context.noBackupFilesDir, "server_config.bin"),
             KeystoreSecretBox(KEY_ALIAS)
         )
-        ConnectionPersistence(source, gate, vault, scope, Dispatchers.IO).apply {
-            restore()
-            start()
-        }
+        ConnectionPersistence(source, gate, vault, scope, Dispatchers.IO).start()
     }
 
     private companion object {

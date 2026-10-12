@@ -16,9 +16,12 @@ import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettings
 import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettingsStore
 import java.io.File
 import java.nio.file.Path
+import java.security.ProviderException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -131,9 +134,8 @@ class ConnectionPersistenceTest {
                 CoroutineScope(backgroundScope.coroutineContext + dispatcher),
                 dispatcher
             )
-        persistence.restore()
-        assertEquals(CONFIG, source.config.value)
         persistence.start()
+        assertEquals(CONFIG, source.config.value)
 
         // A key being checked is never saved; a refused one leaves the old one in place.
         val other = ServerConfig("https://other.example/".toHttpUrl(), KEY)
@@ -160,9 +162,39 @@ class ConnectionPersistenceTest {
         val source = InMemoryServerConfigSource(other)
         val scope = CoroutineScope(Dispatchers.Unconfined)
         ConnectionPersistence(source, ConnectionGate(source), vault, scope, Dispatchers.Unconfined)
-            .restore()
+            .start()
         assertEquals(other, source.config.value)
+        // The configuration in use is the one saved from now on.
+        assertEquals(other, vault.load())
+        scope.cancel()
     }
+
+    @Test
+    fun `a failing Keystore means not connected, never a crash`() {
+        val file = File(dir.toFile(), "server.bin")
+        ServerConfigVault(file, XorBox()).save(CONFIG)
+        val vault = ServerConfigVault(file, ThrowingBox)
+        assertNull(vault.load())
+
+        val source = InMemoryServerConfigSource()
+        val gate = ConnectionGate(source)
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        ConnectionPersistence(source, gate, vault, scope, Dispatchers.Unconfined).start()
+        assertNull(source.config.value)
+
+        // Saving a confirmed key fails inside the box: swallowed, the app keeps running.
+        source.set(CONFIG)
+        assertEquals(CONFIG, source.config.value)
+        assertTrue(scope.coroutineContext[Job]!!.isActive)
+        scope.cancel()
+    }
+}
+
+/** A Keystore that is broken: every call throws, as some devices do. */
+private object ThrowingBox : SecretBox {
+    override fun seal(plain: ByteArray): ByteArray = throw ProviderException("keystore down")
+
+    override fun open(sealed: ByteArray): ByteArray? = throw ProviderException("keystore down")
 }
 
 class TrackMappingTest {

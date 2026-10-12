@@ -18,7 +18,7 @@ import com.qtekfun.ultimatetunes.core.player.prefetch.PrefetchTarget
 import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.job
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 
 /** The [PrefetchTarget] of the real player: the API and Media3's cache writer. */
@@ -26,7 +26,10 @@ class MediaPrefetchTarget(
     private val api: TunesApi,
     private val caches: MediaCaches,
     private val sources: MediaDataSources,
-    private val io: CoroutineDispatcher = Dispatchers.IO
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val writerFor: (DataSpec) -> CacheWriter = { spec ->
+        CacheWriter(sources.playCache.createDataSource(), spec, null, null)
+    }
 ) : PrefetchTarget {
     override fun isAvailable(id: SongId): Boolean =
         caches.hasStart(CachePolicy.cacheKey(id), CachePolicy.PRELOAD_BYTES)
@@ -42,16 +45,15 @@ class MediaPrefetchTarget(
                 .setKey(CachePolicy.cacheKey(id))
                 .setLength(bytes)
                 .build()
-            val writer = CacheWriter(sources.playCache.createDataSource(), spec, null, null)
-            val stop = coroutineContext.job.invokeOnCompletion { writer.cancel() }
+            val writer = writerFor(spec)
             try {
-                writer.cache()
+                // Cancelling (the queue moved on) interrupts the blocking read, so the stream
+                // closes at once and frees its listener slot on the server.
+                runInterruptible { writer.cache() }
                 true
             } catch (ignored: IOException) {
                 // Includes the interruption of a cancelled preload; the planner retries later.
                 false
-            } finally {
-                stop.dispose()
             }
         }
     }

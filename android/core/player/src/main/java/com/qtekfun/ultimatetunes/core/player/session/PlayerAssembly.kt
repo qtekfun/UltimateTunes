@@ -88,9 +88,12 @@ class PlayerAssembly @Inject constructor(
         DataSourceBitmapLoader.Builder(context).setDataSourceFactory(sources.http).build()
 
     /**
-     * Resolves the stream URL of every item a controller adds (see [MediaItems.resolve]). Other
-     * apps that are not trusted by the system (notification, Bluetooth, headsets are) may control
-     * playback but not change the queue, so they cannot make the server download anything.
+     * Resolves the stream URL of every item a controller adds (see [MediaItems.resolve]). Only the
+     * app itself and controllers Media3 marks as trusted may change the queue; any other app may
+     * control playback but not queue songs, so it cannot make the server download anything.
+     * "Trusted" means the system (notification, Bluetooth, headsets), apps holding
+     * MEDIA_CONTENT_CONTROL **and enabled notification-listener apps**: the user granted those
+     * access to every notification, so they also count as trusted here.
      */
     fun sessionCallback(): MediaSession.Callback = object : MediaSession.Callback {
         override fun onConnect(

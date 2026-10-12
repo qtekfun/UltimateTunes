@@ -14,7 +14,7 @@ data class SyncPlan(
     val remove: Set<SongId>,
     /** `yt:` songs still downloading on the server; the next sync picks them up. */
     val awaitingServer: List<SongId>,
-    /** False while some album or playlist was never read: nothing is removed then. */
+    /** False while some album or playlist was never read: only dropped songs are removed then. */
     val complete: Boolean
 )
 
@@ -23,8 +23,18 @@ data class SyncPlan(
  * kept playlist are downloaded; removed ones are freed, unless another kept item still has them.
  */
 object OfflineSyncPlanner {
-    /** The plan for [selection], given the songs [downloaded] already (or downloading). */
-    fun plan(selection: OfflineSelection, downloaded: Set<SongId>): SyncPlan {
+    /**
+     * The plan for [selection], given every download the phone has ([downloaded], in any state)
+     * and those of them that [failed] (downloaded again when still wanted, removed otherwise).
+     * While some kept album or playlist was never read, only the [dropped] songs (the user just
+     * let them go) are freed, if nothing known still wants them.
+     */
+    fun plan(
+        selection: OfflineSelection,
+        downloaded: Set<SongId>,
+        failed: Set<SongId> = emptySet(),
+        dropped: Set<SongId> = emptySet()
+    ): SyncPlan {
         val wanted = (selection.tracks + selection.collections.flatMap { it.members.orEmpty() })
             .distinctBy { it.id }
         val awaiting = mutableListOf<SongId>()
@@ -35,9 +45,10 @@ object OfflineSyncPlanner {
         }.distinctBy { it.id }
         val keep = resolved.mapTo(HashSet()) { it.id }
         val complete = selection.collections.all { it.members != null }
+        val freeable = if (complete) downloaded else dropped.map { selection.aliases[it] ?: it }
         return SyncPlan(
-            add = resolved.filter { it.id !in downloaded },
-            remove = if (complete) downloaded - keep else emptySet(),
+            add = resolved.filter { it.id !in downloaded || it.id in failed },
+            remove = freeable.filterTo(HashSet()) { it in downloaded && it !in keep },
             awaitingServer = awaiting,
             complete = complete
         )

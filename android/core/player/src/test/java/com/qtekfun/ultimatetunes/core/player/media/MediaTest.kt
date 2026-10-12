@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
@@ -30,7 +31,13 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import io.mockk.verify
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.AfterEach
@@ -142,6 +149,53 @@ class MediaPrefetchTargetTest {
             TunesResult.NetworkError(IOException("off"))
         assertTrue(target.requestOnServer(yt))
         assertFalse(target.requestOnServer(ID))
+    }
+
+    private fun targetWith(writer: CacheWriter) =
+        MediaPrefetchTarget(api, caches, MediaDataSources(OkHttpClient(), caches), Dispatchers.IO) {
+            writer
+        }
+
+    private fun withServer() {
+        mockkStatic(Uri::class)
+        every { Uri.parse(any()) } returns mockk(relaxed = true)
+        every { api.streamUrl(ID) } returns "https://music.example/rest/stream".toHttpUrl()
+    }
+
+    @AfterEach
+    fun unmock() = unmockkAll()
+
+    @Test
+    fun `a preload writes the start of the song, and a failed one says so`() = runBlocking {
+        withServer()
+        val ok = mockk<CacheWriter> { every { cache() } returns Unit }
+        assertTrue(targetWith(ok).preload(ID, 10))
+        val failing = mockk<CacheWriter> { every { cache() } throws IOException("reset") }
+        assertFalse(targetWith(failing).preload(ID, 10))
+    }
+
+    @Test
+    fun `cancelling a preload interrupts the blocking write at once`() = runBlocking {
+        withServer()
+        val started = CompletableDeferred<Unit>()
+        val interrupted = CompletableDeferred<Boolean>()
+        val writer = mockk<CacheWriter> {
+            every { cache() } answers {
+                started.complete(Unit)
+                try {
+                    Thread.sleep(60_000)
+                } catch (e: InterruptedException) {
+                    interrupted.complete(true)
+                    throw e
+                }
+            }
+        }
+        val job = launch(Dispatchers.Default) { targetWith(writer).preload(ID, 10) }
+        started.await()
+
+        withTimeout(5_000) { job.cancelAndJoin() }
+
+        assertTrue(withTimeout(5_000) { interrupted.await() })
     }
 
     @Test

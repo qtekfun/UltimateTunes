@@ -4,7 +4,6 @@
 package com.qtekfun.ultimatetunes.core.player.prefetch
 
 import com.qtekfun.ultimatetunes.core.api.model.SongId
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -22,9 +21,12 @@ interface PrefetchTarget {
 }
 
 /**
- * Runs the [PrefetchPlanner]'s actions in [scope] each time the queue moves. A new snapshot
- * cancels the work still running for the previous one; failed or cancelled actions are
- * forgotten, so the next snapshot plans them again.
+ * Runs the [PrefetchPlanner]'s actions in [scope] each time the queue moves. A snapshot with the
+ * same upcoming songs as the running work leaves it alone (a timeline change that keeps the next
+ * song must not restart its preload); a different one cancels it. Failed and cancelled actions are
+ * forgotten at once, so the next snapshot plans them again.
+ *
+ * Not thread-safe: [scope] must run on the thread that calls it (the player's).
  */
 class Prefetcher(
     private val planner: PrefetchPlanner,
@@ -32,30 +34,43 @@ class Prefetcher(
     private val scope: CoroutineScope
 ) {
     private var running: Job? = null
+    private var pending = mutableListOf<PrefetchAction>()
+    private var runningFor: Pair<List<SongId>, Boolean>? = null
 
-    /** Plans for [snapshot] and starts the work; returns the planned actions. */
+    /** Plans for [snapshot] and starts the work; returns the newly planned actions. */
     fun onQueueChanged(snapshot: QueueSnapshot): List<PrefetchAction> {
-        running?.cancel()
+        val targets = planner.targetsOf(snapshot) to snapshot.offlineOnly
+        val job = running
+        if (job != null && job.isActive && targets == runningFor) return emptyList()
+        stop()
         val actions = planner.plan(snapshot, target::isAvailable)
-        if (actions.isEmpty()) return actions
-        running = scope.launch {
-            for ((index, action) in actions.withIndex()) {
-                val done = try {
-                    run(action)
-                } catch (cancelled: CancellationException) {
-                    actions.drop(index).forEach(planner::forget)
-                    throw cancelled
-                }
-                if (!done) planner.forget(action)
-            }
-        }
+        if (actions.isNotEmpty()) start(actions, targets)
         return actions
     }
 
+    private fun start(actions: List<PrefetchAction>, targets: Pair<List<SongId>, Boolean>) {
+        val left = actions.toMutableList()
+        pending = left
+        runningFor = targets
+        running = scope.launch {
+            for (action in actions) {
+                val done = run(action)
+                left.remove(action)
+                if (!done) planner.forget(action)
+            }
+        }
+    }
+
     /** Stops the running work. */
-    fun cancel() {
+    fun cancel() = stop()
+
+    private fun stop() {
         running?.cancel()
         running = null
+        runningFor = null
+        // Synchronously, so a new plan made right after sees them as not done.
+        pending.forEach(planner::forget)
+        pending = mutableListOf()
     }
 
     private suspend fun run(action: PrefetchAction): Boolean = when (action) {

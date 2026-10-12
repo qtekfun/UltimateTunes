@@ -109,10 +109,14 @@ class OfflineDownloads @Inject constructor(
         }
     }
 
-    override suspend fun knownIds(): Set<SongId> {
+    override suspend fun knownIds(): Set<SongId> = ids { true }
+
+    override suspend fun failedIds(): Set<SongId> = ids { it.state == Download.STATE_FAILED }
+
+    private suspend fun ids(where: (Download) -> Boolean): Set<SongId> {
         val index = onMain { manager }.downloadIndex
         return withContext(Dispatchers.IO) { readIndex(index) }
-            .filter { it.state != Download.STATE_FAILED }
+            .filter(where)
             .mapTo(HashSet()) { SongId(it.request.id) }
     }
 
@@ -124,7 +128,13 @@ class OfflineDownloads @Inject constructor(
             .build()
         onMain {
             manager.addDownload(request)
-            showProgress()
+            try {
+                // The download service shows the progress notification.
+                DownloadService.start(context, OfflineDownloadService::class.java)
+            } catch (ignored: IllegalStateException) {
+                // Refused in the background (Android 12+): downloads go on while the process
+                // lives (the sync worker waits for them).
+            }
         }
     }
 
@@ -137,15 +147,6 @@ class OfflineDownloads @Inject constructor(
     suspend fun awaitIdle(timeoutMs: Long): Boolean {
         idle.value = onMain { manager.isIdle }
         return withTimeoutOrNull(timeoutMs) { idle.first { it } } != null
-    }
-
-    /** Starts the download service for the progress notification; not allowed in background. */
-    private fun showProgress() {
-        try {
-            DownloadService.start(context, OfflineDownloadService::class.java)
-        } catch (ignored: IllegalStateException) {
-            // Background start refused (Android 12+): downloads go on while the process lives.
-        }
     }
 
     private fun refresh() {

@@ -53,11 +53,7 @@ class PrefetchPlanner(
      */
     fun plan(snapshot: QueueSnapshot, isAvailable: (SongId) -> Boolean): List<PrefetchAction> {
         if (snapshot.offlineOnly) return emptyList()
-        val targets = snapshot.upcoming.asSequence()
-            .filter { it != snapshot.current }
-            .distinct()
-            .take(lookahead)
-            .toList()
+        val targets = targetsOf(snapshot)
         val requests = targets
             .filter { it.isExternal && remember(requested, it) }
             .map { PrefetchAction.RequestOnServer(it) }
@@ -66,6 +62,13 @@ class PrefetchPlanner(
             .map { PrefetchAction.Preload(it, preloadBytes) }
         return requests + preloads
     }
+
+    /** The upcoming songs [plan] looks at for [snapshot]: the next ones, without the current. */
+    fun targetsOf(snapshot: QueueSnapshot): List<SongId> = snapshot.upcoming.asSequence()
+        .filter { it != snapshot.current }
+        .distinct()
+        .take(lookahead)
+        .toList()
 
     /** Lets [action] be planned again (it failed). */
     fun forget(action: PrefetchAction) {
