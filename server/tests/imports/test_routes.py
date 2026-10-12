@@ -15,12 +15,16 @@ from fastapi.testclient import TestClient
 from tests.imports.conftest import (
     OTHER_USER,
     USER,
+    AllowAll,
     FixtureCatalog,
     fixture_bytes,
     schema_validator,
 )
+from ultimatetunes.app import create_app
+from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import Services
+from ultimatetunes.errors import InvalidApiKey
 from ultimatetunes.imports.files import MAX_FILE_BYTES
 from ultimatetunes.search.fake import PLAYLIST_ID
 
@@ -309,9 +313,27 @@ def test_a_stale_import_is_resumed_when_read(
     assert len(rows(services, "SELECT id FROM playlists")) == 1
 
 
-def test_the_router_module_exposes_only_router() -> None:
-    from ultimatetunes.imports import routes  # noqa: PLC0415
+class Deny(AllowAll):
+    def authenticate_api_key(
+        self, header_key: str | None, query_key: str | None, client_ip: str | None
+    ) -> Principal:
+        raise InvalidApiKey()
 
-    assert routes.router is routes.router
-    with pytest.raises(AttributeError):
-        getattr(routes, "nope")  # noqa: B009
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/ut/v1/imports"),
+        ("POST", "/ut/v1/imports"),
+        ("GET", "/ut/v1/imports/0199d6a2-4c1e-7b3a-9f10-2a6c8e017001"),
+    ],
+)
+def test_every_route_needs_an_api_key(services: Services, method: str, path: str) -> None:
+    services.authenticator = Deny()
+    with TestClient(create_app(services=services)) as client:
+        r = client.request(
+            method, path, json={"url": "https://music.youtube.com/playlist?list=PLx"}
+        )
+        with services.db.read() as conn:
+            assert conn.execute("SELECT COUNT(*) AS n FROM imports").scalar() == 0
+    problem(r, 401, "invalid_api_key")

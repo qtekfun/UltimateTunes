@@ -8,15 +8,12 @@ YouTube playlist URL as JSON (`CreateImport`) or an uploaded file as multipart
 `payload_too_large`), stores the import and answers `202`; the work runs in the background
 (`runner.py`). Each user sees only their own imports. A user may have a few
 imports running at once (`UT_IMPORT_MAX_ACTIVE_PER_USER`, `conflict` beyond).
-
-`router` is built on first access (PEP 562 module `__getattr__`): the handlers take the caller
-from `ut.current_principal`, and `ultimatetunes.ut` imports this module while it is still being
-initialised. Using the same dependency callable lets FastAPI authenticate once per request.
+The handlers take the caller from `core.authn.current_principal`, the same dependency the
+`/ut/v1` router runs, so FastAPI authenticates once per request.
 """
 
 import json
 from collections.abc import Sequence
-from functools import cache
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
@@ -24,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
-from ultimatetunes.core.authn import Principal
+from ultimatetunes.core.authn import Principal, current_principal
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.services import Services, services
 from ultimatetunes.errors import Conflict, InvalidParameter, NotFound
@@ -133,62 +130,51 @@ async def _store(request: Request, svc: Services, user_id: str) -> str:
     raise InvalidParameter("Send application/json (a URL) or multipart/form-data (a file)")
 
 
-@cache
-def _build_router() -> APIRouter:
-    from ultimatetunes.ut import current_principal  # noqa: PLC0415 - see the module docstring
-
-    built = APIRouter()
-    caller = Annotated[Principal, Depends(current_principal)]
-
-    @built.get("/ut/v1/imports")
-    async def list_imports(
-        request: Request,
-        background: BackgroundTasks,
-        principal: caller,
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
-        offset: Annotated[int, Query(ge=0)] = 0,
-    ) -> dict[str, object]:
-        svc = services(request)
-
-        def load() -> dict[str, object]:
-            _resume(svc, background, principal.user_id)
-            with svc.db.read() as conn:
-                rows = ImportRepository(conn).list_for(principal.user_id, limit, offset)
-            return {"imports": [render.summary(r) for r in rows]}
-
-        return await run_in_threadpool(load)
-
-    @built.post("/ut/v1/imports")
-    async def create_import(
-        request: Request, background: BackgroundTasks, principal: caller
-    ) -> JSONResponse:
-        svc = services(request)
-        import_id = await _store(request, svc, principal.user_id)
-        body = await run_in_threadpool(_detail, svc, import_id, principal.user_id)
-        background.add_task(ImportRunner.of(svc).run, import_id)
-        return JSONResponse(
-            body, status_code=202, headers={"Location": f"/ut/v1/imports/{import_id}"}
-        )
-
-    @built.get("/ut/v1/imports/{import_id}")
-    async def get_import(
-        request: Request, background: BackgroundTasks, principal: caller, import_id: str
-    ) -> dict[str, object]:
-        svc = services(request)
-        if not is_uuid(import_id):
-            raise NotFound("No such import")
-
-        def load() -> dict[str, object]:
-            body = _detail(svc, import_id, principal.user_id)
-            _resume(svc, background, principal.user_id)
-            return body
-
-        return await run_in_threadpool(load)
-
-    return built
+router = APIRouter()
+Caller = Annotated[Principal, Depends(current_principal)]
 
 
-def __getattr__(name: str) -> APIRouter:
-    if name == "router":
-        return _build_router()
-    raise AttributeError(name)
+@router.get("/ut/v1/imports")
+async def list_imports(
+    request: Request,
+    background: BackgroundTasks,
+    principal: Caller,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    svc = services(request)
+
+    def load() -> dict[str, object]:
+        _resume(svc, background, principal.user_id)
+        with svc.db.read() as conn:
+            rows = ImportRepository(conn).list_for(principal.user_id, limit, offset)
+        return {"imports": [render.summary(r) for r in rows]}
+
+    return await run_in_threadpool(load)
+
+
+@router.post("/ut/v1/imports")
+async def create_import(
+    request: Request, background: BackgroundTasks, principal: Caller
+) -> JSONResponse:
+    svc = services(request)
+    import_id = await _store(request, svc, principal.user_id)
+    body = await run_in_threadpool(_detail, svc, import_id, principal.user_id)
+    background.add_task(ImportRunner.of(svc).run, import_id)
+    return JSONResponse(body, status_code=202, headers={"Location": f"/ut/v1/imports/{import_id}"})
+
+
+@router.get("/ut/v1/imports/{import_id}")
+async def get_import(
+    request: Request, background: BackgroundTasks, principal: Caller, import_id: str
+) -> dict[str, object]:
+    svc = services(request)
+    if not is_uuid(import_id):
+        raise NotFound("No such import")
+
+    def load() -> dict[str, object]:
+        body = _detail(svc, import_id, principal.user_id)
+        _resume(svc, background, principal.user_id)
+        return body
+
+    return await run_in_threadpool(load)
