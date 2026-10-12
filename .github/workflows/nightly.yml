@@ -28,7 +28,9 @@ concurrency:
 
 jobs:
   canary:
-    if: github.event_name != 'pull_request'
+    # Manual only: GitHub runner IPs get YouTube's bot wall (T03c). The scheduled canary runs
+    # on the server (worker), reported in the admin panel.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

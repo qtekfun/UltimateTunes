@@ -55,7 +55,7 @@ v1 runs with Docker Compose on one host, but is built so that moving to Kubernet
 
 ### Play flow
 1. Track in the library → file served with HTTP Range; the client caches it.
-2. Track not in the library (`yt:<videoId>`) → the api asks for a job (deduplicated per video id) and **streams the growing file from `/staging` while the worker downloads it** (no seek on that first play). When done, the track is tagged and archived; the `yt:` id becomes an alias of the library id; later plays come from the file.
+2. Track not in the library (`yt:<videoId>`) → the api asks for a job (deduplicated per video id) and **streams the growing file from `/staging` while the worker downloads it** (seek on that first play only where the container and a known size allow it; T03a). When done, the track is tagged and archived; the `yt:` id becomes an alias of the library id; later plays come from the file.
 
 ## 4. Functional requirements (v1)
 
@@ -81,7 +81,7 @@ As in §3. Several listeners of the same pending track share one download. If th
 From **LRCLIB** (by title, artist, album, duration), stored in the DB, served by `getLyricsBySongId` with timings (LRC). Plain lyrics when no synced ones exist.
 
 ### RF-08 Playlist import
-`POST /ut/v1/imports` with a YouTube Music or Spotify playlist URL; each track matched on YouTube Music and requested; progress per import; result becomes a user playlist. Spotify needs credentials configured by the admin (T03 decides the method); without them the option is hidden.
+`POST /ut/v1/imports` with a YouTube Music (or YouTube) playlist URL, or an **uploaded file** for Spotify playlists (generic CSV, Exportify CSV, Spotify data-export JSON; T03d); each track matched on YouTube Music (ISRC first when present) and requested; progress per import; result becomes a user playlist. Importing by Spotify URL is not in v1 (T03d).
 
 ### RF-09 Favourites, playlists, history
 Per user: stars, playlists, play history (scrobble), play queue saved across devices. Files are shared between users (a track is downloaded once).
@@ -121,7 +121,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 
 ## 8. Quality and CI
 - CI on every PR: server (ruff, mypy, pytest with coverage, bandit, pip-audit), contracts (OpenAPI validation, migrations apply, schemathesis against the app), Android (`./gradlew check assembleDebug`), Docker (build, Trivy scan, `compose.test.yaml` smoke), gitleaks, store texts, PR title.
-- Nightly: canary (real ytmusicapi search + yt-dlp download of one fixed Creative Commons track), pip-audit, Android instrumented tests on an emulator against the test compose stack.
+- Nightly: pip-audit, Android instrumented tests on an emulator against the test compose stack. The canary (real ytmusicapi search + yt-dlp download of one fixed Creative Commons track) runs **scheduled on the server** (worker, reported in the admin panel); on GitHub it is manual only, because runner IPs get YouTube's bot wall (T03c).
 - Release on tag: signed APK + multi-arch (amd64, arm64) image on GHCR, GitHub Release with notes, APK SHA-256. Updates on the phone through Obtainium.
 - Coverage: ≥ 85 % server and Android core; 100 % in the critical areas listed in CLAUDE.md.
 
@@ -130,7 +130,7 @@ Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/L
 
 ## 10. Known risks
 - **YouTube changes break yt-dlp or ytmusicapi** (PO tokens, JS challenges, IP blocks): worker isolated, yt-dlp auto-update, nightly canary with alert, `Downloader`/`MusicCatalog` interfaces to swap implementations. T03 measures the current state.
-- **Streaming a growing file**: no seek on the first play; clients that insist on Range on an unknown length must not break (T03 tests ExoPlayer and one third-party client).
+- **Streaming a growing file**: only front-indexed containers stream progressively and only an exact size lets the client cache the first play (T03a); third-party clients are still untested (manual protocol in `docs/spikes/T03a.md`).
 - **MusicBrainz match quality** and its 1 req/s limit: queue with rate limit, keep YT Music data when unsure.
 - **Spotify playlist reading** depends on Spotify's developer API rules: T03 decides; the feature can stay disabled.
 - **Disk growth** with "keep everything": stats and alerts in the admin panel.
@@ -154,3 +154,14 @@ Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/L
 - **No Redis in v1** (2026-10-12): SQLite + in-process caches behind interfaces; Redis only if the api ever runs as several processes.
 - The worker has no database access and talks to the api through an internal API (2026-10-12; fixes a contradiction in the first draft, where it read the `jobs` table directly).
 - **Kubernetes-ready** (2026-10-12): stateless api, shared state behind interfaces, portable SQL checked on SQLite and PostgreSQL, storage interfaces, leased jobs, probes, migrations as a separate command. v1 ships on Compose with SQLite; Kubernetes, PostgreSQL and Redis come in phase 5.
+
+### Taken at Checkpoint 0b (spikes, 2026-10-12)
+Reports in `docs/spikes/`. Where two reports disagreed, the text below is the decision.
+
+- **YouTube Music catalog** (T03b): `ytmusicapi` anonymously from the server (search, album/artist pages, radio, playlist reads); `requests` (Apache-2.0) comes in transitively. `MusicCatalog`: `language="en"` always (`"es"` silently breaks filtered search); three filtered searches in parallel for `search3`, library-only fallback after 1.5 s; global limit 2 req/s (burst 6); 5 s timeout, one retry, circuit breaker with admin alert on 429/403; one `YTMusic` instance per worker thread (thread safety of a shared `requests.Session` is not promised); SQLite TTL cache of normalised records (search 24 h, album 7 d, artist 24 h, track 30 d, radio 1 h, playlist 10 min, not-found 1 h). Several videoIds may alias one library track (ATV preferred). Unknown ids map to not-found, not to a parse error; only canary-run parse errors raise the "layout changed" alert. Tests use `FakeMusicCatalog` and parser-level fixtures (respx cannot intercept `requests`).
+- **yt-dlp** (T03c): subprocess with an argument list, from the official signed zipapp in the `/opt/ytdlp` volume (pinned seed in the image; self-update: GitHub release → `gpgv` against the pinned key → SHA-256 → smoke test → atomic symlink swap). JS runtime **Deno** (MIT), pinned by version and SHA-256, no remote components. Format `251/bestaudio[acodec=opus][protocol=https]/140/bestaudio[ext=m4a][protocol=https]` with `--fixup never`; player clients from settings (`default`, falling back to `web_embedded`); no PO-token provider and no cookies in v1. Real download timings and the on-disk layout of 251/140 are **pending** (to be measured with the author's exception, `spikes/t03c/measure_downloads.sh`); until then the ≤ 5 s first-sound target is unconfirmed.
+- **Streaming while downloading** (T03a + T03c): the worker writes the raw stream sequentially to `/staging/<job-id>/` and never rewrites it; it reports the exact `expected_size` as soon as known, both the `.part` path and the final path, and `finished`; the api opens the final path once `finished` is reported. If the final size differs from `expected_size` or the format changes on a retry, open streams are aborted. api: known size → `200` with exact `Content-Length` + `Accept-Ranges`, `206` on the growing file, `416` past the size; unknown size → chunked, Range ignored; never an estimated length; end-indexed formats only once complete; failure mid-stream → abort without a terminating chunk, retries get error 70 (HTTP 404). Listeners per in-flight job are capped. The api learns about growth from the worker's progress reports (≤ 0.5 s), not from filesystem polling (works on RWX volumes later). Client: seeks on a first play only when Media3 says seekable; read timeout 20–30 s; drops `yt:` cache entries once archived or after an incomplete first play.
+- **Archive format**: never transcoded. At archive time Opus/WebM is remuxed (stream copy) to Ogg/Opus (`.opus`, taggable by mutagen) and M4A is remuxed with faststart; tags and ReplayGain are written to that new file, which is moved atomically into `/music`.
+- **Spotify import** (T03d): since Spotify's February 2026 development-mode changes no app we can register reads another user's or an editorial playlist. v1 imports Spotify playlists from an uploaded file (generic CSV always; Exportify CSV with ISRC, unverified under the 2026 limits and at best own/collaborative playlists; Spotify data-export JSON) and contacts no Spotify host. Uploads are capped in size and rows, decoded as UTF-8, and import reports escape spreadsheet formulas. Import by URL through Spotify login is out of v1.
+- **Canary**: scheduled on the server (worker), result in the admin panel and notifications; the GitHub job is `workflow_dispatch` only.
+- **Pending the author's approval** (CLAUDE.md lists allowed outbound hosts and SPEC §6 the system packages): (1) GitHub releases (`github.com`, `objects.githubusercontent.com`) for yt-dlp self-updates; (2) YouTube image hosts `yt3.googleusercontent.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com`, `i.ytimg.com` for cover art of external items; (3) system packages `gpgv` (runtime) and `gnupg` (build stage only). Until approved, nothing uses them.
