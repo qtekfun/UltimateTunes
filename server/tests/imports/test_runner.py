@@ -16,8 +16,8 @@ from ultimatetunes.ids.uuid7 import new_id
 from ultimatetunes.imports import render
 from ultimatetunes.imports.files import SourceItem
 from ultimatetunes.imports.repository import ImportRepository, ImportRow, TrackRow
-from ultimatetunes.imports.runner import ImportRunner
-from ultimatetunes.search.catalog import CatalogThrottled
+from ultimatetunes.imports.runner import MAX_PAUSES, ImportRunner
+from ultimatetunes.search.catalog import CatalogParseError, CatalogThrottled, CatalogUnavailable
 from ultimatetunes.search.fake import PLAYLIST_ID
 
 pytestmark = pytest.mark.anyio
@@ -286,3 +286,53 @@ async def test_imports_share_one_catalog_budget(
     assert waits == [2, 2, 2]
     assert load(services, first).matched_items == 3
     assert load(services, second).matched_items == 1
+
+
+async def test_an_unreadable_answer_fails_only_its_item(
+    services: Services, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    search = catalog.search_songs
+
+    async def broken_for_one(query: str, limit: int) -> list[Any]:
+        if "Copper Static" in query:
+            raise CatalogParseError()
+        return await search(query, limit)
+
+    monkeypatch.setattr(catalog, "search_songs", broken_for_one)
+    items = (
+        SourceItem("Paper Canyon", ("Marisol Vega",)),
+        SourceItem("Copper Static", ("The Paper Lanterns",)),
+    )
+    import_id = new_import(services, items=items)
+    await ImportRunner.of(services).run(import_id)
+    body = report(services, import_id)
+    assert body["state"] == "done"
+    assert [i["state"] for i in body["items"]] == ["matched", "failed"]
+    assert body["items"][1]["error"] == CatalogParseError.default_message
+
+
+async def test_an_item_that_keeps_pausing_fails_after_max_pauses(
+    services: Services, catalog: FixtureCatalog
+) -> None:
+    catalog.fail_with = CatalogUnavailable()
+    runner = ImportRunner.of(services)
+    import_id = new_import(services, items=(SourceItem("Paper Canyon", ("Marisol Vega",)),))
+    for _ in range(MAX_PAUSES - 1):
+        await runner.run(import_id)
+        assert load(services, import_id).state == "matching"
+    await runner.run(import_id)
+    body = report(services, import_id)
+    assert (body["state"], body["items"][0]["state"]) == ("done", "failed")
+    assert body["items"][0]["error"].startswith("YouTube Music kept failing")
+
+
+async def test_a_read_that_keeps_pausing_fails_the_import(
+    services: Services, catalog: FixtureCatalog
+) -> None:
+    catalog.fail_with = CatalogThrottled()
+    runner = ImportRunner.of(services)
+    import_id = new_import(services, source="ytmusic", playlist_id=PLAYLIST_ID)
+    for _ in range(MAX_PAUSES):
+        await runner.run(import_id)
+    row = load(services, import_id)
+    assert (row.state, row.error_code, row.pauses) == ("failed", "upstream_unavailable", 5)

@@ -46,6 +46,7 @@ def item(position: int, state: str, title: str, track_id: str | None = None) -> 
         yt_video_id="Wq5Jd7HsKe2" if track_id else None,
         track_id=track_id,
         error_message=None,
+        pauses=0,
     )
 
 

@@ -42,6 +42,7 @@ class ImportRow:
     created_at: str
     updated_at: str
     finished_at: str | None
+    pauses: int
     done_items: int
 
 
@@ -59,6 +60,7 @@ class ItemRow:
     yt_video_id: str | None
     track_id: str | None
     error_message: str | None
+    pauses: int
 
     def source(self) -> SourceItem:
         artists = tuple(a.strip() for a in (self.source_artist or "").split(";") if a.strip())
@@ -96,13 +98,13 @@ class TrackRow:
 _IMPORT_COLUMNS = (
     "id, user_id, source, source_url, source_playlist_id, name, state, total_items,"
     " matched_items, not_found_items, playlist_id, error_code, error_message, created_at,"
-    " updated_at, finished_at,"
+    " updated_at, finished_at, pauses,"
     " (SELECT COUNT(*) FROM import_items i WHERE i.import_id = imports.id"
     " AND i.state <> 'pending') AS done_items"
 )
 _ITEM_COLUMNS = (
     "position, source_ref, source_title, source_artist, source_album, source_duration_ms,"
-    " source_isrc, state, match_score, yt_video_id, track_id, error_message"
+    " source_isrc, state, match_score, yt_video_id, track_id, error_message, pauses"
 )
 _TRACK_COLUMNS = (
     "id, status, title, artist_name, artist_id, album_name, album_id, duration_ms, year,"
@@ -242,6 +244,28 @@ class ImportRepository(Repository):
             f"UPDATE imports SET {_COUNTERS}, updated_at = ? WHERE id = ?",  # noqa: S608  # nosec B608
             (import_id, import_id, now, import_id),
         )
+
+    def pause_read(self, import_id: str, now: str) -> int:
+        """Counts one pause of the playlist read; returns the count so far."""
+        self.run(
+            "UPDATE imports SET pauses = pauses + 1, updated_at = ? WHERE id = ?",
+            (now, import_id),
+        )
+        row = self.conn.execute("SELECT pauses FROM imports WHERE id = ?", (import_id,)).fetchone()
+        return int(str(row["pauses"])) if row else 0
+
+    def pause_item(self, import_id: str, position: int, now: str) -> int:
+        """Counts one pause on an item; returns the count so far."""
+        self.run(
+            "UPDATE import_items SET pauses = pauses + 1 WHERE import_id = ? AND position = ?",
+            (import_id, position),
+        )
+        self.run("UPDATE imports SET updated_at = ? WHERE id = ?", (now, import_id))
+        row = self.conn.execute(
+            "SELECT pauses FROM import_items WHERE import_id = ? AND position = ?",
+            (import_id, position),
+        ).fetchone()
+        return int(str(row["pauses"])) if row else 0
 
     def finish(self, import_id: str, playlist_id: str, now: str) -> bool:
         """Ends an active import as `done` and creates its user playlist from the matched

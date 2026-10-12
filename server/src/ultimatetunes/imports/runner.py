@@ -11,12 +11,16 @@ does not cancel it). Work is resumable: each item is recorded as soon as it is d
 rerun only looks at the items still `pending`. An import whose run stopped is resumed when its
 owner next reads it (`routes._resume`): still active, not running here, and not touched for
 `STALE_AFTER_S`. With several api replicas (phase 5) two replicas could resume the same stale
-import at once; that is harmless (every step is idempotent) but wasteful, and a lease column
-would settle it then.
+import at once: every step is idempotent, so the database stays consistent, but the work and
+its catalog calls are done twice; a lease column would settle that then.
 
 A run stops early, leaving the import active and the current item `pending`, when:
-- YouTube Music is unavailable or throttling (`UpstreamUnavailable`, `RetryLater`): the next
-  resume tries again, instead of failing items for a passing outage;
+- YouTube Music is throttling or unreachable (`CatalogThrottled`, `RetryLater`, and
+  `CatalogUnavailable`, which covers network errors and 5xx but also other 4xx answers): the
+  next resume tries again instead of failing items for a passing outage. Each pause is counted
+  on the item (or on the import for the playlist read); at `MAX_PAUSES` the item fails (or the
+  import fails), so an error that repeats for one query never keeps an import running. A
+  response that cannot be read (`CatalogParseError`) is not passing: it fails the item at once;
 - the api shuts down (SIGTERM): uvicorn waits for running requests, background tasks included,
   for its graceful-shutdown timeout and then cancels them; a cancelled run is logged and the
   import is resumed after the restart. (The api's lifespan is coordinator-owned and has no task
@@ -56,7 +60,7 @@ from ultimatetunes.imports.matching import SEARCH_LIMIT, Match, best_match, core
 from ultimatetunes.imports.repository import TERMINAL, ImportRepository, ImportRow, ItemRow
 from ultimatetunes.imports.settings import ImportSettings
 from ultimatetunes.jobs.queue import PRIORITY_IMPORT, JobQueue
-from ultimatetunes.search.catalog import CatalogTrack, MusicCatalog
+from ultimatetunes.search.catalog import CatalogParseError, CatalogTrack, MusicCatalog
 
 if TYPE_CHECKING:
     from ultimatetunes.core.inflight import InFlight
@@ -67,8 +71,10 @@ log = logging.getLogger(__name__)
 STALE_AFTER_S = 120
 BUCKET = "import:catalog"
 _KEY = "import:"
+MAX_PAUSES = 5
 # Errors that mean "YouTube Music cannot answer now": pause the run, retry on resume.
 _PASSING = (UpstreamUnavailable, RetryLater)
+_LASTING = (CatalogParseError,)
 
 
 class _Paused(Exception):  # noqa: N818 - a signal, not an error
@@ -138,6 +144,8 @@ class ImportRunner:
             await anyio.sleep(decision.retry_after_s)
         try:
             return await call()
+        except _LASTING:
+            raise
         except _PASSING as exc:
             raise _Paused(exc.message) from exc
 
@@ -179,6 +187,14 @@ class ImportRunner:
         playlist_id = str(row.source_playlist_id)
         try:
             playlist = await self._catalog_call(lambda: self._catalog.playlist(playlist_id))
+        except _Paused as paused:
+            if await self._write(lambda r: r.pause_read(row.id, self._now())) < MAX_PAUSES:
+                raise
+            message = f"YouTube Music kept failing: {paused}"
+            await self._write(
+                lambda r: r.fail(row.id, "upstream_unavailable", message, self._now())
+            )
+            return None
         except NotFound:
             message = (
                 "The playlist was not found on YouTube Music (private playlists cannot be read)"
@@ -226,8 +242,17 @@ class ImportRunner:
             found = await self._find(item.source(), known)
         except NotFound:
             found = None
-        except _Paused:
-            raise
+        except _Paused as paused:
+            pauses = await self._write(lambda r: r.pause_item(row.id, position, self._now()))
+            if pauses < MAX_PAUSES:
+                raise
+            message = f"YouTube Music kept failing: {paused}"
+            await self._write(
+                lambda r: r.record_item(
+                    row.id, position, state="failed", now=self._now(), error=message
+                )
+            )
+            return
         except TunesError as exc:
             message = exc.message
             await self._write(
