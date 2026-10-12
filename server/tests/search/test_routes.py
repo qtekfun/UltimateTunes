@@ -166,12 +166,17 @@ def test_search3_empty_result_has_empty_lists(client: TestClient) -> None:
         ({"query": "x", "songCount": "-1"}, 0),
         ({"query": "x", "albumOffset": "-5"}, 0),
         ({"query": "x", "artistCount": "lots"}, 0),
+        ({"query": "x" * 201}, 0),
     ],
 )
 def test_search3_parameter_errors(client: TestClient, params: dict[str, str], code: int) -> None:
     body = search3(client, **params)
     assert body["status"] == "failed"
     assert body["error"]["code"] == code
+
+
+def test_search3_accepts_a_query_of_200_characters(client: TestClient) -> None:
+    assert search3(client, query="x" * 200)["status"] == "ok"
 
 
 def test_search3_caps_counts(client: TestClient) -> None:

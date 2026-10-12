@@ -48,16 +48,20 @@ def build_services(settings: Settings, clock: Clock | None = None) -> Services:
 
     clock = clock or SystemClock()
     db = Database.sqlite(settings.database_file)
+    cache = SqliteTtlCache(db, clock)
+    rate_limiter = SqliteRateLimiter(db, clock)
+    inflight = MemoryInFlight()
     services = Services(
         settings=settings,
         clock=clock,
         db=db,
-        cache=SqliteTtlCache(db, clock),
-        rate_limiter=SqliteRateLimiter(db, clock),
-        inflight=MemoryInFlight(),
+        cache=cache,
+        rate_limiter=rate_limiter,
+        inflight=inflight,
         library=LocalLibraryStore(settings.music_dir),
         staging=LocalStagingStore(settings.staging_dir),
-        catalog=build_catalog(settings),
+        # One database handle and one single-flight registry for the whole api.
+        catalog=build_catalog(settings, cache=cache, limiter=rate_limiter, inflight=inflight),
         jobs=SqliteJobQueue(db, clock),
         authenticator=PendingAuthenticator(),
     )

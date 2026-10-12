@@ -94,6 +94,15 @@ def _sized(url: str) -> str:
     return _SIZE_S.sub(f"=s{COVER_SIZE}", url, count=1)
 
 
+def _approved_image_url(url: str) -> bool:
+    """HTTPS on an approved host, written plainly: no explicit port, no userinfo (`@`)."""
+    parts = urlsplit(url)
+    # `netloc == hostname` also rules out uppercase hosts and an empty port (`host:`).
+    return (
+        parts.scheme == "https" and parts.hostname in IMAGE_HOSTS and parts.netloc == parts.hostname
+    )
+
+
 def thumbnail(value: object) -> Thumbnail | None:
     """The largest thumbnail on an approved host (HTTPS), or None."""
     best: Thumbnail | None = None
@@ -101,8 +110,7 @@ def thumbnail(value: object) -> Thumbnail | None:
         url = _text(item, "url")
         if url is None:
             continue
-        parts = urlsplit(url)
-        if parts.scheme != "https" or parts.hostname not in IMAGE_HOSTS:
+        if not _approved_image_url(url):
             continue
         width = item.get("width")
         height = item.get("height")

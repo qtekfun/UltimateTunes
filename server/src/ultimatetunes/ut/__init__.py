@@ -3,7 +3,7 @@
 """The `/ut/v1` API (contracts/openapi/ut-v1.yaml): assembly and authentication.
 
 Each stream owns the routes of its area in its own package and exposes `router` (needs an API
-key: the dependency below runs `Services.authenticator.authenticate_api_key` first) and,
+key: `core.authn.current_principal` runs `Services.authenticator.authenticate_api_key` first) and,
 where the contract allows anonymous calls, `public_router`:
 
 | Module | Paths | Owner |
@@ -18,28 +18,17 @@ where the contract allows anonymous calls, `public_router`:
 Errors are `TunesError`s rendered as problems by the app's exception handler.
 """
 
-from fastapi import APIRouter, Depends, Request
-from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, Depends
 
 from ultimatetunes.auth import routes as auth_routes
-from ultimatetunes.core.authn import Principal
-from ultimatetunes.core.services import services
+from ultimatetunes.core.authn import current_principal
 from ultimatetunes.imports import routes as import_routes
 from ultimatetunes.jobs import routes as job_routes
 from ultimatetunes.radio import routes as radio_routes
 from ultimatetunes.search import routes as search_routes
 from ultimatetunes.ut import system
 
-
-async def current_principal(request: Request) -> Principal:
-    """The caller of an authenticated `/ut/v1` route (cached per request by FastAPI)."""
-    principal: Principal = await run_in_threadpool(
-        services(request).authenticator.authenticate_api_key,
-        request.headers.get("x-api-key"),
-        request.query_params.get("apiKey"),
-        request.client.host if request.client else None,
-    )
-    return principal
+__all__ = ["build_ut_router", "current_principal"]
 
 
 def build_ut_router() -> APIRouter:

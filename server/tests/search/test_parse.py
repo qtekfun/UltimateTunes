@@ -179,6 +179,18 @@ def test_thumbnail_rules() -> None:
     assert parse.thumbnail([{"width": 10}, "junk"]) is None
     assert parse.thumbnail([{"url": "http://i.ytimg.com/vi/x/hq.jpg"}]) is None
     assert parse.thumbnail([{"url": "https://i.ytimg.com.evil.example/x.jpg"}]) is None
+    # No explicit port (not even 443) and no userinfo on an approved host.
+    for url in (
+        "https://i.ytimg.com:443/vi/x/hq.jpg",
+        "https://i.ytimg.com:8443/vi/x/hq.jpg",
+        "https://i.ytimg.com:/vi/x/hq.jpg",
+        "https://i.ytimg.com:bad/vi/x/hq.jpg",
+        "https://user@i.ytimg.com/vi/x/hq.jpg",
+        "https://user:pw@i.ytimg.com/vi/x/hq.jpg",
+        "https://@i.ytimg.com/vi/x/hq.jpg",
+        "https://evil.example@i.ytimg.com/vi/x/hq.jpg",
+    ):
+        assert parse.thumbnail([{"url": url}]) is None, url
     # i.ytimg.com URLs are kept as they are, unknown sizes too.
     assert parse.thumbnail([{"url": "https://i.ytimg.com/vi/x/hq.jpg"}]) == Thumbnail(
         "https://i.ytimg.com/vi/x/hq.jpg"

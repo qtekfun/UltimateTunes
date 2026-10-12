@@ -5,7 +5,8 @@
 Library results first, then YouTube Music results with virtual ids (contracts/ids.md); plain
 clients see external songs as normal songs, and playing one (`stream`) requests it. An empty
 `query` lists the library (clients that sync everything) and never reaches YouTube Music.
-Counts are capped at `MAX_COUNT` per kind.
+Counts are capped at `MAX_COUNT` per kind; the query at `MAX_QUERY` characters, like
+`/ut/v1/search` (longer is `InvalidParameter`, contracts/errors.md).
 """
 
 from ultimatetunes.core.clock import format_ts
@@ -16,6 +17,7 @@ from ultimatetunes.subsonic.router import Payload, SubsonicRequest, SubsonicRout
 
 router = SubsonicRouter()
 DEFAULT_COUNT = 20
+MAX_QUERY = 200
 
 
 def _page(req: SubsonicRequest, kind: str) -> Page:
@@ -31,6 +33,8 @@ async def search3(req: SubsonicRequest) -> Payload:
     query = req.get("query")
     if query is None:
         raise MissingParameter("Required parameter is missing: query")
+    if len(query) > MAX_QUERY:
+        raise InvalidParameter(f"query must be at most {MAX_QUERY} characters")
     results = await SearchService.of(req.services).search(
         req.user.user_id,
         query,

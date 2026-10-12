@@ -123,6 +123,7 @@ async def test_invalid_ids_never_reach_the_downloader(staging: LocalStagingStore
 
 
 async def test_build_downloader(settings: Settings, staging: LocalStagingStore) -> None:
+    settings = settings.model_copy(update={"fake_youtube": False})
     pending = build_downloader(settings, staging)
     assert isinstance(pending, UnavailableDownloader)
     with pytest.raises(DownloadError):
