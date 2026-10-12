@@ -127,18 +127,20 @@ class SqliteConnection:
 def connect_sqlite(path: Path, *, read_only: bool = False) -> SqliteConnection:
     """Opens a SQLite database: WAL, foreign keys on, a busy timeout. Read-only connections
     never create the file (used by `/readyz`)."""
+    if not read_only:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    target = f"file:{path}?mode=ro" if read_only else str(path)
     try:
-        if read_only:
-            raw = sqlite3.connect(
-                f"file:{path}?mode=ro", uri=True, isolation_level=None, check_same_thread=False
-            )
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            raw = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        raw = sqlite3.connect(target, uri=read_only, isolation_level=None, check_same_thread=False)
+    except sqlite3.Error as exc:
+        raise DatabaseError(str(exc)) from exc
+    try:
+        if not read_only:
             raw.execute("PRAGMA journal_mode=WAL")
         raw.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
         raw.execute("PRAGMA foreign_keys=ON")
     except sqlite3.Error as exc:
+        raw.close()
         raise DatabaseError(str(exc)) from exc
     return SqliteConnection(raw)
 
