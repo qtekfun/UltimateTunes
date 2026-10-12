@@ -3,15 +3,22 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
-import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
-import com.qtekfun.ultimatetunes.core.api.ServerConfig
+import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
-import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.api.model.TrackState
+import com.qtekfun.ultimatetunes.playback.PlaybackState
+import com.qtekfun.ultimatetunes.ui.FakePlayerController
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
-import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
-import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.connectedApi
+import com.qtekfun.ultimatetunes.ui.dropConnection
+import com.qtekfun.ultimatetunes.ui.model.LoadError
+import com.qtekfun.ultimatetunes.ui.tile
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -22,142 +29,162 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(MainDispatcherExtension::class)
 class PlayerViewModelTest {
-    private fun track(n: Int, duration: Int? = 200) = TrackTile(
-        id = SongId("song-$n"),
-        title = "Song $n",
-        artist = "Invented Artist",
-        album = null,
-        durationSec = duration,
-        coverUrl = null,
-        isExternal = false
-    )
-
-    private val queue = listOf(track(0), track(1), track(2))
-    private val config =
-        ServerConfig(
-            "https://music.example.net/".toHttpUrl(),
-            ApiKeySecret(FakeTunesServer.API_KEY)
-        )
-    private val configSource = InMemoryServerConfigSource(config)
-    private val gate = ConnectionGate(configSource)
+    private lateinit var server: FakeTunesServer
+    private lateinit var player: FakePlayerController
     private lateinit var viewModel: PlayerViewModel
     private val state get() = viewModel.state.value
+    private val queue = listOf(tile(0), tile(1), tile(2))
 
     @BeforeEach
     fun setUp() {
-        viewModel = PlayerViewModel(gate)
+        server = FakeTunesServer().start()
+        player = FakePlayerController()
+        viewModel = PlayerViewModel(player, connectedApi(server))
+    }
+
+    @AfterEach
+    fun tearDown() {
+        // Nothing may resume on Main once the test dispatcher is gone.
+        viewModel.viewModelScope.cancel()
+        server.close()
     }
 
     @Test
-    fun `going back to Connect drops the queue, and a new connection starts empty`() {
-        viewModel.play(queue, startIndex = 2)
+    fun `it connects to the session and shows its state in milliseconds`() {
+        assertEquals(1, player.connects)
+        player.mutableState.value = PlaybackState(
+            queue = queue,
+            index = 1,
+            isPlaying = true,
+            positionMs = 61_500,
+            durationMs = 200_000,
+            canSeek = true,
+            connected = true
+        )
 
-        gate.disconnect()
-        assertNull(state.current)
-        assertEquals(emptyList<TrackTile>(), state.queue)
-
-        configSource.set(config)
-        viewModel.play(queue)
-        assertEquals(track(0), state.current)
-    }
-
-    @Test
-    fun `nothing plays at first`() {
-        assertNull(state.current)
-        assertFalse(state.isPlaying)
-        assertEquals(0, state.durationSec)
-        assertEquals(emptyList<TrackTile>(), state.upNext)
-        viewModel.togglePlayPause()
-        assertFalse(state.isPlaying)
-    }
-
-    @Test
-    fun `play starts the queue at the given song`() {
-        viewModel.play(queue, startIndex = 1)
-
-        assertEquals(track(1), state.current)
-        assertTrue(state.isPlaying)
-        assertEquals(listOf(track(2)), state.upNext)
+        assertEquals(queue[1], state.current)
+        assertEquals(61_500, state.positionMs)
+        assertEquals(200_000, state.durationMs)
+        assertTrue(state.canSeek)
+        assertEquals(listOf(queue[2]), state.upNext)
         assertTrue(state.hasNext)
         assertTrue(state.hasPrevious)
     }
 
     @Test
-    fun `play clamps the start and ignores an empty queue`() {
+    fun `play replaces the queue at the chosen song, and an empty queue is ignored`() {
         viewModel.play(queue, startIndex = 9)
-        assertEquals(track(2), state.current)
-        viewModel.play(queue, startIndex = -1)
-        assertEquals(track(0), state.current)
+        assertEquals(queue[2], state.current)
+        assertEquals(Triple(2, 0L, true), player.played)
 
         viewModel.play(emptyList())
-        assertEquals(track(0), state.current)
+        assertEquals(queue, state.queue)
     }
 
     @Test
-    fun `play and pause toggle`() {
+    fun `the controls reach the session`() {
         viewModel.play(queue)
-        viewModel.togglePlayPause()
-        assertFalse(state.isPlaying)
-        viewModel.togglePlayPause()
-        assertTrue(state.isPlaying)
-    }
-
-    @Test
-    fun `next moves on and stops at the end`() {
-        viewModel.play(queue)
-        viewModel.seekTo(50)
         viewModel.next()
         assertEquals(1, state.index)
-        assertEquals(0, state.positionSec)
-        viewModel.next()
-        viewModel.next()
-        assertEquals(2, state.index)
-        assertFalse(state.hasNext)
-    }
-
-    @Test
-    fun `previous restarts the song after a few seconds, else goes back`() {
-        viewModel.play(queue, startIndex = 1)
-        viewModel.seekTo(PlayerViewModel.RESTART_THRESHOLD_SEC + 1)
-        viewModel.previous()
-        assertEquals(1, state.index)
-        assertEquals(0, state.positionSec)
-
         viewModel.previous()
         assertEquals(0, state.index)
-
-        viewModel.seekTo(2)
-        viewModel.previous()
-        assertEquals(0, state.index)
-        assertEquals(0, state.positionSec)
-    }
-
-    @Test
-    fun `playAt jumps inside the queue only`() {
-        viewModel.play(queue)
-        viewModel.togglePlayPause()
         viewModel.playAt(2)
         assertEquals(2, state.index)
-        assertTrue(state.isPlaying)
-        viewModel.playAt(3)
-        assertEquals(2, state.index)
+        viewModel.togglePlayPause()
+        assertFalse(state.isPlaying)
+
+        viewModel.playNext(listOf(tile(7)))
+        viewModel.enqueue(listOf(tile(8)))
+        viewModel.playNext(emptyList())
+        viewModel.enqueue(emptyList())
+        assertEquals(
+            listOf("song-0", "song-1", "song-2", "song-7", "song-8"),
+            state.queue.map { it.id.value }
+        )
     }
 
     @Test
-    fun `seek stays inside the song`() {
-        viewModel.play(listOf(track(0, duration = 100)))
-        viewModel.seekTo(40)
-        assertEquals(40, state.positionSec)
-        viewModel.seekTo(500)
-        assertEquals(100, state.positionSec)
-        viewModel.seekTo(-5)
-        assertEquals(0, state.positionSec)
+    fun `seeking happens only where the song allows it`() {
+        viewModel.play(queue)
+        viewModel.seekTo(5_000)
+        assertEquals(emptyList<Long>(), player.seeks)
+
+        player.mutableState.update { it.copy(canSeek = true) }
+        viewModel.seekTo(42_000)
+        viewModel.seekTo(-3)
+        assertEquals(listOf(42_000L, 0L), player.seeks)
     }
 
     @Test
-    fun `a song without a known duration cannot be scrubbed`() {
-        viewModel.play(listOf(track(0, duration = null)))
-        viewModel.seekTo(30)
-        assertEquals(0, state.positionSec)
+    fun `a first play shows the server's progress while the song is fetched`() = runTest {
+        server.dispatcher.trackStatusExample = "downloading"
+        viewModel.play(listOf(tile(1, external = true), tile(2)))
+
+        val shown = viewModel.state.awaitFirst { it.firstPlay != null }.firstPlay!!
+        assertEquals(TrackState.DOWNLOADING, shown.state)
+        assertEquals(0.42, shown.progress)
+        assertFalse(shown.failed)
+        assertTrue(server.takeRequest().url.encodedPath.endsWith("/status"))
+
+        viewModel.next()
+        assertNull(state.firstPlay)
+    }
+
+    @Test
+    fun `a failed first play says so`() = runTest {
+        server.dispatcher.trackStatusExample = "failed"
+        viewModel.play(listOf(tile(1, external = true)))
+
+        val shown = viewModel.state.awaitFirst { it.firstPlay != null }.firstPlay!!
+        assertTrue(shown.failed)
+    }
+
+    @Test
+    fun `a song already archived shows nothing`() = runTest {
+        server.dispatcher.trackStatusExample = "ready"
+        viewModel.play(listOf(tile(1, external = true)))
+
+        server.takeRequest()
+        assertNull(state.firstPlay)
+    }
+
+    @Test
+    fun `a status check that fails leaves the player as it is`() = runTest {
+        server.dispatcher.override("ut/v1/tracks/yt:Song1Abcdef/status") { dropConnection() }
+        viewModel.play(listOf(tile(1, external = true)))
+
+        server.takeRequest()
+        assertNull(state.firstPlay)
+    }
+
+    @Test
+    fun `a radio from the current song replaces what comes next`() = runTest {
+        viewModel.play(listOf(tile(0), tile(5)))
+
+        viewModel.startRadio()
+
+        val after = viewModel.state.awaitFirst { state ->
+            state.queue.none { it.id == SongId("song-5") }
+        }
+        assertEquals(SongId("song-0"), after.current?.id)
+        assertEquals("Tidewater", after.queue[1].title)
+        assertEquals("/ut/v1/radio", server.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun `a radio that cannot start is reported once`() = runTest {
+        server.dispatcher.override("ut/v1/radio") { dropConnection() }
+        viewModel.play(listOf(tile(0)))
+        viewModel.startRadio()
+
+        assertEquals(LoadError.NETWORK, viewModel.state.awaitFirst { it.message != null }.message)
+        viewModel.dismissMessage()
+        assertNull(state.message)
+    }
+
+    @Test
+    fun `no radio without a song`() {
+        viewModel.startRadio()
+        assertNull(state.current)
     }
 }

@@ -6,6 +6,8 @@ package com.qtekfun.ultimatetunes.ui.playlists
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
+import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
@@ -121,9 +123,12 @@ class PlaylistViewModelsTest {
 
     @Nested
     inner class Detail {
+        private val offline = FakeOfflineControls()
+
         private fun viewModel() = PlaylistViewModel(
             SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to playlistId)),
-            connectedApi(server)
+            connectedApi(server),
+            offline
         )
 
         private suspend fun PlaylistViewModel.ready(): PlaylistContent =
@@ -194,17 +199,58 @@ class PlaylistViewModelsTest {
         }
 
         @Test
-        fun `a refused change is undone and explained`() = runTest {
+        fun `a refused change is explained and the playlist read again`() = runTest {
             server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(50) }
             val viewModel = loaded()
 
             viewModel.rename("Mine now")
 
-            val failed = viewModel.state.awaitFirst { it.message != null }
+            val failed = viewModel.state.awaitFirst {
+                it.message != null &&
+                    (it.content as? LoadState.Ready)?.value?.playlist?.name == "Sunday Morning"
+            }
             assertEquals(LoadError.SERVER, failed.message)
-            assertEquals("Sunday Morning", (failed.content as LoadState.Ready).value.playlist.name)
+            assertEquals("/rest/updatePlaylist", server.takeRequest().url.encodedPath)
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
             viewModel.dismissMessage()
             assertNull(viewModel.state.value.message)
+        }
+
+        @Test
+        fun `after a refusal the server's current playlist shows, not the old copy`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(70) }
+            server.dispatcher.override("rest/getPlaylist") {
+                subsonicOk(
+                    "playlist",
+                    """{"id":"$playlistId","name":"Renamed Elsewhere","songCount":0,
+                        "duration":0,"entry":[]}"""
+                )
+            }
+
+            viewModel.removeAt(0)
+
+            val state = viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.playlist?.name == "Renamed Elsewhere"
+            }
+            assertEquals(emptyList<Any>(), (state.content as LoadState.Ready).value.tracks)
+        }
+
+        @Test
+        fun `a playlist can be kept offline and dropped again`() = runTest {
+            val viewModel = loaded()
+            assertFalse(viewModel.state.value.isOffline)
+
+            viewModel.toggleOffline()
+            assertTrue(viewModel.state.awaitFirst { it.isOffline }.isOffline)
+            val kept = offline.mutableSelection.value.collections.single()
+            assertEquals(CollectionKind.PLAYLIST, kept.kind)
+            assertEquals(playlistId, kept.id)
+            assertEquals("Sunday Morning", kept.name)
+
+            viewModel.toggleOffline()
+            assertFalse(viewModel.state.awaitFirst { !it.isOffline }.isOffline)
+            assertTrue(offline.mutableSelection.value.collections.isEmpty())
         }
 
         @Test

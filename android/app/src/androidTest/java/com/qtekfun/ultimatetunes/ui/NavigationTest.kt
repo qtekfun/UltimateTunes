@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.ui
 import androidx.annotation.StringRes
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -151,8 +152,14 @@ class NavigationTest {
         compose.onNodeWithTag(MINI_PLAYER_TAG).performClick()
 
         waitFor(hasTestTag(FULL_PLAYER_TAG))
-        compose.onNodeWithContentDescription(text(R.string.player_pause)).performClick()
-        compose.onNodeWithContentDescription(text(R.string.player_play)).assertIsDisplayed()
+        // The real player (PLAN T18) has no audio from the fake API: its play/pause button shows
+        // whichever state the session reports; it must be there and answer.
+        val toggle = hasAnyAncestor(hasTestTag(FULL_PLAYER_TAG)) and (
+            hasContentDescription(text(R.string.player_play)) or
+                hasContentDescription(text(R.string.player_pause))
+            )
+        waitFor(toggle)
+        compose.onNode(toggle).assertIsDisplayed().performClick()
 
         compose.onNodeWithContentDescription(text(R.string.player_close)).performClick()
         waitFor(hasTestTag(MINI_PLAYER_TAG))

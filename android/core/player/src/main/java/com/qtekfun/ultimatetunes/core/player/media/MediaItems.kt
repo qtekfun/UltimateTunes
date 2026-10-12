@@ -13,6 +13,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
@@ -24,16 +25,23 @@ import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
  */
 object MediaItems {
     private const val EXTRA_ALBUM_ID = "ut.albumId"
+    private const val EXTRA_ARTIST_ID = "ut.artistId"
+    private const val EXTRA_ALBUM_ARTIST = "ut.albumArtist"
 
     /** [track] as a media item for a controller: id and metadata, no URI. */
     fun of(track: PlayableTrack): MediaItem {
-        val extras = Bundle().apply { track.albumId?.let { putString(EXTRA_ALBUM_ID, it.value) } }
+        val extras = Bundle().apply {
+            track.albumId?.let { putString(EXTRA_ALBUM_ID, it.value) }
+            track.artistId?.let { putString(EXTRA_ARTIST_ID, it.value) }
+            track.albumArtist?.let { putString(EXTRA_ALBUM_ARTIST, it) }
+        }
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
             .setArtworkUri(track.artworkUrl?.let(Uri::parse))
             .setTrackNumber(track.trackNumber)
+            .setDiscNumber(track.discNumber)
             .setDurationMs(track.durationMs)
             .setIsPlayable(true)
             .setIsBrowsable(false)
@@ -59,9 +67,12 @@ object MediaItems {
             artist = metadata.artist?.toString().orEmpty(),
             album = metadata.albumTitle?.toString(),
             albumId = albumOf(item),
+            artistId = metadata.extras?.getString(EXTRA_ARTIST_ID)?.let(::ArtistId),
             durationMs = metadata.durationMs,
             artworkUrl = metadata.artworkUri?.toString(),
-            trackNumber = metadata.trackNumber
+            trackNumber = metadata.trackNumber,
+            discNumber = metadata.discNumber,
+            albumArtist = metadata.extras?.getString(EXTRA_ALBUM_ARTIST)
         )
     }
 

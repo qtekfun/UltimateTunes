@@ -49,7 +49,13 @@ data class TrackTile(
     /** Where "Go to Album" leads; null when unknown. */
     val albumId: AlbumId? = null,
     /** Position on its album, shown in album lists. */
-    val trackNumber: Int? = null
+    val trackNumber: Int? = null,
+    /** Where "Go to Artist" leads; null when unknown. */
+    val artistId: ArtistId? = null,
+    /** Disc of [trackNumber] on its album. */
+    val discNumber: Int? = null,
+    /** The album's artist, when known and different from [artist]. */
+    val albumArtist: String? = null
 )
 
 /** An artist in a list or a grid. */
@@ -136,7 +142,8 @@ fun TrackItem.toTile(api: TunesApi): TrackTile = TrackTile(
     durationSec = durationSec,
     coverUrl = api.coverUrl(coverArt),
     isExternal = isExternal,
-    albumId = albumId
+    albumId = albumId,
+    artistId = artistId
 )
 
 fun RadioStation.toTile(api: TunesApi): StationTile = StationTile(

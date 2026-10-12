@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Strings of the export to the phone (RF-14) in :core:player.
+-->
+<resources>
+    <string name="export_channel">Export</string>
+    <string name="export_channel_description">Progress of songs copied to a folder on this phone</string>
+    <string name="export_running">Exporting songs</string>
+    <string name="export_progress">%1$d of %2$d</string>
+    <string name="export_done">Export finished</string>
+    <plurals name="export_done_summary">
+        <item quantity="one">%1$d song copied, %2$d skipped</item>
+        <item quantity="other">%1$d songs copied, %2$d skipped</item>
+    </plurals>
+</resources>

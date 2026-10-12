@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -35,6 +36,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -52,8 +54,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,10 +65,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsView
+import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.model.formatDuration
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
@@ -74,6 +80,10 @@ import kotlin.math.roundToInt
 /** Test tags of the full player. */
 const val FULL_PLAYER_TAG = "player.full"
 const val LYRICS_BUTTON_TAG = "player.lyricsButton"
+const val PLAYER_RADIO_TAG = "player.radio"
+const val PLAYER_MORE_TAG = "player.more"
+const val PLAYER_NOTE_TAG = "player.note"
+const val PLAYER_SCRUBBER_TAG = "player.scrubber"
 
 private const val MILLIS_PER_SECOND = 1000L
 
@@ -101,6 +111,7 @@ fun FullPlayer(
     lyrics: LyricsHooks = LyricsHooks()
 ) {
     val track = state.current ?: return
+    val trackMenu = LocalTrackMenu.current
     val colors = rememberPlayerColors(track.coverUrl)
     var showQueue by rememberSaveable { mutableStateOf(false) }
     var showLyrics by rememberSaveable { mutableStateOf(false) }
@@ -132,7 +143,8 @@ fun FullPlayer(
                     showLyrics = showLyrics,
                     lyrics = lyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
-                    onShowQueue = { showQueue = true }
+                    onShowQueue = { showQueue = true },
+                    onMore = trackMenu
                 ),
                 artworkModifier = artworkModifier
             )
@@ -147,12 +159,13 @@ fun FullPlayer(
     }
 }
 
-/** The lyrics and queue toggles of the full player. */
+/** The lyrics and queue toggles of the full player, and its song menu. */
 private data class PlayerPanels(
     val showLyrics: Boolean,
     val lyrics: LyricsHooks,
     val onToggleLyrics: () -> Unit,
-    val onShowQueue: () -> Unit
+    val onShowQueue: () -> Unit,
+    val onMore: (TrackTile) -> Unit
 )
 
 @Composable
@@ -181,8 +194,9 @@ private fun PlayerContent(
         if (panels.showLyrics) {
             LyricsView(
                 state = panels.lyrics.state,
-                positionMillis = state.positionSec * MILLIS_PER_SECOND,
-                canSeek = !track.isExternal,
+                positionMillis = state.positionMs,
+                // Tap to seek only for library songs, whose files allow it (SPEC §5).
+                canSeek = !track.isExternal && state.canSeek,
                 onSeek = actions.seekTo,
                 onRetry = panels.lyrics.onRetry,
                 modifier = Modifier
@@ -199,9 +213,10 @@ private fun PlayerContent(
             )
         }
         TrackTitle(state)
+        PlaybackNote(state)
         Scrubber(state, actions.seekTo)
         Controls(state, actions)
-        PanelButtons(panels)
+        PanelButtons(panels, onRadio = actions.startRadio, onMore = { panels.onMore(track) })
     }
 }
 
@@ -258,9 +273,9 @@ private fun BigArtwork(state: PlayerUiState, modifier: Modifier, artworkModifier
     }
 }
 
-/** Lyrics on the left, the queue on the right. */
+/** Lyrics on the left; radio, the song's menu and the queue on the right. */
 @Composable
-private fun PanelButtons(panels: PlayerPanels) {
+private fun PanelButtons(panels: PlayerPanels, onRadio: () -> Unit, onMore: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -285,11 +300,25 @@ private fun PanelButtons(panels: PlayerPanels) {
                 }
             )
         }
-        IconButton(onClick = panels.onShowQueue) {
-            Icon(
-                painter = painterResource(R.drawable.ic_queue),
-                contentDescription = stringResource(R.string.player_show_queue)
-            )
+        Row {
+            IconButton(onClick = onRadio, modifier = Modifier.testTag(PLAYER_RADIO_TAG)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_radio),
+                    contentDescription = stringResource(R.string.player_start_radio)
+                )
+            }
+            IconButton(onClick = onMore, modifier = Modifier.testTag(PLAYER_MORE_TAG)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more),
+                    contentDescription = stringResource(R.string.more_options)
+                )
+            }
+            IconButton(onClick = panels.onShowQueue) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_queue),
+                    contentDescription = stringResource(R.string.player_show_queue)
+                )
+            }
         }
     }
 }
@@ -324,26 +353,40 @@ private fun TrackTitle(state: PlayerUiState) {
 }
 
 @Composable
-private fun Scrubber(state: PlayerUiState, onSeek: (Int) -> Unit) {
+private fun Scrubber(state: PlayerUiState, onSeek: (Long) -> Unit) {
     val content = LocalContentColor.current
-    val elapsed = formatDuration(state.positionSec)
-    val total = formatDuration(state.durationSec)
+    // While dragging, the thumb follows the finger; the seek happens once, on release.
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val positionMs = dragging?.toLong() ?: state.positionMs
+    val durationMs = state.durationMs.coerceAtLeast(0)
+    val elapsed = formatDuration((positionMs / MILLIS_PER_SECOND).toInt())
+    val total = formatDuration((durationMs / MILLIS_PER_SECOND).toInt())
     val label = stringResource(R.string.player_position)
     val position = stringResource(R.string.player_position_state, elapsed, total)
     Column(modifier = Modifier.fillMaxWidth().padding(top = Dimens.SpaceL)) {
         Slider(
-            value = state.positionSec.toFloat(),
-            onValueChange = { onSeek(it.roundToInt()) },
-            valueRange = 0f..state.durationSec.coerceAtLeast(1).toFloat(),
+            value = positionMs.coerceIn(0, durationMs.coerceAtLeast(1)).toFloat(),
+            onValueChange = { dragging = it },
+            onValueChangeFinished = {
+                dragging?.let { onSeek(it.toLong()) }
+                dragging = null
+            },
+            enabled = state.canSeek,
+            valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
             colors = SliderDefaults.colors(
                 thumbColor = content,
                 activeTrackColor = content,
-                inactiveTrackColor = content.copy(alpha = 0.3f)
+                inactiveTrackColor = content.copy(alpha = 0.3f),
+                disabledThumbColor = content.copy(alpha = 0.6f),
+                disabledActiveTrackColor = content.copy(alpha = 0.6f),
+                disabledInactiveTrackColor = content.copy(alpha = 0.2f)
             ),
-            modifier = Modifier.semantics {
-                contentDescription = label
-                stateDescription = position
-            }
+            modifier = Modifier
+                .testTag(PLAYER_SCRUBBER_TAG)
+                .semantics {
+                    contentDescription = label
+                    stateDescription = position
+                }
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
@@ -354,7 +397,7 @@ private fun Scrubber(state: PlayerUiState, onSeek: (Int) -> Unit) {
             Text(
                 text = stringResource(
                     R.string.player_remaining,
-                    formatDuration(state.durationSec - state.positionSec)
+                    formatDuration(((durationMs - positionMs) / MILLIS_PER_SECOND).toInt())
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = content.copy(alpha = 0.7f)
@@ -450,7 +493,13 @@ private fun QueueSheet(state: PlayerUiState, onDismiss: () -> Unit, onPlayAt: (I
 private fun FullPlayerPreview() {
     UltimateTunesTheme {
         FullPlayer(
-            state = PlayerUiState(queue = PreviewData.tracks, isPlaying = true, positionSec = 74),
+            state = PlayerUiState(
+                queue = PreviewData.tracks,
+                isPlaying = true,
+                positionMs = 74_000,
+                durationMs = 197_000,
+                canSeek = true
+            ),
             actions = PlayerActions(),
             onCollapse = {}
         )

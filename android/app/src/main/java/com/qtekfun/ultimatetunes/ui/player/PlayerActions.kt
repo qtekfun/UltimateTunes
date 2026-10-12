@@ -11,8 +11,11 @@ data class PlayerActions(
     val togglePlay: () -> Unit = {},
     val next: () -> Unit = {},
     val previous: () -> Unit = {},
-    val seekTo: (Int) -> Unit = {},
-    val playAt: (Int) -> Unit = {}
+    /** Seeks to a position in **milliseconds**. */
+    val seekTo: (Long) -> Unit = {},
+    val playAt: (Int) -> Unit = {},
+    /** A radio from the current song replaces what comes next. */
+    val startRadio: () -> Unit = {}
 ) {
     companion object {
         /** The actions of [viewModel]. */
@@ -21,7 +24,8 @@ data class PlayerActions(
             next = viewModel::next,
             previous = viewModel::previous,
             seekTo = viewModel::seekTo,
-            playAt = viewModel::playAt
+            playAt = viewModel::playAt,
+            startRadio = viewModel::startRadio
         )
     }
 }

@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.core.player
 
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import kotlinx.serialization.Serializable
@@ -21,9 +22,15 @@ data class PlayableTrack(
     val artist: String,
     val album: String? = null,
     val albumId: AlbumId? = null,
+    /** Where "Go to Artist" leads; null when unknown. */
+    val artistId: ArtistId? = null,
     val durationMs: Long? = null,
     val artworkUrl: String? = null,
-    val trackNumber: Int? = null
+    val trackNumber: Int? = null,
+    /** Disc of [trackNumber] on its album (export names: `D-NN` from the second disc). */
+    val discNumber: Int? = null,
+    /** The album's artist, the export folder; null when it is the song's [artist]. */
+    val albumArtist: String? = null
 ) {
     /** True for a YouTube Music song not archived in the library yet. */
     val isExternal: Boolean get() = id.isExternal
@@ -41,9 +48,12 @@ data class PlayableTrack(
             artist = song.displayArtist ?: song.artist.orEmpty(),
             album = song.album,
             albumId = song.albumId,
+            artistId = song.artistId,
             durationMs = song.duration?.let { it * MS_PER_SECOND },
             artworkUrl = song.coverArt?.let { api.coverArtUrl(it, ARTWORK_PX)?.toString() },
-            trackNumber = song.track
+            trackNumber = song.track,
+            discNumber = song.discNumber,
+            albumArtist = song.displayAlbumArtist ?: song.albumArtists.firstOrNull()?.name
         )
     }
 }

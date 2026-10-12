@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.designsystem
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.StationTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -193,12 +195,17 @@ fun TrackRow(
 ) {
     val description = stringResource(R.string.track_description, track.title, track.artist)
     val external = stringResource(R.string.not_in_library)
+    val menu = LocalTrackMenu.current
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = Dimens.MinRowHeight)
-                .clickable(onClick = onClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
+                    onLongClick = { menu(track) }
+                )
                 .semantics(mergeDescendants = true) {
                     contentDescription =
                         if (track.isExternal) "$description, $external" else description

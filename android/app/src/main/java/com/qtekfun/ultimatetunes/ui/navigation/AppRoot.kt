@@ -20,9 +20,17 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LocalReconnect
 @Composable
 fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val showConnect by viewModel.showConnect.collectAsStateWithLifecycle()
+    val askNotifications by viewModel.askNotifications.collectAsStateWithLifecycle()
     Surface(color = MaterialTheme.colorScheme.background) {
         CompositionLocalProvider(LocalReconnect provides viewModel::reconnect) {
-            if (showConnect) ConnectRoute() else MainScreen()
+            if (showConnect) {
+                ConnectRoute()
+            } else {
+                MainScreen(
+                    askNotifications = askNotifications,
+                    onNotificationsAnswered = viewModel::onNotificationsAsked
+                )
+            }
         }
     }
 }

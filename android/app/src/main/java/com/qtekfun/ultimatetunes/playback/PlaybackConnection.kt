@@ -59,7 +59,9 @@ data class PlaybackState(
     val durationMs: Long = 0,
     /** False while a `yt:` song streams without a known size (no seek, T03a). */
     val canSeek: Boolean = false,
-    val issue: PlaybackIssue? = null
+    val issue: PlaybackIssue? = null,
+    /** True once the state comes from the playback service (an empty queue is then real). */
+    val connected: Boolean = false
 ) {
     val current: TrackTile? get() = queue.getOrNull(index)
     val hasNext: Boolean get() = index < queue.lastIndex
@@ -78,13 +80,13 @@ data class PlaybackState(
 class PlaybackConnection @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val gate: ConnectionGate
-) {
+) : PlayerController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableState = MutableStateFlow(PlaybackState())
     private var ticker: Job? = null
 
     /** The player's state, updated on every change and every [TICK_MS] while playing. */
-    val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
+    override val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
 
     private var controller: Deferred<MediaController>? = null
 
@@ -95,7 +97,7 @@ class PlaybackConnection @Inject constructor(
     }
 
     /** Connects to the service now (the state flow starts following the player). */
-    fun connect() {
+    override fun connect() {
         controller()
     }
 
@@ -115,12 +117,11 @@ class PlaybackConnection @Inject constructor(
         }.also { controller = it }
     }
 
-    /** Replaces the queue with [queue] and starts at [startIndex], [startPositionMs]. */
-    fun play(
+    override fun play(
         queue: List<TrackTile>,
-        startIndex: Int = 0,
-        startPositionMs: Long = 0,
-        playWhenReady: Boolean = true
+        startIndex: Int,
+        startPositionMs: Long,
+        playWhenReady: Boolean
     ) = command {
         if (queue.isEmpty()) return@command
         it.setMediaItems(
@@ -132,18 +133,23 @@ class PlaybackConnection @Inject constructor(
         it.prepare()
     }
 
-    /** Adds [tiles] right after the current song. */
-    fun playNext(tiles: List<TrackTile>) = command {
+    override fun playNext(tiles: List<TrackTile>) = command {
         val at = if (it.mediaItemCount == 0) 0 else it.currentMediaItemIndex + 1
         it.addMediaItems(at, tiles.map { tile -> MediaItems.of(tile.toPlayable()) })
     }
 
-    /** Adds [tiles] at the end of the queue. */
-    fun enqueue(tiles: List<TrackTile>) = command {
+    override fun enqueue(tiles: List<TrackTile>) = command {
         it.addMediaItems(tiles.map { tile -> MediaItems.of(tile.toPlayable()) })
     }
 
-    fun togglePlayPause() = command {
+    override fun replaceUpNext(tiles: List<TrackTile>) = command {
+        if (it.mediaItemCount == 0) return@command
+        val after = it.currentMediaItemIndex + 1
+        if (after < it.mediaItemCount) it.removeMediaItems(after, it.mediaItemCount)
+        it.addMediaItems(tiles.map { tile -> MediaItems.of(tile.toPlayable()) })
+    }
+
+    override fun togglePlayPause() = command {
         if (it.isPlaying) {
             it.pause()
         } else {
@@ -153,26 +159,22 @@ class PlaybackConnection @Inject constructor(
         }
     }
 
-    fun next() = command { it.seekToNextMediaItem() }
+    override fun next() = command { it.seekToNextMediaItem() }
 
-    /** Back to the start of the song, or to the previous one when already near its start. */
-    fun previous() = command { it.seekToPrevious() }
+    override fun previous() = command { it.seekToPrevious() }
 
-    /** Seeks to [positionMs] of the current song, only where the stream allows it (T03a). */
-    fun seekTo(positionMs: Long) = command {
+    override fun seekTo(positionMs: Long) = command {
         if (it.isCurrentMediaItemSeekable) it.seekTo(positionMs.coerceAtLeast(0))
     }
 
-    /** Jumps to the song at [index] of the queue. */
-    fun playAt(index: Int) = command {
+    override fun playAt(index: Int) = command {
         if (index in 0 until it.mediaItemCount) {
             it.seekToDefaultPosition(index)
             it.play()
         }
     }
 
-    /** Stops and empties the queue. */
-    fun clear() = command {
+    override fun clear() = command {
         it.stop()
         it.clearMediaItems()
     }
@@ -203,7 +205,8 @@ class PlaybackConnection @Inject constructor(
             positionMs = player.currentPosition.coerceAtLeast(0),
             durationMs = player.duration.takeIf { it != C.TIME_UNSET } ?: metadataMs,
             canSeek = player.isCurrentMediaItemSeekable,
-            issue = player.playerError?.let(::issueOf)
+            issue = player.playerError?.let(::issueOf),
+            connected = true
         )
         if (player.isPlaying) startTicker(player) else stopTicker()
     }
