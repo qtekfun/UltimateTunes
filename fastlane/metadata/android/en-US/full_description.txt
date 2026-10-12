@@ -1,8 +1,24 @@
-UltimateTunes is the player for your own UltimateTunes server: search for any song, listen at once, and keep it in your own library.
+UltimateTunes is the Android player for your own UltimateTunes server. Search for any song and it plays at once; from then on it lives in your library on your server, tagged with proper metadata and cover art.
 
-• Apple Music-style interface: Listen Now, Radio, Library and Search.
-• Every song you play is cached on the phone to save mobile data; download albums and playlists for offline listening.
-• Synced lyrics, radio from any song, playlist import, and ReplayGain for even volume.
-• Talks only to your server, with a key you can revoke per device. No ads, no tracking, free software (GPL-3.0-or-later).
+<b>Listen</b>
+• Four tabs: Listen Now, Radio, Library and Search, with large artwork and bold titles.
+• Full-screen player with colours taken from the cover, the queue of what plays next, and synced lyrics: the current line lights up, tap a line to jump to it.
+• Start a radio station from any song.
+• ReplayGain for an even volume between songs.
 
-Requires an UltimateTunes server (Docker).
+<b>Save mobile data</b>
+• Every song you play is kept in a cache on the phone, so the second play costs nothing.
+• The next songs of the queue are fetched ahead of time.
+• Keep albums, playlists or single songs offline, on Wi-Fi only if you like.
+• Export songs you have on the phone to a folder of your choice, with their tags.
+
+<b>Your library</b>
+• Playlists, favourites, artists and albums, shared with every device you connect.
+• Import playlists from a link or a file.
+• Light and dark themes, English and Spanish, large fonts and TalkBack.
+
+<b>Private by design</b>
+• The app talks only to your server, with a key you can revoke per device. The key is stored encrypted on the phone.
+• No ads, no tracking, no analytics. Free software (GPL-3.0-or-later).
+
+Requires an UltimateTunes server, which you run yourself (Docker). It also works as a client of the server's OpenSubsonic API.
