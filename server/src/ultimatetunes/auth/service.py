@@ -17,11 +17,15 @@ On `/ut/v1`: `X-Api-Key` or `apiKey`, both only when equal (`conflicting_auth`).
 Rate limit and lockout (`core.ratelimit`):
 - Every request with a valid key takes a token from `auth:key:<id>`.
 - Failures (40, 44, 50) count per IP (`auth:ip:<ip>`), and password failures also per username.
-  Reaching the limit locks that bucket for `auth_lockout_s`. The per-username count is **split
-  by origin** (`trusted` of `verify_password`): `auth:user:<name>` for checks from the admin's
-  own networks (LAN/Tailscale, `core.forwarded.from_trusted_network`) and `auth:user-out:<name>`
-  for everything else (the public `POST /ut/v1/keys`). Strangers on the Internet can lock the
-  outside counter only, so an admin can always log in from LAN/Tailscale. A key that
+  Reaching the limit locks the IP bucket for `auth_lockout_s`. The per-username count is
+  **split by origin** (`trusted` of `verify_password`): `auth:user:<name>` for checks from the
+  admin's own networks (LAN/Tailscale, `core.forwarded.from_trusted_network`), locked like the
+  IP bucket, and `auth:user-out:<name>` for everything else (the web player's sign-in and
+  `POST /ut/v1/keys` from the Internet). The outside counter is **never a hard lock**: each
+  consecutive failure delays the next check of that username from outside
+  (`auth_outside_backoff_base_s`, doubling, at most `auth_outside_backoff_max_s`; a success
+  resets it). Strangers can slow a family member's sign-in down, never lock it for long, and
+  never touch the inside counter, so an admin can always log in from LAN/Tailscale. A key that
   exists but is revoked or belongs to a disabled user is refused without counting (a stale
   device is not guessing), so it never locks out its IP.
 - Password checks need the client address: without one they are refused (`Forbidden`), so
@@ -33,9 +37,11 @@ Rate limit and lockout (`core.ratelimit`):
 - Password checks also take a token from `auth:login:<ip>`.
 - IPv6 clients are counted by their /64 (`throttle.client_key`), at most
   `auth_argon2_concurrency` Argon2 verifications run at once (`throttle.Argon2Slots`), and a
-  global failure budget per minute (`auth:global`) locks password checks and unknown keys while
-  it is exceeded (auth/throttle.py). Password checks from the admin's own networks (`trusted`:
-  the admin panel, behind its allowlist) are neither refused by it nor counted in it.
+  global failure budget per minute (`auth:global`) locks unknown keys, and outside password
+  checks of usernames with outside failures on record, while it is exceeded (auth/throttle.py).
+  A username that has not failed from outside since its last success is never refused by it:
+  a password spray cannot deny the web sign-in of everyone else. Password checks from the
+  admin's own networks (`trusted`) are neither refused by it nor counted in it.
 
 Secrets (keys, passwords, hashes) never reach a log line, an audit entry or an error message.
 """
@@ -55,6 +61,7 @@ from ultimatetunes.auth.repository import (
     AuditEntry,
     AuditRepository,
     KeyOwner,
+    SessionEpochRepository,
     User,
     UserRepository,
     audit_detail,
@@ -95,6 +102,9 @@ TOUCH_EVERY_S = 60
 ROLES: tuple[Role, ...] = ("admin", "user")
 _USERNAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 MAX_KEY_NAME = 100
+# Session epochs of the admin panel and the web player (`admin/routes.py`, `web/security.py`):
+# "sign out every device" raises both.
+SESSION_EPOCH_PREFIXES = ("admin.session_epoch.", "web.session_epoch.")
 # The global failure budget (auth/throttle.py): its token bucket, and the lock it sets.
 GLOBAL_FAILURES = "auth:global:failures"
 GLOBAL_LOCK = "auth:global"
@@ -285,19 +295,35 @@ class AuthService:
         """Counts the failure (per IP, and in `user_bucket` for passwords), then raises `error`.
         Locking a bucket is logged and audited."""
         buckets = [(self._ip_bucket(client_ip), self._settings.auth_max_failures_per_ip)]
-        if user_bucket is not None:
+        if user_bucket is not None and trusted:
             buckets.append((user_bucket, self._settings.auth_max_failures_per_user))
         for bucket, max_failures in buckets:
             decision = self._limiter.record_failure(
                 bucket, max_failures=max_failures, lockout_s=self._settings.auth_lockout_s
             )
             if not decision.allowed:
-                _, kind, target = bucket.split(":", 2)
-                log.warning("auth lockout of %s %s for %d s", kind, target, decision.retry_after_s)
-                self._audit(None, client_ip, AuditEvent("auth.lockout", kind, target))
+                self._log_lockout(bucket, client_ip, decision.retry_after_s)
+        if user_bucket is not None and not trusted:
+            self._back_off(user_bucket, client_ip)
         if not trusted:
             self._count_global_failure(client_ip)
         raise error
+
+    def _log_lockout(self, bucket: str, client_ip: str | None, seconds: int) -> None:
+        _, kind, target = bucket.split(":", 2)
+        log.warning("auth lockout of %s %s for %d s", kind, target, seconds)
+        self._audit(None, client_ip, AuditEvent("auth.lockout", kind, target))
+
+    def _back_off(self, user_bucket: str, client_ip: str | None) -> None:
+        """The growing delay of an outside per-username failure (module doc). Logged and
+        audited once per streak, when it reaches `auth_max_failures_per_user` failures."""
+        decision = self._limiter.record_failure_backoff(
+            user_bucket,
+            base_s=self._settings.auth_outside_backoff_base_s,
+            max_s=self._settings.auth_outside_backoff_max_s,
+        )
+        if self._limiter.failures(user_bucket) == self._settings.auth_max_failures_per_user:
+            self._log_lockout(user_bucket, client_ip, decision.retry_after_s)
 
     def _refuse_global(self, *, trusted: bool) -> None:
         """429 while the global failure budget is locked, except for the admin's own networks
@@ -331,14 +357,15 @@ class AuthService:
         """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
         and unknown user give the same `AuthenticationFailed` in the same time. `trusted`: the
         request comes from the admin's own networks (`core.forwarded.trusted_origin`); it picks
-        the per-username lockout counter (module docstring), and such checks are neither refused
-        by the global failure budget nor counted in it."""
+        the per-username counter (inside: lockout; outside: growing delay, module docstring),
+        and such checks are neither refused by the global failure budget nor counted in it."""
         if not client_ip:
             raise Forbidden("Password checks need the client address")
         name = normalize_username(username)
         user_bucket = self._user_bucket(name, trusted=trusted)
         self._refuse_locked(self._ip_bucket(client_ip), user_bucket)
-        self._refuse_global(trusted=trusted)
+        # The global budget only holds back usernames that failed from outside (module doc).
+        self._refuse_global(trusted=trusted or self._limiter.failures(user_bucket) == 0)
         limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
         decision = self._limiter.hit(f"auth:login:{client_key(client_ip)}", limit)
         if not decision.allowed:
@@ -548,6 +575,27 @@ class AuthService:
             if repo.revoke(key_id, now):
                 self._audit_in(conn, actor, client_ip, AuditEvent("key.revoke", "api_key", key_id))
                 log.info("api key %s revoked", key_id)
+
+    def sign_out_everywhere(
+        self, user_id: str, *, actor: Principal, client_ip: str | None = None
+    ) -> int:
+        """Revokes every API key of `user_id` and ends every admin and web session of it
+        (copied cookies included), in one transaction, audited. Only for the user itself or an
+        admin (`Forbidden` otherwise). Returns how many keys were revoked."""
+        if actor.user_id != user_id and actor.role != "admin":
+            raise Forbidden("Only an administrator can sign out another user")
+        now = format_ts(self._clock.now())
+        with self._db.transaction() as conn:
+            if UserRepository(conn).get(user_id) is None:
+                raise NotFound("No such user")
+            revoked = ApiKeyRepository(conn).revoke_all(user_id, now)
+            epochs = SessionEpochRepository(conn)
+            for prefix in SESSION_EPOCH_PREFIXES:
+                epochs.bump(prefix + user_id, now)
+            event = AuditEvent("user.sign_out_all", "user", user_id, {"keys": revoked})
+            self._audit_in(conn, actor, client_ip, event)
+        log.info("user %s signed out everywhere (%d keys revoked)", user_id, revoked)
+        return revoked
 
     # ------------------------------------------------------------------ audit
 

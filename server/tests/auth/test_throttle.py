@@ -125,9 +125,14 @@ def test_busy_slots_refuse_password_checks_before_argon2(
         with pytest.raises(RateLimited):
             service.verify_password("nobody", SIGN_IN, IP)
     assert service.verify_password("alice", SIGN_IN, IP).username == "alice"
-    # A busy server is not a failed guess: nothing was counted against the IP or the user.
+    # A busy server is not a failed guess: nothing was counted against the IP or the user, so
+    # the first real failure costs the first step of the delay only.
     with pytest.raises(AuthenticationFailed):
         service.verify_password("alice", NOT_IT, IP)
+    with pytest.raises(RateLimited) as delayed:
+        service.verify_password("alice", SIGN_IN, IP)
+    assert delayed.value.retry_after_s == 1
+    clock.advance(1)
     assert service.verify_password("alice", SIGN_IN, IP).username == "alice"
 
 
@@ -166,15 +171,24 @@ def test_too_many_failures_from_anywhere_lock_everyone(
     alice = budgeted.create_key(
         budgeted.verify_password("alice", SIGN_IN, IP).id, "phone", actor=None
     )
-    # Four failures from four addresses: within budget; the fifth goes over it.
-    for n in range(1, 6):
+    budgeted.create_user("carol", SIGN_IN, "user", actor=None)
+    # alice has an outside failure on record (its 1 s delay is over).
+    with pytest.raises(AuthenticationFailed):
+        budgeted.verify_password("alice", NOT_IT, "203.0.113.40")
+    clock.advance(1)
+    # Three more failures from three addresses: within budget; the fifth goes over it.
+    for n in range(1, 5):
         with pytest.raises(InvalidApiKey):
             budgeted.authenticate_api_key(UNKNOWN_KEY, None, f"198.51.100.{n}")
     with pytest.raises(RateLimited) as locked:
         budgeted.authenticate_api_key(UNKNOWN_KEY, None, "203.0.113.50")
     assert locked.value.retry_after_s == 30
-    with pytest.raises(RateLimited):
+    # A username that failed from outside waits for the global lock too...
+    with pytest.raises(RateLimited) as held:
         budgeted.verify_password("alice", SIGN_IN, "203.0.113.51")
+    assert held.value.retry_after_s == 30
+    # ...but one with no failure on record still signs in (a spray cannot deny everyone).
+    assert budgeted.verify_password("carol", SIGN_IN, "203.0.113.53").username == "carol"
     # A valid key is never refused for it.
     assert budgeted.authenticate_api_key(alice.secret, None, "203.0.113.52").username == "alice"
     assert "auth lockout of everyone for 30 s" in caplog.text
@@ -193,7 +207,9 @@ def test_the_failure_budget_refills_over_time(budgeted: AuthService, clock: Fake
     assert budgeted.verify_password("alice", SIGN_IN, IP).username == "alice"
 
 
-def test_the_admins_networks_are_exempt_from_the_global_budget(budgeted: AuthService) -> None:
+def test_the_admins_networks_are_exempt_from_the_global_budget(
+    budgeted: AuthService, clock: FakeClock
+) -> None:
     # Failures from the admin's networks are not counted...
     for n in range(8):
         with pytest.raises(AuthenticationFailed):
@@ -203,10 +219,12 @@ def test_the_admins_networks_are_exempt_from_the_global_budget(budgeted: AuthSer
     for n in range(5):
         with pytest.raises(AuthenticationFailed):
             budgeted.verify_password(f"stranger{n}", NOT_IT, f"198.51.100.{n + 1}")
-    with pytest.raises(RateLimited):
-        budgeted.verify_password("alice", SIGN_IN, "203.0.113.10")
-    with pytest.raises(RateLimited):
-        budgeted.create_key_with_password("alice", SIGN_IN, "Laptop", "203.0.113.11")
+    clock.advance(2)  # the per-username delays are over; the global lock (30 s) is not
+    with pytest.raises(RateLimited) as held:
+        budgeted.verify_password("stranger0", NOT_IT, "203.0.113.10")
+    assert held.value.retry_after_s == 28
+    # alice has no outside failure: the global lock does not hold her back.
+    assert budgeted.verify_password("alice", SIGN_IN, "203.0.113.11").username == "alice"
     assert budgeted.verify_password("alice", SIGN_IN, "192.168.1.50", trusted=True).username
     created = budgeted.create_key_with_password(
         "alice", SIGN_IN, "Laptop", "192.168.1.51", trusted=True

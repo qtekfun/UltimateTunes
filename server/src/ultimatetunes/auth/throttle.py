@@ -9,9 +9,11 @@
   `UT_AUTH_ARGON2_WAIT_S` is refused with `RateLimited` before Argon2 runs. One instance per
   process (`shared_slots`), whatever the number of `AuthService` objects.
 - The global failure budget (`AuthService`): more than `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN`
-  failed attempts per minute from outside the admin's networks lock password checks from
-  outside and every unknown key for `UT_AUTH_GLOBAL_LOCKOUT_S` (a valid API key is never
-  refused for it, and the admin panel, behind its allowlist, is exempt).
+  failed attempts per minute from outside the admin's networks lock every unknown key, and
+  the outside password checks of usernames with outside failures on record, for
+  `UT_AUTH_GLOBAL_LOCKOUT_S`. A valid API key is never refused for it, a username that has not
+  failed from outside since its last success is not either (a spray cannot deny everyone's web
+  sign-in), and the admin's networks are exempt.
 """
 
 import ipaddress
