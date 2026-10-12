@@ -9,13 +9,11 @@ Releases are manual and tag-driven, like UltimateCalendar. One version for the s
 
 ## Publishing is paused
 
-Since 2026-10-12 nothing is published: no `v*` tags, no GHCR image, no GitHub Release (GitHub Actions are disabled: no spending, everything lives on the author's homelab; SPEC §11). Until the author decides otherwise, a release is local:
+Nothing is published yet: no `v*` tags, no GHCR image, no GitHub Release. The repository is public, so CI runs on GitHub at no cost, but the **Release** and **Nightly** workflows are still disabled (SPEC §11).
 
-- **APK**: built by the author with the release keystore kept in `~/keys` (signed locally, `./gradlew assembleRelease` with `UT_KEYSTORE_FILE` pointing at it and the other `UT_*` variables set) and installed on the phone with `adb install -r` (never uninstall first).
-- **Server**: the image is built locally (`docker build -f server/Dockerfile .`) on or for the homelab and run there with Compose; migrations first with `ultimatetunes migrate`.
+- **To publish**, the author enables the Release workflow (`gh workflow enable release.yml`) and pushes the tag of a merged release PR (step 7 below). Signing uses the existing `UT_*` repository secrets.
+- **Local signed builds** (`./gradlew assembleRelease`) need `UT_KEYSTORE_FILE` and the keystore and key passwords in the environment; without them the APK is unsigned. The server image can be built locally with `docker build -f server/Dockerfile .` and run with Compose; migrations first with `ultimatetunes migrate`.
 - `VERSION`, `CHANGELOG.md` and the store changelogs still change only in a release PR, as below.
-
-Everything below describes the tag-driven pipeline **when publishing is enabled** again.
 
 ## Versions
 

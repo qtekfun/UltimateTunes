@@ -44,3 +44,25 @@ The author asked to keep going overnight, release when appropriate, decide doubt
 - Tapping the open tab again returns to its first screen (other tabs keep their state).
 - Dark launch window in dark mode (no white flash); light stays white.
 - No extra R8/ProGuard rules were needed: a minified build was checked on the Pixel 8 (cold start 260 ms, 0.26 % janky frames in Library).
+
+## D9. Final audit: "go" for public exposure, after the edge and lockout fixes
+- The final pre-production audit found no Critical or High issues. One Medium: strangers could lock a family member out of the public web sign-in, and password guessing could reach `/web/login` without Authelia.
+- Decision: outside sign-in failures now cost a growing delay instead of a hard lock. The edge examples add a strict per-client rate limit on `POST /web/login`. Admin accounts may still sign in to the web player from outside: the admin panel itself stays LAN-only behind Authelia, and refusing admins would block their own listening.
+- Also fixed: forged long `X-Forwarded-For` chains, IPv6 /64 buckets at the edge, ffmpeg restricted to the expected demuxers and codecs, "sign out every device", `noexec` `/tmp` for the api, HEAD never starts a download.
+- Accepted residual risks, documented in SECURITY.md: the admin panel and the player share one origin (strict CSP, no XSS found); containers on the proxy network must be trusted; the public client address relies on Cloudflare's `X-Forwarded-For`.
+
+## D10. QR connect through the phone's camera app, no scanning library
+- The admin panel already shows a QR with `ultimatetunes://connect?url=…&key=…` (contracts/ids.md), but the app could not scan it. In-app scanning needs ML Kit (Google Play services, forbidden) or ZXing (a new dependency the author has not approved).
+- Decision: the app handles the `ultimatetunes://connect` link, and the phone's camera app reads the QR and opens it. The app always asks for confirmation, showing the server address, before connecting or replacing a connection, so a malicious link cannot silently repoint the app.
+- A link whose server does not answer, or is not UltimateTunes, never touches the current connection.
+- Note (non-blocking): while a link's dialog is showing, further links are dropped and Connect waits again for 1 s, so the first link wins. A hostile app on the phone firing links faster than once a second can therefore keep the user's own confirmation from being accepted (a denial of service on that dialog), but it cannot get its own server accepted.
+
+## D11. Outside password sign-in: availability traded for brute-force resistance
+- An outsider who knows a username can keep that user's *password* sign-in from outside (web player login, key creation, password change) slowed to a crawl for as long as the attack lasts. Existing web sessions and API keys keep working, and LAN/Tailscale sign-in is unaffected.
+- The alternative, no per-username brake, would allow fast password guessing from the Internet. Users who need password sign-in from outside under attack can use Tailscale or put Authelia in front of `/` and `/web`.
+- The delay is reserved before the password hash is checked, so parallel requests cannot squeeze in extra guesses.
+- The reservation is atomic within one api process (SQLite single writer). Several api replicas (phase 5, PostgreSQL/Redis) will need a row lock or compare-and-set in `reserve_backoff`.
+
+## D12. First production candidate is 1.0.0-rc.1
+- Everything planned for 1.0 is merged, but nothing has run in production yet and the signed APK can only come from the Release workflow. A release candidate lets the author install and deploy it, run the SECURITY.md author checklist (TLS, backup restore, limits through the real proxy, public client IPs in the audit log) and then cut 1.0.0 from the same code.
+- versionCode 1000001; the final 1.0.0 will be 1000099.

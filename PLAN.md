@@ -97,6 +97,7 @@ Rules: one task per branch `feat/tNN-<slug>`, its gates green before the PR (`ma
 - [x] **T23 Identity and store assets**: icon, screenshots from a test with invented artists and covers, store texts en/es, README images. *Verification:* `tools/check-store-texts.sh` green; images in `fastlane/`.
   - *Result:* merged #53, with the T18 export follow-ups. The manual SAF export on the phone was blocked by a system MediaProvider crash loop at the time.
 - [ ] **T24 Release 1.0.0** following RELEASING.md. *Verification:* GitHub Release with APK and image; Obtainium update tested on the author's phone.
+  - *Status:* release candidate 1.0.0-rc.1 prepared (release PR); publishing needs the author (enable the Release workflow, push the tag; RELEASING.md).
   - *Status:* release prepared by the coordinator; publishing needs the author (enable the `Release` workflow and push the tag; no signing passwords on the build machine). See `docs/decisions.md`.
 - *Wave 3 result (2026-10-12):* besides T20–T23, Wave 3 delivered: security audit fixes before exposure (#61 exposure hardening, #63 download limits, catalog budget and auth brakes, #65), performance fixes found by T21 (#58, #59), the web player at `/` (#66, RF-15), container architecture docs (#67), deployment examples (Caddy and Tailscale in #56, Traefik with Authelia in #61, Traefik behind Cloudflare Tunnel in #68), authenticated ntfy notifications (#69), and Android polish (#64 full player sheet, #70). Decisions in SPEC §11.
 
