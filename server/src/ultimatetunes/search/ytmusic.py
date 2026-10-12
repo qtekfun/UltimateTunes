@@ -35,6 +35,7 @@ from ultimatetunes.search.catalog import (
     CatalogAlbumRef,
     CatalogArtist,
     CatalogArtistRef,
+    CatalogClientError,
     CatalogNotFound,
     CatalogParseError,
     CatalogPlaylist,
@@ -48,6 +49,7 @@ YTM_HOST = "music.youtube.com"
 SearchKind = Literal["songs", "albums", "artists"]
 _PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{2,64}")
 _HTTP_FORBIDDEN = 403
+_HTTP_NOT_FOUND = 404
 _HTTP_TOO_MANY = 429
 _HTTP_SERVER = 500
 
@@ -85,7 +87,9 @@ def map_error(error: Exception, *, lookup: bool) -> Exception:  # noqa: PLR0911 
     """The catalog error for an exception raised while calling ytmusicapi (others unchanged).
 
     `lookup`: the call fetched one item by id (album, artist, radio, playlist), where an
-    unknown id must be `CatalogNotFound`.
+    unknown id must be `CatalogNotFound`. Other 4xx answers (403 and 429 are throttling) are
+    `CatalogNotFound` on a lookup and `CatalogClientError` otherwise; a 404 outside a lookup
+    stays `CatalogUnavailable`.
     """
     missing = CatalogNotFound() if lookup else None
     if isinstance(error, TunesError):
@@ -95,7 +99,9 @@ def map_error(error: Exception, *, lookup: bool) -> Exception:  # noqa: PLR0911 
             return CatalogThrottled()
         if error.status >= _HTTP_SERVER:
             return CatalogUnavailable()
-        return missing or CatalogUnavailable()
+        if missing is not None:
+            return missing
+        return CatalogUnavailable() if error.status == _HTTP_NOT_FOUND else CatalogClientError()
     if isinstance(error, requests.RequestException):
         return CatalogUnavailable()
     if isinstance(error, YTMusicGatedError):

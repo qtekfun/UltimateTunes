@@ -11,7 +11,7 @@ Wraps any `MusicCatalog` (ytmusicapi in production) with:
   2 req/s, burst 6): a call waits for a token up to `ytm_max_wait_s`, then fails as
   unavailable.
 - **one retry** on network errors and 5xx (`CatalogUnavailable`), after a jittered 0.5 to 1.5 s;
-  never on not-found, parse errors or throttling.
+  never on not-found, refused requests (`CatalogClientError`), parse errors or throttling.
 - a **circuit breaker** on 429/403/gated answers (`CatalogThrottled`): open for 5 min, doubling
   up to 1 h while throttling repeats; while open every uncached call fails fast with
   `CatalogThrottled`. Its state lives in the cache (shared by every api replica) and each
@@ -38,6 +38,7 @@ from ultimatetunes.search.catalog import (
     CatalogAlbumRef,
     CatalogArtist,
     CatalogArtistRef,
+    CatalogClientError,
     CatalogNotFound,
     CatalogParseError,
     CatalogPlaylist,
@@ -234,6 +235,9 @@ class GuardedCatalog:
                 raise
             except CatalogThrottled:
                 await self._open_breaker()
+                raise
+            except CatalogClientError:
+                log.warning("YouTube Music refused a request (%s)", key.split(":", 1)[0])
                 raise
             except CatalogParseError:
                 log.warning("unexpected YouTube Music response (%s)", key.split(":", 1)[0])
