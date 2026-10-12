@@ -52,6 +52,7 @@ class ConnectLinkTest {
     lateinit var configSource: InMemoryServerConfigSource
 
     private var scenario: ActivityScenario<MainActivity>? = null
+    private var started: MainActivity? = null
 
     @Before
     fun inject() {
@@ -61,21 +62,33 @@ class ConnectLinkTest {
     @After
     fun close() {
         scenario?.close()
+        started?.let { activity -> instrumentation.runOnMainSync { activity.finish() } }
     }
+
+    private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     private fun text(@StringRes id: Int, vararg args: Any): String =
         InstrumentationRegistry.getInstrumentation().targetContext.getString(id, *args)
 
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
 
-    private fun launchWithLink(key: String = FakeTunesApi.API_KEY) {
-        val link = "ultimatetunes://connect?url=${encode(SERVER)}&key=${encode(key)}"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
-            .setClass(
-                InstrumentationRegistry.getInstrumentation().targetContext,
-                MainActivity::class.java
-            )
-        scenario = ActivityScenario.launch(intent)
+    private fun linkIntent(link: String): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse(link)).setClass(
+            instrumentation.targetContext,
+            MainActivity::class.java
+        )
+
+    private fun connectLink(key: String = FakeTunesApi.API_KEY) =
+        "ultimatetunes://connect?url=${encode(SERVER)}&key=${encode(key)}"
+
+    /**
+     * Starts the app with [link] as the camera app does. Not through ActivityScenario: it tracks
+     * the activity by its intent, which the app clears on purpose.
+     */
+    private fun launchWithLink(link: String = connectLink()) {
+        started = instrumentation.startActivitySync(
+            linkIntent(link).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ) as MainActivity
     }
 
     private fun waitFor(matcher: SemanticsMatcher) {
@@ -101,7 +114,7 @@ class ConnectLinkTest {
         waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_listen_now)))
         waitForNo(hasTestTag(CONNECT_LINK_DIALOG_TAG))
         assertEquals(FakeTunesApi.config, configSource.config.value)
-        scenario?.onActivity { assertNull(it.intent.data) }
+        instrumentation.runOnMainSync { assertNull(started?.intent?.data) }
     }
 
     @Test
@@ -124,7 +137,7 @@ class ConnectLinkTest {
         )
         configSource.set(current)
         // Well-formed, but not the fake server's key; built at run time.
-        launchWithLink(key = "utk_" + "Q".repeat(43))
+        launchWithLink(connectLink(key = "utk_" + "Q".repeat(43)))
         waitFor(hasText(text(R.string.connect_link_replaces)))
 
         compose.onNodeWithTag(CONNECT_LINK_CONFIRM_TAG).performClick()
@@ -137,17 +150,28 @@ class ConnectLinkTest {
 
     @Test
     fun aMalformedLinkIsRefusedWithAClearMessage() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("ultimatetunes://connect?url=x"))
-            .setClass(
-                InstrumentationRegistry.getInstrumentation().targetContext,
-                MainActivity::class.java
-            )
-        scenario = ActivityScenario.launch(intent)
+        launchWithLink("ultimatetunes://connect?url=x")
 
         waitFor(hasText(text(R.string.connect_link_error_malformed)))
         compose.onNodeWithTag(CONNECT_LINK_CANCEL_TAG).performClick()
         waitForNo(hasTestTag(CONNECT_LINK_DIALOG_TAG))
         assertNull(configSource.config.value)
+    }
+
+    @Test
+    fun aLinkOpenedWhileTheAppIsShowingAsksToo() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
+
+        // singleTop: the running activity gets the link through onNewIntent.
+        scenario?.onActivity {
+            instrumentation.callActivityOnNewIntent(it, linkIntent(connectLink()))
+        }
+
+        waitFor(hasText(text(R.string.connect_link_title, HOST)))
+        compose.onNodeWithTag(CONNECT_LINK_CONFIRM_TAG).performClick()
+        waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_listen_now)))
+        assertEquals(FakeTunesApi.config, configSource.config.value)
     }
 
     private companion object {

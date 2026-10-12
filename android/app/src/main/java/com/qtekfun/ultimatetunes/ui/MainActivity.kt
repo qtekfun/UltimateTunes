@@ -64,7 +64,6 @@ class MainActivity : ComponentActivity() {
     private fun takeConnectLink(intent: Intent?) {
         val link = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString ?: return
         intent.data = null
-        setIntent(intent)
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
             connectLinks.offer(link)
         }
