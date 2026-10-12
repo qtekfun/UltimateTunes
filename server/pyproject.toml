@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[project]
+name = "ultimatetunes"
+dynamic = ["version"]
+description = "Self-hosted music streaming server with on-demand YouTube Music fetching"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.34",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.7",
+]
+
+[project.scripts]
+ultimatetunes = "ultimatetunes.cli:main"
+
+[dependency-groups]
+dev = [
+  "anyio>=4.8",
+  "bandit>=1.8",
+  "httpx>=0.28",
+  "mypy>=1.15",
+  "pip-audit>=2.8",
+  # PostgreSQL driver for the portable-migration check in CI (approved 2026-10-12, T00);
+  # runtime use comes in PLAN phase 5.
+  "psycopg[binary]>=3.2",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+# One version for everything: the root VERSION file (CLAUDE.md).
+[tool.hatch.version]
+path = "../VERSION"
+pattern = "^(?P<version>\\d+\\.\\d+\\.\\d+(?:-rc\\.\\d+)?)\\s*$"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ultimatetunes"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "S", "BLE",
+  "T20", "PT", "RUF", "ASYNC", "TRY", "PL", "DTZ", "LOG", "G",
+]
+ignore = [
+  # Exception messages are written inline; a custom class per message adds nothing.
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert and fixed fake values by nature.
+"tests/**" = ["S101", "S105", "S106", "PLR2004"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+  "--strict-markers",
+  "--cov=ultimatetunes",
+  "--cov-branch",
+  "--cov-report=term-missing",
+  "--cov-report=xml:reports/coverage.xml",
+]
+markers = ["postgres: needs UT_TEST_POSTGRES_URL (a disposable PostgreSQL database)"]
+filterwarnings = [
+  "error",
+  # Starlette's TestClient prefers httpx2; httpx is the approved client (SPEC §6).
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["ultimatetunes"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

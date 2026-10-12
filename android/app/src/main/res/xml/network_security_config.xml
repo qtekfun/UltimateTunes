@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  HTTPS only (SPEC §7): cleartext traffic is refused and only the system CAs are trusted.
+  Debug builds replace this file to also allow the emulator's host (src/debug).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

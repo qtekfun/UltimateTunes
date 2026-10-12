@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
 
       - name: Build the image
-        run: docker build -t ultimatetunes-server:canary server
+        run: docker build -f server/Dockerfile -t ultimatetunes-server:canary .
 
       # Updates yt-dlp inside the container first, exactly as production does.
       - name: Canary
@@ -61,7 +61,7 @@ jobs:
         run: uv sync --locked && uv run pip-audit
 
       - name: Build the image
-        run: docker build -t ultimatetunes-server:audit server
+        run: docker build -f server/Dockerfile -t ultimatetunes-server:audit .
 
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

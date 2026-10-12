@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Example deployment (Docker Compose, one host). Copy it next to a `.env` file:
+#   UT_VERSION=0.1.0                 image tag
+#   UT_MUSIC_PATH=/srv/music         your library on the host
+#   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
+# and the worker token in ./secrets/worker_token (random, e.g. `openssl rand -hex 32`).
+#   docker compose up -d
+# Migrations run first (`migrate`), then the api. The worker never touches the database: it
+# talks to the api's internal worker API (token-protected) and needs `default` to reach
+# YouTube Music and MusicBrainz.
+
+x-hardening: &hardening
+  image: ghcr.io/qtekfun/ultimatetunes-server:${UT_VERSION:?set UT_VERSION}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  migrate:
+    <<: *hardening
+    command: ["migrate"]
+    restart: "no"
+    volumes: [data:/data]
+
+  api:
+    <<: *hardening
+    command: ["api"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports: ["${UT_BIND:-127.0.0.1:8044}:8044"]
+    volumes:
+      - data:/data
+      - ${UT_MUSIC_PATH:?set UT_MUSIC_PATH}:/music
+      - staging:/staging
+    secrets:
+      - source: worker_token
+        # pydantic-settings reads /run/secrets/<env name>, prefix included.
+        target: ut_worker_token
+    networks: [default, internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *hardening
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ${UT_MUSIC_PATH:?set UT_MUSIC_PATH}:/music
+      - staging:/staging
+      - ytdlp:/opt/ytdlp
+    secrets:
+      - source: worker_token
+        # pydantic-settings reads /run/secrets/<env name>, prefix included.
+        target: ut_worker_token
+    # `internal` reaches the api; `default` is the way out to YouTube Music and MusicBrainz.
+    networks: [default, internal]
+
+secrets:
+  worker_token:
+    file: ./secrets/worker_token
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  data:
+  staging:
+  ytdlp:
