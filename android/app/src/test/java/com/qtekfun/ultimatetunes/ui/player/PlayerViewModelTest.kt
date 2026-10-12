@@ -3,7 +3,6 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
-import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.api.model.TrackState
@@ -11,11 +10,11 @@ import com.qtekfun.ultimatetunes.playback.PlaybackState
 import com.qtekfun.ultimatetunes.ui.FakePlayerController
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.tile
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
@@ -45,7 +44,7 @@ class PlayerViewModelTest {
     @AfterEach
     fun tearDown() {
         // Nothing may resume on Main once the test dispatcher is gone.
-        viewModel.viewModelScope.cancel()
+        viewModel.closeForTest()
         server.close()
     }
 
