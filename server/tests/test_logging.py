@@ -139,3 +139,27 @@ def test_configure_logging_routes_uvicorn_access_through_redaction(
     entry = json.loads(line)
     assert entry["logger"] == "uvicorn.access"
     assert SECRET not in line
+
+
+@pytest.mark.parametrize("level", ["DEBUG", "INFO", "ERROR"])
+def test_outbound_request_urls_are_not_logged(
+    capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    """httpx logs each request URL at INFO (an ntfy topic, a webhook path): kept out (T22)."""
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    quiet = {name: logging.getLogger(name).level for name in ("httpx", "httpcore")}
+    try:
+        configure_logging(level)
+        logging.getLogger("httpx").info('HTTP Request: POST https://ntfy.example.net/topic-1 "200"')
+        logging.getLogger("httpcore").debug("connect_tcp.started host='ntfy.example.net'")
+        logging.getLogger("httpx").error("transport failed")
+        out = capsys.readouterr().out
+    finally:
+        root.handlers[:], root_level = saved
+        root.setLevel(root_level)
+        for name, previous in quiet.items():
+            logging.getLogger(name).setLevel(previous)
+    assert "topic-1" not in out
+    assert "connect_tcp" not in out
+    assert "transport failed" in out

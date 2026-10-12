@@ -10,6 +10,8 @@ x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   tmpfs: [/tmp]
+  # Bounds a fork bomb or a runaway tool (threads of the download tools count here too).
+  pids_limit: 512
 
 services:
   migrate:
@@ -35,6 +37,7 @@ services:
       # Test stack only: a fixed, public, worthless value so the worker can reach the internal
       # API. Never reuse it; real deployments pass a random token as a Docker secret (compose.yaml).
       UT_WORKER_TOKEN: test-stack-worker-token-not-a-secret
+    # Only the client port is published; the worker reaches the internal API on api:8045.
     ports: ["127.0.0.1:8044:8044"]
     volumes: [data:/data, music:/music, staging:/staging]
     networks: [default, internal]

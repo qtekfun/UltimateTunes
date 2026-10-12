@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from typing import Any, override
 
 REDACTED = "[REDACTED]"
+# Third-party loggers that would log full outbound URLs below WARNING.
+QUIET_LOGGERS = ("httpx", "httpcore")
 
 # Query or form parameters that carry credentials (OpenSubsonic: apiKey, p, t, s), also URL-encoded.
 _PARAM = re.compile(
@@ -98,3 +100,7 @@ def configure_logging(level: str) -> None:
         uv_logger = logging.getLogger(name)
         uv_logger.handlers.clear()
         uv_logger.propagate = True
+    # httpx logs every outbound request URL at INFO: notification targets (an ntfy topic is a
+    # secret) and webhook paths would land in the logs. Their warnings still do (T22).
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(max(logging.WARNING, logging.getLevelName(level)))

@@ -14,6 +14,8 @@
   held by another track or job is `conflict`. A file already at the path is **adopted** when no
   track owns the path and its SHA-256 equals the registered one (this job's own file, moved by
   an attempt that died before `complete`); any other file there is `conflict`.
+- The staging file must be inside the job's staging directory, have the registered size and
+  the registered SHA-256, which the api computes itself (it never trusts the worker's hash).
 - The answer carries the album state: when every track of the album is in the library
   (`totalTracks` known and reached), the worker computes album ReplayGain.
 
@@ -30,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from ultimatetunes.core.clock import Clock, format_ts
-from ultimatetunes.core.storage import LibraryStore, StagingStore, check_relative
+from ultimatetunes.core.storage import FileStore, LibraryStore, StagingStore, check_relative
 from ultimatetunes.db.database import Database
 from ultimatetunes.db.driver import Connection, IntegrityError
 from ultimatetunes.errors import Conflict, LeaseLost, NotFound, PathRejected
@@ -176,7 +178,7 @@ class _Job:
     placed_sha256: str | None = None
 
 
-def file_sha256(store: LibraryStore, rel: str) -> str:
+def file_sha256(store: FileStore, rel: str) -> str:
     sha = hashlib.sha256()
     with store.open_read(rel) as reader:
         while chunk := reader.read(_CHUNK):
@@ -450,28 +452,26 @@ class Registrar:
         library_path = self._library.check(check_relative(body.library_path))
         staging_path = check_relative(body.staging_path)
         now = format_ts(self._clock.now())
+        # Hashed once, outside the write transaction (no write lock held while reading the file).
+        staged_sha = self._staged_sha256(body, staging_path, now)
         try:
             with self._db.transaction() as conn:
-                return self._register(conn, body, library_path, staging_path, now)
+                return self._register(
+                    conn, body, library_path, staging_path, now, staged_sha=staged_sha
+                )
         except IntegrityError:
             pass
         # A concurrent register wrote a unique row (a path, an artist, an album) between our
         # lookups and our writes: once more, the lookups now see it.
         try:
             with self._db.transaction() as conn:
-                return self._register(conn, body, library_path, staging_path, now)
+                return self._register(
+                    conn, body, library_path, staging_path, now, staged_sha=staged_sha
+                )
         except IntegrityError as exc:
             raise Conflict("libraryPath is held by another job") from exc
 
-    def _register(
-        self,
-        conn: Connection,
-        body: RegisterBody,
-        library_path: str,
-        staging_path: str,
-        now: str,
-    ) -> Registered:
-        job = self._leased(conn, body.job_id, body.lease_id, now)
+    def _check_staging(self, job: _Job, body: RegisterBody, staging_path: str) -> None:
         if body.track_id != job.track_id:
             raise Conflict("trackId is not the job's track")
         if not staging_path.startswith(f"{job.staging_dir}/"):
@@ -480,6 +480,34 @@ class Registrar:
             self._staging.size(staging_path) != body.file.size_bytes
         ):
             raise Conflict("the staging file is missing or has another size")
+
+    def _staged_sha256(self, body: RegisterBody, staging_path: str, now: str) -> str:
+        """The api hashes the staging file itself: a compromised worker cannot make it adopt
+        another file by reporting that file's hash (SECURITY.md, T22). Read-only lookups first,
+        so a bad lease or path is refused before any file is read."""
+        with self._db.read() as conn:
+            job = self._leased(conn, body.job_id, body.lease_id, now)
+        self._check_staging(job, body, staging_path)
+        try:
+            return file_sha256(self._staging, staging_path)
+        except OSError as exc:
+            raise Conflict("the staging file is not readable") from exc
+
+    def _register(  # noqa: PLR0913 - one registration
+        self,
+        conn: Connection,
+        body: RegisterBody,
+        library_path: str,
+        staging_path: str,
+        now: str,
+        *,
+        staged_sha: str,
+    ) -> Registered:
+        job = self._leased(conn, body.job_id, body.lease_id, now)
+        # Again under the write lock: the lease and the file may have changed meanwhile.
+        self._check_staging(job, body, staging_path)
+        if staged_sha != body.file.sha256:
+            raise Conflict("the staging file does not match sha256")
         meta = body.metadata
         target = self._merge_target(conn, job, meta.musicbrainz.recording_id)
         if target is not None:

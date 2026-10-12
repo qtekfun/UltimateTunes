@@ -23,8 +23,8 @@ YTDLP_KEY_FINGERPRINT = YTDLP_SIGNER.replace(" ", "")
 
 
 class WorkerSettings(AreaSettings):
-    # The api's internal worker API (internal Docker network, single listener in v1).
-    api_url: str = "http://api:8044"
+    # The api's internal worker API: its own listener on the internal Docker network (T22).
+    api_url: str = "http://api:8045"
     # Stable id of this worker process; the hostname and pid when unset.
     worker_id: str | None = None
     # Lease asked for at claim; heartbeats come every third of it (contract).

@@ -5,13 +5,19 @@
 In order, for every request under `/admin`:
 1. **Network allowlist** (`AdminGate` middleware): the client address must be inside
    `UT_ADMIN_ALLOWED_NETWORKS` (LAN and Tailscale by default), otherwise 403 before anything
-   else runs. This is also the mitigation for the per-username lockout of T04 (SPEC §11): a
-   stranger cannot reach the login form to lock an admin out.
+   else runs. The address is the one `core/forwarded.py` resolved (`X-Forwarded-For` only from
+   `UT_TRUSTED_PROXIES`); a request with forwarding headers from any other peer, or a Tailscale
+   Funnel request, is refused too: behind an unconfigured proxy every caller looks local.
+   The worker's network (`UT_WORKER_NETWORKS`) is refused even though it is private.
+   This is also the mitigation for the per-username lockout of T04 (SPEC §11): a stranger
+   cannot reach the login form to lock an admin out.
 2. **Session**: a cookie signed with itsdangerous (`HttpOnly`, `Secure`, `SameSite=Strict`,
    `Path=/admin`), stateless so any api replica can check it. It holds the user id, an expiry
-   from the injected clock, the CSRF token and a fingerprint of the password hash (changing the
-   password ends every session). The user is read from the database on every request: a
-   disabled user is logged out, a user who is not an admin gets 403.
+   from the injected clock, the CSRF token and a fingerprint of the password hash and of the
+   user's **session epoch** (changing the password ends every session; logging out bumps the
+   epoch, kept in the `settings` table, so a copied cookie dies with the logout too). The
+   user is read from the database on every request: a disabled user is logged out, a user who
+   is not an admin gets 403.
 3. **CSRF**: every state-changing request carries the session's token (form field `csrf`, or
    the `X-CSRF-Token` header that HTMX sends) and must not be cross-site (`Sec-Fetch-Site`).
    The login form uses its own signed cookie with a token (double submit).
@@ -22,7 +28,6 @@ nothing external), `no-store`, `nosniff`, no framing and no referrer.
 
 import hashlib
 import hmac
-import ipaddress
 import secrets
 from dataclasses import dataclass
 
@@ -34,6 +39,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ultimatetunes.admin.settings import IpNetwork
 from ultimatetunes.core.clock import Clock
+from ultimatetunes.core.forwarded import via_untrusted_proxy
+from ultimatetunes.core.netaddr import in_networks
 
 SESSION_COOKIE = "ut_admin_session"
 LOGIN_COOKIE = "ut_admin_login"
@@ -43,6 +50,8 @@ CSRF_HEADER = "x-csrf-token"
 LOGIN_TTL_S = 15 * 60
 # Forms of the panel are small; anything bigger is refused before parsing.
 MAX_BODY_BYTES = 64 * 1024
+# Set by Tailscale Funnel on public requests: the panel is never served through Funnel.
+FUNNEL_HEADER = "tailscale-funnel-request"
 
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -56,6 +65,12 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    # The panel uses no browser feature beyond plain pages (ZAP baseline, T22).
+    "Permissions-Policy": (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(),"
+        " microphone=(), payment=(), usb=()"
+    ),
 }
 
 
@@ -66,15 +81,7 @@ def is_admin_path(path: str) -> bool:
 def client_allowed(host: str | None, networks: tuple[IpNetwork, ...]) -> bool:
     """True when `host` is an IP address inside one of `networks`. Hostnames, missing
     addresses and garbage are refused. IPv4-mapped IPv6 addresses count as IPv4."""
-    if not host:
-        return False
-    try:
-        address = ipaddress.ip_address(host.split("%", 1)[0])
-    except ValueError:
-        return False
-    mapped = getattr(address, "ipv4_mapped", None)
-    address = mapped or address
-    return any(address.version == net.version and address in net for net in networks)
+    return in_networks(host, networks)
 
 
 class AdminGate:
@@ -83,9 +90,15 @@ class AdminGate:
     A plain ASGI middleware: every other path passes through untouched (no wrapping of the
     streaming responses of `/rest`)."""
 
-    def __init__(self, app: ASGIApp, networks: tuple[IpNetwork, ...]) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        networks: tuple[IpNetwork, ...],
+        denied: tuple[IpNetwork, ...] = (),
+    ) -> None:
         self._app = app
         self._networks = networks
+        self._denied = denied
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -100,7 +113,12 @@ class AdminGate:
             request = Request(scope)
             host = request.client.host if request.client else None
             refusal: Response | None = None
-            if not client_allowed(host, self._networks):
+            if (
+                not client_allowed(host, self._networks)
+                or client_allowed(host, self._denied)
+                or via_untrusted_proxy(scope)
+                or FUNNEL_HEADER in request.headers
+            ):
                 refusal = PlainTextResponse("Forbidden", status_code=403)
             elif _too_big(request):
                 refusal = PlainTextResponse("Payload too large", status_code=413)
@@ -160,16 +178,20 @@ class SessionCodec:
     def _now(self) -> int:
         return int(self._clock.now().timestamp())
 
-    def fingerprint(self, password_hash: str) -> str:
-        """Changes whenever the password hash changes; reveals nothing about it."""
-        return hmac.new(self._secret, password_hash.encode(), hashlib.sha256).hexdigest()[:32]
+    def fingerprint(self, password_hash: str, epoch: int = 0) -> str:
+        """Changes whenever the password hash or the user's session epoch changes (logout
+        bumps the epoch); reveals nothing about either."""
+        message = f"{epoch}\x00{password_hash}".encode()
+        return hmac.new(self._secret, message, hashlib.sha256).hexdigest()[:32]
 
-    def new_session(self, user_id: str, password_hash: str) -> tuple[str, SessionData]:
+    def new_session(
+        self, user_id: str, password_hash: str, epoch: int = 0
+    ) -> tuple[str, SessionData]:
         data = SessionData(
             user_id,
             secrets.token_urlsafe(32),
             self._now() + self.ttl_s,
-            self.fingerprint(password_hash),
+            self.fingerprint(password_hash, epoch),
         )
         token = self._session.dumps([data.user_id, data.csrf, data.expires_at, data.fingerprint])
         return token, data
