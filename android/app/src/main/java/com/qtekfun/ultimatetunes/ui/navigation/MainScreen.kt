@@ -5,9 +5,9 @@ package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -94,15 +95,13 @@ import com.qtekfun.ultimatetunes.ui.search.SearchRoute
 import com.qtekfun.ultimatetunes.ui.settings.SettingsRoute
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 
-/** Key of the artwork shared between the mini and the full player. */
-private const val SHARED_ARTWORK_KEY = "player.artwork"
+/** How long the full player takes to slide up or down. */
+private const val PLAYER_SLIDE_MS = 320
 
 /**
  * The app once connected: the four tabs with their bar, the mini player above it, and the full
- * player over everything, opened from the mini player with a shared-element transition of the
- * artwork (SPEC §5).
+ * player over everything, sliding up from the bottom like a sheet (SPEC §5).
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainScreen(
     askNotifications: Boolean = false,
@@ -123,19 +122,17 @@ fun MainScreen(
     NotificationPermission(askNotifications, onNotificationsAnswered)
 
     ProvideLibraryActions(actionsViewModel, onOpenMenu = { menuTrack = it }) {
-        SharedTransitionLayout {
-            MainLayout(
-                navController = navController,
-                player = player,
-                actions = actions,
-                lyrics = lyrics,
-                expanded = expanded,
-                onExpandedChange = { expanded = it },
-                snackbar = snackbar,
-                banner = { ExportBanner(actionsViewModel) },
-                onPlay = playerViewModel::play
-            )
-        }
+        MainLayout(
+            navController = navController,
+            player = player,
+            actions = actions,
+            lyrics = lyrics,
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            snackbar = snackbar,
+            banner = { ExportBanner(actionsViewModel) },
+            onPlay = playerViewModel::play
+        )
     }
     LibraryActionsHost(
         viewModel = actionsViewModel,
@@ -151,11 +148,14 @@ fun MainScreen(
     )
 }
 
-/** The tabs with the mini player and the bar, and the full player over them when [expanded]. */
-@OptIn(ExperimentalSharedTransitionApi::class)
+/**
+ * The tabs with the mini player and the bar, and the full player over them when [expanded].
+ * The mini player keeps its place while the full player is open, so nothing under the full
+ * player moves while it slides.
+ */
 @Suppress("LongParameterList") // The pieces of the main screen, passed down once.
 @Composable
-private fun SharedTransitionScope.MainLayout(
+private fun MainLayout(
     navController: NavHostController,
     player: PlayerUiState,
     actions: PlayerActions,
@@ -169,6 +169,8 @@ private fun SharedTransitionScope.MainLayout(
     val hasTrack = player.current != null
     Box(Modifier.fillMaxSize()) {
         Scaffold(
+            // Under the open full player, TalkBack must not reach the hidden tabs and mini player.
+            modifier = if (hasTrack && expanded) Modifier.clearAndSetSemantics {} else Modifier,
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbar) },
@@ -176,7 +178,7 @@ private fun SharedTransitionScope.MainLayout(
                 Column {
                     banner()
                     MiniPlayerBar(
-                        visible = hasTrack && !expanded,
+                        visible = hasTrack,
                         player = player,
                         actions = actions,
                         onOpen = { onExpandedChange(true) }
@@ -193,27 +195,23 @@ private fun SharedTransitionScope.MainLayout(
         }
         AnimatedVisibility(
             visible = hasTrack && expanded,
-            enter = slideInVertically { it / 2 } + fadeIn(),
-            exit = slideOutVertically { it / 2 } + fadeOut()
+            enter = slideInVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it },
+            exit = slideOutVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it }
         ) {
             FullPlayer(
                 state = player,
                 actions = actions,
                 onCollapse = { onExpandedChange(false) },
-                lyrics = lyrics,
-                artworkModifier = Modifier.sharedElement(
-                    sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
-                    animatedVisibilityScope = this
-                )
+                shown = transition.targetState == EnterExitState.Visible,
+                lyrics = lyrics
             )
         }
     }
 }
 
-/** The mini player above the tab bar, its artwork shared with the full player. */
-@OptIn(ExperimentalSharedTransitionApi::class)
+/** The mini player above the tab bar. */
 @Composable
-private fun SharedTransitionScope.MiniPlayerBar(
+private fun MiniPlayerBar(
     visible: Boolean,
     player: PlayerUiState,
     actions: PlayerActions,
@@ -224,15 +222,7 @@ private fun SharedTransitionScope.MiniPlayerBar(
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
-        MiniPlayer(
-            state = player,
-            actions = actions,
-            onOpen = onOpen,
-            artworkModifier = Modifier.sharedElement(
-                sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
-                animatedVisibilityScope = this
-            )
-        )
+        MiniPlayer(state = player, actions = actions, onOpen = onOpen)
     }
 }
 

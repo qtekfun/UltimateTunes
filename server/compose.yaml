@@ -7,6 +7,7 @@
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
 #   UT_TRUSTED_PROXIES=...           only behind a reverse proxy (deploy/README.md)
 #   UT_INTERNAL_SUBNET=10.213.44.0/24 the api-worker network (change it if it overlaps yours)
+#   UT_API_INTERNAL_ADDRESS=10.213.44.250 the api's pinned address on it (inside that subnet)
 #   UT_EGRESS_SUBNET=10.213.45.0/24   the worker's way out (change it if it overlaps yours)
 # and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
@@ -15,8 +16,9 @@
 # Public exposure: only through Caddy (deploy/README.md, "Exposing UltimateTunes"); never
 # forward port 8044 on your router.
 # Migrations run first (`migrate`), then the api. The worker never touches the database: it
-# talks to the api's internal worker API (token-protected) and needs `default` to reach
-# YouTube Music and MusicBrainz.
+# talks to the api's internal worker API (token-protected, api:8045 over `internal`) and leaves
+# through its own `egress` network (yt-dlp, MusicBrainz, Cover Art Archive, GitHub releases).
+# Only the api calls YouTube Music (music.youtube.com), through `default`.
 
 x-hardening: &hardening
   image: ghcr.io/qtekfun/ultimatetunes-server:${UT_VERSION:?set UT_VERSION}
@@ -59,6 +61,10 @@ services:
       UT_KEEPALIVE_TIMEOUT_S: ${UT_KEEPALIVE_TIMEOUT_S:-5}
       # The only host notification credentials go to (required with them; empty: none).
       UT_NOTIFY_HOST: ${UT_NOTIFY_HOST:-}
+      # The internal worker API (8045) listens only on the api's pinned address on `internal`,
+      # so nothing on the api's other networks (`default`, a reverse proxy's shared network)
+      # can even connect to it. The client port (8044) still listens everywhere.
+      UT_INTERNAL_HOST: ${UT_API_INTERNAL_ADDRESS:-10.213.44.250}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -92,7 +98,12 @@ services:
       # UT_NOTIFY_HOST in .env to the ntfy host name (required: the token goes only there).
       # - source: notify_token
       #   target: ut_notify_token
-    networks: [default, internal]
+    networks:
+      default: {}
+      internal:
+        # Pinned (UT_INTERNAL_HOST above). High in the subnet, away from the addresses Docker
+        # hands out in order; keep it inside UT_INTERNAL_SUBNET.
+        ipv4_address: ${UT_API_INTERNAL_ADDRESS:-10.213.44.250}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
       interval: 30s
@@ -117,14 +128,15 @@ services:
       - staging:/staging
       - ytdlp:/opt/ytdlp
     environment:
-      # The api's internal listener (UT_INTERNAL_PORT), not the client port.
+      # The api's internal listener (UT_INTERNAL_PORT), not the client port. `api` resolves to
+      # its address on `internal`, the only network the worker shares with it.
       UT_API_URL: http://api:8045
     secrets:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
-    # `internal` reaches the api; `egress` is its own way out to YouTube Music and MusicBrainz,
-    # so the worker shares no other network with the api.
+    # `internal` reaches the api; `egress` is its own way out (yt-dlp to www.youtube.com,
+    # MusicBrainz, Cover Art Archive, GitHub), so the worker shares no other network with the api.
     networks: [egress, internal]
 
 secrets:

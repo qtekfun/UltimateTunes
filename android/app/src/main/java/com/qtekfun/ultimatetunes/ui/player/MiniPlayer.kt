@@ -46,16 +46,14 @@ private val SwipeThreshold = 56.dp
 
 /**
  * The mini player pinned above the tab bar: artwork, title, artist, play/pause and next. Tap opens
- * the full player; swipe left or right skips (also TalkBack actions). [artworkModifier] carries
- * the shared-element transition into the full player.
+ * the full player; swipe left or right skips (also TalkBack actions).
  */
 @Composable
 fun MiniPlayer(
     state: PlayerUiState,
     actions: PlayerActions,
     onOpen: () -> Unit,
-    modifier: Modifier = Modifier,
-    artworkModifier: Modifier = Modifier
+    modifier: Modifier = Modifier
 ) {
     val track = state.current ?: return
     Surface(
@@ -80,7 +78,7 @@ fun MiniPlayer(
                 url = track.coverUrl,
                 placeholderKey = track.id.value,
                 shape = Dimens.SmallArtworkShape,
-                modifier = artworkModifier.size(Dimens.MiniArtwork)
+                modifier = Modifier.size(Dimens.MiniArtwork)
             )
             Column(
                 modifier = Modifier
