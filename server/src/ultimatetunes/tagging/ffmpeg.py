@@ -5,6 +5,12 @@
 - Every call is an **argument list** (never a shell), with `-nostdin`, a minimal environment
   (no secret can leak into it) and a timeout. File arguments are absolute paths from the
   stores, passed as `file:<path>` so ffmpeg never reads them as another protocol or option.
+- Every input is opened with a **forced demuxer** chosen from its extension (`DEMUXERS`: the
+  containers yt-dlp is asked for, our archives and the fake downloader's file; anything else
+  is refused before ffmpeg runs), so ffmpeg never probes the content for a format, and with
+  `-format_whitelist`/`-codec_whitelist`/`-protocol_whitelist` (`input_args`): only those
+  demuxers, the expected audio decoders (Opus, AAC, Vorbis, MP3, FLAC) and local files. A
+  hostile download can reach no other parser of ffmpeg.
 - `remux`: stream copy of the first audio stream into the archive container: Opus to Ogg/Opus
   (`.opus`), AAC to MP4 with `+faststart` (`.m4a`). Source metadata and chapters are dropped
   (our tags are written afterwards), `+bitexact` keeps the output reproducible.
@@ -38,6 +44,13 @@ _PEAK = re.compile(r"^\s*Peak:\s+(\S+)\s+dBFS\s*$", re.MULTILINE)
 _KEEP_STDERR = 400
 # Inputs may only be local files: no network, no concat/subfile/data tricks (input option).
 _LOCAL_ONLY = ("-protocol_whitelist", "file")
+# Input extension -> the demuxer forced for it (module doc). `webm` is yt-dlp's Opus container
+# (format 251), `m4a` its AAC one (140); `opus`/`m4a` are our archives, `opus` also the fake
+# downloader's file.
+DEMUXERS = {"webm": "matroska", "opus": "ogg", "ogg": "ogg", "m4a": "mov", "mp4": "mov"}
+FORMAT_WHITELIST = "matroska,ogg,mov"
+# Decoder names (`ffmpeg -decoders`); `mp3float` is the one ffmpeg picks for MP3.
+CODEC_WHITELIST = "opus,aac,vorbis,mp3float,mp3,flac"
 
 
 class FfmpegError(Exception):
@@ -95,6 +108,30 @@ def _file(path: Path) -> str:
     if not path.is_absolute():
         raise FfmpegError("ffmpeg needs absolute paths")
     return f"file:{path}"
+
+
+def input_args(path: Path) -> list[str]:
+    """The options and the `-i`-less file argument of one input (module doc)."""
+    file = _file(path)
+    demuxer = DEMUXERS.get(path.suffix.lstrip(".").lower())
+    if demuxer is None:
+        raise FfmpegError(f"unexpected input type {path.suffix[:16]!r}")
+    return [
+        "-f",
+        demuxer,
+        "-format_whitelist",
+        FORMAT_WHITELIST,
+        "-codec_whitelist",
+        CODEC_WHITELIST,
+        *_LOCAL_ONLY,
+        file,
+    ]
+
+
+def _input(path: Path) -> list[str]:
+    """`input_args` for ffmpeg: the same, with `-i` before the file."""
+    args = input_args(path)
+    return [*args[:-1], "-i", args[-1]]
 
 
 def _number(value: Any) -> float | None:
@@ -158,7 +195,7 @@ def loudness_args(ffmpeg: Path, paths: Sequence[Path]) -> list[str]:
         raise FfmpegError("loudness of nothing")
     args = [str(ffmpeg), "-nostdin", "-hide_banner", "-nostats", "-loglevel", "info"]
     for path in paths:
-        args += [*_LOCAL_ONLY, "-i", _file(path)]
+        args += _input(path)
     if len(paths) == 1:
         graph = "[0:a:0]ebur128=peak=true:framelog=quiet[out]"
     else:
@@ -180,9 +217,7 @@ def remux_args(ffmpeg: Path, src: Path, dst: Path, kind: ArchiveKind) -> list[st
         "-loglevel",
         "error",
         "-n",
-        *_LOCAL_ONLY,
-        "-i",
-        _file(src),
+        *_input(src),
         "-map",
         "0:a:0",
         "-c:a",
@@ -211,8 +246,7 @@ def probe_args(ffprobe: Path, path: Path) -> list[str]:
         "a:0",
         "-show_streams",
         "-show_format",
-        *_LOCAL_ONLY,
-        _file(path),
+        *input_args(path),
     ]
 
 
