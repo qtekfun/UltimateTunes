@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Nightly and on demand:
-# - canary: the only job allowed to reach YouTube Music. It searches and downloads one fixed
-#   Creative Commons track with the current yt-dlp and ytmusicapi; a failure means YouTube changed.
-#   GitHub runners use datacenter IPs that YouTube may challenge: if T03c shows that, this job moves
-#   to the server itself (the worker's scheduled canary, reported in the admin panel) and stays here
-#   only as `workflow_dispatch`.
+# - canary (manual only): the only job allowed to reach YouTube Music. It searches and downloads one
+#   fixed Creative Commons track with the current yt-dlp and ytmusicapi. GitHub runner IPs get
+#   YouTube's bot wall (T03c), so the scheduled canary runs on the server (reported in the admin
+#   panel) and this job is best effort.
 # - audit: dependency vulnerabilities (server and image).
 # - android-ui: instrumented tests on an emulator against the test stack (fake YouTube).
 #   Also on PRs labelled `ui-tests`.
@@ -28,7 +27,9 @@ concurrency:
 
 jobs:
   canary:
-    if: github.event_name != 'pull_request'
+    # Manual only: GitHub runner IPs get YouTube's bot wall (T03c). The scheduled canary runs
+    # on the server (worker), reported in the admin panel.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
