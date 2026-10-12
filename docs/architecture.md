@@ -26,6 +26,7 @@ flowchart LR
 
   subgraph edge["Edge (optional, on the host)"]
     ts["tailscale serve (HTTPS in the tailnet)"]
+    cf["cloudflared (Cloudflare Tunnel, pinned address)"]
     proxy["Caddy or Traefik (public HTTPS)"]
   end
 
@@ -60,6 +61,8 @@ flowchart LR
   app -->|"HTTPS, API key"| ts
   app -->|"HTTPS, API key"| proxy
   oss -->|"HTTPS, API key"| proxy
+  oss -->|"HTTPS via Cloudflare"| cf
+  cf -->|"trusted X-Forwarded-For"| proxy
   browser -->|"HTTPS, session cookie, LAN or tailnet only"| ts
   ts -->|"HTTP 127.0.0.1:8044"| api
   proxy -->|"HTTP 127.0.0.1:8044 or the proxy network"| api
@@ -98,10 +101,16 @@ flowchart LR
 - **Edge**: the recommended setup is `tailscale serve` (HTTPS inside the tailnet, nothing public,
   `deploy/tailscale/README.md`). Public access only through Caddy (`deploy/caddy/Caddyfile`) or
   Traefik + Authelia (`deploy/traefik/`). A Cloudflare **proxy** may sit in front of Traefik
-  only when its ranges are listed in Traefik's `forwardedHeaders.trustedIPs`; a **tunnel**
-  (Cloudflare Tunnel/`cloudflared`, ngrok, an SSH forward, Tailscale Funnel) must never sit in
-  front of Caddy or Traefik, because every client would then arrive from a local address and
-  look like the LAN (`deploy/README.md`, item 4).
+  when its ranges are listed in Traefik's `forwardedHeaders.trustedIPs`.
+- **Cloudflare Tunnel** is supported as `cloudflared` → Traefik → api
+  (`deploy/traefik-cloudflared/`), and is safe only under these conditions: `cloudflared` and
+  Traefik have **pinned addresses** on their Docker network; Traefik trusts `X-Forwarded-For`
+  **only from `cloudflared`'s address**; the api's `UT_TRUSTED_PROXIES` lists exactly those two
+  `/32`s; and `UT_ADMIN_ALLOWED_NETWORKS` excludes the Docker and tunnel ranges, so `/admin`
+  stays LAN-only (plus Authelia). What is never allowed is an **untrusted or unpinned** tunnel
+  (or SSH forward, ngrok, Tailscale Funnel) in front of the edge: its traffic arrives from a
+  private peer address that nothing attributes to a real client, so `/admin` and every per-IP
+  limit would treat the whole Internet as the LAN (`deploy/README.md`, item 4).
 
 ## 2. Containers
 
@@ -202,6 +211,9 @@ userland proxy reaches the api from the bridge gateway, which cannot be told apa
   network.
 - The edges themselves trust no incoming `X-Forwarded-For` (Caddy without `trusted_proxies`,
   Traefik `forwardedHeaders.trustedIPs: []`): they are the edge and send the peer they saw.
+  With Cloudflare Tunnel, the chain is client → `cloudflared` → Traefik → api: Traefik trusts
+  the header only from `cloudflared`'s pinned address, and the api trusts both pinned
+  addresses (`UT_TRUSTED_PROXIES`), so the client resolved is the one Cloudflare saw.
 
 ## 4. Communications catalogue
 

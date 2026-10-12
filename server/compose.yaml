@@ -15,8 +15,9 @@
 # Public exposure: only through Caddy (deploy/README.md, "Exposing UltimateTunes"); never
 # forward port 8044 on your router.
 # Migrations run first (`migrate`), then the api. The worker never touches the database: it
-# talks to the api's internal worker API (token-protected) and needs `default` to reach
-# YouTube Music and MusicBrainz.
+# talks to the api's internal worker API (token-protected, api:8045 over `internal`) and leaves
+# through its own `egress` network (yt-dlp, MusicBrainz, Cover Art Archive, GitHub releases).
+# Only the api calls YouTube Music (music.youtube.com), through `default`.
 
 x-hardening: &hardening
   image: ghcr.io/qtekfun/ultimatetunes-server:${UT_VERSION:?set UT_VERSION}
