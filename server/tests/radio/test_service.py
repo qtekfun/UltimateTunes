@@ -325,3 +325,20 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         assert not radio_settings().radio
     finally:
         radio_settings.cache_clear()
+
+
+async def test_a_radio_keeps_nothing(service: RadioService, library: Database) -> None:
+    """Listing a radio is not a "keep" action: no pending track, alias or job (ids.md)."""
+
+    def counts() -> tuple[int, ...]:
+        with library.read() as conn:
+            return tuple(
+                int(conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"])  # noqa: S608 - constant names
+                for table in ("tracks", "track_aliases", "jobs")
+            )
+
+    before = counts()
+    await service.radio(USER, "yt:Qx7Lm2pZ0aB", 50)
+    await service.radio(USER, "ytartist:UCn4HbR7oQ2sLx9TzV0eWm3K", 50, artists=True)
+    await service.radio(USER, ORCHARD, 50)
+    assert counts() == before

@@ -170,9 +170,17 @@ def test_similar_songs_of_an_artist_start_with_its_top_song(client: TestClient) 
     assert song_ids(library_artist) == [LOW_TIDE, "yt:Rb8Tn3ZcYv0"]
 
 
+def test_similar_songs_count_zero_never_calls_the_catalog(
+    client: TestClient, catalog: FakeMusicCatalog
+) -> None:
+    assert song_ids(similar(client, id=LIGHTHOUSE, count="0")) == []
+    assert song_ids(similar(client, id="ytartist:UCn4HbR7oQ2sLx9TzV0eWm3K", count="0")) == []
+    assert catalog.calls == []
+    assert similar(client, id="ytalbum:bad id", count="0")["error"]["code"] == 70
+
+
 def test_similar_songs_count(client: TestClient) -> None:
     assert song_ids(similar(client, id=LIGHTHOUSE, count="1")) == [LOW_TIDE]
-    assert song_ids(similar(client, id=LIGHTHOUSE, count="0")) == []
     assert len(song_ids(similar(client, id=LIGHTHOUSE, count="100000"))) == 6
 
 
