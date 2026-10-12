@@ -23,8 +23,9 @@ security:
 	uv run pip-audit --skip-editable
 
 # Contracts: every migration applies on SQLite and on PostgreSQL (UT_TEST_POSTGRES_URL must point
-# at a disposable database). PLAN T02 adds OpenAPI validation and schemathesis.
+# at a disposable database), the OpenAPI files validate, and schemathesis runs against the app
+# with more examples per operation than `make check` (tests/contract).
 contracts:
 	@test -n "$$UT_TEST_POSTGRES_URL" || { echo "UT_TEST_POSTGRES_URL is not set"; exit 1; }
 	mkdir -p reports
-	uv run pytest
+	UT_CONTRACT_EXAMPLES=25 uv run pytest
