@@ -185,3 +185,10 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken before Wave 1 (2026-10-12)
 - **Dependencies added in one coordinator PR** so parallel streams never edit shared build files. Server: argon2-cffi (MIT), ytmusicapi (MIT; pulls `requests`, Apache-2.0), mutagen (GPL-2.0-or-later), jinja2, itsdangerous (BSD-3-Clause), python-multipart (Apache-2.0); dev respx (BSD-3-Clause). yt-dlp is not a Python dependency (zipapp subprocess, T03c). Android: Coil 3 (compose, network-okhttp), palette, DataStore preferences, Media3 (exoplayer, session, datasource-okhttp; `:core:player` depends on `:core:api` so one OkHttp version ships). Also **navigation-compose** and **hilt-navigation-compose** (Apache-2.0), approved by the author on 2026-10-12. DataStore bundles protobuf, so licensee also allows BSD-3-Clause.
+
+### Taken in T04 (users, keys and auth, 2026-10-12)
+- **Passwords**: Argon2id with 19 MiB memory, t = 2, p = 1 (the OWASP minimum, chosen for the RAM budget). Passwords are at least 12 characters. Usernames are lower-cased and match `[a-z0-9][a-z0-9._-]{0,63}`.
+- **Lockout**: a valid API key is never refused because its IP is locked out (one stale device behind a shared home IP must not lock the household out). Defaults: 10 failures per IP, 5 per username, 15 minutes.
+- **Key last use** is written at most once a minute per key and IP.
+- **Disabled user** → error 50.
+- **`POST /ut/v1/keys`** answers with `Cache-Control: no-store`; its body is capped at 16 KiB.
