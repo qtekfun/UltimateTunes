@@ -49,14 +49,141 @@
     <string name="station_up_next">A continuación</string>
     <string name="station_description">%1$s, emisora</string>
 
-    <!-- Biblioteca y Buscar (las completa PLAN T13) -->
-    <string name="library_placeholder">Aquí aparecerán tus artistas, álbumes, listas y descargas.</string>
-    <string name="search_placeholder">Busca en tu biblioteca y en YouTube Music.</string>
+    <!-- Biblioteca -->
+    <string name="library_playlists">Listas</string>
+    <string name="library_artists">Artistas</string>
+    <string name="library_albums">Álbumes</string>
+    <string name="library_favourites">Favoritos</string>
+    <string name="library_downloads">Descargas</string>
+    <string name="library_empty">Tu biblioteca aún está vacía. Busca música y escúchala para guardarla aquí.</string>
+    <string name="favourites_empty">Aún no tienes favoritos. Toca el corazón de un álbum para añadirlo.</string>
+    <string name="downloads_empty">Aún no hay descargas. Aquí aparecerán las canciones que descargues para escuchar sin conexión.</string>
+    <string name="favourite_add">Añadir a Favoritos</string>
+    <string name="favourite_remove">Quitar de Favoritos</string>
+    <string name="album_external">En YouTube Music, aún no está en tu biblioteca. Al escuchar una canción se guarda.</string>
+    <string name="artist_albums">Álbumes</string>
+    <string name="artist_no_albums">Aún no hay álbumes de este artista.</string>
+    <string name="artist_external">En YouTube Music, aún no está en tu biblioteca.</string>
+    <string name="go_to_album">Ir al álbum</string>
+    <string name="play">Reproducir</string>
+    <string name="shuffle">Aleatorio</string>
+    <plurals name="song_count">
+        <item quantity="one">%d canción</item>
+        <item quantity="many">%d canciones</item>
+        <item quantity="other">%d canciones</item>
+    </plurals>
+    <plurals name="minute_count">
+        <item quantity="one">%d minuto</item>
+        <item quantity="many">%d minutos</item>
+        <item quantity="other">%d minutos</item>
+    </plurals>
+
+    <!-- Listas -->
+    <string name="playlist_new">Nueva lista</string>
+    <string name="playlist_name">Nombre de la lista</string>
+    <string name="playlist_create">Crear</string>
+    <string name="playlist_rename">Renombrar</string>
+    <string name="playlist_delete">Eliminar</string>
+    <string name="playlist_delete_title">¿Eliminar la lista?</string>
+    <string name="playlist_delete_message">«%1$s» se eliminará de tu servidor y de todos tus dispositivos. Las canciones siguen en tu biblioteca.</string>
+    <string name="playlist_empty">Esta lista está vacía.</string>
+    <string name="playlists_empty">Aún no tienes listas. Crea una o impórtala.</string>
+    <string name="playlist_remove_song">Quitar %1$s de la lista</string>
+    <string name="more_options">Más opciones</string>
+
+    <!-- Buscar -->
+    <string name="search_field">Artistas, álbumes, canciones</string>
+    <string name="search_clear">Borrar búsqueda</string>
+    <string name="search_hint">Busca en tu biblioteca y en YouTube Music.</string>
+    <string name="search_no_results">Sin resultados.</string>
+    <string name="search_artists">Artistas</string>
+    <string name="search_albums">Álbumes</string>
+    <string name="search_songs">Canciones</string>
+
+    <!-- Letras -->
+    <string name="lyrics_none">Esta canción no tiene letra.</string>
+    <string name="lyrics_seek">Reproducir desde este verso</string>
+    <string name="player_show_lyrics">Mostrar letra</string>
+    <string name="player_hide_lyrics">Ocultar letra</string>
+
+    <!-- Importar -->
+    <string name="import_title">Importar lista</string>
+    <string name="import_intro">Trae una lista a tu biblioteca. Cada canción se busca en YouTube Music y se guarda en tu servidor.</string>
+    <string name="import_name">Nombre de la lista (opcional)</string>
+    <string name="import_from_link">Desde un enlace de YouTube Music</string>
+    <string name="import_link">Enlace de la lista</string>
+    <string name="import_link_hint">https://music.youtube.com/playlist?list=…</string>
+    <string name="import_button">Importar</string>
+    <string name="import_from_file">Desde un archivo</string>
+    <string name="import_file_help">Para listas de Spotify, expórtalas antes: un CSV de Exportify, un archivo de lista de «Descargar tus datos» de Spotify, o tu propio CSV con columnas de título y artista. Hasta 1 MB.</string>
+    <string name="import_choose_file">Elegir archivo</string>
+    <string name="import_file_button">Importar archivo</string>
+    <string name="import_format_csv">CSV (título, artista)</string>
+    <string name="import_format_exportify">CSV de Exportify</string>
+    <string name="import_format_spotify_json">Datos exportados de Spotify (JSON)</string>
+    <string name="import_source_ytmusic">YouTube Music</string>
+    <string name="import_report">Informe de coincidencias</string>
+    <string name="import_untitled">Lista importada</string>
+    <string name="import_counts">Encontradas: %1$d/%2$d · Sin encontrar: %3$d</string>
+    <string name="import_open_playlist">Abrir lista</string>
+    <string name="import_matched_as">Encontrada: %1$s de %2$s</string>
+    <string name="import_recent">Importaciones recientes</string>
+    <string name="import_none">Aún no hay importaciones.</string>
+    <string name="import_state_queued">Esperando para empezar…</string>
+    <string name="import_state_reading">Leyendo la lista…</string>
+    <string name="import_state_matching">Buscando las canciones…</string>
+    <string name="import_state_done">Terminada</string>
+    <string name="import_state_failed">Fallida</string>
+    <string name="import_item_pending">Pendiente</string>
+    <string name="import_item_matched">Encontrada</string>
+    <string name="import_item_not_found">No encontrada</string>
+    <string name="import_item_failed">Fallida</string>
+    <string name="import_error_spotify_url">Los enlaces de Spotify no se pueden importar. Exporta la lista como archivo (Exportify o la descarga de datos de Spotify) y elígelo abajo.</string>
+    <string name="import_error_unsupported_url">Eso no es un enlace a una lista de YouTube Music o YouTube.</string>
+    <string name="import_error_too_large">El archivo es demasiado grande: hasta 1 MB y 5000 canciones.</string>
+    <string name="import_error_invalid_file">No se ha podido leer el archivo con el formato elegido.</string>
+    <string name="import_error_disabled">Tu servidor tiene desactivado este tipo de importación.</string>
+    <string name="import_error_rate_limited">Demasiadas importaciones a la vez. Inténtalo de nuevo en un momento.</string>
+
+    <!-- Ajustes -->
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_server">Servidor</string>
+    <string name="settings_address">Dirección</string>
+    <string name="settings_server_name">Servidor</string>
+    <string name="settings_account">Cuenta</string>
+    <string name="settings_account_admin">%1$s (administrador)</string>
+    <string name="settings_disconnect">Desconectar</string>
+    <string name="settings_disconnect_title">¿Desconectar este dispositivo?</string>
+    <string name="settings_disconnect_message">Necesitarás una clave de API para volver a conectar. Tu clave sigue siendo válida hasta que la revoques.</string>
+    <string name="settings_keys">Dispositivos y claves</string>
+    <string name="settings_key_this_device">Este dispositivo</string>
+    <string name="settings_key_created">creada el %1$s</string>
+    <string name="settings_key_last_used">último uso el %1$s</string>
+    <string name="settings_key_never_used">sin usar</string>
+    <string name="settings_key_revoked">revocada</string>
+    <string name="settings_revoke">Revocar</string>
+    <string name="settings_revoke_title">¿Revocar esta clave?</string>
+    <string name="settings_revoke_message">«%1$s» dejará de funcionar al momento y tendrá que conectar con una clave nueva.</string>
+    <string name="settings_playback">Reproducción y sin conexión</string>
+    <string name="settings_cache_size">Tamaño de la caché</string>
+    <string name="settings_cache_help">Cada canción que escuchas se guarda en este dispositivo hasta este tamaño; las más antiguas se borran primero. Las descargas no cuentan.</string>
+    <string name="size_mb">%1$d MB</string>
+    <string name="size_gb">%1$d GB</string>
+    <string name="settings_offline_only">Modo sin conexión</string>
+    <string name="settings_offline_only_help">Mostrar solo la música guardada o descargada en este dispositivo.</string>
+    <string name="settings_wifi_only">Descargar solo con wifi</string>
+    <string name="settings_wifi_only_help">Las descargas sin conexión esperan a tener wifi.</string>
+    <string name="settings_quality_info">Las canciones suenan en su formato original (Opus o AAC), sin recodificar.</string>
+    <string name="settings_about">Acerca de</string>
+    <string name="settings_version">Versión %1$s</string>
+    <string name="settings_license">Software libre bajo la GNU GPL, versión 3 o posterior. Sin anuncios ni rastreo: solo habla con tu servidor.</string>
 
     <!-- Comunes -->
     <string name="loading">Cargando</string>
     <string name="connect_again">Volver a conectar</string>
     <string name="retry">Reintentar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="close">Cerrar</string>
     <string name="back">Atrás</string>
     <string name="error_network">No se puede contactar con tu servidor. Comprueba tu conexión.</string>
     <string name="error_unauthorized">Tu servidor ha rechazado la clave de este dispositivo. Vuelve a conectarte.</string>

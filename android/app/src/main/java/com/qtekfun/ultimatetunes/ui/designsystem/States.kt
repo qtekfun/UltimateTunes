@@ -111,3 +111,22 @@ fun ErrorState(error: LoadError, onRetry: () -> Unit, modifier: Modifier = Modif
         modifier = modifier
     )
 }
+
+/**
+ * Shows [error] once in [hostState] (a failed action such as a favourite or a rename), then calls
+ * [onShown] so the view model forgets it.
+ */
+@Composable
+fun MessageEffect(
+    error: LoadError?,
+    hostState: androidx.compose.material3.SnackbarHostState,
+    onShown: () -> Unit
+) {
+    val message = error?.let { stringResource(it.messageRes()) }
+    androidx.compose.runtime.LaunchedEffect(message) {
+        if (message != null) {
+            hostState.showSnackbar(message)
+            onShown()
+        }
+    }
+}

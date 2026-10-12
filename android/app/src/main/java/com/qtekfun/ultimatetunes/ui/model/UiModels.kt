@@ -5,10 +5,17 @@ package com.qtekfun.ultimatetunes.ui.model
 
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
+import com.qtekfun.ultimatetunes.core.api.model.Album
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.AlbumItem
+import com.qtekfun.ultimatetunes.core.api.model.Artist
+import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistItem
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
+import com.qtekfun.ultimatetunes.core.api.model.Playlist
+import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.RadioStation
+import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.api.model.TrackItem
 
@@ -38,7 +45,28 @@ data class TrackTile(
     val album: String?,
     val durationSec: Int?,
     val coverUrl: String?,
+    val isExternal: Boolean,
+    /** Where "Go to Album" leads; null when unknown. */
+    val albumId: AlbumId? = null,
+    /** Position on its album, shown in album lists. */
+    val trackNumber: Int? = null
+)
+
+/** An artist in a list or a grid. */
+data class ArtistTile(
+    val id: ArtistId,
+    val name: String,
+    val coverUrl: String?,
     val isExternal: Boolean
+)
+
+/** A user playlist in a list. */
+data class PlaylistTile(
+    val id: PlaylistId,
+    val name: String,
+    val songCount: Int,
+    val durationSec: Int,
+    val coverUrl: String?
 )
 
 /** A radio station, started from [seedId]. */
@@ -107,7 +135,8 @@ fun TrackItem.toTile(api: TunesApi): TrackTile = TrackTile(
     album = album,
     durationSec = durationSec,
     coverUrl = api.coverUrl(coverArt),
-    isExternal = isExternal
+    isExternal = isExternal,
+    albumId = albumId
 )
 
 fun RadioStation.toTile(api: TunesApi): StationTile = StationTile(

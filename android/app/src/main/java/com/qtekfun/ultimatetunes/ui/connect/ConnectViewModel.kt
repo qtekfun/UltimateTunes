@@ -49,7 +49,10 @@ data class ConnectUiState(
     val apiKey: String = "",
     val checking: Boolean = false,
     val error: ConnectError? = null,
-    /** Set once the key works: the name the server reported. The screen then moves on. */
+    /**
+     * Set once the key works: the name the server reported. The root then shows the tabs; the
+     * typed address and key are cleared at that moment, and everything on the next reconnect.
+     */
     val connectedTo: String? = null
 ) {
     val canConnect: Boolean get() = !checking && serverUrl.isNotBlank() && apiKey.isNotBlank()
@@ -73,6 +76,11 @@ class ConnectViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = mutableState.asStateFlow()
+
+    init {
+        // This view model lives as long as the activity: start over on every return to Connect.
+        viewModelScope.launch { gate.reconnects.collect { mutableState.value = ConnectUiState() } }
+    }
 
     fun onServerUrlChange(value: String) {
         mutableState.update { it.copy(serverUrl = value, error = null) }
@@ -102,7 +110,9 @@ class ConnectViewModel @Inject constructor(
             val result = check(url, ApiKeySecret(key))
             mutableState.update {
                 when (result) {
-                    is CheckResult.Connected -> it.copy(checking = false, connectedTo = result.name)
+                    // The key is kept by the gate; the form forgets what was typed.
+                    is CheckResult.Connected -> ConnectUiState(connectedTo = result.name)
+
                     is CheckResult.Failed -> it.copy(checking = false, error = result.error)
                 }
             }

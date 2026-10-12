@@ -13,19 +13,27 @@ import com.qtekfun.ultimatetunes.core.api.model.Album
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.AlbumItem
 import com.qtekfun.ultimatetunes.core.api.model.AlbumListType
+import com.qtekfun.ultimatetunes.core.api.model.ApiKey
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyList
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistIndex
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
+import com.qtekfun.ultimatetunes.core.api.model.ArtistItem
 import com.qtekfun.ultimatetunes.core.api.model.Capabilities
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.CreatedKey
 import com.qtekfun.ultimatetunes.core.api.model.Import
 import com.qtekfun.ultimatetunes.core.api.model.ImportFileFormat
 import com.qtekfun.ultimatetunes.core.api.model.ImportId
+import com.qtekfun.ultimatetunes.core.api.model.ImportItem
+import com.qtekfun.ultimatetunes.core.api.model.ImportItemState
+import com.qtekfun.ultimatetunes.core.api.model.ImportSource
+import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
+import com.qtekfun.ultimatetunes.core.api.model.LyricLine
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.Me
 import com.qtekfun.ultimatetunes.core.api.model.OpenSubsonicInfo
@@ -51,7 +59,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 /**
  * An in-process [TunesApi] for UI tests on a device, with invented artists and songs (the same
  * ones as the contract examples). It never touches the network: covers have no URL and show
- * their placeholder. What the T12 screens do not use answers "not implemented".
+ * their placeholder. Playlists, favourites, revoked keys and imports change in memory; what the
+ * screens do not use answers "not implemented".
  */
 @Suppress("TooManyFunctions")
 class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : TunesApi {
@@ -101,13 +110,217 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         Radio(first, all - first)
     }
 
+    override suspend fun search(
+        query: String,
+        limit: Int?,
+        external: Boolean
+    ): TunesResult<SearchResult> = configured {
+        SearchResult(
+            query = query,
+            artists = listOf(
+                ArtistItem(LANTERNS_ID, "The Paper Lanterns", CoverArtId("ar-1"), false)
+            ),
+            albums = listOf(HARBOUR, DUSK),
+            tracks = listOf(KEEPER, TIDEWATER, MOONS)
+        )
+    }
+
+    override suspend fun album(id: AlbumId): TunesResult<Album> = configured {
+        val item = listOf(HARBOUR, SALT, ORBIT, DUSK).firstOrNull { it.id == id } ?: HARBOUR
+        val songs = listOf(KEEPER, TIDEWATER, BRASAS, COPPER, MOONS).filter {
+            it.albumId == item.id
+        }
+        Album(
+            id = item.id,
+            name = item.name,
+            artist = item.artist,
+            artistId = LANTERNS_ID,
+            year = 2023,
+            genre = "Indie Pop",
+            songCount = songs.size,
+            duration = songs.sumOf { it.durationSec ?: 0 },
+            starred = if (item.id in starredAlbums) Instant.EPOCH else null,
+            song = songs.mapIndexed { i, t -> t.toSong(track = i + 1) }
+        )
+    }
+
+    override suspend fun artist(id: ArtistId): TunesResult<Artist> = configured {
+        Artist(id = LANTERNS_ID, name = "The Paper Lanterns", album = listOf(HARBOUR.toAlbum()))
+    }
+
+    override suspend fun artists(): TunesResult<ArtistIndexes> = configured {
+        ArtistIndexes(
+            index = listOf(
+                ArtistIndex("M", listOf(Artist(ArtistId("artist-2"), "Marisol Vega"))),
+                ArtistIndex("P", listOf(Artist(LANTERNS_ID, "The Paper Lanterns")))
+            )
+        )
+    }
+
+    override suspend fun albumList(
+        type: AlbumListType,
+        size: Int?,
+        offset: Int?,
+        fromYear: Int?,
+        toYear: Int?,
+        genre: String?
+    ): TunesResult<List<Album>> = configured {
+        if ((offset ?: 0) > 0) emptyList() else listOf(HARBOUR, SALT, ORBIT).map { it.toAlbum() }
+    }
+
+    override suspend fun lyrics(id: SongId): TunesResult<List<Lyrics>> = configured {
+        listOf(
+            Lyrics(
+                lang = "und",
+                synced = true,
+                line = listOf(
+                    LyricLine(LYRIC_FIRST, 0.0),
+                    LyricLine("I keep the light for the ships that never were", 4210.0),
+                    LyricLine("Turning and turning, the harbour asleep", 9875.0)
+                )
+            )
+        )
+    }
+
+    override suspend fun playlists(): TunesResult<List<Playlist>> =
+        configured { playlists.map { it.copy(entry = emptyList()) } }
+
+    override suspend fun playlist(id: PlaylistId): TunesResult<Playlist> {
+        val found = playlists.firstOrNull { it.id == id } ?: return notFound()
+        return configured { found }
+    }
+
+    override suspend fun createPlaylist(
+        name: String,
+        songIds: List<SongId>
+    ): TunesResult<Playlist> = configured {
+        Playlist(PlaylistId("playlist-${playlists.size + 1}"), name).also { playlists += it }
+    }
+
+    override suspend fun updatePlaylist(
+        id: PlaylistId,
+        name: String?,
+        comment: String?,
+        public: Boolean?,
+        songIdsToAdd: List<SongId>,
+        songIndexesToRemove: List<Int>
+    ): TunesResult<Unit> = configured {
+        val i = playlists.indexOfFirst { it.id == id }
+        if (i >= 0) {
+            val p = playlists[i]
+            val entries = p.entry.filterIndexed { index, _ -> index !in songIndexesToRemove }
+            playlists[i] = p.copy(name = name ?: p.name, entry = entries, songCount = entries.size)
+        }
+    }
+
+    override suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit> =
+        configured { playlists.removeAll { it.id == id } }
+
+    override suspend fun star(
+        songIds: List<SongId>,
+        albumIds: List<AlbumId>,
+        artistIds: List<ArtistId>
+    ): TunesResult<Unit> = configured { starredAlbums += albumIds }
+
+    override suspend fun unstar(
+        songIds: List<SongId>,
+        albumIds: List<AlbumId>,
+        artistIds: List<ArtistId>
+    ): TunesResult<Unit> = configured { starredAlbums -= albumIds.toSet() }
+
+    override suspend fun starred(): TunesResult<Starred> = configured {
+        Starred(
+            album = listOf(HARBOUR, SALT, ORBIT, DUSK).filter { it.id in starredAlbums }
+                .map { it.toAlbum() },
+            song = listOf(KEEPER.toSong())
+        )
+    }
+
+    override suspend fun listKeys(): TunesResult<ApiKeyList> = configured {
+        ApiKeyList(
+            listOf(
+                ApiKey(ApiKeyId("key-1"), "Phone", "utk_EXAMPLEe", Instant.EPOCH, current = true),
+                ApiKey(ApiKeyId("key-2"), TABLET_KEY, "utk_EXAMPLEf", Instant.EPOCH)
+            ).filter { it.id !in revokedKeys }
+        )
+    }
+
+    override suspend fun revokeKey(id: ApiKeyId): TunesResult<Unit> = configured {
+        revokedKeys += id
+    }
+
+    override suspend fun imports(limit: Int?, offset: Int?): TunesResult<List<Import>> =
+        configured { imports.toList() }
+
+    override suspend fun createImport(url: String, name: String?): TunesResult<Import> {
+        if ("spotify" in
+            url
+        ) {
+            return TunesResult.ApiError(TunesError(ErrorKind.UNSUPPORTED_URL), 400)
+        }
+        return configured { doneImport(name ?: IMPORTED_NAME).also { imports.add(0, it) } }
+    }
+
+    override suspend fun createFileImport(
+        content: ByteArray,
+        fileName: String,
+        format: ImportFileFormat,
+        name: String?
+    ): TunesResult<Import> = configured { doneImport(name ?: fileName).also { imports.add(0, it) } }
+
+    override suspend fun import(id: ImportId): TunesResult<Import> {
+        val found = imports.firstOrNull { it.id == id } ?: return notFound()
+        return configured { found }
+    }
+
     override fun coverArtUrl(id: CoverArtId, size: Int?): HttpUrl? = null
 
     override fun streamUrl(id: SongId): HttpUrl? = null
 
     override fun downloadUrl(id: SongId): HttpUrl? = null
 
-    // ---- Not used by the T12 screens ----
+    // ---- In-memory state the screens change ----
+
+    private val playlists = mutableListOf(
+        Playlist(
+            id = PlaylistId("playlist-1"),
+            name = SUNDAY,
+            songCount = 2,
+            entry = listOf(KEEPER.toSong(), BRASAS.toSong())
+        )
+    )
+    private val starredAlbums = mutableSetOf<AlbumId>()
+    private val revokedKeys = mutableSetOf<ApiKeyId>()
+    private val imports = mutableListOf<Import>()
+
+    private fun doneImport(name: String) = Import(
+        id = ImportId("import-${imports.size + 1}"),
+        source = ImportSource.YTMUSIC,
+        name = name,
+        state = ImportState.DONE,
+        total = 2,
+        matched = 1,
+        notFound = 1,
+        progress = 1.0,
+        playlistId = playlists.first().id,
+        createdAt = Instant.EPOCH,
+        updatedAt = Instant.EPOCH,
+        items = listOf(
+            ImportItem(
+                0,
+                KEEPER.title,
+                KEEPER.artist,
+                state = ImportItemState.MATCHED,
+                track = KEEPER
+            ),
+            ImportItem(1, "Untitled Demo 4", "Northbound Static", state = ImportItemState.NOT_FOUND)
+        )
+    )
+
+    private fun <T> notFound(): TunesResult<T> =
+        TunesResult.ApiError(TunesError(ErrorKind.NOT_FOUND), HTTP_OK)
+
+    // ---- Not used by the screens ----
 
     private fun <T> notImplemented(): TunesResult<T> =
         TunesResult.ApiError(TunesError(ErrorKind.NOT_IMPLEMENTED), HTTP_NOT_IMPLEMENTED)
@@ -119,96 +332,20 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         deviceName: String
     ): TunesResult<CreatedKey> = notImplemented()
 
-    override suspend fun listKeys(): TunesResult<ApiKeyList> = notImplemented()
-
-    override suspend fun revokeKey(id: ApiKeyId): TunesResult<Unit> = notImplemented()
-
     override suspend fun requestTrack(id: SongId, reason: RequestReason): TunesResult<TrackStatus> =
         notImplemented()
 
     override suspend fun trackStatus(id: SongId): TunesResult<TrackStatus> = notImplemented()
 
-    override suspend fun search(
-        query: String,
-        limit: Int?,
-        external: Boolean
-    ): TunesResult<SearchResult> = notImplemented()
-
-    override suspend fun imports(limit: Int?, offset: Int?): TunesResult<List<Import>> =
-        notImplemented()
-
-    override suspend fun createImport(url: String, name: String?): TunesResult<Import> =
-        notImplemented()
-
-    override suspend fun createFileImport(
-        content: ByteArray,
-        fileName: String,
-        format: ImportFileFormat,
-        name: String?
-    ): TunesResult<Import> = notImplemented()
-
-    override suspend fun import(id: ImportId): TunesResult<Import> = notImplemented()
-
     override suspend fun ping(): TunesResult<Unit> = notImplemented()
 
-    override suspend fun artists(): TunesResult<ArtistIndexes> = notImplemented()
-
-    override suspend fun artist(id: ArtistId): TunesResult<Artist> = notImplemented()
-
-    override suspend fun album(id: AlbumId): TunesResult<Album> = notImplemented()
-
     override suspend fun song(id: SongId): TunesResult<Song> = notImplemented()
-
-    override suspend fun albumList(
-        type: AlbumListType,
-        size: Int?,
-        offset: Int?,
-        fromYear: Int?,
-        toYear: Int?,
-        genre: String?
-    ): TunesResult<List<Album>> = notImplemented()
 
     override suspend fun randomSongs(size: Int?, genre: String?): TunesResult<List<Song>> =
         notImplemented()
 
     override suspend fun similarSongs(id: SongId, count: Int?): TunesResult<List<Song>> =
         notImplemented()
-
-    override suspend fun lyrics(id: SongId): TunesResult<List<Lyrics>> = notImplemented()
-
-    override suspend fun playlists(): TunesResult<List<Playlist>> = notImplemented()
-
-    override suspend fun playlist(id: PlaylistId): TunesResult<Playlist> = notImplemented()
-
-    override suspend fun createPlaylist(
-        name: String,
-        songIds: List<SongId>
-    ): TunesResult<Playlist> = notImplemented()
-
-    override suspend fun updatePlaylist(
-        id: PlaylistId,
-        name: String?,
-        comment: String?,
-        public: Boolean?,
-        songIdsToAdd: List<SongId>,
-        songIndexesToRemove: List<Int>
-    ): TunesResult<Unit> = notImplemented()
-
-    override suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit> = notImplemented()
-
-    override suspend fun star(
-        songIds: List<SongId>,
-        albumIds: List<AlbumId>,
-        artistIds: List<ArtistId>
-    ): TunesResult<Unit> = notImplemented()
-
-    override suspend fun unstar(
-        songIds: List<SongId>,
-        albumIds: List<AlbumId>,
-        artistIds: List<ArtistId>
-    ): TunesResult<Unit> = notImplemented()
-
-    override suspend fun starred(): TunesResult<Starred> = notImplemented()
 
     override suspend fun scrobble(
         id: SongId,
@@ -229,6 +366,12 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         const val API_KEY = "utk_EXAMPLEexampleEXAMPLEexampleEXAMPLEexampleE"
         const val SERVER_URL = "https://music.example.net/"
         const val KEEPER_RADIO = "Lighthouse Keeper Radio"
+        const val SUNDAY = "Sunday Morning"
+        const val TABLET_KEY = "Old tablet"
+        const val IMPORTED_NAME = "Road Trip"
+        const val LYRIC_FIRST = "Salt on the window, the night coming in"
+        private const val HTTP_OK = 200
+        val LANTERNS_ID = ArtistId("artist-1")
 
         private const val HTTP_UNAUTHORIZED = 401
         private const val HTTP_NOT_IMPLEMENTED = 501
@@ -261,12 +404,46 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
             isExternal = external
         )
 
-        private val HARBOUR = album(1, "Harbour Lights", "The Paper Lanterns")
+        val HARBOUR = album(1, "Harbour Lights", "The Paper Lanterns")
         private val SALT = album(2, "Salt & Ember", "Marisol Vega")
         private val ORBIT = album(3, "Low Orbit", "Northbound Static")
+        val DUSK = AlbumItem(
+            id = AlbumId("ytalbum:MPREb_k3Vd9QmT2xL"),
+            name = "Lanterns at Dusk",
+            artist = "The Paper Lanterns",
+            coverArt = CoverArtId("ytalbum:MPREb_k3Vd9QmT2xL"),
+            isExternal = true
+        )
         val KEEPER = track("song-1", "Lighthouse Keeper", "The Paper Lanterns", HARBOUR)
         private val TIDEWATER = track("song-2", "Tidewater", "The Paper Lanterns", HARBOUR)
         private val BRASAS = track("song-3", "Brasas", "Marisol Vega", SALT)
         val COPPER = track("yt:Rb4Tn8wKx1c", "Copper Fields", "Marisol Vega", SALT, external = true)
+        val MOONS =
+            track(
+                "yt:Qx7Lm2pZ0aB",
+                "Paper Moons (Live)",
+                "The Paper Lanterns",
+                DUSK,
+                external = true
+            )
+
+        private fun AlbumItem.toAlbum() = Album(
+            id = id,
+            name = name,
+            artist = artist,
+            artistId = LANTERNS_ID,
+            coverArt = coverArt
+        )
+
+        private fun TrackItem.toSong(track: Int? = null) = Song(
+            id = id,
+            title = title,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            duration = durationSec,
+            coverArt = coverArt,
+            track = track
+        )
     }
 }
