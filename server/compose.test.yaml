@@ -50,6 +50,9 @@ services:
     build: *build
     image: ultimatetunes-server:test
     command: ["worker"]
+    # Idle it runs no tool; a job adds yt-dlp (~65 MB) and, on the fallback client, a short-lived
+    # Deno process (~330 MB) (spike T03c).
+    mem_limit: 768m
     environment: *test-env
     depends_on:
       api:

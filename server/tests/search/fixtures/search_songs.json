@@ -1,0 +1,28 @@
+[
+  {"category": "Songs", "resultType": "song", "title": "Low Tide Letters", "videoId": "Fk2Lp9QwXa1",
+   "videoType": "MUSIC_VIDEO_TYPE_ATV", "isAvailable": true, "isExplicit": false, "year": null,
+   "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}],
+   "album": {"name": "Lanterns at Dusk", "id": "MPREb_k3Vd9QmT2xL"},
+   "duration": "3:34", "duration_seconds": 214, "views": "1.2M",
+   "thumbnails": [
+     {"url": "https://yt3.googleusercontent.com/fakeLowTide=w60-h60-l90-rj", "width": 60, "height": 60},
+     {"url": "https://yt3.googleusercontent.com/fakeLowTide=w120-h120-l90-rj", "width": 120, "height": 120}]},
+  {"category": "Songs", "resultType": "song", "title": "Paper Moons (Live)", "videoId": "Qx7Lm2pZ0aB",
+   "videoType": "MUSIC_VIDEO_TYPE_ATV", "isAvailable": true, "isExplicit": true, "year": null,
+   "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}, {"name": "Neon Harbor", "id": "UCn4HbR7oQ2sLx9TzV0eWm3K"}],
+   "album": {"name": "Lanterns at Dusk", "id": "MPREb_k3Vd9QmT2xL"},
+   "duration": "4:22", "views": "300K",
+   "thumbnails": [{"url": "https://yt3.googleusercontent.com/fakeMoons=w60-h60-l90-rj", "width": 60, "height": 60}]},
+  {"category": "Songs", "resultType": "song", "title": "Lantern Medley", "videoId": "Mx1Vb2Nc3Za",
+   "videoType": "MUSIC_VIDEO_TYPE_ATV", "isAvailable": true, "isExplicit": false, "year": null,
+   "artists": [{"name": "Various Artists", "id": null}],
+   "album": {"name": "Harbour Hits", "id": "MPREb_Vb7Nc2Xz9Qa"},
+   "duration": "1:02:03", "views": "9K",
+   "thumbnails": [{"url": "https://www.example.org/not-an-approved-host.jpg", "width": 60, "height": 60}]},
+  {"category": "Songs", "resultType": "episode", "title": "Lanterns, the podcast", "videoId": "Ep1Ep2Ep3Ep",
+   "artists": [{"name": "Somebody", "id": null}], "thumbnails": []},
+  {"category": "Songs", "resultType": "song", "title": "No id here", "videoId": null,
+   "artists": [{"name": "Somebody", "id": null}]},
+  {"category": "Songs", "resultType": "song", "title": "Bad id", "videoId": "../etc/passwd",
+   "artists": []}
+]
