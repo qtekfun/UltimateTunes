@@ -20,9 +20,9 @@ interface DocumentTree {
     @Throws(IOException::class)
     fun root(): String
 
-    /** The child of [folder] called exactly [name], if any. */
+    /** The documents directly in [folder]. */
     @Throws(IOException::class)
-    fun child(folder: String, name: String): Entry?
+    fun children(folder: String): List<Entry>
 
     /** Creates a document (a folder for [isFolder]) in [folder]; its id. */
     @Throws(IOException::class)
@@ -46,16 +46,22 @@ interface DocumentTree {
  * The folder the user picked (RF-14). It never deletes, replaces or renames a file it did not
  * write, and never changes an existing folder: a file is written under a temporary name, then
  * renamed to its final name; a name that is already taken is left alone (an earlier export of the
- * same size counts as done). Only the file written in this call is ever deleted, when its write
- * fails. Missing folders are created.
+ * same size counts as done). Names are matched without case, like phone storage does, so an
+ * existing `copper fern` folder is reused for `Copper Fern` (an exact match wins). Missing folders
+ * are created.
+ *
+ * It deletes only its own temporary files: the one of a write that fails, and, the first time an
+ * export (one instance) uses a folder, the `.ut-export-<uuid>.part` files an interrupted export
+ * left there. Exports run one at a time (ExportManager), so no other export is writing them.
  */
 class DocumentTreeTarget(private val tree: DocumentTree) : ExportTarget {
     private val folders = HashMap<List<String>, String>()
+    private val swept = HashSet<String>()
 
     override fun write(path: List<String>, length: Long, content: InputStream): WriteOutcome {
         val folder = folderOf(path.dropLast(1))
         val name = path.last()
-        val existing = tree.child(folder, name)
+        val existing = named(listing(folder), name)
         return when {
             existing == null -> writeNew(folder, name, length, content)
             !existing.isFolder && existing.size == length -> WriteOutcome.ALREADY_EXPORTED
@@ -95,7 +101,7 @@ class DocumentTreeTarget(private val tree: DocumentTree) : ExportTarget {
             val parent = folder
             val name = names[depth - 1]
             folder = folders.getOrPut(names.subList(0, depth).toList()) {
-                val child = tree.child(parent, name)
+                val child = named(listing(parent), name)
                 when {
                     child == null -> tree.create(parent, name, isFolder = true)
                     child.isFolder -> child.id
@@ -105,6 +111,23 @@ class DocumentTreeTarget(private val tree: DocumentTree) : ExportTarget {
         }
         return folder
     }
+
+    /**
+     * The documents of [folder]. The first time this export lists it, the temporary files an
+     * interrupted export left there are deleted (best effort) and left out.
+     */
+    private fun listing(folder: String): List<DocumentTree.Entry> {
+        val children = tree.children(folder)
+        if (!swept.add(folder)) return children
+        val (stale, kept) = children.partition { !it.isFolder && TEMP_NAME.matches(it.name) }
+        stale.forEach { deleteOurs(it.id) }
+        return kept
+    }
+
+    /** The entry called [name]: exactly, or else without case (phone storage ignores it). */
+    private fun named(entries: List<DocumentTree.Entry>, name: String): DocumentTree.Entry? =
+        entries.firstOrNull { it.name == name }
+            ?: entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
 
     /** Best effort: a file this target wrote that could not be kept. */
     private fun deleteOurs(document: String) {
@@ -118,5 +141,8 @@ class DocumentTreeTarget(private val tree: DocumentTree) : ExportTarget {
     private companion object {
         const val TEMP_PREFIX = ".ut-export-"
         const val TEMP_SUFFIX = ".part"
+
+        /** Exactly the temporary names [writeNew] gives: nobody else's file matches. */
+        val TEMP_NAME = Regex("""\.ut-export-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.part""")
     }
 }
