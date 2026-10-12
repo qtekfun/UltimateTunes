@@ -48,11 +48,12 @@ class FileStore(Protocol):
         ...
 
     def rename(self, src: str, dst: str) -> None:
-        """Atomic rename inside the store (replaces `dst`)."""
+        """Atomic rename inside the store (replaces `dst`). A symlink is moved, not followed."""
         ...
 
     def delete(self, rel: str) -> None:
-        """Deletes a file or a whole directory. Missing paths are fine."""
+        """Deletes a file or a whole directory. Missing paths are fine. A symlink is removed
+        itself: its target is never touched."""
         ...
 
     def local_path(self, rel: str) -> Path:
@@ -122,14 +123,31 @@ class LocalStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         return path.open("ab" if append else "wb")
 
+    def entry_path(self, rel: str) -> Path:
+        """Filesystem path of the directory entry itself, **without** following a symlink in
+        the last segment (so `delete` and `rename` act on the link, never on its target). The
+        parent directory is resolved and must stay inside the store."""
+        clean = check_relative(rel)
+        root = self.root.resolve()
+        lexical = root / clean
+        parent = lexical.parent.resolve()
+        if not parent.is_relative_to(root):
+            raise PathRejected("path escapes the store")
+        return parent / lexical.name
+
     def rename(self, src: str, dst: str) -> None:
-        target = self.local_path(dst)
+        source = self.entry_path(src)
+        target = self.entry_path(dst)
         target.parent.mkdir(parents=True, exist_ok=True)
-        self.local_path(src).replace(target)
+        # os.replace renames the entry itself: a symlink is moved, never followed.
+        source.replace(target)
 
     def delete(self, rel: str) -> None:
-        path = self.local_path(rel)
-        if path.is_dir() and not path.is_symlink():
+        path = self.entry_path(rel)
+        if path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
+            # rmtree never follows symlinks inside the tree (it unlinks them).
             shutil.rmtree(path)
         else:
             path.unlink(missing_ok=True)

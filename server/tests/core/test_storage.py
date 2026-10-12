@@ -101,3 +101,62 @@ def test_writable_and_usage(staging: LocalStagingStore, tmp_path: Path) -> None:
     usage = staging.usage()
     assert usage.total_bytes >= usage.free_bytes > 0
     assert not LocalStagingStore(tmp_path / "missing").is_writable()
+
+
+def test_delete_removes_a_file_symlink_never_its_target(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep me")
+    inside = staging.root / "inside.txt"
+    inside.write_text("keep me too")
+    (staging.root / "job").mkdir()
+    (staging.root / "job" / "out").symlink_to(outside)
+    (staging.root / "job" / "in").symlink_to(inside)
+    staging.delete("job/out")
+    staging.delete("job/in")
+    assert not (staging.root / "job" / "out").is_symlink()
+    assert not (staging.root / "job" / "in").is_symlink()
+    assert outside.read_text() == "keep me"
+    assert inside.read_text() == "keep me too"
+
+
+def test_delete_removes_a_directory_symlink_never_its_target(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    target = tmp_path / "precious"
+    target.mkdir()
+    (target / "song.opus").write_bytes(b"audio")
+    (staging.root / "link").symlink_to(target)
+    staging.delete("link")
+    assert not (staging.root / "link").exists()
+    assert (target / "song.opus").read_bytes() == b"audio"
+    # A symlink inside a deleted directory is unlinked, not followed.
+    (staging.root / "job").mkdir()
+    (staging.root / "job" / "link").symlink_to(target)
+    staging.delete("job")
+    assert not (staging.root / "job").exists()
+    assert (target / "song.opus").read_bytes() == b"audio"
+
+
+def test_rename_moves_the_symlink_itself(staging: LocalStagingStore, tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (staging.root / "a").symlink_to(target)
+    staging.rename("a", "moved/b")
+    moved = staging.root / "moved" / "b"
+    assert moved.is_symlink()
+    assert moved.readlink() == target
+    assert not (staging.root / "a").is_symlink()
+    assert target.is_dir()
+
+
+def test_entry_paths_must_stay_inside(staging: LocalStagingStore, tmp_path: Path) -> None:
+    (tmp_path / "secret").mkdir()
+    (staging.root / "dir").symlink_to(tmp_path / "secret")
+    with pytest.raises(PathRejected, match="escapes"):
+        staging.delete("dir/file")
+    with pytest.raises(PathRejected, match="escapes"):
+        staging.rename("x", "dir/file")
+    with pytest.raises(PathRejected):
+        staging.delete("../x")
