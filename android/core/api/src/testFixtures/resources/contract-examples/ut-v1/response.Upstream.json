@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#upstream_unavailable",
+    "title": "Upstream unavailable",
+    "status": 502,
+    "detail": "YouTube Music did not answer in time",
+    "code": "upstream_unavailable",
+    "instance": "/ut/v1/…"
+}

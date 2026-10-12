@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#feature_disabled",
+    "title": "Feature disabled",
+    "status": 409,
+    "detail": "Spotify import is not configured on this server",
+    "code": "feature_disabled",
+    "instance": "/ut/v1/…"
+}

@@ -1,0 +1,118 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "randomSongs": {
+            "song": [
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c004",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003",
+                    "isDir": false,
+                    "title": "Signal Fade",
+                    "album": "Low Orbit",
+                    "artist": "Northbound Static",
+                    "track": 5,
+                    "year": 2021,
+                    "genre": "Electronic",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003",
+                    "size": 3955102,
+                    "contentType": "audio/ogg",
+                    "suffix": "opus",
+                    "duration": 243,
+                    "bitRate": 130,
+                    "samplingRate": 48000,
+                    "channelCount": 2,
+                    "path": "Northbound Static/Low Orbit/05 - Signal Fade.opus",
+                    "playCount": 0,
+                    "discNumber": 1,
+                    "created": "2026-10-11T21:40:02.517Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b003",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "",
+                    "genres": [
+                        {
+                            "name": "Electronic"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+                            "name": "Northbound Static"
+                        }
+                    ],
+                    "displayArtist": "Northbound Static",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+                            "name": "Northbound Static"
+                        }
+                    ],
+                    "displayAlbumArtist": "Northbound Static",
+                    "replayGain": {
+                        "trackGain": -9.3,
+                        "trackPeak": 0.991
+                    }
+                },
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "isDir": false,
+                    "title": "Brasas",
+                    "album": "Salt & Ember",
+                    "artist": "Marisol Vega",
+                    "track": 3,
+                    "year": 2025,
+                    "genre": "Latin Pop",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "size": 3264530,
+                    "contentType": "audio/mp4",
+                    "suffix": "m4a",
+                    "duration": 201,
+                    "bitRate": 129,
+                    "samplingRate": 44100,
+                    "channelCount": 2,
+                    "path": "Marisol Vega/Salt & Ember/03 - Brasas.m4a",
+                    "playCount": 3,
+                    "discNumber": 1,
+                    "created": "2026-10-03T09:12:45.880Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "",
+                    "genres": [
+                        {
+                            "name": "Latin Pop"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayArtist": "Marisol Vega",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "name": "Marisol Vega"
+                        }
+                    ],
+                    "displayAlbumArtist": "Marisol Vega",
+                    "replayGain": {
+                        "trackGain": -8.91,
+                        "trackPeak": 1.0
+                    },
+                    "played": "2026-10-12T07:58:14.000Z"
+                }
+            ]
+        }
+    }
+}

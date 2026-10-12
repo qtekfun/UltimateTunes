@@ -1,0 +1,161 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "playQueue": {
+            "current": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
+            "position": 73500,
+            "username": "alice",
+            "changed": "2026-10-12T07:59:40.000Z",
+            "changedBy": "UltimateTunes-Android",
+            "entry": [
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "isDir": false,
+                    "title": "Lighthouse Keeper",
+                    "album": "Harbour Lights",
+                    "artist": "The Paper Lanterns",
+                    "track": 1,
+                    "year": 2023,
+                    "genre": "Indie Pop",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "size": 3489211,
+                    "contentType": "audio/ogg",
+                    "suffix": "opus",
+                    "duration": 214,
+                    "bitRate": 128,
+                    "samplingRate": 48000,
+                    "channelCount": 2,
+                    "path": "The Paper Lanterns/Harbour Lights/01 - Lighthouse Keeper.opus",
+                    "playCount": 14,
+                    "discNumber": 1,
+                    "created": "2026-09-30T18:04:11.204Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01",
+                    "genres": [
+                        {
+                            "name": "Indie Pop"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayArtist": "The Paper Lanterns",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayAlbumArtist": "The Paper Lanterns",
+                    "replayGain": {
+                        "trackGain": -7.12,
+                        "trackPeak": 0.988,
+                        "albumGain": -6.85,
+                        "albumPeak": 0.998
+                    },
+                    "played": "2026-10-11T19:22:03.000Z",
+                    "starred": "2026-10-02T08:00:00.000Z"
+                },
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
+                    "parent": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "isDir": false,
+                    "title": "Tidewater",
+                    "album": "Harbour Lights",
+                    "artist": "The Paper Lanterns",
+                    "track": 2,
+                    "year": 2023,
+                    "genre": "Indie Pop",
+                    "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "size": 3051876,
+                    "contentType": "audio/ogg",
+                    "suffix": "opus",
+                    "duration": 187,
+                    "bitRate": 128,
+                    "samplingRate": 48000,
+                    "channelCount": 2,
+                    "path": "The Paper Lanterns/Harbour Lights/02 - Tidewater.opus",
+                    "playCount": 6,
+                    "discNumber": 1,
+                    "created": "2026-09-30T18:04:11.204Z",
+                    "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                    "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c02",
+                    "genres": [
+                        {
+                            "name": "Indie Pop"
+                        }
+                    ],
+                    "artists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayArtist": "The Paper Lanterns",
+                    "albumArtists": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayAlbumArtist": "The Paper Lanterns",
+                    "replayGain": {
+                        "trackGain": -6.4,
+                        "trackPeak": 0.972,
+                        "albumGain": -6.85,
+                        "albumPeak": 0.998
+                    },
+                    "played": "2026-10-10T07:45:31.000Z"
+                },
+                {
+                    "id": "yt:Qx7Lm2pZ0aB",
+                    "parent": "ytalbum:MPREb_k3Vd9QmT2xL",
+                    "isDir": false,
+                    "title": "Paper Moons (Live)",
+                    "album": "Lanterns at Dusk",
+                    "artist": "The Paper Lanterns",
+                    "coverArt": "yt:Qx7Lm2pZ0aB",
+                    "duration": 262,
+                    "albumId": "ytalbum:MPREb_k3Vd9QmT2xL",
+                    "artistId": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+                    "type": "music",
+                    "mediaType": "song",
+                    "isVideo": false,
+                    "musicBrainzId": "",
+                    "genres": [],
+                    "artists": [
+                        {
+                            "id": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayArtist": "The Paper Lanterns",
+                    "albumArtists": [
+                        {
+                            "id": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+                            "name": "The Paper Lanterns"
+                        }
+                    ],
+                    "displayAlbumArtist": "The Paper Lanterns",
+                    "replayGain": {}
+                }
+            ]
+        }
+    }
+}

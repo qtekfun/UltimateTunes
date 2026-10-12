@@ -1,0 +1,9 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#rate_limited",
+    "title": "Too many requests",
+    "status": 429,
+    "detail": "Retry in 60 seconds",
+    "code": "rate_limited",
+    "instance": "/ut/v1/…",
+    "retryAfter": 60
+}

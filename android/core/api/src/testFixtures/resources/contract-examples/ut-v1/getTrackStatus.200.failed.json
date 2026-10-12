@@ -1,0 +1,14 @@
+{
+    "id": "yt:Rb4Tn8wKx1c",
+    "trackId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c006",
+    "state": "failed",
+    "progress": 0.1,
+    "attempts": 3,
+    "maxAttempts": 3,
+    "error": {
+        "code": "video_unavailable",
+        "message": "Video unavailable in this country"
+    },
+    "streamable": false,
+    "updatedAt": "2026-10-12T08:20:02.000Z"
+}
