@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.buildlogic
 import app.cash.licensee.LicenseeExtension
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalog
@@ -27,6 +28,19 @@ private val FORBIDDEN_GROUP_PREFIXES = listOf(
     "io.fabric",
     "io.sentry"
 )
+
+/** What ships: every Android module has these. */
+private val SHIPPED_CLASSPATHS = listOf("debugRuntimeClasspath", "releaseRuntimeClasspath")
+
+/** What runs in tests, on a JVM or on a device; checked where the module has them. */
+private val TEST_CLASSPATHS = listOf(
+    "debugUnitTestRuntimeClasspath",
+    "releaseUnitTestRuntimeClasspath",
+    "debugAndroidTestRuntimeClasspath"
+)
+
+/** Kover variant on which :app verifies the 100 % packages. */
+const val CRITICAL_COVERAGE_VARIANT = "critical"
 
 internal val Project.libs: VersionCatalog
     get() = extensions.getByType<VersionCatalogsExtension>().named("libs")
@@ -73,6 +87,16 @@ internal fun Project.configureQuality() {
         allow("Apache-2.0")
     }
 
+    // The "critical" coverage variant (debug build) of every module: :app merges them and verifies
+    // the 100 % packages of CLAUDE.md on it (koverVerifyCritical, see app/build.gradle.kts).
+    extensions.configure<KoverProjectExtension> {
+        currentProject {
+            createVariant(CRITICAL_COVERAGE_VARIANT) {
+                add("debug")
+            }
+        }
+    }
+
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
     }
@@ -90,9 +114,9 @@ private fun Project.registerForbiddenDependencyCheck() {
         group = "verification"
         description = "Fails if a runtime classpath contains Google Play Services, Firebase, " +
             "Crashlytics or Sentry."
-        val roots = listOf("debugRuntimeClasspath", "releaseRuntimeClasspath").map { name ->
-            configurations.named(name).flatMap { it.incoming.resolutionResult.rootComponent }
-        }
+        val shipped = SHIPPED_CLASSPATHS.map { name -> configurations.named(name).get() }
+        val tests = TEST_CLASSPATHS.mapNotNull { name -> configurations.findByName(name) }
+        val roots = (shipped + tests).map { it.incoming.resolutionResult.rootComponent }
         doLast {
             val offenders = modulesOf(roots.map { it.get() })
                 .filter { module -> FORBIDDEN_GROUP_PREFIXES.any { module.startsWith(it) } }
