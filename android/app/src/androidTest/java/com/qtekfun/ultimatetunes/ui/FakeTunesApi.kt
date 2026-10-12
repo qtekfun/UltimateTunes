@@ -240,7 +240,7 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         ApiKeyList(
             listOf(
                 ApiKey(ApiKeyId("key-1"), "Phone", "utk_EXAMPLEe", Instant.EPOCH, current = true),
-                ApiKey(ApiKeyId("key-2"), TABLET_KEY, "utk_3fT9aQ1z", Instant.EPOCH)
+                ApiKey(ApiKeyId("key-2"), TABLET_KEY, "utk_EXAMPLEf", Instant.EPOCH)
             ).filter { it.id !in revokedKeys }
         )
     }

@@ -233,7 +233,7 @@ internal object PreviewData {
                 KeyRow(
                     ApiKeyId("preview-key-2"),
                     "Tablet",
-                    "utk_3fT9aQ1z",
+                    "utk_EXAMPLEf",
                     Instant.parse("2026-09-14T09:02:11Z"),
                     null,
                     revoked = false,
