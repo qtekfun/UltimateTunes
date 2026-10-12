@@ -32,6 +32,7 @@ from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.db import migrate
+from ultimatetunes.jobs.settings import JobsSettings
 from ultimatetunes.library.scan import LibraryScanner
 from ultimatetunes.settings import Settings
 
@@ -92,6 +93,8 @@ def _build() -> tuple[tempfile.TemporaryDirectory[str], Services, str, str]:
 
 _ROOT, SERVICES, USER_ID, API_KEY = _build()
 APP = create_app(services=SERVICES)
+# Long-poll claims (`waitSeconds`) would hold every generated empty claim for seconds.
+APP.state.jobs_settings = JobsSettings(claim_max_wait_s=0.05, claim_poll_s=0.01)
 
 
 class SessionLifespan:
