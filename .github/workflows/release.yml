@@ -84,15 +84,15 @@ jobs:
             echo "image=ghcr.io/${OWNER,,}/ultimatetunes-server"
           } >> "$GITHUB_OUTPUT"
 
-      # A tag, and a release PR (branch release/*), must carry the CHANGELOG section and the store
-      # changelogs of the version. Other dry runs only warn (VERSION is not bumped there).
+      # A tag, a release PR (branch release/*) and a manual dry run on a release/* branch must carry
+      # the CHANGELOG section and the store changelogs of the version. Other dry runs only warn.
       - name: Release notes and store changelogs
         env:
           VERSION: ${{ steps.v.outputs.version }}
           PUBLISH: ${{ steps.v.outputs.publish }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [[ "$PUBLISH" == true || "$HEAD_REF" == release/* ]]; then
+          if [[ "$PUBLISH" == true || "${HEAD_REF:-$GITHUB_REF_NAME}" == release/* ]]; then
             tools/check-store-texts.sh --release
             tools/release-notes.sh "$VERSION" > notes.md
           else
