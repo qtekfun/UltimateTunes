@@ -7,8 +7,9 @@
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
 # and the worker token in ./secrets/worker_token (random, e.g. `openssl rand -hex 32`).
 #   docker compose up -d
-# Migrations run first (`migrate`), then the api; the worker only reaches the api on the
-# internal network and never the database.
+# Migrations run first (`migrate`), then the api. The worker never touches the database: it
+# talks to the api's internal worker API (token-protected) and needs `default` to reach
+# YouTube Music and MusicBrainz.
 
 x-hardening: &hardening
   image: ghcr.io/qtekfun/ultimatetunes-server:${UT_VERSION:?set UT_VERSION}
@@ -39,7 +40,10 @@ services:
       - data:/data
       - ${UT_MUSIC_PATH:?set UT_MUSIC_PATH}:/music
       - staging:/staging
-    secrets: [worker_token]
+    secrets:
+      - source: worker_token
+        # pydantic-settings reads /run/secrets/<env name>, prefix included.
+        target: ut_worker_token
     networks: [default, internal]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
@@ -58,7 +62,10 @@ services:
       - ${UT_MUSIC_PATH:?set UT_MUSIC_PATH}:/music
       - staging:/staging
       - ytdlp:/opt/ytdlp
-    secrets: [worker_token]
+    secrets:
+      - source: worker_token
+        # pydantic-settings reads /run/secrets/<env name>, prefix included.
+        target: ut_worker_token
     # `internal` reaches the api; `default` is the way out to YouTube Music and MusicBrainz.
     networks: [default, internal]
 

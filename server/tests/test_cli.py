@@ -91,3 +91,11 @@ def test_python_dash_m_prints_the_version() -> None:
         check=True,
     )
     assert out.stdout.strip() == __version__
+
+
+def test_secrets_are_read_from_docker_secret_files(tmp_path: Path) -> None:
+    """compose.yaml mounts the worker token as /run/secrets/ut_worker_token."""
+    (tmp_path / "ut_worker_token").write_text("token-from-file\n")
+    settings = Settings(_secrets_dir=tmp_path)
+    assert settings.worker_token is not None
+    assert settings.worker_token.get_secret_value() == "token-from-file"
