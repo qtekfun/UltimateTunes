@@ -40,7 +40,8 @@ jobs:
       - name: Build the image
         run: docker build -f server/Dockerfile -t ultimatetunes-server:canary .
 
-      # Updates yt-dlp inside the container first, exactly as production does.
+      # Updates yt-dlp inside the container first, exactly as production does. The `canary`
+      # command arrives with PLAN T19 (until then this manual job fails on purpose).
       - name: Canary
         run: docker run --rm --read-only --tmpfs /tmp --tmpfs /staging --tmpfs /opt/ytdlp ultimatetunes-server:canary canary
 
@@ -59,7 +60,8 @@ jobs:
 
       - name: pip-audit
         working-directory: server
-        run: uv sync --locked && uv run pip-audit
+        # Same flags as `make security` (the project itself is not on PyPI).
+        run: uv sync --locked && uv run pip-audit --skip-editable
 
       - name: Build the image
         run: docker build -f server/Dockerfile -t ultimatetunes-server:audit .
