@@ -10,7 +10,7 @@
 # Output:
 #   /out/bin/deno
 #   /out/share/yt-dlp-keyring.gpg     binary keyring for gpgv (the worker's updater uses it, T08)
-#   /out/ytdlp-seed/{yt-dlp,SHA2-256SUMS,SHA2-256SUMS.sig}
+#   /out/ytdlp-seed/{yt-dlp,SHA2-256SUMS,SHA2-256SUMS.sig,VERSION}
 set -eu
 
 here=$(dirname "$0")

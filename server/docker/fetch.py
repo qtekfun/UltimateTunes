@@ -25,6 +25,18 @@ ARGS_WITHOUT_HASH = 3
 ARGS_WITH_HASH = 4
 
 
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows redirects (GitHub release assets redirect to a CDN) but never to plain http."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]  # noqa: PLR0913, PLR0917 (stdlib signature)
+        if not newurl.startswith("https://"):
+            raise SystemExit(f"refusing redirect to non-https URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_HttpsOnlyRedirects)
+
+
 def fetch(url: str, dest: Path, expected: str | None) -> str:
     if not url.startswith("https://"):
         raise SystemExit(f"refusing non-https URL: {url}")
@@ -35,7 +47,7 @@ def fetch(url: str, dest: Path, expected: str | None) -> str:
 
     digest = hashlib.sha256()
     data = bytearray()
-    with urllib.request.urlopen(url, timeout=TIMEOUT_S) as resp:  # noqa: S310 (https only, above)
+    with _OPENER.open(url, timeout=TIMEOUT_S) as resp:  # https only, redirects included
         while chunk := resp.read(CHUNK):
             data += chunk
             if len(data) > MAX_BYTES:
