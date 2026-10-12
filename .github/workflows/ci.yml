@@ -14,11 +14,47 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A title/body-only edit gets its own group, so it never cancels a real run.
+  group: ci-${{ github.ref }}${{ github.event.action == 'edited' && github.event.changes.base == null && format('-edit-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
+  # Which parts a PR touches, so the expensive jobs only run when they matter (Actions minutes).
+  # A push to master runs everything. Plain git, no third-party action.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A title or body edit re-runs nothing; a base change re-runs everything (gitleaks range).
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    outputs:
+      server: ${{ steps.diff.outputs.server }}
+      android: ${{ steps.diff.outputs.android }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT" != pull_request ]]; then
+            echo "server=true" >> "$GITHUB_OUTPUT"; echo "android=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(git diff --no-renames --name-only "$BASE...$HEAD")
+          printf '%s\n' "$files"
+          # Shared files (workflows, tools, VERSION, .claude) run both sides.
+          shared='^(\.github/|VERSION$|tools/|\.claude/|\.gitleaks)'
+          if grep -qE "^(server/|contracts/|\.dockerignore$)|$shared" <<<"$files"; then s=true; else s=false; fi
+          if grep -qE "^(android/|contracts/openapi/)|$shared" <<<"$files"; then a=true; else a=false; fi
+          echo "server=$s" >> "$GITHUB_OUTPUT"; echo "android=$a" >> "$GITHUB_OUTPUT"
+
   server:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -53,6 +89,8 @@ jobs:
           retention-days: 14
 
   contracts:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     # The OpenAPI files validate, every migration applies on SQLite and on PostgreSQL
     # (portable SQL, SPEC §3), and the app answers its contracts (schemathesis).
     runs-on: ubuntu-latest
@@ -88,7 +126,8 @@ jobs:
   android:
     # Dependabot PRs are built by dependabot-verification.yml, which first
     # refreshes android/gradle/verification-metadata.xml.
-    if: github.actor != 'dependabot[bot]'
+    needs: changes
+    if: github.actor != 'dependabot[bot]' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -123,6 +162,8 @@ jobs:
 
   docker:
     # Builds the image, scans it, and runs the test stack (fake YouTube) end to end.
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -149,6 +190,9 @@ jobs:
           docker compose -f server/compose.test.yaml down -v
 
   secrets:
+    needs: changes
+    # Always run (also if `changes` fails), except for a title-only edit that skipped it.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -175,6 +219,9 @@ jobs:
             git /repo --log-opts="$range" --redact --verbose --exit-code 1
 
   store-texts:
+    needs: changes
+    # Always run (also if `changes` fails), except for a title-only edit that skipped it.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     # Store text limits on every PR; on a release PR (branch release/*), also requires the
     # en-US and es-ES changelogs for the versionCode of VERSION. See RELEASING.md.
     runs-on: ubuntu-latest

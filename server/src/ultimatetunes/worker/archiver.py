@@ -9,8 +9,9 @@ attempt's staging directory (remux, tags, ReplayGain), calls `registerTrack` thr
 the `Archived` decision; the loop then calls `complete` with it. An `ArchiveError`-style
 failure is a `DownloadError` (e.g. `tagging_failed`, `storage_error`).
 
-T09 implements this protocol; until it is wired, `PendingArchiver` fails the job (not
-retried: retrying cannot help before the archiver exists).
+T09 implements this protocol in `ultimatetunes.tagging` (`TaggingArchiver`), which
+`default_archiver` builds for `loop.build_worker`. `PendingArchiver` fails the job (not
+retried); it stays for tests of the loop.
 """
 
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from typing import Protocol
 
 from ultimatetunes.core.storage import LibraryStore, StagingStore
 from ultimatetunes.errors import WorkerErrorCode
+from ultimatetunes.settings import Settings
 from ultimatetunes.worker.client import ClaimedJob, WorkerApi
 from ultimatetunes.worker.downloader import DownloadError, DownloadResult
 
@@ -50,3 +52,11 @@ class PendingArchiver:
         raise DownloadError(
             WorkerErrorCode.TAGGING_FAILED, "archiving is not available yet", retryable=False
         )
+
+
+def default_archiver(settings: Settings) -> Archiver:
+    """The production archiver (PLAN T09). Imported here, not at the top: `tagging` builds on
+    this module's records."""
+    from ultimatetunes.tagging.archiver import build_archiver  # noqa: PLC0415
+
+    return build_archiver(settings)
