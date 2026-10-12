@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """LRCLIB client against respx fixtures (no network)."""
 
+import gzip
+from collections.abc import Iterator
+
 import httpx
 import pytest
 import respx
@@ -151,6 +154,54 @@ def test_oversized_body_is_unavailable(lrclib: respx.MockRouter) -> None:
     lrclib.get("/api/get").respond(200, content=b" " * (MAX_BODY_BYTES + 1))
     with pytest.raises(LrclibUnavailable, match="too large"):
         LrclibClient().get(QUERY)
+
+
+def test_gzip_body_is_capped_after_decoding(lrclib: respx.MockRouter) -> None:
+    bomb = gzip.compress(b"{" + b" " * (4 * MAX_BODY_BYTES) + b"}")
+    assert len(bomb) < MAX_BODY_BYTES // 100
+    lrclib.get("/api/get").respond(200, content=bomb, headers={"Content-Encoding": "gzip"})
+    with pytest.raises(LrclibUnavailable, match="too large"):
+        LrclibClient().get(QUERY)
+
+
+def test_gzip_body_within_the_cap_is_read(lrclib: respx.MockRouter) -> None:
+    body = gzip.compress(fixture("lighthouse_keeper.json"))
+    lrclib.get("/api/get").respond(200, content=body, headers={"Content-Encoding": "gzip"})
+    record = LrclibClient().get(QUERY)
+    assert record is not None
+    assert record.id == 4242001
+
+
+def test_streamed_body_stops_reading_past_the_cap() -> None:
+    chunk = b" " * 65536
+    sent: list[int] = []
+
+    def endless() -> Iterator[bytes]:
+        while True:
+            sent.append(len(chunk))
+            yield chunk
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Stream(endless()))
+
+    client = LrclibClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(LrclibUnavailable, match="too large"):
+        client.get(QUERY)
+    assert sum(sent) <= MAX_BODY_BYTES + len(chunk)
+
+
+def test_body_at_the_cap_is_parsed(lrclib: respx.MockRouter) -> None:
+    lrclib.get("/api/get").respond(200, content=b" " * MAX_BODY_BYTES)
+    with pytest.raises(LrclibUnavailable, match="not JSON"):
+        LrclibClient().get(QUERY)
+
+
+class _Stream(httpx.SyncByteStream):
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._chunks = chunks
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self._chunks
 
 
 def test_custom_transport_is_used() -> None:

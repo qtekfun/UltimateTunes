@@ -116,26 +116,40 @@ class LrclibClient:
 
     def get(self, query: LrclibQuery) -> LrclibRecord | None:
         try:
-            with httpx.Client(
-                base_url=BASE_URL,
-                timeout=self._timeout,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                follow_redirects=False,
-                transport=self._transport,
-            ) as client:
-                response = client.get("/api/get", params=query.params())
+            with (
+                httpx.Client(
+                    base_url=BASE_URL,
+                    timeout=self._timeout,
+                    headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                    follow_redirects=False,
+                    transport=self._transport,
+                ) as client,
+                client.stream("GET", "/api/get", params=query.params()) as response,
+            ):
+                status = response.status_code
+                if status == httpx.codes.NOT_FOUND:
+                    return None
+                if status == httpx.codes.BAD_REQUEST:
+                    log.warning("LRCLIB refused a lyrics query (HTTP 400)")
+                    return None
+                if status in (httpx.codes.TOO_MANY_REQUESTS, httpx.codes.SERVICE_UNAVAILABLE):
+                    raise LrclibThrottled(retry_after(response))
+                if status != httpx.codes.OK:
+                    raise LrclibUnavailable(f"LRCLIB answered HTTP {status}")
+                body = _read_capped(response)
         except httpx.HTTPError as error:
             raise LrclibUnavailable("LRCLIB did not answer") from error
-        status = response.status_code
-        if status == httpx.codes.NOT_FOUND:
-            return None
-        if status == httpx.codes.BAD_REQUEST:
-            log.warning("LRCLIB refused a lyrics query (HTTP 400)")
-            return None
-        if status in (httpx.codes.TOO_MANY_REQUESTS, httpx.codes.SERVICE_UNAVAILABLE):
-            raise LrclibThrottled(retry_after(response))
-        if status != httpx.codes.OK:
-            raise LrclibUnavailable(f"LRCLIB answered HTTP {status}")
-        if len(response.content) > MAX_BODY_BYTES:
+        return parse_record(body)
+
+
+def _read_capped(response: httpx.Response) -> bytes:
+    """The decoded body, read in chunks; stops as soon as it passes `MAX_BODY_BYTES`, so a
+    huge (or highly compressed) answer is never held in memory whole."""
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
             raise LrclibUnavailable("LRCLIB answer too large")
-        return parse_record(response.content)
+        chunks.append(chunk)
+    return b"".join(chunks)
