@@ -156,6 +156,9 @@ ES: dict[str, str] = {
     "Cancel requested.": "Cancelación pedida.",
     "Track deleted.": "Canción borrada.",
     "Album deleted.": "Álbum borrado.",
+    "Deleted, but some files could not be removed from disk (see the logs).": (
+        "Borrado, pero algunos archivos no se pudieron quitar del disco (mira los registros)."
+    ),
     "Command queued: the next worker report picks it up.": (
         "Orden en cola: el próximo informe de un worker la recoge."
     ),
@@ -177,8 +180,8 @@ ES: dict[str, str] = {
         "No puedes desactivarte ni cambiar tu propio rol"
     ),
     "Unknown action": "Acción desconocida",
-    "The server address must be an http(s) URL of at most 200 characters": (
-        "La dirección del servidor debe ser una URL http(s) de 200 caracteres como mucho"
+    "The server address must be an https URL of at most 120 characters": (
+        "La dirección del servidor debe ser una URL https de 120 caracteres como mucho"
     ),
     "The server address is too long": "La dirección del servidor es demasiado larga",
     "No such job": "No existe esa descarga",
@@ -189,7 +192,10 @@ ES: dict[str, str] = {
         "Solo se pueden cancelar descargas en cola o en curso"
     ),
     "Tick the box to confirm the delete": "Marca la casilla para confirmar el borrado",
-    "The files could not be deleted": "No se pudieron borrar los archivos",
+    "The album changed meanwhile; try again": "El álbum cambió mientras tanto; vuelve a probar",
+    "Notifications cannot go to this server's own network": (
+        "Las notificaciones no pueden ir a la red local de este servidor"
+    ),
     "Set a notification target first": "Configura antes un destino de notificaciones",
     "A download of this item is in progress; cancel it first": (
         "Hay una descarga de esto en curso; cancélala primero"

@@ -9,12 +9,18 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from tests.admin.conftest import People, csrf_of
 from tests.auth.conftest import USER_PASSWORD
 from ultimatetunes import __version__
 from ultimatetunes.admin import qr
-from ultimatetunes.admin.routes import check_server_url, connect_uri, human_size
+from ultimatetunes.admin.routes import (
+    check_server_url,
+    connect_uri,
+    default_server_url,
+    human_size,
+)
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services
@@ -160,7 +166,13 @@ def test_create_key_errors(client: TestClient, admin_csrf: str, people: People) 
         return status
 
     assert create(server_url="ftp://m.example.net") == 400
+    assert create(server_url="http://m.example.net") == 400
     assert create(server_url="https://" + "a" * 200 + ".net") == 400
+    # Fits the 120-character limit but not a QR code once percent-encoded: refused before any
+    # key exists, so no live key is left unseen.
+    assert create(server_url="https://m.example.net" + "/a" * 49) == 400
+    auth: AuthService = client.app.state.admin.auth  # type: ignore[attr-defined]
+    assert auth.list_keys(people.bob.id) == []
     assert create(user_id="0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001") == 404
     assert create(name="") == 400
 
@@ -169,6 +181,7 @@ def test_server_url_and_connect_uri() -> None:
     assert check_server_url(" https://m.example.net:8443/ ") == "https://m.example.net:8443"
     for bad in (
         "m.example.net",
+        "http://m.example.net",
         "javascript:alert(1)",
         "https://user:pw@m.example.net",
         "https://m.example.net/?a=1",
@@ -189,6 +202,20 @@ def test_server_url_and_connect_uri() -> None:
 
 def test_default_server_url(client: TestClient, admin_csrf: str) -> None:
     assert 'value="https://testserver"' in client.get("/admin/keys").text
+    plain = Request(
+        {
+            "type": "http",
+            "app": client.app,
+            "scheme": "http",
+            "server": ("192.168.1.5", 8044),
+            "path": "/admin/keys",
+            "root_path": "",
+            "headers": [(b"host", b"192.168.1.5:8044")],
+            "query_string": b"",
+        }
+    )
+    # The app needs https: an http address is never suggested.
+    assert default_server_url(plain) == ""
     state = client.app.state.admin  # type: ignore[attr-defined]
     object.__setattr__(state.settings, "admin_public_url", "https://tunes.example.ts.net")
     assert 'value="https://tunes.example.ts.net"' in client.get("/admin/keys").text
@@ -428,29 +455,82 @@ def test_delete_never_follows_a_symlink(
     assert outside.read_text() == "keep me"
 
 
-def test_delete_with_an_unsafe_path_rolls_back(client: TestClient, admin_csrf: str) -> None:
+def count(services: Services, table: str) -> int:
+    with services.db.read() as conn:
+        row = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()  # noqa: S608
+    assert row is not None
+    n = row["n"]
+    assert isinstance(n, int)
+    return n
+
+
+def test_delete_with_an_unsafe_path_keeps_the_delete(
+    client: TestClient, admin_csrf: str, caplog: pytest.LogCaptureFixture
+) -> None:
     services = services_of(client)
     add_track(services, "t1", path="../escape.opus")
     r = client.post("/admin/library/tracks/t1/delete", data={"csrf": admin_csrf, "confirm": "yes"})
-    assert r.status_code == 400
-    with services.db.read() as conn:
-        assert conn.execute("SELECT COUNT(*) AS n FROM tracks").fetchone()["n"] == 1  # type: ignore[index]
+    assert r.headers["location"] == "/admin/library?done=files_left"
+    assert count(services, "tracks") == 0
+    assert "a file was left on disk (PathRejected)" in caplog.text
 
 
-def test_delete_failing_on_disk(
-    client: TestClient, admin_csrf: str, monkeypatch: pytest.MonkeyPatch
+def test_album_delete_with_a_failing_middle_unlink(
+    client: TestClient,
+    admin_csrf: str,
+    settings_music: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     services = services_of(client)
-    add_track(services, "t1", path="a/x.opus")
+    album = add_album(services, name="Gray")
+    for n in range(3):
+        write_file(settings_music, f"Gray/{n}.opus")
+        add_track(services, f"t{n}", album_id=album, path=f"Gray/{n}.opus")
+    real = services.library.delete
 
-    def broken(rel: str) -> None:
-        raise PermissionError(rel)
+    def flaky(rel: str) -> None:
+        if rel == "Gray/1.opus":
+            raise PermissionError(rel)
+        real(rel)
 
-    monkeypatch.setattr(services.library, "delete", broken)
-    r = client.post("/admin/library/tracks/t1/delete", data={"csrf": admin_csrf, "confirm": "yes"})
-    assert r.status_code == 500
-    with services.db.read() as conn:
-        assert conn.execute("SELECT COUNT(*) AS n FROM tracks").fetchone()["n"] == 1  # type: ignore[index]
+    monkeypatch.setattr(services.library, "delete", flaky)
+    r = client.post(
+        f"/admin/library/albums/{album}/delete", data={"csrf": admin_csrf, "confirm": "yes"}
+    )
+    assert r.headers["location"] == "/admin/library?done=files_left"
+    assert sorted(p.name for p in (settings_music / "Gray").iterdir()) == ["1.opus"]
+    assert count(services, "tracks") == 0
+    assert count(services, "albums") == 0
+    assert "PermissionError" in caplog.text
+    assert "files could not be removed" in client.get(r.headers["location"]).text
+
+
+def test_album_delete_refused_when_a_track_appears(
+    client: TestClient, admin_csrf: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The album row goes only while no track points at it (checked by the DELETE itself)."""
+    from ultimatetunes.admin.repository import AdminRepository  # noqa: PLC0415
+
+    services = services_of(client)
+    album = add_album(services, name="Late")
+    add_track(services, "t1", album_id=album)
+    real = AdminRepository._delete_track_row
+
+    def and_another(self: AdminRepository, track_id: str) -> None:
+        real(self, track_id)
+        self.run(
+            "INSERT INTO tracks (id, status, title, title_norm, artist_name, album_id,"
+            " created_at, updated_at) VALUES ('late', 'pending', 'L', 'l', 'X', ?, 'a', 'a')",
+            (album,),
+        )
+
+    monkeypatch.setattr(AdminRepository, "_delete_track_row", and_another)
+    r = client.post(
+        f"/admin/library/albums/{album}/delete", data={"csrf": admin_csrf, "confirm": "yes"}
+    )
+    assert r.status_code == 409
+    assert count(services, "tracks") == 1  # rolled back: t1 is still there
 
 
 def test_delete_album(client: TestClient, admin_csrf: str, settings_music: Path) -> None:

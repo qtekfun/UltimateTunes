@@ -16,6 +16,7 @@ at that moment (no backlog).
 """
 
 import asyncio
+import ipaddress
 import logging
 from dataclasses import dataclass
 from typing import Literal
@@ -70,7 +71,30 @@ def check_url(url: str) -> str:
         raise InvalidParameter("The URL must not contain a user or password")
     if any(c in cleaned for c in " \t\r\n"):
         raise InvalidParameter("The URL must not contain spaces")
+    if _own_host(parts.hostname):
+        raise InvalidParameter("Notifications cannot go to this server's own network")
     return cleaned
+
+
+def _own_host(host: str) -> bool:
+    """Loopback, link-local (cloud metadata), unspecified and multicast addresses, and
+    `localhost` names. Checked on save and again on every send. Names are not resolved here
+    (no DNS from the panel); LAN addresses stay allowed for a self-hosted ntfy."""
+    name = host.rstrip(".").lower()
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    mapped = getattr(address, "ipv4_mapped", None)
+    address = mapped or address
+    return (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_unspecified
+        or address.is_multicast
+    )
 
 
 def check_kind(kind: str) -> Kind:

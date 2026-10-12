@@ -69,7 +69,9 @@ router = APIRouter()
 root_router = APIRouter()
 
 STATIC_FILES = {"htmx.min.js": "text/javascript", "admin.css": "text/css"}
-MAX_SERVER_URL = 200
+MAX_SERVER_URL = 120
+# Same length and alphabet as a real key (contracts/ids.md): sizes the QR before a key exists.
+_SIZING_KEY = "utk_" + "A" * 43
 QR_SCHEME = "ultimatetunes://connect"
 # Fixed confirmation messages of `?done=`: nothing from the query string is ever echoed.
 DONE = {
@@ -80,6 +82,7 @@ DONE = {
     "job_cancelled": "Cancel requested.",
     "track_deleted": "Track deleted.",
     "album_deleted": "Album deleted.",
+    "files_left": "Deleted, but some files could not be removed from disk (see the logs).",
     "command_queued": "Command queued: the next worker report picks it up.",
     "command_waiting": "That command is already waiting for a worker.",
     "notify_saved": "Notification settings saved.",
@@ -444,8 +447,13 @@ def update_user(request: Request, user_id: str, post: PostedDep) -> Response:
 
 
 def default_server_url(request: Request) -> str:
+    """`UT_ADMIN_PUBLIC_URL`, else the address the browser used when it is https, else empty
+    (the app needs https: an http address is never suggested)."""
     configured = state(request).settings.admin_public_url
-    return configured or str(request.base_url).rstrip("/")
+    if configured:
+        return configured
+    base = str(request.base_url).rstrip("/")
+    return base if base.startswith("https://") else ""
 
 
 def check_server_url(url: str) -> str:
@@ -453,7 +461,7 @@ def check_server_url(url: str) -> str:
     parts = urlsplit(cleaned)
     if (
         len(cleaned) > MAX_SERVER_URL
-        or parts.scheme not in ("http", "https")
+        or parts.scheme != "https"
         or not parts.hostname
         or parts.username is not None
         or parts.password is not None
@@ -462,9 +470,7 @@ def check_server_url(url: str) -> str:
         or not cleaned.isprintable()
         or " " in cleaned
     ):
-        raise InvalidParameter(
-            "The server address must be an http(s) URL of at most 200 characters"
-        )
+        raise InvalidParameter("The server address must be an https URL of at most 120 characters")
     return cleaned
 
 
@@ -505,9 +511,11 @@ def keys_page(request: Request, admin: AdminDep) -> Response:
 
 @router.post("/admin/keys", include_in_schema=False)
 def create_key(request: Request, post: PostedDep) -> Response:
-    """Shows the new key once, with its QR code; it is never stored or shown again."""
+    """Shows the new key once, with its QR code; it is never stored or shown again. The QR is
+    sized with a stand-in key first, so a failure never leaves a live key nobody saw."""
     try:
         server_url = check_server_url(post.get("server_url"))
+        qr.choose_version(len(connect_uri(server_url, _SIZING_KEY).encode()))
         created = state(request).auth.create_key(
             post.get("user_id"),
             post.get("name"),
@@ -672,8 +680,10 @@ def library_page(request: Request, admin: AdminDep) -> Response:
 
 @router.post("/admin/library/{kind}/{item_id}/delete", include_in_schema=False)
 def delete_library_item(request: Request, kind: str, item_id: str, post: PostedDep) -> Response:
-    """Deletes a track or an album: rows first, then the files through `LibraryStore` (which
-    removes a symlink itself, never its target), all in one transaction."""
+    """Deletes a track or an album. The rows (and the audit entry) are committed first; then
+    the files go through `LibraryStore` (which removes a symlink itself, never its target), best
+    effort: a file that cannot be removed is logged and left for the library scan, it never
+    brings the rows back."""
     services = state(request).services
     try:
         if kind not in ("tracks", "albums"):
@@ -683,8 +693,6 @@ def delete_library_item(request: Request, kind: str, item_id: str, post: PostedD
         with services.db.transaction() as conn:
             repo = AdminRepository(conn)
             deleted = repo.delete_track(item_id) if kind == "tracks" else repo.delete_album(item_id)
-            for path in deleted.paths:
-                services.library.delete(path)
             audit(
                 conn,
                 services.clock,
@@ -697,11 +705,20 @@ def delete_library_item(request: Request, kind: str, item_id: str, post: PostedD
             )
     except TunesError as exc:
         return _library_page(request, post.admin, error=exc.message, status=error_status(exc))
-    except OSError:
-        log.warning("library delete of %s %s failed on disk", kind, item_id)
-        return _library_page(
-            request, post.admin, error="The files could not be deleted", status=500
-        )
+    left = 0
+    for path in deleted.paths:
+        try:
+            services.library.delete(path)
+        except (OSError, TunesError) as exc:
+            left += 1
+            log.warning(
+                "library delete of %s %s: a file was left on disk (%s)",
+                kind,
+                item_id,
+                type(exc).__name__,
+            )
+    if left:
+        return back("/admin/library", "files_left")
     return back("/admin/library", "track_deleted" if kind == "tracks" else "album_deleted")
 
 
@@ -733,7 +750,11 @@ def worker_command(request: Request, command: str, post: PostedDep) -> Response:
     name = {"update": "update_ytdlp", "canary": "run_canary"}.get(command)
     if name is None or name not in WORKER_COMMANDS:
         return page(
-            request, "forbidden.html", {"message": "Not found"}, admin=post.admin, status=404
+            request,
+            "forbidden.html",
+            {"message": translator(lang_of(request))("Not found")},
+            admin=post.admin,
+            status=404,
         )
     with services.db.transaction() as conn:
         queued = AdminRepository(conn).add_command(name, post.admin.user.id, services.clock)
@@ -825,4 +846,17 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
         "UltimateTunes test", "Notifications from your UltimateTunes server work."
     )
     sent = await st.sender.send(target, message)
+
+    def record() -> None:
+        with st.services.db.transaction() as conn:
+            audit(
+                conn,
+                st.services.clock,
+                actor_id=post.admin.user.id,
+                ip=post.admin.ip,
+                action="notify.test",
+                detail={"kind": target.kind, "host": target.host, "sent": sent},
+            )
+
+    await run_in_threadpool(record)
     return back("/admin/notifications", "notify_sent" if sent else "notify_failed")

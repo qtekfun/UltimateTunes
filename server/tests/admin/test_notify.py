@@ -45,6 +45,15 @@ NTFY = "https://ntfy.example.net/ut-alerts-1234"
         "https://ntfy.example.net/" + "a" * 2048,
         "file:///etc/passwd",
         "javascript:alert(1)",
+        "https://localhost/topic",
+        "https://ntfy.localhost./topic",
+        "https://127.0.0.1/topic",
+        "https://[::1]/topic",
+        "https://169.254.169.254/latest/meta-data",
+        "https://[fe80::1]/x",
+        "https://0.0.0.0/x",
+        "https://224.0.0.1/x",
+        "https://[::ffff:127.0.0.1]/x",
     ],
 )
 def test_only_plain_https_urls(url: str) -> None:
@@ -54,6 +63,8 @@ def test_only_plain_https_urls(url: str) -> None:
 
 def test_check_url_and_kind() -> None:
     assert check_url(f"  {NTFY} ") == NTFY
+    # A self-hosted ntfy on the LAN is fine.
+    assert check_url("https://192.168.1.30/alerts") == "https://192.168.1.30/alerts"
     assert notify.check_kind("webhook") == "webhook"
     with pytest.raises(InvalidParameter):
         notify.check_kind("email")
@@ -122,6 +133,10 @@ def test_sender_failures_are_logged_not_raised(caplog: pytest.LogCaptureFixture)
 
     assert _run(Sender(Broken()).send(Target("ntfy", NTFY), Message("t", "b"))) is False
     assert _run(Sender(redirect).send(Target("ntfy", "http://x"), Message("t", "b"))) is False
+    # Checked again at send time (e.g. a row written before the rule): nothing goes out.
+    loopback = Target("ntfy", "https://127.0.0.1/x")
+    assert _run(Sender(redirect).send(loopback, Message("t", "b"))) is False
+    assert len(redirect.requests) == 1
     assert "ntfy.example.net" in caplog.text
     assert "ut-alerts-1234" not in caplog.text
 

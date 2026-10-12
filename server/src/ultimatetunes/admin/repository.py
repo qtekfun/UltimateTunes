@@ -197,8 +197,8 @@ class AdminRepository(Repository):
         row = self.conn.execute("SELECT path FROM tracks WHERE id = ?", (track_id,)).fetchone()
         if row is None:
             raise NotFound("No such track")
-        playlists = self._prepare_delete([track_id])
-        self.run("DELETE FROM tracks WHERE id = ?", (track_id,))
+        playlists = self._playlists_of([track_id])
+        self._delete_track_row(track_id)
         self._renumber(playlists)
         return Deleted([str(row["path"])] if row["path"] else [], 1)
 
@@ -211,28 +211,46 @@ class AdminRepository(Repository):
         tracks = self.conn.execute(
             "SELECT id, path FROM tracks WHERE album_id = ? ORDER BY id", (album_id,)
         ).fetchall()
-        playlists = self._prepare_delete([str(t["id"]) for t in tracks])
+        ids = [str(t["id"]) for t in tracks]
+        playlists = self._playlists_of(ids)
         # Tracks merged into one of these keep their row; merged_into becomes NULL.
-        self.run("DELETE FROM tracks WHERE album_id = ?", (album_id,))
-        self.run("DELETE FROM albums WHERE id = ?", (album_id,))
+        for track_id in ids:
+            self._delete_track_row(track_id)
+        # Only once no track points at it (a track added meanwhile keeps the album).
+        if not self.run(
+            "DELETE FROM albums WHERE id = ? AND NOT EXISTS"
+            " (SELECT 1 FROM tracks WHERE album_id = ?)",
+            (album_id, album_id),
+        ):
+            raise Conflict("The album changed meanwhile; try again")
         self._renumber(playlists)
         paths = [str(t["path"]) for t in tracks if t["path"]]
         if album["cover_path"]:
             paths.append(str(album["cover_path"]))
         return Deleted(paths, len(tracks))
 
-    def _prepare_delete(self, track_ids: Sequence[str]) -> list[str]:
-        """Refuses while a job of these tracks (or one merging into them) holds a lease: a job
-        row is never deleted then (0001_init.sql). Returns the playlists that hold them."""
+    def _delete_track_row(self, track_id: str) -> None:
+        """A job row is never deleted while it holds a lease (0001_init.sql). Two statements,
+        each re-checking the lease itself, so a concurrent claim on PostgreSQL (READ COMMITTED)
+        is seen: the job rows not leased go first (a row a claimer just leased is re-checked and
+        kept), then the track only while no job of it, or merging into it, is leased (a new
+        statement, a new snapshot). Nothing is read and then acted on."""
+        self.run(
+            "DELETE FROM jobs WHERE track_id = ? AND state NOT IN ('downloading', 'tagging')",
+            (track_id,),
+        )
+        deleted = self.run(
+            "DELETE FROM tracks WHERE id = ? AND NOT EXISTS (SELECT 1 FROM jobs"
+            " WHERE state IN ('downloading', 'tagging')"
+            " AND (track_id = ? OR merge_into_track_id = ?))",
+            (track_id, track_id, track_id),
+        )
+        if deleted != 1:
+            raise Conflict("A download of this item is in progress; cancel it first")
+
+    def _playlists_of(self, track_ids: Sequence[str]) -> list[str]:
         playlists: set[str] = set()
         for track_id in track_ids:
-            leased = self.conn.execute(
-                "SELECT COUNT(*) AS n FROM jobs WHERE state IN ('downloading', 'tagging')"
-                " AND (track_id = ? OR merge_into_track_id = ?)",
-                (track_id, track_id),
-            ).fetchone()
-            if leased is not None and _int(leased["n"]) > 0:
-                raise Conflict("A download of this item is in progress; cancel it first")
             rows = self.conn.execute(
                 "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?", (track_id,)
             ).fetchall()

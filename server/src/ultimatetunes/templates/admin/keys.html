@@ -48,7 +48,7 @@
       <select name="user_id">{% for user in users %}<option value="{{ user.id }}">{{ user.username }}</option>{% endfor %}</select>
     </label>
     <label>{{ _("Device name") }}<input name="name" required maxlength="100" autocomplete="off"></label>
-    <label>{{ _("Server address the app will use") }}<input name="server_url" type="url" required maxlength="200" value="{{ server_url }}"></label>
+    <label>{{ _("Server address the app will use") }}<input name="server_url" type="url" required maxlength="120" value="{{ server_url }}" placeholder="https://music.example.ts.net"></label>
     <button type="submit">{{ _("Create key") }}</button>
   </form>
 </div>
