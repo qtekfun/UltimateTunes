@@ -127,3 +127,19 @@ def test_success_and_hits_count_as_activity(limiter: SqliteRateLimiter, clock: F
     assert limiter.purge_idle(600) == 0
     clock.advance(101)
     assert limiter.purge_idle(600) == 2
+
+
+def test_peek_reports_tokens_without_taking_any(
+    limiter: SqliteRateLimiter, clock: FakeClock
+) -> None:
+    assert limiter.peek("ip:a", LIMIT) == 3
+    limiter.hit("ip:a", LIMIT)
+    limiter.hit("ip:a", LIMIT)
+    assert limiter.peek("ip:a", LIMIT) == 1
+    assert limiter.peek("ip:a", LIMIT) == 1
+    clock.advance(0.5)
+    assert limiter.peek("ip:a", LIMIT) == 1.5
+    clock.advance(3600)
+    assert limiter.peek("ip:a", LIMIT) == 3
+    # Peeking moved nothing: the bucket still refills from the last hit.
+    assert [limiter.hit("ip:a", LIMIT).allowed for _ in range(4)] == [True, True, True, False]

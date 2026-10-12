@@ -11,6 +11,8 @@ the limits; this module only does the arithmetic and keeps the state in `rate_li
 - `record_failure(key, ...)` counts a failure (wrong password, invalid key); reaching
   `max_failures` locks the key for `lockout_s` and starts a new count.
 - `record_success(key)` clears the failure count.
+- `peek(key, limit)` says how many tokens `key` holds now (a full bucket when unknown), without
+  taking any or touching the key (the admin panel's view of a budget).
 - `purge_idle(idle_s)` forgets keys with no activity (hit, failure or success) for `idle_s`
   and no running lockout. So a failure count lives as long as failures keep coming less than
   `idle_s` apart: purging never wipes a live count.
@@ -58,6 +60,10 @@ class RateLimiter(Protocol):
         ...
 
     def record_success(self, key: str) -> None: ...
+
+    def peek(self, key: str, limit: Limit) -> float:
+        """Tokens `key` holds now under `limit` (the burst when unknown); changes nothing."""
+        ...
 
     def purge_idle(self, idle_s: float) -> int:
         """Drops keys with no activity for `idle_s` and not locked. Returns how many."""
@@ -149,6 +155,14 @@ class SqliteRateLimiter:
     def locked(self, key: str) -> Decision:
         with self._db.read() as conn:
             return self._lockout(self._load(conn, key))
+
+    def peek(self, key: str, limit: Limit) -> float:
+        with self._db.read() as conn:
+            bucket = self._load(conn, key)
+        if bucket is None:
+            return limit.burst
+        elapsed = max(0.0, (self._clock.now() - parse_ts(bucket.updated_at)).total_seconds())
+        return min(limit.burst, bucket.tokens + elapsed * limit.rate_per_s)
 
     def record_failure(self, key: str, *, max_failures: int, lockout_s: float) -> Decision:
         if max_failures < 1 or lockout_s <= 0:
