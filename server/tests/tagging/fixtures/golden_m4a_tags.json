@@ -1,0 +1,65 @@
+{
+  "----:com.apple.iTunes:ISRC": [
+    "XXA012400004"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Album Artist Id": [
+    "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Album Id": [
+    "4d6f8a0c-3e5a-4b7c-8f9a-1b3d5f7a9c02"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Album Type": [
+    "live"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Artist Id": [
+    "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Release Group Id": [
+    "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e04"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Release Track Id": [
+    "3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a07"
+  ],
+  "----:com.apple.iTunes:MusicBrainz Track Id": [
+    "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d01"
+  ],
+  "----:com.apple.iTunes:replaygain_track_gain": [
+    "-7.85 dB"
+  ],
+  "----:com.apple.iTunes:replaygain_track_peak": [
+    "0.993000"
+  ],
+  "aART": [
+    "The Paper Lanterns"
+  ],
+  "disk": [
+    [
+      1,
+      1
+    ]
+  ],
+  "soar": [
+    "Paper Lanterns, The"
+  ],
+  "trkn": [
+    [
+      4,
+      9
+    ]
+  ],
+  "©ART": [
+    "The Paper Lanterns"
+  ],
+  "©alb": [
+    "Lanterns at Dusk"
+  ],
+  "©day": [
+    "2024"
+  ],
+  "©gen": [
+    "Indie Pop"
+  ],
+  "©nam": [
+    "Paper Moons (Live)"
+  ]
+}
