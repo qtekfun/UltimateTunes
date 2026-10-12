@@ -171,7 +171,8 @@ def test_destructive_actions_ask_first(client: TestClient, admin_csrf: str, peop
             "server_url": "https://music.example.com",
         },
     )
-    assert "cannot scan the QR code yet" in created.text
+    assert "point it at this code" in created.text
+    assert "cannot scan" not in created.text
     keys = client.get("/admin/keys").text
     assert 'data-confirm="Revoke the key of Phone?' in keys
     users = client.get("/admin/users").text

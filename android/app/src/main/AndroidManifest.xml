@@ -32,6 +32,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.ConnectLinkActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <!--
+              The admin panel's QR code (contracts/ids.md): the phone's camera app reads it and
+              opens ultimatetunes://connect?url=…&key=…. Only this scheme and host. This activity
+              shows nothing and keeps nothing (no Recents entry, no history); MainActivity asks
+              before connecting (ConnectLinkViewModel).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ultimatetunes" android:host="connect" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

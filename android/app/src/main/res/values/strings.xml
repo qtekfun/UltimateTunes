@@ -24,7 +24,16 @@
     <string name="connect_button">Connect</string>
     <string name="connect_checking">Checking…</string>
     <string name="connect_scan_qr">Scan QR code</string>
-    <string name="connect_qr_unavailable">Scanning the QR code of the admin panel arrives in a later version. Copy the key from the panel for now.</string>
+    <string name="connect_qr_how">Open your phone\'s camera and point it at the QR code in the admin panel (Keys). Your camera will offer to open UltimateTunes.</string>
+    <string name="connect_link_title">Connect to %1$s?</string>
+    <string name="connect_link_message">A link opened UltimateTunes with a server address and an API key. Only continue if it came from your own server\'s admin panel.</string>
+    <string name="connect_link_replaces">This replaces your current connection once the new server and key work.</string>
+    <string name="connect_link_busy">Another link arrived while this one was open and was ignored. Finish with this one, then open the other link again.</string>
+    <string name="connect_link_refused_title">Can\'t use this link</string>
+    <string name="connect_link_error_malformed">This isn\'t an UltimateTunes connect link. Create a key in the admin panel and scan its QR code again.</string>
+    <string name="connect_link_error_invalid_url">The server address in this link isn\'t valid.</string>
+    <string name="connect_link_error_insecure_url">The server address in this link uses http://. This app only talks to servers over HTTPS.</string>
+    <string name="connect_link_error_invalid_key">The API key in this link isn\'t a valid UltimateTunes key.</string>
     <string name="connect_help">Create a key for this device in your server\'s admin panel. It is shown only once.</string>
     <string name="connect_error_invalid_url">That doesn\'t look like a server address.</string>
     <string name="connect_error_insecure_url">Use an https:// address: this app only talks to servers over HTTPS.</string>

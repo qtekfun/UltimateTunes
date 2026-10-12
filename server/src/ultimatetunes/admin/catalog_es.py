@@ -73,11 +73,6 @@ ES: dict[str, str] = {
         "¿Revocar la clave de %(device)s? Ese dispositivo deja de funcionar hasta que tenga una"
         " clave nueva."
     ),
-    "In the app's Connect screen, type the server address and this key. The app cannot scan"
-    " the QR code yet; it is here for a later version.": (
-        "En la pantalla Conectar de la app, escribe la dirección del servidor y esta clave. La"
-        " app aún no puede escanear el código QR; está aquí para una versión futura."
-    ),
     "e.g. Pixel phone": "p. ej. móvil Pixel",
     "Must be https, as the app reaches it (for example the tailscale serve address). Set"
     " UT_ADMIN_PUBLIC_URL to prefill it.": (
@@ -239,6 +234,13 @@ ES: dict[str, str] = {
     "Server address the app will use": "Dirección del servidor que usará la app",
     "Create key": "Crear clave",
     "QR code to connect the app": "Código QR para conectar la app",
+    "Android app: open the phone's camera and point it at this code. The camera offers to open"
+    " UltimateTunes, which shows the server and asks before connecting. Other apps: type the"
+    " server address and the key.": (
+        "App de Android: abre la cámara del móvil y apúntala a este código. La cámara te ofrece"
+        " abrir UltimateTunes, que muestra el servidor y pregunta antes de conectar. Otras apps:"
+        " escribe la dirección del servidor y la clave."
+    ),
     # Downloads
     "Song": "Canción",
     "Progress": "Progreso",
