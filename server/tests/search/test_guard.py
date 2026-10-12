@@ -14,6 +14,7 @@ from ultimatetunes.core.ratelimit import SqliteRateLimiter
 from ultimatetunes.db import Database
 from ultimatetunes.errors import TunesError
 from ultimatetunes.search.catalog import (
+    CatalogClientError,
     CatalogNotFound,
     CatalogParseError,
     CatalogThrottled,
@@ -163,6 +164,17 @@ async def test_parse_errors_are_not_retried(h: Harness) -> None:
         await h.catalog.search_songs("night", 5)
     assert inner_calls(h, "search_songs") == 1
     assert h.slept == []
+
+
+async def test_refused_requests_are_not_retried(h: Harness) -> None:
+    h.inner.errors = [CatalogClientError()]
+    with pytest.raises(CatalogClientError) as raised:
+        await h.catalog.search_songs("night", 5)
+    # Callers that only know `CatalogUnavailable` still catch it.
+    assert isinstance(raised.value, CatalogUnavailable)
+    assert inner_calls(h, "search_songs") == 1
+    assert h.slept == []
+    assert await h.catalog.breaker_state() == BreakerState(open=False, level=0)
 
 
 async def test_throttling_opens_the_breaker(h: Harness) -> None:

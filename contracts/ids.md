@@ -45,7 +45,7 @@ Why v7 and not v4:
 A `yt:` id becomes a library track in two steps, or is merged into one that already exists:
 
 1. **Materialization.** On the first action that means "keep this" (`stream`, `download`, `POST /ut/v1/tracks/{id}/request`, `star`, adding to a playlist, a matched import item, a `scrobble`), the api creates a `tracks` row with a new UUIDv7, `status = pending`, the YouTube Music metadata (title, artist, album, duration, album browse id, channel id, thumbnail URL), and `yt_video_id`. It also creates the alias `track_aliases('yt:<videoId>' → <uuid>)` and, unless one already exists, the download job (deduplicated per video id: one job row per track). All of this happens in one transaction, so two concurrent requests end up with the same track and the same job.
-2. **Archive** (internal worker API: register, move, complete). The worker registers the tagged file while it is still in staging. The api fills the pending track's `artist_id`, `album_id` and file columns and reserves the library path on the job. The worker moves the file into `/music`, and `complete` sets `path` and `status = ready`.
+2. **Archive** (internal worker API: register, move, complete). Each download attempt writes to its own staging directory `<jobId>/<attemptSeq>` (a per-job sequence that never resets, contracts/openapi/internal-worker.yaml). The worker registers the tagged file while it is still in staging. The api fills the pending track's `artist_id`, `album_id` and file columns and reserves the library path on the job. The worker moves the file into `/music`, and `complete` sets `path` and `status = ready`. A retry after a crash between the move and `complete` finds its own file already at the path: register adopts it when no track row owns that path and the SHA-256 matches (no conflict, no second copy), and the worker skips the move.
 3. **Duplicate recording.** If register finds that the video is the same recording (same MusicBrainz recording id) as a `ready` track already in the library, it answers `merged: true` with the existing track, and the file never goes into `/music`. `complete` then applies the merge in **one transaction**:
    - the alias `yt:<videoId>` is pointed at the existing track (`track_aliases.track_id`);
    - the pending track's stars, playlist entries, play history, play statistics and import items move to the existing track (a user who has both keeps one star and the summed statistics);
@@ -88,3 +88,13 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 ## API key format
 
 `utk_` + 43 characters of unpadded base64url (32 random bytes = 256 bits), e.g. `utk_EXAMPLEexampleEXAMPLEexampleEXAMPLEexampleE` (examples always use this obviously fake value). Only the SHA-256 hex digest is stored (`api_keys.key_hash`), plus the first 12 characters (`utk_` + 8) as the display `prefix`. A slow hash is unnecessary for a 256-bit random secret, and SHA-256 keeps every authenticated request cheap. The `utk_` prefix lets gitleaks and the log redactor spot leaked keys.
+
+## App connect QR code
+
+The admin panel shows, once, when an API key is created, a QR code for the Android app. Its payload is exactly:
+
+```
+ultimatetunes://connect?url=<percent-encoded server base URL>&key=<the API key>
+```
+
+`url` is the HTTPS base URL the app should use (no trailing slash); `key` matches the API key format above. The app parses only this scheme and host, validates both parameters as it does for manual entry, and never logs the payload.

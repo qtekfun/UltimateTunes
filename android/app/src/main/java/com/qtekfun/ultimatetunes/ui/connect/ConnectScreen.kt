@@ -64,6 +64,7 @@ import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 const val CONNECT_SERVER_URL_TAG = "connect.serverUrl"
 const val CONNECT_API_KEY_TAG = "connect.apiKey"
 const val CONNECT_BUTTON_TAG = "connect.button"
+const val CONNECT_DEMO_TAG = "connect.demo"
 
 /** The Connect screen with its view model; the root moves on once the key works. */
 @Composable
@@ -73,7 +74,9 @@ fun ConnectRoute(viewModel: ConnectViewModel = hiltViewModel()) {
         state = state,
         onServerUrlChange = viewModel::onServerUrlChange,
         onApiKeyChange = viewModel::onApiKeyChange,
-        onConnect = viewModel::connect
+        onConnect = viewModel::connect,
+        demoLabelRes = viewModel.demoLabelRes,
+        onTryDemo = viewModel::tryDemo
     )
 }
 
@@ -95,7 +98,9 @@ fun ConnectScreen(
     onServerUrlChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onConnect: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    @StringRes demoLabelRes: Int? = null,
+    onTryDemo: () -> Unit = {}
 ) {
     // A Surface, not a plain Box: it sets the content colour, so text follows light and dark.
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -124,6 +129,16 @@ fun ConnectScreen(
                 )
             }
             ConnectActions(state, onConnect)
+            // Debug builds only: the demo server (src/debug); release builds pass no label.
+            demoLabelRes?.let { label ->
+                TextButton(
+                    onClick = onTryDemo,
+                    enabled = !state.checking,
+                    modifier = Modifier.testTag(CONNECT_DEMO_TAG)
+                ) {
+                    Text(stringResource(label))
+                }
+            }
         }
     }
 }

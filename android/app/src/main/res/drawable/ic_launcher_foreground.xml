@@ -1,25 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
-  SPDX-License-Identifier: GPL-3.0-or-later
+  SPDX-FileCopyrightText: Google LLC
+  SPDX-License-Identifier: Apache-2.0
+  Path data of a Material icon (https://github.com/google/material-design-icons).
 -->
-<!-- A beamed pair of eighth notes. Only opaque white shapes, so the same drawable also works
-     as the monochrome layer of themed icons. Kept inside the 66dp safe zone. -->
+<!-- The app logo's white music note (the same Material icon path as ic_music_note), at the
+     proportion of the in-app logo: 48dp on an 88dp tile, so about 39dp of the 72dp a launcher
+     mask shows, centred. Only opaque white, so it is also the monochrome layer of themed icons. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M46,36 L72,31 L72,38 L46,43z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M46,36h4v32h-4z M68,32h4v31h-4z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M41,68a7,5.5 0,1 0,14 0a7,5.5 0,1 0,-14 0z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M63,63a7,5.5 0,1 0,14 0a7,5.5 0,1 0,-14 0z" />
+    <group
+        android:scaleX="1.6364"
+        android:scaleY="1.6364"
+        android:translateX="34.364"
+        android:translateY="34.364">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+    </group>
 </vector>

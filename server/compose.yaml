@@ -5,7 +5,8 @@
 #   UT_VERSION=0.1.0                 image tag
 #   UT_MUSIC_PATH=/srv/music         your library on the host
 #   UT_BIND=127.0.0.1:8044           keep it local; publish it through `tailscale serve`
-# and the worker token in ./secrets/worker_token (random, e.g. `openssl rand -hex 32`).
+# and two random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
+# (e.g. `openssl rand -hex 32` each).
 #   docker compose up -d
 # Migrations run first (`migrate`), then the api. The worker never touches the database: it
 # talks to the api's internal worker API (token-protected) and needs `default` to reach
@@ -44,6 +45,9 @@ services:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
+      - source: admin_session_secret
+        # Signs admin panel sessions (32+ random characters); without it sessions die on restart.
+        target: ut_admin_session_secret
     networks: [default, internal]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
@@ -75,6 +79,8 @@ services:
 secrets:
   worker_token:
     file: ./secrets/worker_token
+  admin_session_secret:
+    file: ./secrets/admin_session_secret
 
 networks:
   internal:

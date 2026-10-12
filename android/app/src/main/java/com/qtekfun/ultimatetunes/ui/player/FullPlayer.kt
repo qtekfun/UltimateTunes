@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -62,14 +63,19 @@ import coil3.compose.AsyncImage
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsView
 import com.qtekfun.ultimatetunes.ui.model.formatDuration
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 import kotlin.math.roundToInt
 
-/** Test tag of the full player. */
+/** Test tags of the full player. */
 const val FULL_PLAYER_TAG = "player.full"
+const val LYRICS_BUTTON_TAG = "player.lyricsButton"
+
+private const val MILLIS_PER_SECOND = 1000L
 
 /** Downward drag that closes the full player. */
 private val CollapseThreshold = 120.dp
@@ -91,11 +97,15 @@ fun FullPlayer(
     actions: PlayerActions,
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
-    artworkModifier: Modifier = Modifier
+    artworkModifier: Modifier = Modifier,
+    lyrics: LyricsHooks = LyricsHooks()
 ) {
     val track = state.current ?: return
     val colors = rememberPlayerColors(track.coverUrl)
     var showQueue by rememberSaveable { mutableStateOf(false) }
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
+    val onShowLyrics by rememberUpdatedState(lyrics.onShow)
+    LaunchedEffect(track.id, showLyrics) { if (showLyrics) onShowLyrics(track.id) }
     val collapse by rememberUpdatedState(onCollapse)
     val threshold = with(LocalDensity.current) { CollapseThreshold.toPx() }
 
@@ -112,34 +122,18 @@ fun FullPlayer(
             }
             .testTag(FULL_PLAYER_TAG)
     ) {
-        // The artwork, blurred, behind everything (blur needs Android 12; older ones get the
-        // gradient alone, the artwork kept faint).
-        if (track.coverUrl != null) {
-            AsyncImage(
-                model = track.coverUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(72.dp)
-                    .alpha(BLURRED_ARTWORK_ALPHA)
-            )
-        }
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, colors.bottom.copy(alpha = 0.8f))
-                    )
-                )
-        )
+        BlurredBackground(track.coverUrl, colors.bottom)
         CompositionLocalProvider(LocalContentColor provides colors.content) {
             PlayerContent(
                 state = state,
                 actions = actions,
                 onCollapse = onCollapse,
-                onShowQueue = { showQueue = true },
+                panels = PlayerPanels(
+                    showLyrics = showLyrics,
+                    lyrics = lyrics,
+                    onToggleLyrics = { showLyrics = !showLyrics },
+                    onShowQueue = { showQueue = true }
+                ),
                 artworkModifier = artworkModifier
             )
         }
@@ -153,20 +147,24 @@ fun FullPlayer(
     }
 }
 
+/** The lyrics and queue toggles of the full player. */
+private data class PlayerPanels(
+    val showLyrics: Boolean,
+    val lyrics: LyricsHooks,
+    val onToggleLyrics: () -> Unit,
+    val onShowQueue: () -> Unit
+)
+
 @Composable
 private fun PlayerContent(
     state: PlayerUiState,
     actions: PlayerActions,
     onCollapse: () -> Unit,
-    onShowQueue: () -> Unit,
+    panels: PlayerPanels,
     modifier: Modifier = Modifier,
     artworkModifier: Modifier = Modifier
 ) {
     val track = state.current ?: return
-    val scale by animateFloatAsState(
-        targetValue = if (state.isPlaying) 1f else PAUSED_ARTWORK_SCALE,
-        label = "artworkScale"
-    )
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -180,39 +178,118 @@ private fun PlayerContent(
                 contentDescription = stringResource(R.string.player_close)
             )
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(vertical = Dimens.SpaceL),
-            contentAlignment = Alignment.Center
-        ) {
-            Artwork(
-                url = track.coverUrl,
-                placeholderKey = track.id.value,
-                shape = Dimens.PlayerArtworkShape,
-                modifier = artworkModifier
-                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .shadow(elevation = 24.dp, shape = Dimens.PlayerArtworkShape)
+        if (panels.showLyrics) {
+            LyricsView(
+                state = panels.lyrics.state,
+                positionMillis = state.positionSec * MILLIS_PER_SECOND,
+                canSeek = !track.isExternal,
+                onSeek = actions.seekTo,
+                onRetry = panels.lyrics.onRetry,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            )
+        } else {
+            BigArtwork(
+                state = state,
+                artworkModifier = artworkModifier,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
             )
         }
         TrackTitle(state)
         Scrubber(state, actions.seekTo)
         Controls(state, actions)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
+        PanelButtons(panels)
+    }
+}
+
+/**
+ * The artwork, blurred, behind everything (blur needs Android 12; older ones get the artwork
+ * kept faint).
+ */
+@Composable
+private fun BlurredBackground(coverUrl: String?, bottom: Color) {
+    if (coverUrl != null) {
+        AsyncImage(
+            model = coverUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(72.dp)
+                .alpha(BLURRED_ARTWORK_ALPHA)
+        )
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(listOf(Color.Transparent, bottom.copy(alpha = 0.8f)))
+            )
+    )
+}
+
+/** The big artwork, a little smaller while paused. */
+@Composable
+private fun BigArtwork(state: PlayerUiState, modifier: Modifier, artworkModifier: Modifier) {
+    val track = state.current ?: return
+    val scale by animateFloatAsState(
+        targetValue = if (state.isPlaying) 1f else PAUSED_ARTWORK_SCALE,
+        label = "artworkScale"
+    )
+    Box(
+        modifier = modifier.padding(vertical = Dimens.SpaceL),
+        contentAlignment = Alignment.Center
+    ) {
+        Artwork(
+            url = track.coverUrl,
+            placeholderKey = track.id.value,
+            shape = Dimens.PlayerArtworkShape,
+            modifier = artworkModifier
+                .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .shadow(elevation = 24.dp, shape = Dimens.PlayerArtworkShape)
+        )
+    }
+}
+
+/** Lyrics on the left, the queue on the right. */
+@Composable
+private fun PanelButtons(panels: PlayerPanels) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        IconButton(
+            onClick = panels.onToggleLyrics,
+            modifier = Modifier.testTag(LYRICS_BUTTON_TAG)
         ) {
-            IconButton(onClick = onShowQueue) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_queue),
-                    contentDescription = stringResource(R.string.player_show_queue)
-                )
-            }
+            Icon(
+                painter = painterResource(R.drawable.ic_lyrics),
+                contentDescription = stringResource(
+                    if (panels.showLyrics) {
+                        R.string.player_hide_lyrics
+                    } else {
+                        R.string.player_show_lyrics
+                    }
+                ),
+                tint = if (panels.showLyrics) {
+                    LocalContentColor.current
+                } else {
+                    LocalContentColor.current.copy(alpha = 0.6f)
+                }
+            )
+        }
+        IconButton(onClick = panels.onShowQueue) {
+            Icon(
+                painter = painterResource(R.drawable.ic_queue),
+                contentDescription = stringResource(R.string.player_show_queue)
+            )
         }
     }
 }

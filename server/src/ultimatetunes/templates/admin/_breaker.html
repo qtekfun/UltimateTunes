@@ -1,0 +1,7 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+<p>{{ _("Search circuit breaker") }}:
+{% if breaker is none %}<span class="muted">{{ _("not in use (fake catalog)") }}</span>
+{% elif breaker.open %}<span class="bad">{{ _("open: YouTube Music is throttling, searches show the library only") }}</span>
+{% else %}<span class="ok">{{ _("closed") }}</span>{% endif %}
+</p>

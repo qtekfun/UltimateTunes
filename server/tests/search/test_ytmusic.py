@@ -21,6 +21,7 @@ from ytmusicapi.exceptions import YTMusicGatedError, YTMusicServerError, YTMusic
 
 from ultimatetunes.errors import InvalidId
 from ultimatetunes.search.catalog import (
+    CatalogClientError,
     CatalogNotFound,
     CatalogParseError,
     CatalogThrottled,
@@ -122,7 +123,9 @@ def test_a_429_page_never_reaches_the_ytmusicapi_parser() -> None:
         (HttpStatusError(403), True, CatalogThrottled),
         (HttpStatusError(502), True, CatalogUnavailable),
         (HttpStatusError(404), True, CatalogNotFound),
-        (HttpStatusError(400), False, CatalogUnavailable),
+        (HttpStatusError(400), False, CatalogClientError),
+        (HttpStatusError(410), True, CatalogNotFound),
+        (HttpStatusError(404), False, CatalogUnavailable),
         (requests.ConnectTimeout(), False, CatalogUnavailable),
         (requests.ConnectionError(), True, CatalogUnavailable),
         (HostRefused(), True, CatalogUnavailable),

@@ -1,0 +1,1 @@
+First test version, for trying the new design. It cannot connect to a server or play music yet.
