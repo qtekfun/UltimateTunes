@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """`Downloader`: fetch the audio of one video into the attempt's staging directory.
 
+`YtDlpDownloader` (`ytdlp.py`) is the real one, `FakeDownloader` (`fake.py`) the test one.
 Shape from spike T03c: `download(video_id, job_dir, on_progress)` writes the raw audio
 sequentially to `<job_dir>/<video_id>.<ext>.part`, never rewrites it, and renames it to
 `<video_id>.<ext>` when complete (same inode, so a reader that has it open keeps reading).
@@ -20,6 +21,7 @@ from typing import Protocol
 from ultimatetunes.core.storage import StagingStore
 from ultimatetunes.errors import WorkerErrorCode
 from ultimatetunes.settings import Settings
+from ultimatetunes.worker.settings import WorkerSettings
 
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
@@ -47,14 +49,18 @@ class DownloadResult:
 
 
 class DownloadError(Exception):
-    def __init__(self, code: WorkerErrorCode, message: str) -> None:
+    """A failed job step. `retryable` defaults to the code's rule (contracts/errors.md); the
+    worker may only make it stricter (e.g. a yt-dlp usage error is our bug, never retried)."""
+
+    def __init__(self, code: WorkerErrorCode, message: str, *, retryable: bool = True) -> None:
         self.code = code
         self.message = message
+        self._retryable = retryable
         super().__init__(f"{code}: {message}")
 
     @property
     def retryable(self) -> bool:
-        return self.code.retryable
+        return self._retryable and self.code.retryable
 
 
 ProgressCallback = Callable[[DownloadProgress], Awaitable[None]]
@@ -74,19 +80,16 @@ def check_video_id(video_id: str) -> str:
     return video_id
 
 
-class UnavailableDownloader:
-    """Placeholder until T08 wires the real downloader."""
-
-    async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
-    ) -> DownloadResult:
-        raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "downloader not implemented yet")
-
-
-def build_downloader(settings: Settings, staging: StagingStore) -> Downloader:
-    """The worker's downloader: the fake with `UT_FAKE_YOUTUBE=true` (test stack)."""
+def build_downloader(
+    settings: Settings, staging: StagingStore, worker: WorkerSettings | None = None
+) -> Downloader:
+    """The worker's downloader: yt-dlp, or the fake with `UT_FAKE_YOUTUBE=true` (test stack)."""
     if settings.fake_youtube:
         from ultimatetunes.worker.fake import FakeDownloader  # noqa: PLC0415
 
         return FakeDownloader(staging)
-    return UnavailableDownloader()
+    from ultimatetunes.worker.ytdlp import YtDlpDownloader  # noqa: PLC0415
+    from ultimatetunes.worker.ytdlp_runtime import YtDlpRuntime  # noqa: PLC0415
+
+    worker = worker or WorkerSettings()
+    return YtDlpDownloader(staging, worker, YtDlpRuntime(worker))
