@@ -1,0 +1,93 @@
+{
+  "created": "2026-10-12T08:00:00.000Z",
+  "count": 3,
+  "offset": 0,
+  "recordings": [
+    {
+      "id": "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d01",
+      "score": 100,
+      "title": "Paper Moons (Live)",
+      "length": 262040,
+      "first-release-date": "2024-03-01",
+      "isrcs": ["XXA012400004", "bogus"],
+      "artist-credit": [
+        {
+          "name": "The Paper Lanterns",
+          "joinphrase": "",
+          "artist": {
+            "id": "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01",
+            "name": "The Paper Lanterns",
+            "sort-name": "Paper Lanterns, The"
+          }
+        }
+      ],
+      "tags": [
+        {"count": 1, "name": "dream pop"},
+        {"count": 3, "name": "indie pop"},
+        {"name": "no count"}
+      ],
+      "releases": [
+        {
+          "id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c03",
+          "title": "Greatest Lanterns",
+          "status": "Official",
+          "date": "2025-01-10",
+          "release-group": {
+            "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c05",
+            "primary-type": "Album",
+            "secondary-types": ["Compilation"]
+          },
+          "media": [
+            {
+              "position": 1,
+              "track-count": 20,
+              "track": [{"id": "0f1e2d3c-4b5a-4c6d-8e7f-9a0b1c2d3e06", "number": "12"}]
+            }
+          ]
+        },
+        {
+          "id": "4d6f8a0c-3e5a-4b7c-8f9a-1b3d5f7a9c02",
+          "title": "Lanterns at Dusk",
+          "status": "Official",
+          "date": "2024-03-01",
+          "artist-credit": [
+            {
+              "name": "The Paper Lanterns",
+              "artist": {"id": "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01", "name": "The Paper Lanterns"}
+            }
+          ],
+          "release-group": {
+            "id": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e04",
+            "primary-type": "Album",
+            "secondary-types": ["Live"]
+          },
+          "media": [
+            {
+              "position": 1,
+              "track-count": 9,
+              "track": [{"id": "3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a07", "number": "4"}]
+            }
+          ]
+        },
+        {
+          "id": "6b5a4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c08",
+          "title": "Lanterns at Dusk",
+          "status": "Bootleg",
+          "date": "2023-12-01",
+          "media": []
+        }
+      ]
+    },
+    {
+      "id": "8e7d6c5b-4a3f-4e2d-9c1b-0a9f8e7d6c09",
+      "score": 90,
+      "title": "Paper Moons",
+      "length": 198000,
+      "artist-credit": [
+        {"name": "Another Band", "joinphrase": " & ", "artist": {"id": "not-a-uuid"}},
+        {"name": "The Paper Lanterns", "artist": {"id": "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01"}}
+      ]
+    },
+    "not a recording"
+  ]
+}
