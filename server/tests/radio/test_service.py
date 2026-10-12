@@ -330,12 +330,16 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_a_radio_keeps_nothing(service: RadioService, library: Database) -> None:
     """Listing a radio is not a "keep" action: no pending track, alias or job (ids.md)."""
 
-    def counts() -> tuple[int, ...]:
+    def counts() -> list[object]:
         with library.read() as conn:
-            return tuple(
-                int(conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"])  # noqa: S608 - constant names
-                for table in ("tracks", "track_aliases", "jobs")
-            )
+            return [
+                conn.execute(sql).fetchall()
+                for sql in (
+                    "SELECT COUNT(*) AS n FROM tracks",
+                    "SELECT COUNT(*) AS n FROM track_aliases",
+                    "SELECT COUNT(*) AS n FROM jobs",
+                )
+            ]
 
     before = counts()
     await service.radio(USER, "yt:Qx7Lm2pZ0aB", 50)

@@ -4,17 +4,18 @@
 
 Routes in `router` need an API key (see `ut/__init__.py`). `/ut/v1/radio` answers the seed
 first and then the radio, local-first (`radio.service`); `TrackItem` carries no per-user
-field, so it does not need the caller's identity. `/ut/v1/listen-now` is still the T02 stub
-(501): it needs the caller, whose dependency lives in `ut/__init__.py`.
+field, so it does not need the caller's identity. `/ut/v1/listen-now` is the caller's shelves
+(`radio.listen_now`), library only.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
-from starlette.responses import Response
+from fastapi import APIRouter, Depends, Query, Request
+from starlette.concurrency import run_in_threadpool
 
+from ultimatetunes.core.authn import Principal, current_principal
 from ultimatetunes.core.services import services
-from ultimatetunes.errors import FeatureNotImplemented
+from ultimatetunes.radio.listen_now import listen_now
 from ultimatetunes.radio.service import MAX_RADIO, RadioService
 from ultimatetunes.search import render
 
@@ -36,5 +37,7 @@ async def get_radio(
 
 
 @router.get("/ut/v1/listen-now")
-def get_listen_now() -> Response:
-    raise FeatureNotImplemented()
+async def get_listen_now(
+    request: Request, principal: Annotated[Principal, Depends(current_principal)]
+) -> dict[str, object]:
+    return await run_in_threadpool(listen_now, services(request).db, principal.user_id)

@@ -22,6 +22,7 @@ from ultimatetunes.settings import Settings
 
 SIMILAR = schema_validator("opensubsonic-subset.yaml", "GetSimilarSongs2Response")
 RADIO = schema_validator("ut-v1.yaml", "Radio")
+LISTEN_NOW = schema_validator("ut-v1.yaml", "ListenNow")
 XMLNS = "{http://subsonic.org/restapi}"
 
 
@@ -224,3 +225,15 @@ def test_similar_songs_without_songs_is_an_empty_list(
     catalog.radio = radio  # type: ignore[method-assign]
     result = similar(client, id="yt:Qx7Lm2pZ0aB")
     assert result["similarSongs2"] == {"song": []}
+
+
+# ---------------------------------------------------------------------- /ut/v1/listen-now
+
+
+def test_listen_now(client: TestClient) -> None:
+    r = client.get("/ut/v1/listen-now")
+    assert r.status_code == 200
+    body = r.json()
+    LISTEN_NOW.validate(body)
+    assert [s["id"] for s in body["mostPlayed"]] == [LIGHTHOUSE]
+    assert [s["seedId"] for s in body["favouriteRadios"]] == [LIGHTHOUSE]
