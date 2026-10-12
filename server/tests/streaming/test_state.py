@@ -270,3 +270,20 @@ def test_an_idle_job_loses_its_attempt_directories(state: str) -> None:
     assert plan == CleanupPlan(upto=2)
     assert plan.covers(2)
     assert not plan.covers(3)
+
+
+def test_a_file_growing_past_the_announced_size_aborts() -> None:
+    assert step(WHOLE.advanced(100), replace(GROWING, bytes_downloaded=1001)) == Abort(
+        "the download grew past the announced size"
+    )
+
+
+def test_a_chunked_listener_past_the_end_of_a_retry_aborts() -> None:
+    # It sent 500 bytes of attempt 1, followed attempt 2 (same format), which ends at 400.
+    retry = replace(GROWING, attempt_seq=2, expected_size=None)
+    moved = step(CHUNKED.advanced(500), retry)
+    assert isinstance(moved, Follow)
+    done = replace(retry, bytes_downloaded=400, finished=True)
+    assert step(moved.cursor, done) == Abort("the listener passed the end of the final file")
+    # Exactly at the end is a clean end.
+    assert step(replace(moved.cursor, offset=400), done) == Done()

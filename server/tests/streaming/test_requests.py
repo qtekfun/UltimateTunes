@@ -354,3 +354,14 @@ async def test_another_song_is_another_job(live: Live) -> None:
     assert not first.body
     assert not second.body
     assert isinstance(first.error, httpx.HTTPError | None)
+
+
+async def test_head_of_an_unknown_external_song_is_not_found(live: Live) -> None:
+    with pytest.raises(NotFound):
+        await streams(live).serve(
+            direct(live, "yt:Zz9Zz9Zz9Zz", "HEAD"),
+            VirtualId("song", "Zz9Zz9Zz9Zz"),
+            video="Zz9Zz9Zz9Zz",
+            download=False,
+            head=True,
+        )
