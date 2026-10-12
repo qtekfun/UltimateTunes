@@ -580,7 +580,7 @@ components:
             type: https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_parameter
             title: Invalid parameter
             status: 400
-            detail: 'leaseId: field required'
+            detail: 'Invalid: body.workerId'
             code: invalid_parameter
             instance: /internal/v1/jobs/claim
     Unauthorized:
@@ -621,7 +621,7 @@ components:
             detail: The lease expired at 2026-10-12T08:16:30.123Z
             code: lease_lost
     PathRejected:
-      description: '`path_rejected` or `invalid_parameter`.'
+      description: '`path_rejected`.'
       content:
         application/problem+json:
           schema:
