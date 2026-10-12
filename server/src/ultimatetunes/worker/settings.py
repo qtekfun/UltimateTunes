@@ -41,6 +41,10 @@ class WorkerSettings(AreaSettings):
     # the maximum while blocks continue (spike T03c).
     blocked_pause_s: float = Field(default=1800.0, ge=0)
     blocked_pause_max_s: float = Field(default=14400.0, ge=0)
+    # Pace of the fake downloader (`UT_FAKE_YOUTUBE`, test stack only): the end-to-end suite
+    # (PLAN T20) slows it down so a stream is seen growing and a worker can be killed mid-download.
+    fake_download_chunks: int = Field(default=8, ge=1, le=1000)
+    fake_download_delay_s: float = Field(default=0.05, ge=0, le=60)
 
     # yt-dlp (spike T03c).
     ytdlp_dir: Path = Path("/opt/ytdlp")
