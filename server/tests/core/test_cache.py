@@ -57,3 +57,44 @@ def test_json_helpers(cache: TtlCache) -> None:
 def test_ttl_must_be_positive(cache: TtlCache) -> None:
     with pytest.raises(ValueError, match="ttl"):
         cache.set("k", "v", ttl_s=0)
+
+
+def test_trim_removes_the_oldest_entries_past_the_entry_cap(
+    cache: TtlCache, clock: FakeClock
+) -> None:
+    for n in range(5):
+        cache.set(f"k{n}", "v", ttl_s=100)
+        clock.advance(1)
+    cache.set("k0", "renewed", ttl_s=100)  # a rewrite makes the entry young again
+    assert cache.trim(max_entries=3, max_bytes=10_000) == 2
+    assert [cache.get(f"k{n}") for n in range(5)] == [
+        "renewed",
+        None,
+        None,
+        "v",
+        "v",
+    ]
+    assert cache.trim(max_entries=3, max_bytes=10_000) == 0
+
+
+def test_trim_keeps_the_total_size_under_the_byte_cap(cache: TtlCache, clock: FakeClock) -> None:
+    for n in range(4):
+        cache.set(f"k{n}", "x" * 100, ttl_s=100)
+        clock.advance(1)
+    assert cache.trim(max_entries=1000, max_bytes=250) == 2
+    assert cache.get("k1") is None
+    assert cache.get("k2") == "x" * 100
+
+
+def test_trim_works_in_batches(db: Database, clock: FakeClock) -> None:
+    cache = SqliteTtlCache(db, clock)
+    with db.transaction() as conn:
+        for n in range(1200):
+            conn.execute(
+                "INSERT INTO cache_entries (key, value, expires_at, created_at)"
+                " VALUES (?, 'v', '2999-01-01T00:00:00.000Z', ?)",
+                (f"k{n:05d}", f"2026-01-01T00:00:{n % 60:02d}.{n // 60:03d}Z"),
+            )
+    assert cache.trim(max_entries=100, max_bytes=10_000_000) == 1100
+    with db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM cache_entries").scalar() == 100

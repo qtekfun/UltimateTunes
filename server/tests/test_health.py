@@ -12,9 +12,13 @@ from ultimatetunes.app import create_app
 from ultimatetunes.db import migrate
 from ultimatetunes.settings import Settings
 
+LOCAL = ("127.0.0.1", 50000)
+LAN = ("192.168.1.20", 50000)
+PUBLIC = ("203.0.113.7", 50000)
 
-def client(settings: Settings) -> TestClient:
-    return TestClient(create_app(settings))
+
+def client(settings: Settings, peer: tuple[str, int] = LOCAL) -> TestClient:
+    return TestClient(create_app(settings), client=peer)
 
 
 def migrated(settings: Settings) -> Settings:
@@ -76,3 +80,32 @@ def test_docs_and_openapi_are_not_exposed(settings: Settings) -> None:
     c = client(settings)
     assert c.get("/docs").status_code == 404
     assert c.get("/openapi.json").status_code == 404
+
+
+def test_readyz_detail_only_for_local_and_allowlisted_callers(settings: Settings) -> None:
+    migrated(settings)
+    # Inside the admin allowlist (LAN by default): the detail.
+    assert "checks" in client(settings, LAN).get("/readyz").json()
+    # From the Internet: only the status.
+    public = client(settings, PUBLIC).get("/readyz")
+    assert public.status_code == 200
+    assert public.json() == {"status": "ok"}
+    # Through a proxy nobody declared (every caller looks local): only the status.
+    proxied = client(settings, LOCAL).get("/readyz", headers={"X-Forwarded-For": "203.0.113.9"})
+    assert proxied.json() == {"status": "ok"}
+
+
+def test_readyz_failure_keeps_its_status_without_detail(settings: Settings) -> None:
+    response = client(settings, PUBLIC).get("/readyz")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
+
+
+def test_readyz_detail_through_a_trusted_proxy(settings: Settings) -> None:
+    migrated(settings)
+    behind = settings.model_copy(update={"trusted_proxies": "172.16.0.0/12"})
+    proxy = ("172.18.0.1", 40000)
+    from_lan = client(behind, proxy).get("/readyz", headers={"X-Forwarded-For": "192.168.1.5"})
+    assert "checks" in from_lan.json()
+    from_outside = client(behind, proxy).get("/readyz", headers={"X-Forwarded-For": "203.0.113.9"})
+    assert from_outside.json() == {"status": "ok"}

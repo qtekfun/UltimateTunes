@@ -21,7 +21,9 @@ from ultimatetunes.admin import notify, routes
 from ultimatetunes.admin.security import AdminGate, SessionCodec
 from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.service import AuthService
+from ultimatetunes.core.netaddr import LOOPBACK
 from ultimatetunes.core.services import Services
+from ultimatetunes.health import PROBE_NETWORKS_STATE
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,8 @@ def install(
     for exc_class, handler in routes.handlers().items():
         app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]
     app.add_middleware(AdminGate, networks=settings.networks())
+    # Whoever may reach the panel may also read the `/readyz` detail.
+    setattr(app.state, PROBE_NETWORKS_STATE, LOOPBACK + settings.networks())
     sweep = notify.NotificationSweep(services.db, services.clock, sender)
     _run_during_lifespan(app, sweep, settings.admin_notify_interval_s)
 

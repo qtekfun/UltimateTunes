@@ -13,8 +13,10 @@ not clash with the ones here or with another area's.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ultimatetunes.core.netaddr import IpNetwork, parse_networks
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -52,11 +54,42 @@ class Settings(BaseSettings):
     # Loopback unless told otherwise; the image sets UT_HOST=0.0.0.0 and compose decides exposure.
     host: str = "127.0.0.1"
     port: int = 8044
+    # The internal worker API (`/internal/v1`) has its own listener (SECURITY.md, T22): the
+    # client port never serves it and this one serves nothing else. Bound to `host` unless
+    # `UT_INTERNAL_HOST` says otherwise; never publish this port (compose keeps it on the
+    # internal network).
+    internal_host: str | None = None
+    internal_port: int = Field(default=8045, ge=1, le=65535)
+    # Comma-separated CIDRs of reverse proxies whose `X-Forwarded-For` is believed (Caddy,
+    # `tailscale serve` through Docker's port publishing, ...). Empty (default): nobody's, the
+    # TCP peer is the client, and `/admin` refuses requests that carry forwarding headers.
+    trusted_proxies: str = ""
+    # Largest request body the api reads (an import file is at most 1 MiB).
+    max_body_bytes: int = Field(default=4 * 1024 * 1024, ge=64 * 1024)
+    # Housekeeping of the api (expired cache entries, idle rate-limit buckets, cache caps).
+    housekeeping_interval_s: float = Field(default=600.0, ge=0)
+    # Caps of the shared `TtlCache` (`cache_entries`): oldest entries go first past either.
+    cache_max_entries: int = Field(default=200_000, ge=100)
+    cache_max_bytes: int = Field(default=256 * 1024 * 1024, ge=1024 * 1024)
     log_level: LogLevel = "INFO"
     shutdown_timeout_s: int = 10
     worker_token: SecretStr | None = None
     # Test stack only: the fake catalog and fake downloader instead of YouTube Music.
     fake_youtube: bool = False
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _valid_proxies(cls, value: str) -> str:
+        parse_networks(value)
+        return value
+
+    @property
+    def proxy_networks(self) -> tuple[IpNetwork, ...]:
+        return parse_networks(self.trusted_proxies)
+
+    @property
+    def internal_bind(self) -> str:
+        return self.internal_host or self.host
 
     @property
     def database_file(self) -> Path:

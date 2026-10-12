@@ -614,7 +614,7 @@ def test_worker_command_runs_the_loop(settings: Settings, monkeypatch: pytest.Mo
 
 
 def test_worker_settings_come_from_ut_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert WorkerSettings().api_url == "http://api:8044"
+    assert WorkerSettings().api_url == "http://api:8045"
     monkeypatch.setenv("UT_API_URL", "http://api.internal:8044")
     monkeypatch.setenv("UT_WORKER_ID", "worker-1")
     monkeypatch.setenv("UT_YTDLP_PLAYER_CLIENTS", "default,web_embedded")
