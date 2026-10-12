@@ -11,27 +11,32 @@
 <title>{% block title %}{{ _("Admin") }}{% endblock %} · UltimateTunes</title>
 <link rel="stylesheet" href="/admin/static/admin.css">
 <script src="/admin/static/htmx.min.js" defer></script>
+<script src="/admin/static/admin.js" defer></script>
 </head>
 <body{% if admin %} hx-headers='{"X-CSRF-Token": "{{ csrf }}"}'{% endif %}>
+<a class="skip" href="#main">{{ _("Skip to content") }}</a>
 {% if admin %}
 <header class="top">
-  <span class="brand">UltimateTunes</span>
+  <a class="brand" href="/admin">UltimateTunes</a>
   <nav aria-label="{{ _("Sections") }}">
     {% for href, label in [("/admin", "Overview"), ("/admin/users", "Users"), ("/admin/keys", "API keys"), ("/admin/jobs", "Downloads"), ("/admin/library", "Library"), ("/admin/ytdlp", "yt-dlp"), ("/admin/audit", "Audit log"), ("/admin/notifications", "Notifications")] %}
-    <a href="{{ href }}"{% if path == href %} aria-current="page"{% endif %}>{{ _(label) }}</a>
+    <a href="{{ href }}"{% if path == href or (href != "/admin" and path.startswith(href + "/")) %} aria-current="page"{% endif %}>{{ _(label) }}</a>
     {% endfor %}
   </nav>
-  <span class="muted">{{ admin.user.username }}</span>
-  <form class="inline" method="post" action="/admin/logout">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="secondary" type="submit">{{ _("Sign out") }}</button>
-  </form>
+  <span class="who">
+    <span class="muted">{{ admin.user.username }}</span>
+    <form class="inline" method="post" action="/admin/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="secondary" type="submit">{{ _("Sign out") }}</button>
+    </form>
+  </span>
 </header>
 {% endif %}
-<main>
+<main id="main">
 {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% block content %}{% endblock %}
 </main>
+{% if admin %}<footer class="bottom">UltimateTunes {{ version }}</footer>{% endif %}
 </body>
 </html>

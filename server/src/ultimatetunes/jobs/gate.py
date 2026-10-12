@@ -61,6 +61,11 @@ def hour_start(moment: datetime) -> str:
     return format_ts(moment.replace(minute=0, second=0, microsecond=0))
 
 
+def window_start(now: datetime) -> str:
+    """The first hour row inside the 24 hours before `now` (the daily-bytes window)."""
+    return hour_start(now - DAY + timedelta(hours=1))
+
+
 class DownloadGate:
     def __init__(
         self, limits: DownloadLimits, clock: Clock, stores: Sequence[FileStore] = ()
@@ -168,7 +173,7 @@ class DownloadGate:
 
     def _window_start(self) -> str:
         """The first hour row inside the last 24 hours."""
-        return hour_start(self._clock.now() - DAY + timedelta(hours=1))
+        return window_start(self._clock.now())
 
     # ------------------------------------------------------------------ claims and progress
 

@@ -21,6 +21,8 @@ from ultimatetunes.ids import new_id
 from ultimatetunes.search.text import like_pattern, normalize
 
 LIST_LIMIT = 200
+# Rows per page of the lists that grow without bound (queue, needs review, audit log).
+PAGE_SIZE = 50
 JOB_STATES = ("queued", "downloading", "tagging", "ready", "failed", "cancelled")
 LEASED = ("downloading", "tagging")
 WORKER_COMMANDS = ("update_ytdlp", "run_canary")
@@ -41,6 +43,7 @@ class JobRow:
     updated_at: str
     title: str
     artist_name: str
+    requested_by_name: str | None
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,14 @@ class CommandRow:
 
 
 @dataclass(frozen=True)
+class UserUsage:
+    """One user's share of the download limits (core/limits.py, jobs/gate.py)."""
+
+    active_jobs: int
+    bytes_24h: int
+
+
+@dataclass(frozen=True)
 class Deleted:
     """What a library delete removed: files to delete through the store, and counts."""
 
@@ -108,7 +119,12 @@ class Deleted:
 _JOBS = (
     "SELECT j.id, j.state, j.priority, j.attempts, j.max_attempts, j.progress,"
     " j.cancel_requested, j.error_code, j.error_message, j.yt_video_id, j.updated_at,"
-    " t.title, t.artist_name FROM jobs j JOIN tracks t ON t.id = j.track_id"
+    " t.title, t.artist_name, u.username AS requested_by_name"
+    " FROM jobs j JOIN tracks t ON t.id = j.track_id LEFT JOIN users u ON u.id = j.requested_by"
+)
+_AUDIT = (
+    "SELECT id, occurred_at, actor_user_id, actor_ip, action, target_type, target_id, detail"
+    " FROM audit_log"
 )
 
 
@@ -125,15 +141,17 @@ def _opt(value: object) -> str | None:
 class AdminRepository(Repository):
     # ------------------------------------------------------------------ jobs
 
-    def jobs(self, state: str | None, limit: int = LIST_LIMIT) -> list[JobRow]:
+    def jobs(self, state: str | None, limit: int = LIST_LIMIT, offset: int = 0) -> list[JobRow]:
         if state is None:
             return self.all(
-                JobRow, _JOBS + " ORDER BY j.updated_at DESC, j.id DESC LIMIT ?", (limit,)
+                JobRow,
+                _JOBS + " ORDER BY j.updated_at DESC, j.id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
             )
         return self.all(
             JobRow,
-            _JOBS + " WHERE j.state = ? ORDER BY j.updated_at DESC, j.id DESC LIMIT ?",
-            (state, limit),
+            _JOBS + " WHERE j.state = ? ORDER BY j.updated_at DESC, j.id DESC LIMIT ? OFFSET ?",
+            (state, limit, offset),
         )
 
     def job_counts(self) -> dict[str, int]:
@@ -163,13 +181,21 @@ class AdminRepository(Repository):
             _int(row["track_bytes"]),
         )
 
-    def needs_review(self, limit: int = LIST_LIMIT) -> list[TrackRow]:
+    def needs_review(self, limit: int = LIST_LIMIT, offset: int = 0) -> list[TrackRow]:
         return self.all(
             TrackRow,
             "SELECT id, title, artist_name, album_name, status, size_bytes FROM tracks"
-            " WHERE needs_review = 1 ORDER BY updated_at DESC, id DESC LIMIT ?",
-            (limit,),
+            " WHERE needs_review = 1 ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         )
+
+    def mark_reviewed(self, track_id: str, now: str) -> None:
+        """Clears `needs_review` once the admin checked the track's metadata."""
+        if not self.run(
+            "UPDATE tracks SET needs_review = 0, updated_at = ? WHERE id = ? AND needs_review = 1",
+            (now, track_id),
+        ):
+            raise NotFound("No such track needs review")
 
     def find_tracks(self, query: str, limit: int = LIST_LIMIT) -> list[TrackRow]:
         """Tracks whose normalised title contains the normalised query."""
@@ -272,6 +298,52 @@ class AdminRepository(Repository):
                     " VALUES (?, ?, ?, ?)",
                     (playlist_id, position, entry["track_id"], entry["added_at"]),
                 )
+
+    # ------------------------------------------------------------------ download usage
+
+    def user_usage(self, since_hour: str) -> dict[str, UserUsage]:
+        """Per user: jobs queued or running, and bytes charged since `since_hour` (the gate's
+        24-hour window). Users with neither are left out."""
+        active = self.conn.execute(
+            "SELECT requested_by, COUNT(*) AS n FROM jobs WHERE requested_by IS NOT NULL"
+            " AND state IN ('queued', 'downloading', 'tagging') GROUP BY requested_by"
+        ).fetchall()
+        spent = self.conn.execute(
+            "SELECT user_id, SUM(bytes) AS n FROM download_usage WHERE hour_start >= ?"
+            " GROUP BY user_id",
+            (since_hour,),
+        ).fetchall()
+        jobs = {str(r["requested_by"]): _int(r["n"]) for r in active}
+        used = {str(r["user_id"]): _int(r["n"]) for r in spent}
+        return {
+            user: UserUsage(jobs.get(user, 0), used.get(user, 0))
+            for user in sorted(set(jobs) | set(used))
+        }
+
+    # ------------------------------------------------------------------ audit log
+
+    def audit_entries(
+        self, action: str | None, actor_id: str | None, limit: int, offset: int = 0
+    ) -> list[AuditEntry]:
+        """The audit log, newest first, optionally of one action and one actor."""
+        where: list[str] = []
+        params: list[object] = []
+        if action:
+            where.append("action = ?")
+            params.append(action)
+        if actor_id:
+            where.append("actor_user_id = ?")
+            params.append(actor_id)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        return self.all(
+            AuditEntry,
+            _AUDIT + clause + " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        )
+
+    def audit_actions(self) -> list[str]:
+        rows = self.conn.execute("SELECT DISTINCT action FROM audit_log ORDER BY action").fetchall()
+        return [str(r["action"]) for r in rows]
 
     # ------------------------------------------------------------------ workers and canary
 

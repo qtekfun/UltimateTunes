@@ -42,6 +42,8 @@ UltimateTunes is meant for one household on hardware you control, reached over y
 5. In the admin panel (`/admin`), create an API key for each device (it can show it as a QR code), build the app (`cd android && ./gradlew assembleDebug`, or a signed release, see [RELEASING.md](RELEASING.md)) and connect it with the server address and the key.
 
 More on running it:
+- [docs/admin-guide.md](docs/admin-guide.md): running it day to day from the admin panel (users, device keys, the download queue, yt-dlp updates, the audit log).
+- [docs/configuration.md](docs/configuration.md): every `UT_*` setting with its default.
 - [docs/architecture.md](docs/architecture.md): how the containers, networks and every connection fit together.
 - [deploy/README.md](deploy/README.md): reverse proxy examples (Caddy, Traefik, Traefik behind Cloudflare Tunnel with Authelia, Tailscale), trusted proxies, notifications with ntfy, backups, and what to check before exposing the server.
 - [docs/web-player.md](docs/web-player.md): the web player.

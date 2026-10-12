@@ -90,3 +90,18 @@ async def test_wait_for_token_sleeps_until_allowed() -> None:
     for _ in range(3):
         await wait_for_token(limiter, "musicbrainz:global", ONE_PER_S, sleep)
     assert slept == [1, 1]
+
+
+def test_peek_reports_tokens_without_taking_any() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    limit = Limit(rate_per_s=1.0, burst=3)
+    assert limiter.peek("k", limit) == 3
+    limiter.hit("k", limit)
+    limiter.hit("k", limit)
+    assert limiter.peek("k", limit) == 1
+    clock.advance(0.5)
+    assert limiter.peek("k", limit) == 1.5
+    clock.advance(3600)
+    assert limiter.peek("k", limit) == 3
+    assert [limiter.hit("k", limit).allowed for _ in range(4)] == [True, True, True, False]

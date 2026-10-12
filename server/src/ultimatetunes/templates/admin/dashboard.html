@@ -4,24 +4,78 @@
 {% block title %}{{ _("Overview") }}{% endblock %}
 {% block content %}
 <h1>{{ _("Overview") }}</h1>
+<section class="card" aria-labelledby="attention">
+  <h2 id="attention">{{ _("Needs attention") }}</h2>
+  <ul class="alerts">
+  {% set calm = namespace(ok=true) %}
+  {% if low_disk_since %}{% set calm.ok = false %}
+    <li class="bad">{{ _("Downloads are paused: low disk space since %(since)s. Free space on /music or /staging (minimum %(minimum)s).", since=low_disk_since, minimum=limits.min_free_bytes | size) }}</li>
+  {% else %}
+    {% for disk in disks if disk.low %}{% set calm.ok = false %}
+    <li class="bad">{{ _("%(disk)s is below the free-space minimum (%(minimum)s): new downloads will be refused.", disk=disk.name, minimum=limits.min_free_bytes | size) }}</li>
+    {% endfor %}
+  {% endif %}
+  {% if breaker and breaker.open %}{% set calm.ok = false %}
+    <li class="bad">{{ _("YouTube Music is throttling this server: searches show the library only for now.") }} <a href="/admin/ytdlp">yt-dlp</a></li>
+  {% endif %}
+  {% if ytm_tokens < 1 %}{% set calm.ok = false %}
+    <li>{{ _("The shared YouTube Music request budget is used up: lookups are waiting for it to refill.") }}</li>
+  {% endif %}
+  {% if canary and not canary.ok %}{% set calm.ok = false %}
+    <li class="bad">{{ _("The last canary run failed (%(when)s).", when=canary.ran_at) }} <a href="/admin/ytdlp">{{ _("Details") }}</a></li>
+  {% endif %}
+  {% if not workers %}{% set calm.ok = false %}
+    <li>{{ _("No worker has reported yet: downloads will wait in the queue.") }}</li>
+  {% endif %}
+  {% if jobs.failed %}{% set calm.ok = false %}
+    <li><a href="/admin/jobs?state=failed">{{ _("%(count)s failed downloads", count=jobs.failed) }}</a></li>
+  {% endif %}
+  {% if stats.needs_review %}{% set calm.ok = false %}
+    <li><a href="/admin/library">{{ _("%(count)s tracks need review", count=stats.needs_review) }}</a></li>
+  {% endif %}
+  {% if calm.ok %}
+    <li class="ok">{{ _("Everything looks fine.") }}</li>
+  {% endif %}
+  </ul>
+</section>
 <div class="grid">
-  <div class="card stat"><div class="muted">{{ _("Users") }}</div><div class="value">{{ users }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Tracks") }}</div><div class="value">{{ stats.tracks }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Albums") }}</div><div class="value">{{ stats.albums }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Need review") }}</div><div class="value">{{ stats.needs_review }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Queued") }}</div><div class="value">{{ jobs.queued }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Downloading") }}</div><div class="value">{{ jobs.downloading + jobs.tagging }}</div></div>
-  <div class="card stat"><div class="muted">{{ _("Failed") }}</div><div class="value">{{ jobs.failed }}</div></div>
+  <a class="card stat" href="/admin/users"><div class="muted">{{ _("Users") }}</div><div class="value">{{ users }}</div></a>
+  <a class="card stat" href="/admin/library"><div class="muted">{{ _("Tracks") }}</div><div class="value">{{ stats.tracks }}</div></a>
+  <a class="card stat" href="/admin/library"><div class="muted">{{ _("Albums") }}</div><div class="value">{{ stats.albums }}</div></a>
+  <a class="card stat" href="/admin/library"><div class="muted">{{ _("Need review") }}</div><div class="value">{{ stats.needs_review }}</div></a>
+  <a class="card stat" href="/admin/jobs?state=queued"><div class="muted">{{ _("Queued") }}</div><div class="value">{{ jobs.queued }}</div></a>
+  <a class="card stat" href="/admin/jobs?state=downloading"><div class="muted">{{ _("Downloading") }}</div><div class="value">{{ jobs.downloading + jobs.tagging }}</div></a>
+  <a class="card stat" href="/admin/jobs?state=failed"><div class="muted">{{ _("Failed") }}</div><div class="value">{{ jobs.failed }}</div></a>
+  <div class="card stat"><div class="muted">{{ _("Downloaded in 24 h") }}</div><div class="value">{{ bytes_24h | size }}</div></div>
+</div>
+<div class="card">
+  <h2>{{ _("Disk space") }}</h2>
+  <div class="table-wrap">
+  <table class="cards">
+    <thead><tr><th scope="col">{{ _("Volume") }}</th><th scope="col">{{ _("Free") }}</th><th scope="col">{{ _("Size") }}</th><th scope="col">{{ _("State") }}</th></tr></thead>
+    <tbody>
+    {% for disk in disks %}
+    <tr>
+      <td data-label="{{ _("Volume") }}"><code>{{ disk.name }}</code></td>
+      <td data-label="{{ _("Free") }}">{{ disk.free_bytes | size if disk.free_bytes is not none else "?" }}</td>
+      <td data-label="{{ _("Size") }}">{{ disk.total_bytes | size if disk.total_bytes is not none else "?" }}</td>
+      <td data-label="{{ _("State") }}">{% if disk.low %}<span class="bad">{{ _("Low") }}</span>{% else %}<span class="ok">{{ _("OK") }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">{{ _("Below %(minimum)s free on either volume, new downloads are refused and workers stop claiming (UT_MIN_FREE_BYTES).", minimum=limits.min_free_bytes | size) }}</p>
 </div>
 <div class="card">
   <h2>{{ _("YouTube Music") }}</h2>
   {% include "_breaker.html" %}
+  <p>{{ _("Shared request budget") }}: {{ ytm_tokens | round(1) }} / {{ ytm_burst | round(1) }}</p>
   <p>{{ _("Last canary run") }}:
   {% if canary %}
     <span class="{{ 'ok' if canary.ok else 'bad' }}">{{ _("OK") if canary.ok else _("Failed") }}</span> <span class="muted">{{ canary.ran_at }}</span>
   {% else %}<span class="muted">{{ _("none yet") }}</span>{% endif %}
   </p>
-  <p>{{ _("Workers seen") }}: {{ workers | length }}</p>
+  <p>{{ _("Workers seen") }}: {{ workers | length }}{% for worker in workers[:1] %} · yt-dlp {{ worker.ytdlp_version or "-" }} <span class="muted">({{ _("last report %(when)s", when=worker.last_seen_at) }})</span>{% endfor %}</p>
 </div>
-<p class="muted">UltimateTunes {{ version }}</p>
 {% endblock %}

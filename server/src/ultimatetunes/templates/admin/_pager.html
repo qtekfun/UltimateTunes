@@ -1,0 +1,10 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# Previous / next links of a paged list (`routes.Pager`). #}
+{% if pager.number > 1 or pager.has_next %}
+<nav class="pager" aria-label="{{ _("Pages") }}">
+  {% if pager.number > 1 %}<a href="{{ pager.href(pager.number - 1) }}" rel="prev">← {{ _("Newer") }}</a>{% endif %}
+  <span class="muted">{{ _("Page %(number)s", number=pager.number) }}</span>
+  {% if pager.has_next %}<a href="{{ pager.href(pager.number + 1) }}" rel="next">{{ _("Older") }} →</a>{% endif %}
+</nav>
+{% endif %}
