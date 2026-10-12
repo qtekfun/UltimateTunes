@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Typed row mapping and the repository base."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,14 +40,15 @@ class ItemRepository(Repository):
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> Database:
+def db(tmp_path: Path) -> Iterator[Database]:
     database = Database.sqlite(tmp_path / "ut.db")
     with database.transaction() as conn:
         conn.execute(
             "CREATE TABLE items (id TEXT NOT NULL PRIMARY KEY, flag INTEGER NOT NULL,"
             " maybe INTEGER, count BIGINT NOT NULL)"
         )
-    return database
+    yield database
+    database.close()
 
 
 def test_round_trip_maps_booleans(db: Database) -> None:

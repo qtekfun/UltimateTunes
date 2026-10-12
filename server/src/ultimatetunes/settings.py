@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     shutdown_timeout_s: int = 10
     worker_token: SecretStr | None = None
+    # Test stack only: the fake catalog and fake downloader instead of YouTube Music.
+    fake_youtube: bool = False
 
     @property
     def database_file(self) -> Path:

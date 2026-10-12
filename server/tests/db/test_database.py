@@ -3,6 +3,7 @@
 """Connection management on SQLite: one serialized writer, pooled readers, lazy opening."""
 
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,11 +13,12 @@ from ultimatetunes.db.driver import connect_sqlite, to_format_style
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> Database:
+def db(tmp_path: Path) -> Iterator[Database]:
     database = Database.sqlite(tmp_path / "data" / "ut.db", readers=2)
     with database.transaction() as conn:
         conn.execute("CREATE TABLE t (k TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL)")
-    return database
+    yield database
+    database.close()
 
 
 def test_nothing_is_opened_until_first_use(tmp_path: Path) -> None:
@@ -57,9 +59,11 @@ def test_integrity_and_other_errors_are_translated(db: Database) -> None:
 
 def test_nested_transactions_are_refused(tmp_path: Path) -> None:
     conn = connect_sqlite(tmp_path / "x.db")
-    with pytest.raises(RuntimeError, match="nested"), conn.transaction(), conn.transaction():
-        pass  # pragma: no cover - never reached
-    conn.close()
+    try:
+        with pytest.raises(RuntimeError, match="nested"), conn.transaction(), conn.transaction():
+            pass  # pragma: no cover - never reached
+    finally:
+        conn.close()
 
 
 def test_writes_are_serialized(db: Database) -> None:
