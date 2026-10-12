@@ -1,0 +1,17 @@
+{"name": "The Paper Lanterns", "channelId": "UCq8XbV1r0LwZ5mN3tYp7kQe", "description": "An invented band.",
+ "monthlyListeners": "1.1M", "subscribers": "200K", "radioId": "RDEMfakeLanternsRadio0001",
+ "thumbnails": [{"url": "https://lh3.googleusercontent.com/fakeLanternsBanner=w2880-h1200-p-l90-rj", "width": 2880, "height": 1200}],
+ "songs": {"browseId": "VLOLAK5uy_fakeLanternsSongs0123456789abcde",
+   "results": [
+     {"videoId": "Fk2Lp9QwXa1", "title": "Low Tide Letters", "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}],
+      "album": {"name": "Lanterns at Dusk", "id": "MPREb_k3Vd9QmT2xL"}, "videoType": "MUSIC_VIDEO_TYPE_ATV",
+      "isAvailable": true, "isExplicit": false,
+      "thumbnails": [{"url": "https://yt3.googleusercontent.com/fakeLowTide=w60-h60-l90-rj", "width": 60, "height": 60}]}]},
+ "albums": {"browseId": "UCq8XbV1r0LwZ5mN3tYp7kQe", "params": "fakeParams",
+   "results": [{"title": "Lanterns at Dusk", "type": "Album", "year": "2024", "browseId": "MPREb_k3Vd9QmT2xL",
+     "isExplicit": false, "thumbnails": [{"url": "https://yt3.googleusercontent.com/fakeDusk=w226-h226-l90-rj", "width": 226, "height": 226}]}]},
+ "singles": {"results": [{"title": "Paper Moons", "year": "2023", "browseId": "MPREb_Sg1Pm2Mn3Lk",
+     "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}, {"name": "Neon Harbor", "id": "UCn4HbR7oQ2sLx9TzV0eWm3K"}],
+     "thumbnails": []}]},
+ "videos": {"results": []},
+ "related": {"results": []}}

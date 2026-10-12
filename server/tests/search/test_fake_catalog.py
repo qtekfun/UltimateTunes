@@ -6,6 +6,11 @@ import re
 
 import pytest
 
+from ultimatetunes.core.cache import MemoryTtlCache
+from ultimatetunes.core.clock import FakeClock
+from ultimatetunes.core.inflight import MemoryInFlight
+from ultimatetunes.core.ratelimit import SqliteRateLimiter
+from ultimatetunes.db import Database
 from ultimatetunes.errors import FeatureNotImplemented, NotFound, UpstreamUnavailable
 from ultimatetunes.search.catalog import (
     CatalogThrottled,
@@ -13,6 +18,7 @@ from ultimatetunes.search.catalog import (
     build_catalog,
 )
 from ultimatetunes.search.fake import PLAYLIST_ID, FakeMusicCatalog
+from ultimatetunes.search.guard import GuardedCatalog
 from ultimatetunes.settings import Settings
 
 pytestmark = pytest.mark.anyio
@@ -72,9 +78,8 @@ async def test_failures_can_be_injected() -> None:
         await catalog.search_songs("x", 1)
 
 
-async def test_unavailable_catalog_until_t06(settings: Settings) -> None:
-    catalog = build_catalog(settings)
-    assert isinstance(catalog, UnavailableCatalog)
+async def test_unavailable_catalog_refuses_everything() -> None:
+    catalog = UnavailableCatalog()
     for call in (
         catalog.search_songs("x", 1),
         catalog.search_albums("x", 1),
@@ -87,5 +92,16 @@ async def test_unavailable_catalog_until_t06(settings: Settings) -> None:
     ):
         with pytest.raises(FeatureNotImplemented):
             await call
+
+
+def test_build_catalog(settings: Settings, db: Database, clock: FakeClock) -> None:
+    assert isinstance(build_catalog(settings), GuardedCatalog)
+    shared = build_catalog(
+        settings,
+        cache=MemoryTtlCache(clock),
+        limiter=SqliteRateLimiter(db, clock),
+        inflight=MemoryInFlight(),
+    )
+    assert isinstance(shared, GuardedCatalog)
     fake = build_catalog(settings.model_copy(update={"fake_youtube": True}))
     assert isinstance(fake, FakeMusicCatalog)
