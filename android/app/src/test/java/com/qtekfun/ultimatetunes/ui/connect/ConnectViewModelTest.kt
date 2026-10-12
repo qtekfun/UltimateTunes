@@ -4,11 +4,13 @@
 package com.qtekfun.ultimatetunes.ui.connect
 
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
+import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.fake.ContractFixtures
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.apiWith
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import java.util.Optional
 import kotlinx.coroutines.test.runTest
 import mockwebserver3.MockResponse
 import okhttp3.Headers.Companion.headersOf
@@ -182,10 +184,11 @@ class ConnectViewModelTest {
 
     @Test
     fun `plain http is refused where the network security config forbids it`() = runTest {
-        val strict = ConnectViewModel(apiWith(source), ConnectionGate(source)) { host ->
-            host ==
-                "10.0.2.2"
-        }
+        val strict = ConnectViewModel(
+            apiWith(source),
+            ConnectionGate(source),
+            cleartext = { host -> host == "10.0.2.2" }
+        )
         strict.onServerUrlChange("http://music.example.net")
         strict.onApiKeyChange(FakeTunesServer.API_KEY)
 
@@ -197,6 +200,60 @@ class ConnectViewModelTest {
         // The emulator's host may use http in debug builds; https is always fine.
         strict.onServerUrlChange("https://music.example.net")
         assertNull(strict.state.value.error)
+    }
+
+    @Test
+    fun `release builds have no demo`() {
+        assertNull(viewModel.demoLabelRes)
+
+        viewModel.tryDemo()
+
+        assertFalse(viewModel.state.value.checking)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `the demo connects to its server through the normal checks`() = runTest {
+        val demo = object : DemoServer {
+            override val labelRes: Int = DEMO_LABEL
+
+            override suspend fun start() = server.serverConfig()
+        }
+        val withDemo = ConnectViewModel(
+            apiWith(source),
+            ConnectionGate(source),
+            CleartextPolicy { true },
+            Optional.of(demo)
+        )
+        assertEquals(DEMO_LABEL, withDemo.demoLabelRes)
+
+        withDemo.tryDemo()
+        val state = withDemo.state.awaitFirst { !it.checking }
+
+        assertEquals("UltimateTunes", state.connectedTo)
+        assertEquals(server.baseUrl, source.config.value?.root)
+        assertEquals("", state.serverUrl)
+    }
+
+    @Test
+    fun `a demo server that does not start is reported as unreachable`() = runTest {
+        val demo = object : DemoServer {
+            override val labelRes: Int = DEMO_LABEL
+
+            override suspend fun start(): ServerConfig? = null
+        }
+        val withDemo = ConnectViewModel(
+            apiWith(source),
+            ConnectionGate(source),
+            CleartextPolicy { true },
+            Optional.of(demo)
+        )
+
+        withDemo.tryDemo()
+        val state = withDemo.state.awaitFirst { !it.checking }
+
+        assertEquals(ConnectError.UNREACHABLE, state.error)
+        assertNull(source.config.value)
     }
 
     @Test
@@ -290,5 +347,9 @@ class ConnectViewModelTest {
             assertNull(normalize("ftp://example.net"))
             assertNull(normalize("https://"))
         }
+    }
+
+    private companion object {
+        const val DEMO_LABEL = 42
     }
 }
