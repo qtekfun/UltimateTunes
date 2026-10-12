@@ -1,0 +1,13 @@
+{"id": "PLfakeRoadTrip0123456789abcdefGH", "title": "Road Trip (fake)", "privacy": "PUBLIC", "owned": false,
+ "author": {"name": "Somebody", "id": null}, "trackCount": 5, "duration_seconds": 1000, "year": "2026",
+ "thumbnails": [{"url": "https://i.ytimg.com/pl_c/fakeRoadTrip/studio_square_thumbnail.jpg", "width": 300, "height": 300}],
+ "tracks": [
+   {"videoId": "Wq5Jd7HsKe2", "title": "Night Ferry", "album": null, "videoType": "MUSIC_VIDEO_TYPE_OMV",
+    "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}], "isAvailable": true,
+    "isExplicit": false, "duration": "4:01", "duration_seconds": 241,
+    "thumbnails": [{"url": "https://i.ytimg.com/vi/Wq5Jd7HsKe2/hqdefault.jpg?sqp=fake", "width": 400, "height": 225}]},
+   {"videoId": "Tz9Kd4Wb7Rc", "title": "Signal Fires", "album": {"name": "Static Bloom", "id": "MPREb_Hn2Vq8Lr5Tz"},
+    "videoType": "MUSIC_VIDEO_TYPE_ATV", "artists": [{"name": "Neon Harbor", "id": "UCn4HbR7oQ2sLx9TzV0eWm3K"}],
+    "isAvailable": true, "isExplicit": false, "duration": "3:45", "duration_seconds": 225, "thumbnails": []},
+   {"videoId": null, "title": "Some live upload", "artists": [{"name": "Some uploader", "id": null}], "album": null,
+    "videoType": null, "isAvailable": false, "isExplicit": false, "duration": "4:23", "duration_seconds": 263}]}

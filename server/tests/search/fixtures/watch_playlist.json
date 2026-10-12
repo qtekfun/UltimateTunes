@@ -1,0 +1,16 @@
+{"playlistId": "RDAMVMFk2Lp9QwXa1", "lyrics": "MPLYt_fakeLyrics-1", "related": "MPTRt_fakeRelated-1",
+ "tracks": [
+   {"videoId": "Fk2Lp9QwXa1", "title": "Low Tide Letters", "length": "3:34",
+    "videoType": "MUSIC_VIDEO_TYPE_ATV", "year": "2024",
+    "artists": [{"name": "The Paper Lanterns", "id": "UCq8XbV1r0LwZ5mN3tYp7kQe"}],
+    "album": {"name": "Lanterns at Dusk", "id": "MPREb_k3Vd9QmT2xL"},
+    "thumbnail": [{"url": "https://yt3.googleusercontent.com/fakeLowTide=w60-h60-l90-rj", "width": 60, "height": 60}]},
+   {"videoId": "Tz9Kd4Wb7Rc", "title": "Signal Fires", "length": "3:45",
+    "videoType": "MUSIC_VIDEO_TYPE_ATV", "year": "2025",
+    "artists": [{"name": "Neon Harbor", "id": "UCn4HbR7oQ2sLx9TzV0eWm3K"}],
+    "album": {"name": "Static Bloom", "id": "MPREb_Hn2Vq8Lr5Tz"},
+    "thumbnail": [{"url": "https://yt3.googleusercontent.com/fakeSignal=w60-h60-l90-rj", "width": 60, "height": 60}]},
+   {"videoId": "Up1Lo2Ad3Zz", "title": "Lanterns (fan upload)", "length": "4:01",
+    "videoType": "MUSIC_VIDEO_TYPE_UGC", "year": null,
+    "artists": [{"name": "Some uploader", "id": null}], "album": null,
+    "thumbnail": [{"url": "https://i.ytimg.com/vi/Up1Lo2Ad3Zz/hqdefault.jpg", "width": 480, "height": 360}]}]}
