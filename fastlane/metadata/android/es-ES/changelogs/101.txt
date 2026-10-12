@@ -1,0 +1,1 @@
+Primera versión de prueba, para ver el nuevo diseño. Todavía no puede conectarse a un servidor ni reproducir música.
