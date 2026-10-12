@@ -1,1 +1,1 @@
-Primera versión de prueba, para ver el nuevo diseño. Todavía no puede conectarse a un servidor ni reproducir música.
+Primera versión de prueba, para ver el nuevo diseño. Ya puedes conectarte a tu servidor con una clave de API; Escuchar ahora y la reproducción llegan en las próximas versiones.
