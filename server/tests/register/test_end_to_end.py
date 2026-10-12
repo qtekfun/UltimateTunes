@@ -24,6 +24,7 @@ from ultimatetunes.worker.settings import WorkerSettings
 
 pytestmark = [pytest.mark.anyio, needs_ffmpeg]
 FILE = "The Paper Lanterns/Glass Orchard/Glass Orchard.opus"
+TRACK = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001"
 
 
 async def no_sleep(_seconds: float) -> None:
@@ -64,8 +65,8 @@ def worker(api: Api, archiver: object) -> Worker:
 
 
 def enqueue(api: Api) -> str:
-    add_track(api.db, api.clock, "t1", VIDEO)
-    return api.services.jobs.enqueue(track_id="t1", video_id=VIDEO, priority=100).id
+    add_track(api.db, api.clock, TRACK, VIDEO)
+    return api.services.jobs.enqueue(track_id=TRACK, video_id=VIDEO, priority=100).id
 
 
 async def test_download_tag_register_move_complete(api: Api) -> None:
@@ -74,14 +75,20 @@ async def test_download_tag_register_move_complete(api: Api) -> None:
     job = api.services.jobs.get(job_id)
     assert job is not None
     assert job.state == "ready"
-    track = api.row("SELECT * FROM tracks WHERE id = 't1'")
+    track = api.row("SELECT * FROM tracks WHERE id = ?", TRACK)
     assert (track["status"], track["path"], track["format"]) == ("ready", FILE, "opus")
     assert track["needs_review"] == 1  # no lookups in the test stack
     assert api.services.library.size(FILE) == track["size_bytes"]
     assert track["album_id"] is not None
     assert track["artist_id"] is not None
     with api.services.library.open_read(FILE) as reader:
-        assert reader.read(4) == b"OggS"
+        archived = reader.read()
+    assert archived.startswith(b"OggS")
+    # Streamable through the OpenSubsonic `stream` of T05.
+    played = await api.client.get("/rest/stream", params={"apiKey": "utk_ana", "id": TRACK})
+    assert played.status_code == 200, played.text
+    assert played.content == archived
+    assert played.headers["content-type"].startswith("audio/ogg")
 
 
 async def test_a_retry_adopts_the_file_moved_before_a_crash(api: Api) -> None:
@@ -98,6 +105,6 @@ async def test_a_retry_adopts_the_file_moved_before_a_crash(api: Api) -> None:
     job = api.services.jobs.get(job_id)
     assert job is not None
     assert job.state == "ready"
-    assert api.row("SELECT status, path FROM tracks WHERE id = 't1'")[:] == ("ready", FILE)
+    assert api.row("SELECT status, path FROM tracks WHERE id = ?", TRACK)[:] == ("ready", FILE)
     album_dir = Path(api.services.library.local_path(FILE)).parent
     assert sorted(p.name for p in album_dir.iterdir()) == ["Glass Orchard.opus"]

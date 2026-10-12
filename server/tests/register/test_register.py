@@ -14,11 +14,14 @@ import pytest
 from pydantic import SecretStr
 
 from tests.jobs.test_queue import add_track, to_tagging
+from tests.library.harness import Keys
 from ultimatetunes.app import create_app
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.db import Database
+from ultimatetunes.db.driver import IntegrityError
 from ultimatetunes.jobs.queue import Claimed, SqliteJobQueue
+from ultimatetunes.library.register import Registrar
 from ultimatetunes.settings import Settings
 
 pytestmark = pytest.mark.anyio
@@ -85,6 +88,7 @@ async def api(
         update={"worker_token": SecretStr(TOKEN), "database_path": tmp_path / "data" / "ut.db"}
     )
     services = build_services(configured, clock)
+    services.authenticator = Keys()  # `apiKey=utk_ana` on /rest (tests/library/harness.py)
     transport = httpx.ASGITransport(app=create_app(services=services))
     async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
         yield Api(services, db, clock, client)
@@ -255,8 +259,8 @@ async def test_the_same_recording_is_merged(api: Api) -> None:
     r = await api.register(body(c))
     assert r.json() == {
         "trackId": "t0",
-        "albumId": "",
-        "artistId": "",
+        "albumId": None,
+        "artistId": None,
         "merged": True,
         "album": None,
     }
@@ -388,3 +392,171 @@ async def test_replay_gain_updates(api: Api) -> None:
     assert (await api.replay_gain("t1", put(5, leaseId="stale"))).status_code == 409
     bad = await api.replay_gain("t1", {"jobId": c.job_id})
     assert bad.status_code == 400
+
+
+def release(api: Api, c: Claim) -> Claim:
+    """The attempt dies (retryable failure), the backoff passes, the job is claimed again."""
+    api.services.jobs.fail(
+        c.job_id, c.lease_id, error_code="storage_error", retryable=True, message="died"
+    )
+    api.clock.advance(3600)
+    claimed = api.services.jobs.claim("w2", lease_s=60)
+    assert claimed is not None
+    with api.services.staging.open_write(f"{claimed.job.staging_dir}/archive.opus") as out:
+        out.write(AUDIO)
+    return Claim(c.job_id, claimed.lease.lease_id, c.track_id, claimed.job.staging_dir, claimed)
+
+
+async def test_the_album_gain_version_of_a_moved_file_is_adopted(api: Api) -> None:
+    """Last track of an album: register, album gain rewrites the file (reported with the
+    ReplayGain PUT), the file is moved, the attempt dies before complete. The retry registers
+    the pre-gain hash again and the api adopts the moved file anyway."""
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == 200
+    rewritten = AUDIO + b"album gain tags"
+    gain = {"trackGainDb": -1.0, "trackPeak": 0.5, "albumGainDb": -2.0, "albumPeak": 0.9}
+    sha = hashlib.sha256(rewritten).hexdigest()
+    put = {
+        "jobId": c.job_id,
+        "leaseId": c.lease_id,
+        "replayGain": gain,
+        "file": {"sizeBytes": len(rewritten), "sha256": sha},
+    }
+    assert (await api.replay_gain("t1", put)).status_code == 204
+    with api.services.library.open_write(PATH) as out:
+        out.write(rewritten)  # moved, then the worker died
+    again = release(api, c)
+    r = await api.register(body(again))
+    assert r.status_code == 200, r.text
+    job = api.row(
+        "SELECT library_path, placed_path, placed_sha256 FROM jobs WHERE id = ?", c.job_id
+    )
+    assert job[:] == (PATH, PATH, sha)
+    assert api.services.library.exists(PATH)
+
+
+async def test_a_retry_that_merges_removes_the_file_it_had_moved(api: Api) -> None:
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == 200
+    with api.services.library.open_write(PATH) as out:
+        out.write(AUDIO)
+    again = release(api, c)
+    # Meanwhile the same recording became ready elsewhere.
+    ready_track(api, "t0", path="A/B/01 - Old.opus", recording=RECORDING)
+    r = await api.register(body(again))
+    assert r.json()["merged"] is True
+    assert not api.services.library.exists(PATH)
+    job = api.row("SELECT placed_path, merge_into_track_id FROM jobs WHERE id = ?", c.job_id)
+    assert job[:] == (None, "t0")
+
+
+async def test_a_retry_with_another_path_removes_the_old_file(api: Api) -> None:
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == 200
+    with api.services.library.open_write(PATH) as out:
+        out.write(AUDIO)
+    again = release(api, c)
+    other = PATH.replace("04 - ", "")
+    assert (await api.register(body(again, other))).status_code == 200
+    assert not api.services.library.exists(PATH)
+
+
+@pytest.mark.parametrize("change", ["owned", "held", "different", "missing", "unreadable"])
+async def test_a_placed_file_is_only_removed_when_it_is_still_ours(api: Api, change: str) -> None:
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == 200
+    if change != "missing":
+        with api.services.library.open_write(PATH) as out:
+            out.write(AUDIO if change != "different" else b"changed")
+    again = release(api, c)
+    if change == "owned":
+        with api.db.transaction() as conn:
+            conn.execute("UPDATE tracks SET path = ? WHERE id = 't1'", (PATH,))
+    if change == "held":
+        c2 = claim(api, "t2", "Qx7Lm2pZ0aB")
+        with api.db.transaction() as conn:
+            conn.execute("UPDATE jobs SET library_path = ? WHERE id = ?", (PATH, c2.job_id))
+    if change == "unreadable":
+        api.services.library.delete(PATH)
+        (api.services.library.local_path(PATH)).mkdir(parents=True)
+    other = PATH.replace("04 - ", "")
+    assert (await api.register(body(again, other))).status_code == 200
+    assert api.services.library.exists(PATH) is (change != "missing")
+
+
+async def test_a_directory_at_the_path_is_a_conflict(api: Api) -> None:
+    c = claim(api)
+    api.services.library.local_path(PATH).mkdir(parents=True)
+    r = await api.register(body(c))
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+
+
+async def test_concurrent_artist_and_album_creation_is_found_again(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c = claim(api)
+    first = (await api.register(body(c))).json()
+    # Another register created both rows between our lookup and our insert: the first
+    # lookups miss them, the inserts are skipped, the second lookups find them.
+    for name in ("_find_artist", "_find_album"):
+        real = getattr(Registrar, name)
+        misses = {"left": 1}
+
+        def once(*args: Any, _real: Any = real, _misses: dict[str, int] = misses) -> Any:
+            if _misses["left"]:
+                _misses["left"] -= 1
+                return None
+            return _real(*args)
+
+        monkeypatch.setattr(Registrar, name, staticmethod(once))
+    c2 = claim(api, "t2", "Qx7Lm2pZ0aB", audio=b"two")
+    second = (
+        await api.register(body(c2, "The Paper Lanterns/Lanterns at Dusk/x.opus", audio=b"two"))
+    ).json()
+    assert (second["artistId"], second["albumId"]) == (first["artistId"], first["albumId"])
+    assert (api.count("artists"), api.count("albums")) == (1, 1)
+
+
+@pytest.mark.parametrize("finder", ["_find_artist", "_find_album"])
+async def test_rows_that_cannot_be_created_or_found_are_conflicts(
+    api: Api, monkeypatch: pytest.MonkeyPatch, finder: str
+) -> None:
+    c = claim(api)
+    await api.register(body(c))
+    monkeypatch.setattr(Registrar, finder, staticmethod(lambda *_args: None))
+    c2 = claim(api, "t2", "Qx7Lm2pZ0aB", audio=b"two")
+    r = await api.register(body(c2, "The Paper Lanterns/Lanterns at Dusk/x.opus", audio=b"two"))
+    assert (r.status_code, r.json()["code"]) == (409, "conflict")
+
+
+@pytest.mark.parametrize(("failures", "status"), [(1, 200), (2, 409)])
+async def test_a_unique_race_is_retried_once(
+    api: Api, monkeypatch: pytest.MonkeyPatch, failures: int, status: int
+) -> None:
+    real = Registrar._register
+    left = {"n": failures}
+
+    def racing(self: Registrar, *args: Any) -> Any:
+        if left["n"]:
+            left["n"] -= 1
+            raise IntegrityError("UNIQUE constraint failed: jobs.library_path")
+        return real(self, *args)
+
+    monkeypatch.setattr(Registrar, "_register", racing)
+    c = claim(api)
+    assert (await api.register(body(c))).status_code == status
+
+
+async def test_replay_gain_of_a_missing_library_file_is_not_found(api: Api) -> None:
+    c = claim(api)
+    registered = (await api.register(body(c, totalTracks=2))).json()
+    ready_track(api, "t0", path="A/B/01 - A.opus", album_id=registered["albumId"])
+    api.services.library.delete("A/B/01 - A.opus")
+    put = {
+        "jobId": c.job_id,
+        "leaseId": c.lease_id,
+        "replayGain": {"trackGainDb": -1.0, "trackPeak": 0.5},
+        "file": {"sizeBytes": 5, "sha256": "0" * 64},
+    }
+    r = await api.replay_gain("t0", put)
+    assert (r.status_code, r.json()["code"]) == (404, "not_found")

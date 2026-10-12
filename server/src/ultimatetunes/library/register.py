@@ -142,8 +142,8 @@ class AlbumState:
 @dataclass(frozen=True)
 class Registered:
     track_id: str
-    album_id: str
-    artist_id: str
+    album_id: str | None
+    artist_id: str | None
     merged: bool
     album: AlbumState | None
 
@@ -172,6 +172,8 @@ class _Job:
     id: str
     track_id: str
     staging_dir: str
+    placed_path: str | None = None
+    placed_sha256: str | None = None
 
 
 def file_sha256(store: LibraryStore, rel: str) -> str:
@@ -195,8 +197,8 @@ class Registrar:
 
     def _leased(self, conn: Connection, job_id: str, lease_id: str, now: str) -> _Job:
         row = conn.execute(
-            "SELECT id, track_id, state, lease_id, lease_expires_at, attempt_seq FROM jobs"
-            " WHERE id = ?",
+            "SELECT id, track_id, state, lease_id, lease_expires_at, attempt_seq, placed_path,"
+            " placed_sha256 FROM jobs WHERE id = ?",
             (job_id,),
         ).fetchone()
         if row is None:
@@ -209,7 +211,14 @@ class Registrar:
             or str(expires) <= now
         ):
             raise LeaseLost()
-        return _Job(str(row["id"]), str(row["track_id"]), f"{row['id']}/{row['attempt_seq']}")
+        placed, placed_sha = row["placed_path"], row["placed_sha256"]
+        return _Job(
+            str(row["id"]),
+            str(row["track_id"]),
+            f"{row['id']}/{row['attempt_seq']}",
+            None if placed is None else str(placed),
+            None if placed_sha is None else str(placed_sha),
+        )
 
     def _artist(  # noqa: PLR0913 - the identity of one artist
         self,
@@ -222,8 +231,33 @@ class Registrar:
         now: str,
     ) -> str:
         """By MusicBrainz id, else YouTube channel, else normalized name; created if new.
-        Missing ids are filled in on a reused row."""
+        Missing ids are filled in on a reused row. A concurrent creation (the insert skipped by
+        a unique column) is found by a second lookup."""
         name_norm = normalize(name)
+        found = self._find_artist(conn, name_norm, mbid, channel)
+        if found is None:
+            artist_id = new_id(self._clock)
+            inserted = conn.execute(
+                "INSERT INTO artists (id, name, name_norm, sort_name, musicbrainz_id,"
+                " yt_channel_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT DO NOTHING",
+                (artist_id, name, name_norm, sort_name, mbid, channel, now, now),
+            ).rowcount
+            if inserted == 1:
+                return artist_id
+            found = self._find_artist(conn, name_norm, mbid, channel)
+            if found is None:
+                raise Conflict("the artist could not be created")
+        artist_id = found
+        self._fill(conn, "artists", artist_id, "musicbrainz_id", mbid, now=now)
+        self._fill(conn, "artists", artist_id, "yt_channel_id", channel, now=now)
+        self._fill(conn, "artists", artist_id, "sort_name", sort_name, now=now)
+        return artist_id
+
+    @staticmethod
+    def _find_artist(
+        conn: Connection, name_norm: str, mbid: str | None, channel: str | None
+    ) -> str | None:
         row = None
         if mbid:
             row = conn.execute(
@@ -233,26 +267,42 @@ class Registrar:
             row = conn.execute(
                 "SELECT id FROM artists WHERE yt_channel_id = ?", (channel,)
             ).fetchone()
-        if row is None:
+        if row is None and mbid:
             row = conn.execute(
-                "SELECT id FROM artists WHERE name_norm = ?"
-                " AND (musicbrainz_id IS NULL OR ? IS NULL OR musicbrainz_id = ?)"
+                "SELECT id FROM artists WHERE name_norm = ? AND musicbrainz_id IS NULL"
                 " ORDER BY id LIMIT 1",
-                (name_norm, mbid, mbid),
+                (name_norm,),
+            ).fetchone()
+        if row is None and not mbid:
+            row = conn.execute(
+                "SELECT id FROM artists WHERE name_norm = ? ORDER BY id LIMIT 1", (name_norm,)
+            ).fetchone()
+        return None if row is None else str(row["id"])
+
+    @staticmethod
+    def _find_album(
+        conn: Connection, meta: TrackMetadata, artist_id: str, name_norm: str
+    ) -> str | None:
+        mb, yt = meta.musicbrainz, meta.youtube
+        row = None
+        if mb.release_id:
+            row = conn.execute(
+                "SELECT id FROM albums WHERE musicbrainz_release_id = ?", (mb.release_id,)
+            ).fetchone()
+        if row is None and yt.album_browse_id:
+            row = conn.execute(
+                "SELECT id FROM albums WHERE yt_browse_id = ?", (yt.album_browse_id,)
             ).fetchone()
         if row is None:
-            artist_id = new_id(self._clock)
-            conn.execute(
-                "INSERT INTO artists (id, name, name_norm, sort_name, musicbrainz_id,"
-                " yt_channel_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (artist_id, name, name_norm, sort_name, mbid, channel, now, now),
+            sql = (
+                "SELECT id FROM albums WHERE artist_id = ? AND name_norm = ?"
+                " AND musicbrainz_release_id IS NULL ORDER BY id LIMIT 1"
+                if mb.release_id
+                else "SELECT id FROM albums WHERE artist_id = ? AND name_norm = ?"
+                " ORDER BY id LIMIT 1"
             )
-            return artist_id
-        artist_id = str(row["id"])
-        self._fill(conn, "artists", artist_id, "musicbrainz_id", mbid, now=now)
-        self._fill(conn, "artists", artist_id, "yt_channel_id", channel, now=now)
-        self._fill(conn, "artists", artist_id, "sort_name", sort_name, now=now)
-        return artist_id
+            row = conn.execute(sql, (artist_id, name_norm)).fetchone()
+        return None if row is None else str(row["id"])
 
     @staticmethod
     def _fill(  # noqa: PLR0913 - one column of one row
@@ -275,29 +325,14 @@ class Registrar:
     def _album(self, conn: Connection, meta: TrackMetadata, artist_id: str, now: str) -> str:
         mb, yt = meta.musicbrainz, meta.youtube
         name_norm = normalize(meta.album)
-        row = None
-        if mb.release_id:
-            row = conn.execute(
-                "SELECT id FROM albums WHERE musicbrainz_release_id = ?", (mb.release_id,)
-            ).fetchone()
-        if row is None and yt.album_browse_id:
-            row = conn.execute(
-                "SELECT id FROM albums WHERE yt_browse_id = ?", (yt.album_browse_id,)
-            ).fetchone()
-        if row is None:
-            row = conn.execute(
-                "SELECT id FROM albums WHERE artist_id = ? AND name_norm = ?"
-                " AND (musicbrainz_release_id IS NULL OR ? IS NULL OR musicbrainz_release_id = ?)"
-                " ORDER BY id LIMIT 1",
-                (artist_id, name_norm, mb.release_id, mb.release_id),
-            ).fetchone()
-        if row is None:
+        found = self._find_album(conn, meta, artist_id, name_norm)
+        if found is None:
             album_id = new_id(self._clock)
-            conn.execute(
+            inserted = conn.execute(
                 "INSERT INTO albums (id, artist_id, name, name_norm, year, genre, release_type,"
                 " total_tracks, total_discs, musicbrainz_release_id,"
                 " musicbrainz_release_group_id, yt_browse_id, cover_path, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
                 (
                     album_id,
                     artist_id,
@@ -315,9 +350,13 @@ class Registrar:
                     now,
                     now,
                 ),
-            )
-            return album_id
-        album_id = str(row["id"])
+            ).rowcount
+            if inserted == 1:
+                return album_id
+            found = self._find_album(conn, meta, artist_id, name_norm)
+            if found is None:
+                raise Conflict("the album could not be created")
+        album_id = found
         for column, value in (
             ("musicbrainz_release_id", mb.release_id),
             ("musicbrainz_release_group_id", mb.release_group_id),
@@ -334,7 +373,7 @@ class Registrar:
 
     def _merge_target(
         self, conn: Connection, job: _Job, recording_id: str | None
-    ) -> dict[str, str] | None:
+    ) -> dict[str, str | None] | None:
         if not recording_id:
             return None
         row = conn.execute(
@@ -344,10 +383,11 @@ class Registrar:
         ).fetchone()
         if row is None:
             return None
+        album, artist = row["album_id"], row["artist_id"]
         return {
             "track_id": str(row["id"]),
-            "album_id": str(row["album_id"] or ""),
-            "artist_id": str(row["artist_id"] or ""),
+            "album_id": None if album is None else str(album),
+            "artist_id": None if artist is None else str(artist),
         }
 
     def _check_path(self, conn: Connection, job: _Job, path: str, sha: str) -> None:
@@ -359,9 +399,36 @@ class Registrar:
         ).fetchone()
         if owner is not None or held is not None:
             raise Conflict("libraryPath is held by another track")
-        # Adoption (SPEC section 11): this job's own file, moved before a crash.
-        if self._library.exists(path) and file_sha256(self._library, path) != sha:
+        if not self._library.exists(path):
+            return
+        try:
+            existing = file_sha256(self._library, path)
+        except OSError as exc:  # a directory, or unreadable
+            raise Conflict("libraryPath is not a regular file") from exc
+        # Adoption (SPEC section 11): this job's own file, moved before a crash, either as
+        # registered or as rewritten by album gain (the hash recorded by the ReplayGain report).
+        if existing != sha and not (path == job.placed_path and existing == job.placed_sha256):
             raise Conflict("another file exists at libraryPath")
+
+    def _drop_placed(self, conn: Connection, job: _Job, keep: str | None) -> None:
+        """Deletes the file an earlier attempt of this job moved into /music when the job now
+        goes elsewhere (merged, or another path): only if no track or other job holds that
+        path and the file is still the one this job placed."""
+        placed = job.placed_path
+        if placed is None or placed == keep or not self._library.exists(placed):
+            return
+        owner = conn.execute("SELECT 1 FROM tracks WHERE path = ?", (placed,)).fetchone()
+        held = conn.execute(
+            "SELECT 1 FROM jobs WHERE library_path = ? AND id <> ?", (placed, job.id)
+        ).fetchone()
+        if owner is not None or held is not None:
+            return
+        try:
+            same = file_sha256(self._library, placed) == job.placed_sha256
+        except OSError:
+            return
+        if same:
+            self._library.delete(placed)
 
     @staticmethod
     def _album_state(conn: Connection, album_id: str, job: _Job, path: str) -> AlbumState:
@@ -386,8 +453,14 @@ class Registrar:
         try:
             with self._db.transaction() as conn:
                 return self._register(conn, body, library_path, staging_path, now)
+        except IntegrityError:
+            pass
+        # A concurrent register wrote a unique row (a path, an artist, an album) between our
+        # lookups and our writes: once more, the lookups now see it.
+        try:
+            with self._db.transaction() as conn:
+                return self._register(conn, body, library_path, staging_path, now)
         except IntegrityError as exc:
-            # A concurrent register took the path between the check and the update.
             raise Conflict("libraryPath is held by another job") from exc
 
     def _register(
@@ -410,15 +483,17 @@ class Registrar:
         meta = body.metadata
         target = self._merge_target(conn, job, meta.musicbrainz.recording_id)
         if target is not None:
+            self._drop_placed(conn, job, keep=None)
             conn.execute(
-                "UPDATE jobs SET merge_into_track_id = ?, library_path = NULL, updated_at = ?"
-                " WHERE id = ?",
+                "UPDATE jobs SET merge_into_track_id = ?, library_path = NULL,"
+                " placed_path = NULL, placed_sha256 = NULL, updated_at = ? WHERE id = ?",
                 (target["track_id"], now, job.id),
             )
             return Registered(
-                target["track_id"], target["album_id"], target["artist_id"], True, None
+                str(target["track_id"]), target["album_id"], target["artist_id"], True, None
             )
         self._check_path(conn, job, library_path, body.file.sha256)
+        self._drop_placed(conn, job, keep=library_path)
         album_artist_id = self._artist(
             conn,
             meta.album_artist,
@@ -442,10 +517,12 @@ class Registrar:
         )
         album_id = self._album(conn, meta, album_artist_id, now)
         self._update_track(conn, job, body, artist_id=artist_id, album_id=album_id, now=now)
+        # A file adopted with the hash of its album-gain rewrite keeps that hash.
+        placed_sha = job.placed_sha256 if library_path == job.placed_path else body.file.sha256
         conn.execute(
-            "UPDATE jobs SET library_path = ?, merge_into_track_id = NULL, updated_at = ?"
-            " WHERE id = ?",
-            (library_path, now, job.id),
+            "UPDATE jobs SET library_path = ?, merge_into_track_id = NULL, placed_path = ?,"
+            " placed_sha256 = ?, updated_at = ? WHERE id = ?",
+            (library_path, library_path, placed_sha, now, job.id),
         )
         return Registered(
             job.track_id,
@@ -527,8 +604,19 @@ class Registrar:
             same_album = row["album_id"] is not None and row["album_id"] == row["job_album"]
             if not own and not (row["status"] == "ready" and same_album):
                 raise Conflict("the track is not part of this job's album")
-            if not own and self._library.size(str(row["path"])) != body.file.size_bytes:
-                raise Conflict("the library file has another size")
+            if not own:
+                try:
+                    size = self._library.size(str(row["path"]))
+                except OSError as exc:
+                    raise NotFound("the library file is missing") from exc
+                if size != body.file.size_bytes:
+                    raise Conflict("the library file has another size")
+            else:
+                # Album gain rewrote this job's file before the move: adopt that version.
+                conn.execute(
+                    "UPDATE jobs SET placed_sha256 = ? WHERE id = ? AND placed_path IS NOT NULL",
+                    (body.file.sha256, job.id),
+                )
             gain = body.replay_gain
             conn.execute(
                 "UPDATE tracks SET rg_track_gain_db = ?, rg_track_peak = ?,"
