@@ -184,6 +184,13 @@ class ApiKeyRepository(Repository):
             (now, key_id),
         )
 
+    def revoke_all(self, user_id: str, now: str) -> int:
+        """Revokes every live key of the user; how many."""
+        return self.run(
+            "UPDATE api_keys SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (now, user_id),
+        )
+
     def touch(self, key_id: str, now: str, ip: str | None) -> None:
         self.run(
             "UPDATE api_keys SET last_used_at = ?, last_used_ip = ? WHERE id = ?",
@@ -221,3 +228,28 @@ class AuditRepository(Repository):
 
 def audit_detail(values: dict[str, object] | None) -> str | None:
     return None if not values else json.dumps(values, ensure_ascii=False, sort_keys=True)
+
+
+class SessionEpochRepository(Repository):
+    """The per-user session epochs of the admin panel and the web player (rows of `settings`,
+    `admin.session_epoch.<user id>` and `web.session_epoch.<user id>`). Each is part of every
+    session cookie's fingerprint: raising it ends every session of that user at once."""
+
+    def get(self, key: str) -> int:
+        row = self.conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        try:
+            return int(str(row["value"])) if row is not None else 0
+        except ValueError:
+            return 0
+
+    def bump(self, key: str, now: str) -> int:
+        """The epoch plus one, stored (in the caller's transaction)."""
+        epoch = self.get(key) + 1
+        if not self.run(
+            "UPDATE settings SET value = ?, updated_at = ? WHERE key = ?", (str(epoch), now, key)
+        ):
+            self.run(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, str(epoch), now),
+            )
+        return epoch

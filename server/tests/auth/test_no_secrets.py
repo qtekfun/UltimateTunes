@@ -60,7 +60,7 @@ def test_no_secret_in_logs_audit_or_errors(
             c.get("/ut/v1/me", headers={"X-Api-Key": key}),
             c.get("/ut/v1/keys", params={"apiKey": key}),
             c.post("/ut/v1/keys", json={**body, "password": WRONG_PASSWORD}),
-            c.post("/ut/v1/keys", json={**body, "password": WRONG_PASSWORD}),  # locks alice
+            c.post("/ut/v1/keys", json={**body, "password": WRONG_PASSWORD}),  # delays alice
             c.post("/ut/v1/keys", json=body),
             c.get("/rest/ping", params={"u": "alice", "p": ADMIN_PASSWORD, "f": "json"}),
             c.get("/rest/ping", params={"u": "alice", "p": "enc:" + key.encode().hex()}),
@@ -91,7 +91,7 @@ def test_no_secret_in_logs_audit_or_errors(
         for secret in secrets:
             assert secret not in line
     actions = {entry.action for entry in audit}
-    assert {"user.create", "key.create", "key.revoke", "auth.lockout"} <= actions
+    assert {"user.create", "key.create", "key.revoke"} <= actions
     audit_text = json.dumps([entry.__dict__ for entry in audit])
     for text in [audit_text, *responses]:
         for secret in secrets:

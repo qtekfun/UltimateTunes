@@ -29,7 +29,19 @@ http:
       entryPoints: [websecure]
       rule: "Host(`music.example.org`) && Path(`/ut/v1/keys`) && Method(`POST`)"
       priority: 250
-      middlewares: [ut-lan-only, ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
+      middlewares: [ut-lan-only, ut-login-ratelimit, ut-headers, ut-inflight-login, ut-ratelimit, ut-body-limit]
+      service: ut-api
+
+    # The web player's sign-in form (`POST /web/login`), a password check reachable from the
+    # Internet: a strict per-client rate limit (1/s, burst 5, IPv6 by /64) before anything
+    # reaches the api, on top of the api's own per-IP limit and per-username delay. To keep it
+    # at home instead, add `ut-lan-only`; to add a second factor, put `/` and `/web` behind
+    # Authelia (deploy/README.md).
+    ut-web-login:
+      entryPoints: [websecure]
+      rule: "Host(`music.example.org`) && Path(`/web/login`) && Method(`POST`)"
+      priority: 260
+      middlewares: [ut-login-ratelimit, ut-headers, ut-inflight-login, ut-ratelimit, ut-body-limit]
       service: ut-api
 
     # Requests with a body (form posts, imports, key revocation): buffered and capped. The
@@ -70,19 +82,50 @@ http:
         trustForwardHeader: true
         authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
 
-    # Per client IP (the TCP peer: no ipStrategy at the edge; behind a trusted Cloudflare
-    # proxy use `ipStrategy: {depth: 1}`). Generous for browsing (covers, many small calls);
-    # the api adds its own limits on authentication and searches.
+    # Per client IP (the TCP peer: no `depth` at the edge; behind a trusted Cloudflare proxy
+    # add `depth: 1`). IPv6 clients are counted by their /64 (`ipv6Subnet`, Traefik 3.1+), the
+    # block one subscriber gets, so rotating addresses inside it never resets a bucket; the api
+    # groups them the same way. Generous for browsing (covers, many small calls); the api adds
+    # its own limits on authentication and searches.
     ut-ratelimit:
       rateLimit:
         average: 20
         period: 1s
         burst: 100
+        sourceCriterion:
+          ipStrategy:
+            ipv6Subnet: 64
 
-    # Concurrent requests per client IP (a stream holds one while it plays).
+    # Password sign-ins (`POST /web/login`, `POST /ut/v1/keys`): 1 per second per client,
+    # burst 5. More than enough for a person; a guesser gets 429 from Traefik.
+    ut-login-ratelimit:
+      rateLimit:
+        average: 1
+        period: 1s
+        burst: 5
+        sourceCriterion:
+          ipStrategy:
+            ipv6Subnet: 64
+
+    # Concurrent requests per client IP (a stream holds one while it plays). With the api's
+    # 128 connections (UT_LIMIT_CONCURRENCY), 16 per client leaves room for 7 others even when
+    # one client uses all of its share.
     ut-inflight:
       inFlightReq:
         amount: 16
+        sourceCriterion:
+          ipStrategy:
+            ipv6Subnet: 64
+
+    # Password sign-ins are short: a smaller share per client, so a guesser can never hold
+    # many api connections (each check also waits for one of the api's Argon2 slots). Not on
+    # `ut-api-write`: OpenSubsonic clients may POST `stream`, which holds a slot while it plays.
+    ut-inflight-login:
+      inFlightReq:
+        amount: 4
+        sourceCriterion:
+          ipStrategy:
+            ipv6Subnet: 64
 
     # Bodies up to 2 MB (an import file is at most 1 MiB; the api caps bodies at 4 MiB and
     # OpenSubsonic form posts at 1 MiB). Buffered to memory up to 1 MiB, then to disk. No

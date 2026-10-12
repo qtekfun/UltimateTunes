@@ -49,7 +49,7 @@ from ultimatetunes.admin.security import (
 )
 from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.repository import User
-from ultimatetunes.auth.service import AuthService
+from ultimatetunes.auth.service import ADMIN_EPOCH_PREFIX, AuthService
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.forwarded import trusted_origin
@@ -90,11 +90,12 @@ MAX_SERVER_URL = 120
 _SIZING_KEY = "utk_" + "A" * 43
 QR_SCHEME = "ultimatetunes://connect"
 # Per-user counter in the `settings` table; part of every session's fingerprint.
-SESSION_EPOCH_KEY = "admin.session_epoch."
+SESSION_EPOCH_KEY = ADMIN_EPOCH_PREFIX
 # Fixed confirmation messages of `?done=`: nothing from the query string is ever echoed.
 DONE = {
     "user_created": "User created.",
     "user_updated": "User updated.",
+    "user_signed_out": "Every device of the user was signed out.",
     "key_revoked": "Key revoked.",
     "job_retried": "Download queued again.",
     "job_cancelled": "Cancel requested.",
@@ -560,7 +561,10 @@ def create_user(request: Request, post: PostedDep) -> Response:
 
 @router.post("/admin/users/{user_id}", include_in_schema=False)
 def update_user(request: Request, user_id: str, post: PostedDep) -> Response:
-    """`action`: `disable`, `enable`, `role` (with `role`) or `password` (with `password`)."""
+    """`action`: `disable`, `enable`, `role` (with `role`), `password` (with `password`) or
+    `sign_out` (with `confirm=yes`: every API key revoked and every admin and web session of
+    the user ended, `AuthService.sign_out_everywhere`; for the admin's own account too, which
+    then has to sign in again)."""
     auth = state(request).auth
     action = post.get("action")
     actor, ip = post.admin.principal, post.admin.ip
@@ -573,11 +577,15 @@ def update_user(request: Request, user_id: str, post: PostedDep) -> Response:
             auth.set_role(user_id, post.get("role"), actor=actor, client_ip=ip)
         elif action == "password":
             auth.set_password(user_id, post.get("password"), actor=actor, client_ip=ip)
+        elif action == "sign_out":
+            if post.get("confirm") != "yes":
+                raise InvalidParameter("Tick the box to confirm signing out every device")
+            auth.sign_out_everywhere(user_id, actor=actor, client_ip=ip)
         else:
             raise InvalidParameter("Unknown action")
     except TunesError as exc:
         return _users_page(request, post.admin, error=exc.message, status=error_status(exc))
-    return back("/admin/users", "user_updated")
+    return back("/admin/users", "user_signed_out" if action == "sign_out" else "user_updated")
 
 
 # ---------------------------------------------------------------------- API keys

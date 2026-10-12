@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from ultimatetunes.core.forwarded import (
+    MAX_HOPS,
     TRUSTED_NETWORKS_STATE,
     UNKNOWN_CLIENT,
     ClientAddress,
@@ -44,8 +45,16 @@ def scope(peer: str | None, *headers: tuple[str, str]) -> Scope:
         (["garbage", "203.0.113.9"], "203.0.113.9"),
         (["203.0.113.9", "not-an-ip"], UNKNOWN_CLIENT),
         ([], UNKNOWN_CLIENT),
-        (["203.0.113.9"] * 33, UNKNOWN_CLIENT),
+        # Forged entries on the left are never read, however many (audit L1): a client that
+        # prepends 31+ of them still is itself, not `unknown`.
+        (["203.0.113.9"] * 33, "203.0.113.9"),
+        ([*(f"10.9.0.{n}" for n in range(40)), "198.51.100.7"], "198.51.100.7"),
+        ([*(["garbage"] * 50), "198.51.100.7", "172.18.0.2", "127.0.0.1"], "198.51.100.7"),
         (["::ffff:198.51.100.4"], "198.51.100.4"),
+        # At most MAX_HOPS trusted hops in a row: one more and the client is unknown.
+        ([*(["172.18.0.9"] * MAX_HOPS)], "172.18.0.9"),
+        (["203.0.113.9", *(["172.18.0.9"] * MAX_HOPS)], "203.0.113.9"),
+        (["203.0.113.9", *(["172.18.0.9"] * (MAX_HOPS + 1))], UNKNOWN_CLIENT),
     ],
 )
 def test_client_from_chain(chain: list[str], client: str) -> None:
@@ -65,6 +74,12 @@ def test_a_trusted_proxy_names_the_client() -> None:
         ),
         PROXIES,
     )
+    assert found["client"] == ("203.0.113.9", 0)
+
+
+def test_a_long_forged_header_through_a_trusted_proxy_keeps_the_real_client() -> None:
+    forged = ", ".join(f"192.168.1.{n}" for n in range(1, 41))
+    found = resolve(scope("172.18.0.1", ("X-Forwarded-For", f"{forged}, 203.0.113.9")), PROXIES)
     assert found["client"] == ("203.0.113.9", 0)
 
 

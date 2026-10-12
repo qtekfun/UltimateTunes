@@ -30,6 +30,7 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ultimatetunes.admin.security import SessionCodec
+from ultimatetunes.auth.service import WEB_EPOCH_PREFIX
 from ultimatetunes.core.clock import Clock
 from ultimatetunes.imports.upload import MAX_BODY_BYTES as UPLOAD_MAX_BODY_BYTES
 
@@ -41,7 +42,7 @@ LOGIN_COOKIE = "ut_web_login"
 LANG_COOKIE = "ut_web_lang"
 LANG_TTL_S = 365 * 24 * 3600
 # Per-user counter in the `settings` table; part of every web session's fingerprint.
-EPOCH_KEY = "web.session_epoch."
+EPOCH_KEY = WEB_EPOCH_PREFIX
 MAX_BODY_BYTES = 64 * 1024
 UPLOAD_PATH = PREFIX + "/imports/file"
 

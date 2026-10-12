@@ -76,6 +76,18 @@ async def test_head_never_requests_a_download(live: Live) -> None:
     assert live.one("SELECT COUNT(*) FROM jobs") == 0
 
 
+async def test_head_never_requests_a_download_on_any_spelling(live: Live) -> None:
+    """Audit I6: `.view` suffixes and `download` too; a HEAD only ever reads."""
+    add_pending(live)
+    for path in ("/rest/stream.view", "/rest/download.view", "/rest/stream", "/rest/download"):
+        for song in (TRACK, live.song()):
+            r = await live.client.head(path, params=live.params(song))
+            assert r.status_code == 200
+            assert r.content == b""
+    assert live.one("SELECT COUNT(*) FROM jobs") == 0
+    assert live.one("SELECT COUNT(*) FROM tracks") == 1
+
+
 async def test_head_of_a_running_download_has_its_headers(live: Live) -> None:
     async with anyio.create_task_group() as group:
         listening = start(live, group)
@@ -254,10 +266,10 @@ async def test_a_password_user_is_capped_per_user(
         first = Listening()
         group.start_soon(first.run, live.client, "/rest/stream", params, {})
         dl = await requested(live)
-        assert (
-            live.services.inflight.listeners("stream:key:user:0199d6a2-4c1e-7b3a-9f10-2a6c8e01e003")
-            == 1
-        )
+        # The download is requested before the stream is admitted: wait for the admission
+        # (the slot of the user, since a password user has no key id), never race it.
+        slot = "stream:key:user:0199d6a2-4c1e-7b3a-9f10-2a6c8e01e003"
+        await until(lambda: live.services.inflight.listeners(slot) == 1)
         capped = await live.client.get("/rest/stream", params=params)
         assert capped.status_code == 503
         dl.finish()

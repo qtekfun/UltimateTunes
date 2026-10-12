@@ -14,6 +14,7 @@ from tests.admin.conftest import People, login, session_for
 from tests.auth.conftest import ADMIN_PASSWORD
 from ultimatetunes.admin.routes import SESSION_EPOCH_KEY
 from ultimatetunes.admin.security import SESSION_COOKIE
+from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import Services
 
 LOCAL = ("127.0.0.1", 40000)
@@ -149,18 +150,21 @@ def test_the_worker_network_never_reaches_the_panel(
 
 
 def test_strangers_on_the_public_key_endpoint_cannot_lock_the_admin_out(
-    app_factory: Callable[[], FastAPI], services: Services, people: People
+    app_factory: Callable[[], FastAPI], services: Services, people: People, clock: FakeClock
 ) -> None:
     """Audit M1: `POST /ut/v1/keys` is public; its wrong passwords move the outside counter
-    only, so the panel's login (LAN/Tailscale) keeps working."""
+    only (a growing delay, never a lockout), so the panel's login (LAN/Tailscale) keeps
+    working."""
     services.settings = services.settings.model_copy(update={"trusted_proxies": "172.16.0.0/12"})
     with panel(app_factory(), DOCKER_GATEWAY) as client:
         outside = {"X-Forwarded-For": "203.0.113.9"}
         body = {"username": "alice", "password": secrets.token_hex(8), "name": "Laptop"}
-        codes = [
-            client.post("/ut/v1/keys", json=body, headers=outside).status_code for _ in range(4)
-        ]
-        assert codes == [401, 401, 401, 429]
+        codes = []
+        for _ in range(3):
+            codes.append(client.post("/ut/v1/keys", json=body, headers=outside).status_code)
+            codes.append(client.post("/ut/v1/keys", json=body, headers=outside).status_code)
+            clock.advance(10)
+        assert codes == [401, 429, 401, 429, 401, 429]
         client.headers["X-Forwarded-For"] = "192.168.1.5"
         login(client)
         # From inside, the public endpoint uses the inside counter too.
