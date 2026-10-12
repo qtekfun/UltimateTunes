@@ -97,8 +97,10 @@ import org.junit.Test
  *
  * Only this app is touched: its language and theme are set per app (Android 13+) and restored
  * after each test; the play cache, downloads and offline selection live in a scratch folder of the
- * app's cache (emptied when a run starts), so the installed app's own cache, downloads and choices
- * are left as they were. The demo plays a soft chord for a few seconds per tour, then pauses.
+ * app's cache, deleted at the end, so the installed app's own cache, downloads and choices are left
+ * as they were. Only Coil's image cache keeps the demo covers (keyed by a loopback URL that no real
+ * server uses, evicted like any other image). The demo plays a soft chord for a few seconds per
+ * tour, then stops.
  */
 @HiltAndroidTest
 @UninstallModules(FakeTunesApiBindings::class, PlayerModule::class)
@@ -191,6 +193,7 @@ class ScreenshotsTest {
     fun tearDown() {
         scenario?.close()
         resetAppSettings()
+        Scratch.discard()
     }
 
     /**
@@ -320,12 +323,27 @@ class ScreenshotsTest {
             PreferenceDataStoreFactory.create { File(root, "offline.preferences_pb") }
         )
 
+        /** Closes the caches and deletes the folder (the playback was cleared by then). */
+        fun close() {
+            (caches.play as SimpleCache).release()
+            (caches.downloads as SimpleCache).release()
+            database.close()
+            root.deleteRecursively()
+        }
+
         companion object {
             private var instance: Scratch? = null
 
             @Synchronized
             fun of(context: Context): Scratch =
                 instance ?: Scratch(context.applicationContext).also { instance = it }
+
+            /** Deletes the scratch folder of this run, if one was made. */
+            @Synchronized
+            fun discard() {
+                instance?.close()
+                instance = null
+            }
         }
     }
 
