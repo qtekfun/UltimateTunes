@@ -289,6 +289,20 @@ def _signed_out(request: Request) -> Response:
 
 
 def _csrf_refused(request: Request) -> Response:
+    """Pages and forms get the error page (HTMX swaps it into `#content`); the player's calls
+    and the star buttons get JSON, which `player.js` shows in its status line."""
+    if _is_page(request):
+        try:
+            listener = current_listener(request)
+        except (SignInRequired, TunesError):
+            listener = None
+        return page(
+            request,
+            "error.html",
+            {"message": None, "reason": MESSAGES["csrf"]},
+            listener=listener,
+            status=403,
+        )
     message = translator(lang_of(request))(MESSAGES["csrf"])
     return JSONResponse({"error": "csrf", "message": message}, status_code=403)
 

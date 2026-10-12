@@ -4,6 +4,12 @@
 {% block title %}{{ _("Something went wrong") }}{% endblock %}
 {% block content %}
 <h1 class="large" tabindex="-1">{{ _("Something went wrong") }}</h1>
+{% if reason is defined and reason %}
+<p class="error" role="alert">{{ _(reason) }}</p>
+{# A full load (not HTMX): the page gets a fresh CSRF token. #}
+<p><a class="button primary" href="/" hx-boost="false">{{ _("Reload") }}</a></p>
+{% else %}
 <p class="error" role="alert">{{ message }}</p>
 <p><a href="/">{{ _("Back to Listen Now") }}</a></p>
+{% endif %}
 {% endblock %}

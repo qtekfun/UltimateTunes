@@ -19,6 +19,7 @@
     <h2 id="h-file">{{ _("From a file") }}</h2>
     <p class="muted hint">{{ _("A CSV with title and artist columns, an Exportify CSV, or Spotify's JSON export. Up to 1 MiB.") }}</p>
     <form method="post" hx-push-url="false" action="/web/imports/file" enctype="multipart/form-data" hx-encoding="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
       <label>{{ _("File") }}<input type="file" name="file" required accept=".csv,.json,text/csv,application/json"></label>
       <label>{{ _("Format") }}
         <select name="format">

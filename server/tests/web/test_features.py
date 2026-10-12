@@ -320,3 +320,55 @@ def test_imports_belong_to_their_user(app_factory: object, people: People) -> No
         assert bob.get(detail).status_code == 404
         assert "Ana only" not in bob.get("/web/imports").text
         assert bob.get("/web/imports/not-a-uuid").status_code == 404
+
+
+def test_password_change_reloads_the_page_with_the_new_token(
+    client: TestClient, people: People
+) -> None:
+    csrf = login(client, people.ana)
+    new = secrets.token_urlsafe(18)
+    r = client.post(
+        "/web/settings/password",
+        data={"csrf": csrf, "current": people.ana.password, "new": new, "confirm": new},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    # A full reload (not a swap of #content): the page gets the new session's token.
+    assert r.headers["hx-redirect"] == "/web/settings?done=password"
+    page = client.get("/web/settings?done=password")
+    fresh = csrf_of(page.text)
+    assert fresh != csrf
+    star = {"kind": "song", "id": EXTERNAL, "on": "0"}
+    assert client.post("/web/star", data=star, headers={"X-CSRF-Token": fresh}).status_code == 200
+    assert client.post("/web/star", data=star, headers={"X-CSRF-Token": csrf}).status_code == 403
+
+
+def test_a_refused_form_shows_a_page_to_reload(client: TestClient, ana: str) -> None:
+    r = client.post("/web/playlists", data={"csrf": "stale", "name": "x"}, headers=HX)
+    assert r.status_code == 403
+    assert r.headers["content-type"].startswith("text/html")
+    assert "The form expired" in r.text
+    assert 'hx-boost="false"' in r.text
+    assert "<audio" not in r.text
+    full = client.post("/web/playlists", data={"csrf": "stale", "name": "x"})
+    assert full.status_code == 403
+    assert "<audio" in full.text
+
+
+def test_file_import_without_javascript(client: TestClient, ana: str) -> None:
+    csv = b"title,artist\nLow Tide Letters,The Paper Lanterns\n"
+    files = {"file": ("mix.csv", io.BytesIO(csv), "text/csv")}
+    r = client.post(
+        "/web/imports/file", files=files, data={"format": "csv", "name": "No JS", "csrf": ana}
+    )
+    assert r.status_code == 303, r.text
+    assert "No JS" in client.get("/web/imports").text
+    files = {"file": ("mix.csv", io.BytesIO(csv), "text/csv")}
+    wrong = client.post("/web/imports/file", files=files, data={"format": "csv", "csrf": "x"})
+    assert wrong.status_code == 403
+    garbage = client.post(
+        "/web/imports/file",
+        content=b"not multipart",
+        headers={"Content-Type": "multipart/form-data; boundary=x"},
+    )
+    assert garbage.status_code == 403

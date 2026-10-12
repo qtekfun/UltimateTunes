@@ -8,7 +8,8 @@ keyboard shortcuts.
   display preference, never sent to the server.
 - Password: the current one is checked by `AuthService.verify_password` (its rate limit and
   lockout apply), the new one by the password policy. A new password ends every session of
-  the user (web and admin) and every copied cookie; this browser gets a new session at once.
+  the user (web and admin) and every copied cookie; this browser gets a new session at once,
+  and a full reload so the page carries the new session's CSRF token.
 - API keys: the caller's own, listed and revoked through `AuthService` (`revoke_own_key`: a key
   of another user is `not_found`). Keys are created in the app or the admin panel, never here:
   a key is shown once and must not land in a browser page.
@@ -122,7 +123,12 @@ def change_password(request: Request, post: PostedDep) -> Response:
         auth.set_password(me.user.id, new, actor=me.principal, client_ip=me.ip)
     except InvalidParameter:
         return _settings_page(request, me, error=ERRORS["policy"], status=400)
-    response = go(request, SETTINGS + "?done=password")
+    # A full reload, not an HTMX swap: the page must pick up the new session's CSRF token.
+    target = SETTINGS + "?done=password"
+    if request.headers.get("hx-request"):
+        response = Response(status_code=200, headers={"HX-Redirect": target})
+    else:
+        response = Response(status_code=303, headers={"Location": target})
     new_session_cookie(response, request, auth.get_user(me.user.id))
     return response
 

@@ -51,6 +51,7 @@ ES: dict[str, str] = {
     "Previous page": "Página anterior",
     "Recently added": "Añadido recientemente",
     "Recently played": "Escuchado recientemente",
+    "Reload": "Recargar",
     "Remove": "Quitar",
     "Remove from favourites": "Quitar de favoritos",
     "Remove from this playlist": "Quitar de esta lista",

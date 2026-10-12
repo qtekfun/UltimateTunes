@@ -13,14 +13,16 @@ The pages refresh themselves while an import runs.
 """
 
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Request
+from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 from starlette.types import Message
 
-from ultimatetunes.admin.security import csrf_ok
+from ultimatetunes.admin.security import CSRF_FIELD, CSRF_HEADER, csrf_ok
 from ultimatetunes.imports import routes as imports
 from ultimatetunes.imports.files import FILE_FORMATS
 from ultimatetunes.web.routes import (
@@ -37,6 +39,7 @@ from ultimatetunes.web.security import PREFIX, UPLOAD_PATH
 router = APIRouter(route_class=WebRoute)
 IMPORTS = PREFIX + "/imports"
 ACTIVE = ("queued", "reading", "matching")
+MAX_FIELD_BYTES = 4096
 STATE_LABELS = {
     "queued": "Waiting to start",
     "reading": "Reading the playlist",
@@ -114,10 +117,34 @@ async def import_url(request: Request, post: PostedDep) -> Response:
     return response
 
 
+async def _form_token(request: Request) -> str | None:
+    """The `csrf` field of a multipart body (a form posted without JavaScript). The body is
+    read once and kept by Starlette, so `POST /ut/v1/imports` reads the same bytes after."""
+    body = await request.body()
+
+    async def once() -> AsyncGenerator[bytes]:
+        yield body
+
+    parser = MultiPartParser(
+        request.headers, once(), max_files=1, max_fields=4, max_part_size=MAX_FIELD_BYTES
+    )
+    try:
+        form = await parser.parse()
+    except MultiPartException:
+        return None
+    try:
+        token = form.get(CSRF_FIELD)
+        return token if isinstance(token, str) else None
+    finally:
+        await form.close()
+
+
 @router.post(UPLOAD_PATH, include_in_schema=False)
 async def import_file(request: Request, me: ListenerDep) -> Response:
-    """A playlist file; the CSRF token comes in the `X-CSRF-Token` header (HTMX)."""
-    if not csrf_ok(request, me.session.csrf, None):
+    """A playlist file. The CSRF token comes in the `X-CSRF-Token` header (HTMX) or, without
+    JavaScript, in the form's `csrf` field."""
+    submitted = None if request.headers.get(CSRF_HEADER) else await _form_token(request)
+    if not csrf_ok(request, me.session.csrf, submitted):
         raise CsrfRejected
     background = BackgroundTasks()
     created = await imports.create_import(request, background, me.principal)
