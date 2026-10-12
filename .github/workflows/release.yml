@@ -97,7 +97,11 @@ jobs:
             tools/release-notes.sh "$VERSION" > notes.md
           else
             tools/check-store-texts.sh
-            tools/check-store-texts.sh --release || echo "::warning::Dry run: store changelogs for $VERSION are missing (required for a tag)"
+            # Downgrade its ::error:: lines: here they are warnings, not failures.
+            if ! out=$(tools/check-store-texts.sh --release); then
+              sed 's/^::error::/::warning::Dry run: /' <<< "$out"
+              echo "::warning::Dry run: store changelogs for $VERSION are missing (required for a tag)"
+            fi
             tools/release-notes.sh "$VERSION" > notes.md || {
               echo "::warning::Dry run: CHANGELOG.md has no section for $VERSION (required for a tag)"
               echo "_Dry run: no CHANGELOG section for $VERSION._" > notes.md
