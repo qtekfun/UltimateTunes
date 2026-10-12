@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Token buckets, failure counting and lockout (100 % coverage required)."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from ultimatetunes.core.clock import FakeClock
-from ultimatetunes.core.ratelimit import ALLOWED, Decision, Limit, SqliteRateLimiter
+from ultimatetunes.core.ratelimit import ALLOWED, Decision, Limit, SqliteRateLimiter, backoff_delay
 from ultimatetunes.db import Database
 
 LIMIT = Limit(rate_per_s=1.0, burst=3)
@@ -127,6 +129,75 @@ def test_success_and_hits_count_as_activity(limiter: SqliteRateLimiter, clock: F
     assert limiter.purge_idle(600) == 0
     clock.advance(101)
     assert limiter.purge_idle(600) == 2
+
+
+def test_backoff_reserves_one_attempt_per_window_up_to_the_cap(
+    limiter: SqliteRateLimiter, clock: FakeClock
+) -> None:
+    assert limiter.failures("user:a") == 0
+    delays = []
+    for _ in range(11):
+        assert limiter.reserve_backoff("user:a", base_s=1, max_s=300) == ALLOWED
+        # The reservation started the next delay: every other attempt waits for it.
+        refused = limiter.reserve_backoff("user:a", base_s=1, max_s=300)
+        assert not refused.allowed
+        assert limiter.locked("user:a") == refused
+        delays.append(refused.retry_after_s)
+        clock.advance(refused.retry_after_s)
+        assert limiter.locked("user:a") == ALLOWED
+    assert delays == [1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300]
+    # Never a hard lock: the count keeps growing (refusals are not counted), the delay stays
+    # at the cap.
+    assert limiter.failures("user:a") == 11
+    assert limiter.failures("user:b") == 0
+
+
+def test_concurrent_reservations_get_one_attempt(
+    limiter: SqliteRateLimiter, clock: FakeClock
+) -> None:
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(
+            pool.map(
+                lambda _: limiter.reserve_backoff("user:a", base_s=1, max_s=300).allowed,
+                range(16),
+            )
+        )
+    assert results.count(True) == 1
+    assert limiter.failures("user:a") == 1
+
+
+def test_backoff_is_reset_by_a_success(limiter: SqliteRateLimiter, clock: FakeClock) -> None:
+    for _ in range(4):
+        limiter.reserve_backoff("user:a", base_s=1, max_s=300)
+        clock.advance(8)
+    limiter.reserve_backoff("user:a", base_s=1, max_s=300)
+    assert not limiter.locked("user:a").allowed
+    # A success clears both the count and the running delay.
+    limiter.record_success("user:a")
+    assert limiter.failures("user:a") == 0
+    assert limiter.locked("user:a") == ALLOWED
+    assert limiter.reserve_backoff("user:a", base_s=1, max_s=300) == ALLOWED
+    assert limiter.locked("user:a") == Decision(False, 1)
+
+
+def test_backoff_keeps_the_tokens_of_the_bucket(limiter: SqliteRateLimiter) -> None:
+    limiter.hit("user:a", LIMIT)
+    limiter.reserve_backoff("user:a", base_s=0.5, max_s=300)
+    assert limiter.failures("user:a") == 1
+
+
+@pytest.mark.parametrize(("base", "cap"), [(0.0, 1.0), (1.0, 0.0), (-1.0, 5.0)])
+def test_backoff_parameters_must_be_positive(
+    limiter: SqliteRateLimiter, base: float, cap: float
+) -> None:
+    with pytest.raises(ValueError, match="positive"):
+        limiter.reserve_backoff("user:a", base_s=base, max_s=cap)
+    assert limiter.failures("user:a") == 0
+
+
+def test_backoff_delay_never_overflows() -> None:
+    assert backoff_delay(10**9, base_s=1, max_s=300) == 300
+    assert backoff_delay(0, base_s=2, max_s=300) == 2
 
 
 def test_peek_reports_tokens_without_taking_any(

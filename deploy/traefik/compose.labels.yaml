@@ -35,8 +35,14 @@ services:
       traefik.http.routers.ut-keys-login.entrypoints: websecure
       traefik.http.routers.ut-keys-login.rule: Host(`music.example.org`) && Path(`/ut/v1/keys`) && Method(`POST`)
       traefik.http.routers.ut-keys-login.priority: "250"
-      traefik.http.routers.ut-keys-login.middlewares: ut-lan-only@file,ut-headers@file,ut-inflight@file,ut-ratelimit@file,ut-body-limit@file
+      traefik.http.routers.ut-keys-login.middlewares: ut-lan-only@file,ut-login-ratelimit@file,ut-headers@file,ut-inflight-login@file,ut-ratelimit@file,ut-body-limit@file
       traefik.http.routers.ut-keys-login.service: ut-api
+      # The web player's sign-in form: strict per-client rate limit (dynamic/ultimatetunes.yml).
+      traefik.http.routers.ut-web-login.entrypoints: websecure
+      traefik.http.routers.ut-web-login.rule: Host(`music.example.org`) && Path(`/web/login`) && Method(`POST`)
+      traefik.http.routers.ut-web-login.priority: "260"
+      traefik.http.routers.ut-web-login.middlewares: ut-login-ratelimit@file,ut-headers@file,ut-inflight-login@file,ut-ratelimit@file,ut-body-limit@file
+      traefik.http.routers.ut-web-login.service: ut-api
       traefik.http.routers.ut-api-write.entrypoints: websecure
       traefik.http.routers.ut-api-write.rule: Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`)) && !Method(`GET`) && !Method(`HEAD`)
       traefik.http.routers.ut-api-write.priority: "200"

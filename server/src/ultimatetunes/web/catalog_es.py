@@ -112,6 +112,18 @@ ES: dict[str, str] = {
     "Artist radio": "Emisoras de artistas",
     "CSV (title, artist)": "CSV (título, artista)",
     "Change password": "Cambiar la contraseña",
+    "Sign out every device": "Cerrar sesión en todos los dispositivos",
+    (
+        "Revokes every API key of your account and ends every browser session, this one too."
+        " Each device then needs a new key."
+    ): (
+        "Revoca todas las claves API de tu cuenta y cierra todas las sesiones del navegador,"
+        " también esta. Cada dispositivo necesitará una clave nueva."
+    ),
+    "Yes, sign out every device": "Sí, cerrar sesión en todos los dispositivos",
+    "Tick the box to confirm signing out every device.": (
+        "Marca la casilla para confirmar el cierre de sesión en todos los dispositivos."
+    ),
     "Close now playing": "Cerrar la reproducción",
     "Create and add": "Crear y añadir",
     "Created": "Creada",

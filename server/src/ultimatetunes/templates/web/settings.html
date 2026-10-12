@@ -46,6 +46,13 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button class="secondary" type="submit">{{ _("Sign out") }}</button>
   </form>
+  <form method="post" hx-push-url="false" action="/web/settings/sign-out-everywhere" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h3>{{ _("Sign out every device") }}</h3>
+    <p class="muted hint">{{ _("Revokes every API key of your account and ends every browser session, this one too. Each device then needs a new key.") }}</p>
+    <label class="choice"><input type="checkbox" name="confirm" value="yes" required> {{ _("Yes, sign out every device") }}</label>
+    <button class="secondary danger" type="submit">{{ _("Sign out every device") }}</button>
+  </form>
 </section>
 
 <section class="card" aria-labelledby="h-keys">

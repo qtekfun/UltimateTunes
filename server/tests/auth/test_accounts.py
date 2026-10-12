@@ -4,6 +4,7 @@
 
 import json
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from argon2 import PasswordHasher, Type
@@ -32,6 +33,8 @@ from ultimatetunes.errors import (
 OTHER_IP = "198.51.100.7"
 # Callers on the Internet and on the LAN, and a wrong guess (random, never a real secret).
 STRANGERS = tuple(f"203.0.113.{n}" for n in range(1, 5))
+# More callers on the Internet, one per attempt.
+FAR = tuple(f"203.0.113.{n}" for n in range(1, 13))
 NEIGHBOURS = tuple(f"192.168.1.{n}" for n in range(10, 13))
 WRONG = secrets.token_hex(8)
 
@@ -62,38 +65,75 @@ def test_wrong_password_and_unknown_user_look_the_same(
     assert burned == ["x"]
 
 
-def test_disabled_user_with_the_right_password(service: AuthService, user: Account) -> None:
+def test_disabled_user_with_the_right_password(
+    service: AuthService, user: Account, clock: FakeClock
+) -> None:
     service.set_disabled(user.user_id, True, actor=None)
     with pytest.raises(AuthenticationFailed):
         service.verify_password("bob", "wrong password!", IP)
+    clock.advance(1)
     with pytest.raises(AccountDisabled):
         service.verify_password("bob", USER_PASSWORD, IP)
 
 
-def test_password_failures_lock_the_username_across_ips(
+def test_outside_failures_delay_the_username_across_ips(
     service: AuthService, admin: Account, clock: FakeClock
 ) -> None:
+    """Audit M1 (final): from outside, a username is slowed down by a growing delay, never
+    locked for the long lockout (`auth_lockout_s`, 60 s here)."""
     with pytest.raises(AuthenticationFailed):
-        service.verify_password("alice", "guess one", "203.0.113.1")
-    with pytest.raises(AuthenticationFailed):
-        service.verify_password("alice", "guess two", "203.0.113.2")
-    # Locked for 60 s: even the right password is refused, before Argon2 runs.
+        service.verify_password("alice", "guess one", FAR[0])
+    # 1 s for anyone, from any address: even the right password waits, before Argon2 runs.
     with pytest.raises(RateLimited) as caught:
-        service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.3")
-    assert caught.value.retry_after_s == 60
+        service.verify_password("alice", ADMIN_PASSWORD, FAR[2])
+    assert caught.value.retry_after_s == 1
+    clock.advance(1)
+    with pytest.raises(AuthenticationFailed):
+        service.verify_password("alice", "guess two", FAR[1])
+    with pytest.raises(RateLimited) as caught:
+        service.verify_password("alice", ADMIN_PASSWORD, FAR[2])
+    assert caught.value.retry_after_s == 2
     lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
     assert [(e.target_type, e.target_id) for e in lockout] == [("user-out", "alice")]
-    clock.advance(60)
-    assert service.verify_password("alice", ADMIN_PASSWORD, IP).id == admin.user_id
+    clock.advance(2)
+    assert service.verify_password("alice", ADMIN_PASSWORD, FAR[3]).id == admin.user_id
+    # The success reset the streak: the next failure costs 1 s again.
+    with pytest.raises(AuthenticationFailed):
+        service.verify_password("alice", "guess three", FAR[4])
+    with pytest.raises(RateLimited) as caught:
+        service.verify_password("alice", ADMIN_PASSWORD, FAR[5])
+    assert caught.value.retry_after_s == 1
+
+
+def test_outside_delay_grows_to_its_cap_and_never_beyond(
+    db: Database, clock: FakeClock, auth_settings: AuthSettings, admin: Account
+) -> None:
+    roomy = auth_settings.model_copy(
+        update={"auth_max_failures_per_ip": 1000, "auth_outside_backoff_max_s": 300.0}
+    )
+    service = AuthService(db, clock, SqliteRateLimiter(db, clock), roomy, fast_passwords())
+    waits = []
+    for n in range(12):
+        with pytest.raises(AuthenticationFailed):
+            service.verify_password("alice", WRONG, f"203.0.113.{n + 1}")
+        with pytest.raises(RateLimited) as caught:
+            service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP)
+        waits.append(caught.value.retry_after_s)
+        clock.advance(caught.value.retry_after_s)
+    assert waits == [1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300]
+    # One audit entry for the whole streak, not one per failure.
+    lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
+    assert len(lockout) == 1
+    assert service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP).id == admin.user_id
 
 
 def test_strangers_cannot_lock_out_logins_from_trusted_networks(
     service: AuthService, admin: Account
 ) -> None:
-    """Audit M1: wrong passwords from the Internet (`POST /ut/v1/keys`) lock only the outside
-    counter; the admin still logs in from LAN/Tailscale."""
+    """Audit M1: wrong passwords from the Internet (`POST /ut/v1/keys`) delay only the outside
+    counter; the admin still logs in from LAN/Tailscale at once."""
     for stranger in STRANGERS[:2]:
-        with pytest.raises(AuthenticationFailed):
+        with pytest.raises((AuthenticationFailed, RateLimited)):
             service.create_key_with_password("alice", WRONG, "Laptop", stranger)
     with pytest.raises(RateLimited):
         service.verify_password("alice", ADMIN_PASSWORD, STRANGERS[2])
@@ -101,7 +141,7 @@ def test_strangers_cannot_lock_out_logins_from_trusted_networks(
     assert inside.id == admin.user_id
     created = service.create_key_with_password("alice", ADMIN_PASSWORD, "Phone", IP, trusted=True)
     assert created.key.user_id == admin.user_id
-    # The outside counter is still locked: a success inside does not reset it.
+    # The outside delay still runs: a success inside does not reset it.
     with pytest.raises(RateLimited):
         service.verify_password("alice", ADMIN_PASSWORD, STRANGERS[3])
 
@@ -128,10 +168,13 @@ def test_password_failures_lock_the_ip(service: AuthService, admin: Account) -> 
     assert service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP).id == admin.user_id
 
 
-def test_success_clears_the_failure_count(service: AuthService, admin: Account) -> None:
+def test_success_clears_the_failure_count(
+    service: AuthService, admin: Account, clock: FakeClock
+) -> None:
     for _ in range(3):
         with pytest.raises(AuthenticationFailed):
             service.verify_password("alice", "guess", IP)
+        clock.advance(1)  # a single outside failure delays the username by 1 s, never more
         service.verify_password("alice", ADMIN_PASSWORD, IP)
     service.verify_password("alice", ADMIN_PASSWORD, IP)
 
@@ -368,10 +411,11 @@ def test_create_key_with_password(service: AuthService, admin: Account, clock: F
 
 
 def test_create_key_with_password_failures(
-    service: AuthService, admin: Account, user: Account
+    service: AuthService, admin: Account, user: Account, clock: FakeClock
 ) -> None:
     with pytest.raises(AuthenticationFailed):
         service.create_key_with_password("alice", "wrong password", "Laptop", IP)
+    clock.advance(1)
     with pytest.raises(InvalidParameter):
         service.create_key_with_password("alice", ADMIN_PASSWORD, " ", IP)
     # A key sent along must be valid and of the same user.
@@ -382,3 +426,35 @@ def test_create_key_with_password_failures(
     with pytest.raises(InvalidApiKey):
         service.create_key_with_password("alice", ADMIN_PASSWORD, "Laptop", OTHER_IP, "utk_x")
     assert len(service.list_keys(admin.user_id)) == 2
+
+
+def test_concurrent_outside_attempts_get_one_guess_per_delay(
+    service: AuthService, admin: Account, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security review of #74: the delay is checked and the attempt reserved atomically before
+    Argon2, so a burst of parallel guesses when a delay ends yields one guess, not one each."""
+    checked: list[str] = []
+    real_verify = Passwords.verify
+
+    def counting(self: Passwords, stored: str, password: str) -> bool:
+        checked.append("x")
+        return real_verify(self, stored, password)
+
+    monkeypatch.setattr(Passwords, "verify", counting)
+
+    def attempt(n: int) -> str:
+        try:
+            service.verify_password("alice", WRONG, FAR[n % len(FAR)])
+        except AuthenticationFailed:
+            return "guessed"
+        except RateLimited:
+            return "waited"
+        return "signed in"
+
+    for _ in range(3):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(attempt, range(8)))
+        assert outcomes.count("guessed") == 1
+        assert outcomes.count("waited") == 7
+        clock.advance(300)
+    assert len(checked) == 3

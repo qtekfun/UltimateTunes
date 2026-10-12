@@ -10,6 +10,7 @@ import subprocess  # nosec B404 - tests only, argument lists
 from collections.abc import Sequence
 from pathlib import Path
 
+import anyio
 import pytest
 
 from tests.tagging.conftest import (
@@ -45,13 +46,15 @@ def test_remux_is_a_stream_copy_into_the_archive_container() -> None:
     assert args[0] == "/usr/bin/ffmpeg"
     assert args[args.index("-i") + 1] == "file:/s/a.webm"
     assert args[args.index("-c:a") + 1] == "copy"
-    assert args[args.index("-f") + 1] == "ogg"
+    assert args[args.index("-f") + 1] == "matroska"  # the input's demuxer, forced
+    assert args[len(args) - 1 - args[::-1].index("-f") + 1] == "ogg"  # the output's muxer
     assert args[-1] == "file:/s/archive.opus"
     assert "-nostdin" in args
     assert "-n" in args  # never overwrite
     m4a = remux_args(FF, Path("/s/a.m4a"), Path("/s/archive.m4a"), M4A)
     assert m4a[m4a.index("-movflags") + 1] == "+faststart"
-    assert m4a[m4a.index("-f") + 1] == "mp4"
+    assert m4a[m4a.index("-f") + 1] == "mov"
+    assert m4a[-3:-1] == ["-f", "mp4"]
 
 
 def test_paths_must_be_absolute() -> None:
@@ -125,7 +128,9 @@ async def test_the_wrapper_runs_the_tools_and_reports_failures(tmp_path: Path) -
         await ffmpeg.remux(Path("/s/a.webm"), tmp_path / "other.opus", OPUS)
     runner.fail = None
     with pytest.raises(FfmpegError, match="no archive"):
-        await Ffmpeg(TaggingSettings(), _noop).remux(Path("/s/a"), tmp_path / "none.opus", OPUS)
+        await Ffmpeg(TaggingSettings(), _noop).remux(
+            Path("/s/a.webm"), tmp_path / "none.opus", OPUS
+        )
 
 
 async def test_run_process_uses_argument_lists_and_a_timeout(tmp_path: Path) -> None:
@@ -209,6 +214,16 @@ async def test_track_and_album_loudness_of_the_tones() -> None:
     assert album.true_peak >= track.true_peak - 0.01
 
 
+WHITELISTS = [
+    "-format_whitelist",
+    "matroska,ogg,mov",
+    "-codec_whitelist",
+    "opus,aac,vorbis,mp3float,mp3,flac",
+    "-protocol_whitelist",
+    "file",
+]
+
+
 def test_inputs_are_local_files_only() -> None:
     for args in (
         remux_args(FF, Path("/s/a.webm"), Path("/s/archive.opus"), OPUS),
@@ -217,6 +232,69 @@ def test_inputs_are_local_files_only() -> None:
         inputs = [i for i, arg in enumerate(args) if arg == "-i"]
         assert inputs
         for i in inputs:
-            assert args[i - 2 : i] == ["-protocol_whitelist", "file"]
+            assert args[i - 6 : i] == WHITELISTS
     probe = probe_args(FF, Path("/s/a.opus"))
-    assert probe[-3:] == ["-protocol_whitelist", "file", "file:/s/a.opus"]
+    assert probe[-9:] == ["-f", "ogg", *WHITELISTS, "file:/s/a.opus"]
+
+
+@pytest.mark.parametrize(
+    ("name", "demuxer"),
+    [
+        ("a.webm", "matroska"),
+        ("a.WEBM", "matroska"),
+        ("a.opus", "ogg"),
+        ("a.ogg", "ogg"),
+        ("a.m4a", "mov"),
+        ("a.mp4", "mov"),
+    ],
+)
+def test_the_input_demuxer_is_forced_from_the_extension(name: str, demuxer: str) -> None:
+    """Audit L3: ffmpeg never guesses an input format from the content."""
+    for args in (
+        probe_args(FF, Path("/s") / name),
+        remux_args(FF, Path("/s") / name, Path("/s/archive.opus"), OPUS),
+        loudness_args(FF, [Path("/s") / name]),
+    ):
+        assert args[args.index("-f") + 1] == demuxer
+        assert args.index("-f") < args.index(f"file:/s/{name}")
+
+
+@pytest.mark.parametrize("name", ["a", "a.mp3", "a.flac", "a.txt", "a.m3u8", "a.webm.part"])
+def test_inputs_of_unexpected_types_are_refused(name: str) -> None:
+    path = Path("/s") / name
+    with pytest.raises(FfmpegError, match="unexpected input type"):
+        probe_args(FF, path)
+    with pytest.raises(FfmpegError, match="unexpected input type"):
+        remux_args(FF, path, Path("/s/archive.opus"), OPUS)
+    with pytest.raises(FfmpegError, match="unexpected input type"):
+        loudness_args(FF, [Path("/s/a.opus"), path])
+
+
+@needs_ffmpeg
+async def test_the_codec_whitelist_refuses_other_decoders(tmp_path: Path) -> None:
+    """A file whose audio is not one of the expected codecs is not decoded at all."""
+    src = tmp_path / "pcm.m4a"
+    await anyio.run_process(
+        [
+            real_settings().ffmpeg_path,
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:a",
+            "alac",
+            f"file:{src}",
+        ],
+    )
+    with pytest.raises(FfmpegError):
+        await Ffmpeg(real_settings()).loudness([src])
+
+
+@needs_ffmpeg
+async def test_the_vorbis_webm_is_still_probed(tmp_path: Path) -> None:
+    probe = await Ffmpeg(real_settings()).probe(copy_fixture("vorbis.webm", tmp_path / "v.webm"))
+    assert probe.codec == "vorbis"
+    assert probe.kind() is None
