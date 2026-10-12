@@ -107,8 +107,41 @@ async def test_an_empty_queue_says_when_to_come_back() -> None:
     )
     client = api.client()
     assert await client.claim("w1", 60) == NoJob(3.0)
-    assert await client.claim("w1", 60) == NoJob(0.0)
-    assert await client.claim("w1", 60) == NoJob(0.0)
+    assert await client.claim("w1", 60) == NoJob(None)
+    assert await client.claim("w1", 60) == NoJob(None)
+
+
+async def test_a_long_poll_claim_asks_to_wait_and_reads_longer() -> None:
+    api = Api(
+        httpx.Response(204, headers={"Retry-After": "0"}),
+        httpx.Response(204, headers={"Retry-After": "-1"}),
+    )
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(api.handle), base_url="http://api", timeout=10.0
+    )
+    client = HttpWorkerApi(http, "token-x", claim_wait_s=8)
+    assert await client.claim("w1", 60) == NoJob(0.0)  # waited: claim again at once
+    assert api.body(0) == {
+        "workerId": "w1",
+        "kinds": ["download"],
+        "leaseSeconds": 60,
+        "waitSeconds": 8,
+    }
+    # The answer may take the whole wait: reading it gets that much more time.
+    assert api.requests[0].extensions["timeout"]["read"] == 18.0
+    assert api.requests[0].extensions["timeout"]["connect"] == 10.0
+    assert await client.claim("w1", 60) == NoJob(None)
+
+
+async def test_a_long_poll_without_a_read_timeout_keeps_none() -> None:
+    api = Api(httpx.Response(204, headers={"Retry-After": "0"}))
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(api.handle),
+        base_url="http://api",
+        timeout=httpx.Timeout(10.0, read=None),
+    )
+    await HttpWorkerApi(http, "token-x", claim_wait_s=8).claim("w1", 60)
+    assert api.requests[0].extensions["timeout"]["read"] is None
 
 
 async def test_heartbeat_and_progress_bodies() -> None:

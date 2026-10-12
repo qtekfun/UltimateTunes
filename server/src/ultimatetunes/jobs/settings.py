@@ -10,3 +10,9 @@ from ultimatetunes.settings import AreaSettings
 class JobsSettings(AreaSettings):
     # `Retry-After` of an empty claim (204): how long an idle worker waits before asking again.
     claim_retry_after_s: int = Field(default=2, ge=1, le=60)
+    # Longest a claim with `waitSeconds` is held while no job is claimable (issue #55); 0 turns
+    # long-polling off (every claim answers at once).
+    claim_max_wait_s: float = Field(default=25.0, ge=0, le=30)
+    # While a claim waits, the queue is checked again at least this often, for jobs queued
+    # outside this process (another replica) or whose retry backoff ends.
+    claim_poll_s: float = Field(default=1.0, gt=0, le=30)

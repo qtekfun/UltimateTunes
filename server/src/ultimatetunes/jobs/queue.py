@@ -32,6 +32,7 @@ from ultimatetunes.errors import InvalidStateTransition, LeaseLost, NotFound, Pa
 from ultimatetunes.ids import new_id
 from ultimatetunes.jobs import state as sm
 from ultimatetunes.jobs.gate import DownloadGate
+from ultimatetunes.jobs.signal import JobSignal
 
 JobState = Literal["queued", "downloading", "tagging", "ready", "failed", "cancelled"]
 ReleaseState = Literal["queued", "ready", "failed", "cancelled"]
@@ -153,6 +154,9 @@ Finalizer = Callable[[Connection, Job], None]
 
 
 class JobQueue(Protocol):
+    # Fired whenever a job becomes `queued` in this process (long-poll claims, `signal.py`).
+    signal: JobSignal
+
     def enqueue(
         self, *, track_id: str, video_id: str, priority: int, requested_by: str | None = None
     ) -> Job: ...
@@ -313,12 +317,14 @@ class SqliteJobQueue:
         *,
         rand: Callable[[], float] | None = None,
         gate: DownloadGate | None = None,
+        signal: JobSignal | None = None,
     ) -> None:
         self._db = db
         self._clock = clock
         self._rand = rand or secrets.SystemRandom().random
         # The abuse limits (jobs/gate.py); None (tests of the queue alone) checks nothing.
         self._gate = gate
+        self.signal = signal or JobSignal()
 
     def _admit(self, conn: Connection, track_id: str, requested_by: str | None) -> None:
         """A download is about to start for `track_id`: the gate may refuse it."""
@@ -361,10 +367,13 @@ class SqliteJobQueue:
                 " VALUES (?, 'download', ?, ?, 'queued', ?, ?, ?, ?)",
                 (job_id, track_id, video_id, priority, requested_by, now, now),
             )
+            # Before the commit is fine: a woken claim waits for this writer (signal.py).
+            self.signal.notify()
             return self._require(conn, job_id)
         if existing.state in (sm.JobState.FAILED, sm.JobState.CANCELLED):
             self._admit(conn, track_id, requested_by)
             self._requeue(conn, existing, priority, now, requested_by)
+            self.signal.notify()
         elif existing.state == sm.JobState.QUEUED and priority > existing.priority:
             jobs.run(
                 "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
