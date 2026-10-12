@@ -72,6 +72,7 @@ class ServerEndToEndTest {
     private val network = NetworkSwitch()
     private val decode = arguments.getString(ARG_DECODE).toBoolean()
     private var caches: MediaCaches? = null
+    private var database: StandaloneDatabaseProvider? = null
     private lateinit var api: TunesApi
     private lateinit var sources: MediaDataSources
 
@@ -81,7 +82,7 @@ class ServerEndToEndTest {
         val key = arguments.getString(ARG_KEY)
         assumeTrue("end-to-end: run through tools/e2e/run.sh", url != null && key != null)
         root.deleteRecursively()
-        val database = StandaloneDatabaseProvider(context)
+        val database = StandaloneDatabaseProvider(context).also { this.database = it }
         val evictor = AdjustableLruEvictor(LARGE)
         val media = MediaCaches(
             play = SimpleCache(File(root, "play"), evictor, database),
@@ -105,6 +106,10 @@ class ServerEndToEndTest {
         caches?.let {
             (it.play as SimpleCache).release()
             (it.downloads as SimpleCache).release()
+            // Drops the caches' index tables too, so the app's Media3 database keeps no orphans.
+            val provider = requireNotNull(database)
+            SimpleCache.delete(File(root, "play"), provider)
+            SimpleCache.delete(File(root, "offline"), provider)
             root.deleteRecursively()
         }
     }
@@ -137,7 +142,9 @@ class ServerEndToEndTest {
 
         // Network cut: the server is unreachable, the cached song still plays.
         network.online.set(false)
+        val beforePing = network.requests.get()
         assertTrue(api.ping() is TunesResult.NetworkError)
+        assertTrue("a blocked request is counted", network.requests.get() > beforePing)
         val atCut = network.requests.get()
         assertNull(playToEnd(libraryId))
         assertEquals("the offline replay never asked the server", atCut, network.requests.get())
@@ -198,14 +205,17 @@ class ServerEndToEndTest {
         return (result as TunesResult.Success).value
     }
 
-    /** Counts requests and cuts the network on demand, before anything leaves the phone. */
+    /**
+     * Counts every request the phone attempts, online or not, and cuts the network on demand
+     * before anything leaves the phone.
+     */
     private class NetworkSwitch : Interceptor {
         val online = AtomicBoolean(true)
         val requests = AtomicInteger()
 
         override fun intercept(chain: Interceptor.Chain): Response {
-            if (!online.get()) throw IOException("network cut")
             requests.incrementAndGet()
+            if (!online.get()) throw IOException("network cut")
             return chain.proceed(chain.request())
         }
     }

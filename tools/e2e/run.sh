@@ -12,7 +12,7 @@
 #
 # Settings (env): UT_E2E_PORT (host port of the api, default 8044), UT_E2E_PROJECT (Compose
 # project, default ut-e2e), UT_E2E_DEVICE (adb serial; empty = no device part), UT_E2E_ADB_LOCK
-# (a file to `flock` around every install and adb call, for a phone shared with other jobs),
+# (a file to `flock`, held for the whole device part, for a phone shared with other jobs),
 # UT_E2E_KEEP=1 (leave the stack up at the end, to look around).
 #
 # The device part installs the debug app and its test APK (`installDebug installDebugAndroidTest`,
@@ -38,16 +38,30 @@ compose() {
     -f "$REPO/server/compose.test.yaml" -f "$REPO/tools/e2e/compose.e2e.yaml" "$@"
 }
 
-# Runs a command under the shared-phone lock when one is set.
-locked() {
-  if [[ -n "$LOCK" ]]; then flock "$LOCK" "$@"; else "$@"; fi
+# Takes the shared-phone lock (when one is set) for the rest of this script: install, reverse,
+# instrument and the reverse restore in the teardown all run under one hold, released at exit.
+hold_phone() {
+  if [[ -n "$LOCK" ]]; then
+    exec 9>>"$LOCK"
+    flock 9
+  fi
 }
 
+# adb and Gradle never inherit the lock's descriptor: an adb server or a Kotlin daemon they
+# start would otherwise keep the phone locked after this script ends.
+adb_() { adb "$@" 9>&-; }
+
 reversed=0
+previous_reverse=""
 teardown() {
   local status=$?
   if [[ "$reversed" == 1 ]]; then
-    locked adb -s "$DEVICE" reverse --remove "tcp:${DEVICE_PORT}" >/dev/null 2>&1 || true
+    # Put back whatever mapped the phone's port before this run, or remove ours.
+    if [[ -n "$previous_reverse" ]]; then
+      adb_ -s "$DEVICE" reverse "tcp:${DEVICE_PORT}" "$previous_reverse" >/dev/null 2>&1 || true
+    else
+      adb_ -s "$DEVICE" reverse --remove "tcp:${DEVICE_PORT}" >/dev/null 2>&1 || true
+    fi
   fi
   if [[ "$status" != 0 ]]; then
     echo "e2e: FAILED (exit $status); last stack logs:" >&2
@@ -92,14 +106,18 @@ key="$(
     -d "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\",\"name\":\"e2e phone\"}" |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["secret"])'
 )"
+hold_phone
 (
   cd "$REPO/android"
-  ANDROID_SERIAL="$DEVICE" locked ./gradlew --no-daemon -q installDebug installDebugAndroidTest
+  ANDROID_SERIAL="$DEVICE" ./gradlew --no-daemon -q installDebug installDebugAndroidTest 9>&-
 )
-locked adb -s "$DEVICE" reverse "tcp:${DEVICE_PORT}" "tcp:${PORT}"
+previous_reverse="$(
+  adb_ -s "$DEVICE" reverse --list | awk -v port="tcp:${DEVICE_PORT}" '$2 == port { print $3 }'
+)"
 reversed=1
+adb_ -s "$DEVICE" reverse "tcp:${DEVICE_PORT}" "tcp:${PORT}"
 output="$(
-  locked adb -s "$DEVICE" shell am instrument -w \
+  adb_ -s "$DEVICE" shell am instrument -w \
     -e package com.qtekfun.ultimatetunes.e2e \
     -e utE2eUrl "http://127.0.0.1:${DEVICE_PORT}" -e utE2eKey "$key" \
     com.qtekfun.ultimatetunes.test/com.qtekfun.ultimatetunes.HiltTestRunner
