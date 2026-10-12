@@ -75,16 +75,15 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 | `al-<albumUuid>` | Album cover (`cover.jpg` next to the album in `/music`). Library songs use their album's id. |
 | `ar-<artistUuid>` | Artist image |
 | `pl-<playlistUuid>` | Playlist mosaic or first track's cover |
-| `yt:<videoId>` | Thumbnail of the video (pending or external songs). **Error 70 in v1 for now**, see below |
-| `ytalbum:<browseId>` | External album thumbnail. **Error 70 for now** |
-| `ytartist:<channelId>` | External artist thumbnail. **Error 70 for now** |
+| `yt:<videoId>` | Thumbnail of the video (pending or external songs), see below |
+| `ytalbum:<browseId>` | External album thumbnail |
+| `ytartist:<channelId>` | External artist thumbnail |
 
-**YouTube image hosts are not approved yet.** SPEC §11 lists `i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com` and `yt3.googleusercontent.com` as *pending the author's approval*. Until that approval is recorded there:
-- `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) answers error `70` (no image). Clients show their placeholder.
-- Thumbnail URLs from YouTube Music (`thumbnailUrl` in job hints, `tracks.yt_thumbnail_url`) may be **stored**, but neither the api nor the worker ever fetches them.
-- The worker takes album covers from Cover Art Archive only.
-
-Once approved, the api fetches external images only from those hosts and caches them on disk, and the worker may use them as a cover fallback. No other host is ever contacted (SSRF rule, SECURITY.md).
+**YouTube image hosts** (approved by the author on 2026-10-12, SPEC §11): `i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com` and `yt3.googleusercontent.com`, over HTTPS only.
+- `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) fetches the thumbnail URL the catalog returned (never a URL built from client input), only over HTTPS and only if its host is on that exact list. **Redirects are not followed** (any 3xx answers error `70`); a non-`image/*` content type or a body over 5 MiB (enforced while streaming, not only from `Content-Length`) also answers error `70`.
+- Fetched images are cached on disk in one dedicated directory under `/data` (owned by the api, not the staging store), keyed by the virtual id, with a TTL (default 30 days) and a total-size cap (default 512 MiB, oldest evicted first). Both are settings of the area that implements `getCoverArt` (T05).
+- The worker may use the YouTube thumbnail as a cover fallback when Cover Art Archive has none, with the same rules (HTTPS, exact hosts, no redirects, image type, 5 MiB); Cover Art Archive stays first.
+- No other host is ever contacted (SSRF rule, SECURITY.md).
 
 ## API key format
 

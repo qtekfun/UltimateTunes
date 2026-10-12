@@ -732,8 +732,8 @@ components:
           - string
           - 'null'
           format: uri
-          description: Stored with the pending track (`tracks.yt_thumbnail_url`) but **never fetched** by the api or
-            the worker until SPEC §11's pending approval of the YouTube image hosts is granted (contracts/ids.md).
+          description: Stored with the pending track (`tracks.yt_thumbnail_url`); fetched only from the approved YouTube
+            image hosts, with the same rules as `getCoverArt` (contracts/ids.md).
     Lease:
       type: object
       required:
@@ -1071,8 +1071,8 @@ components:
           - $ref: '#/components/schemas/RelativePath'
           - type: 'null'
           description: Album cover under `/music` (e.g. `<Artist>/<Album>/cover.jpg`), written by the worker next to
-            the audio file when it moves it (an existing cover is kept). From Cover Art Archive only until SPEC
-            §11 approves the YouTube image hosts.
+            the audio file when it moves it (an existing cover is kept). From Cover Art Archive first, else the
+            YouTube thumbnail from the approved hosts, same rules as `getCoverArt` (contracts/ids.md).
     RegisterTrack:
       type: object
       required:
