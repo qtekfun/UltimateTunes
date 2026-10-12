@@ -47,7 +47,7 @@ packages = ["src/ultimatetunes"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["src", "tests"]
+src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
 select = [
@@ -65,8 +65,8 @@ ignore = [
 
 [tool.mypy]
 strict = true
-files = ["src", "tests"]
-mypy_path = "src"
+files = ["src", "tests", "tools"]
+mypy_path = ["src", "tools"]
 plugins = ["pydantic.mypy"]
 
 [tool.bandit]
@@ -74,6 +74,8 @@ exclude_dirs = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The quality-gate scripts of tools/ are tested too (tests/tools).
+pythonpath = ["tools"]
 addopts = [
   "--strict-markers",
   "--cov=ultimatetunes",

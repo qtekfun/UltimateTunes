@@ -3,9 +3,9 @@
 #
 # Every gate CI runs on the server (CLAUDE.md, Commands). `uv sync --locked` first.
 
-.PHONY: check lint types test security contracts
+.PHONY: check lint types test security deps contracts
 
-check: lint types test security
+check: lint types test security deps
 
 lint:
 	uv run ruff check .
@@ -14,13 +14,20 @@ lint:
 types:
 	uv run mypy
 
+# pytest enforces >= 85 % overall; tools/critical_coverage.py then 100 % lines and branches on the
+# critical modules of CLAUDE.md (auth, rate limiter, ids, path sanitizer, job and streaming states).
 test:
 	mkdir -p reports
 	uv run pytest
+	uv run python tools/critical_coverage.py reports/coverage.xml
 
 security:
-	uv run bandit -c pyproject.toml -r src
+	uv run bandit -c pyproject.toml -r src tools
 	uv run pip-audit --skip-editable
+
+# No telemetry, analytics or crash-reporting package anywhere in the lock (CLAUDE.md).
+deps:
+	uv run python tools/forbidden_deps.py uv.lock
 
 # Contracts: every migration applies on SQLite and on PostgreSQL (UT_TEST_POSTGRES_URL must point
 # at a disposable database). PLAN T02 adds OpenAPI validation and schemathesis.
