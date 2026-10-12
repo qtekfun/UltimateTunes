@@ -21,12 +21,11 @@ to the ReplayGain reference). Every `*_norm` column uses `search.text.normalize`
 
 import contextlib
 import logging
-import os
 import re
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 import mutagen
@@ -281,25 +280,16 @@ def read_info(info: object, size: int) -> AudioInfo:
 
 
 def list_files(store: LibraryStore) -> Iterator[str]:
-    """Relative paths of the regular, visible files of the library, in a stable order.
-
-    `LibraryStore` has no listing call yet (coordinator: SPEC section 11 / PR notes); the
-    local store's root is walked without following symbolic links, and every path still goes
-    through the store's checks before it is opened.
-    """
-    root = getattr(store, "root", None)
-    if not isinstance(root, Path) or not root.is_dir():
-        return
-    for directory, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
-        base = Path(directory)
-        parts = base.relative_to(root).parts
-        for name in sorted(files):
-            full = base / name
-            if name.startswith(".") or full.is_symlink() or not full.is_file():
-                continue
-            with contextlib.suppress(PathRejected):
-                yield store.check(PurePosixPath(*parts, name).as_posix())
+    """Relative paths of the regular, visible files of the library (`FileStore.walk`: no
+    symbolic links). Hidden files and directories are left out; a path the store refuses is
+    skipped on its own, never ending the scan."""
+    for rel in store.walk():
+        if any(part.startswith(".") for part in rel.split("/")):
+            continue
+        try:
+            yield store.check(rel)
+        except PathRejected:
+            log.warning("library scan: path refused by the store")
 
 
 # ---------------------------------------------------------------------- registration

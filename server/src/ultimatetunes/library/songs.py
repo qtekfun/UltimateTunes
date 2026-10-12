@@ -11,7 +11,8 @@
 - `keep(services, user, raw_ids)`: the "keep" action of contracts/ids.md (star, playlist
   add): every id resolves to a library track; a `yt:` id without one is materialized as a
   `pending` track with its alias (`ids.resolve.materialize_song`) and its download job is
-  requested. Every id is checked before anything is written.
+  requested in the same transaction (`JobQueue.enqueue_in`), also for a pending track kept
+  by its library UUID. Every id is checked before anything is written.
 """
 
 import asyncio
@@ -22,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ultimatetunes.errors import PayloadTooLarge, TunesError
 from ultimatetunes.ids.resolve import TrackRef, materialize_song, resolve_track
-from ultimatetunes.ids.virtual import SONG_PREFIX, VirtualId, parse_kind
+from ultimatetunes.ids.virtual import VirtualId, parse_kind
 from ultimatetunes.jobs.queue import PRIORITY_KEEP
 from ultimatetunes.library.render import Obj, pending_child, placeholder_child
 from ultimatetunes.library.repository import LibraryRepository
@@ -128,17 +129,35 @@ def _resolve_keep(services: "Services", raw_ids: Sequence[str]) -> dict[str, Tra
     return out
 
 
-def _materialize(services: "Services", tracks: Sequence[CatalogTrack]) -> dict[str, TrackRef]:
+def _materialize_and_request(
+    services: "Services",
+    resolved: dict[str, TrackRef | VirtualId],
+    records: Sequence[CatalogTrack],
+    user_id: str,
+) -> dict[str, TrackRef]:
+    """One transaction: the pending tracks of `records` (with their aliases), then a download
+    job for every pending track that is kept, however it was named (`yt:` id or library
+    UUID). The queue keeps one job per track."""
     with services.db.transaction() as conn:
-        return {t.video_id: materialize_song(conn, services.clock, t) for t in tracks}
-
-
-def _request_jobs(services: "Services", refs: Sequence[tuple[TrackRef, str]], user_id: str) -> None:
-    for ref, video in refs:
-        if ref.status == "pending":
-            services.jobs.enqueue(
-                track_id=ref.id, video_id=video, priority=PRIORITY_KEEP, requested_by=user_id
-            )
+        new = {t.video_id: materialize_song(conn, services.clock, t) for t in records}
+        refs: dict[str, TrackRef] = {
+            raw: new[target.payload] if isinstance(target, VirtualId) else target
+            for raw, target in resolved.items()
+        }
+        pending = {ref.id for ref in refs.values() if ref.status == "pending"}
+        for track_id in sorted(pending):
+            video = conn.execute(
+                "SELECT yt_video_id FROM tracks WHERE id = ?", (track_id,)
+            ).scalar()
+            if video is not None:
+                services.jobs.enqueue_in(
+                    conn,
+                    track_id=track_id,
+                    video_id=str(video),
+                    priority=PRIORITY_KEEP,
+                    requested_by=user_id,
+                )
+    return refs
 
 
 async def keep(services: "Services", user_id: str, raw_ids: Sequence[str]) -> list[str]:
@@ -147,21 +166,9 @@ async def keep(services: "Services", user_id: str, raw_ids: Sequence[str]) -> li
     _parse_songs(raw_ids)
     resolved = await run_in_threadpool(_resolve_keep, services, raw_ids)
     missing = list(dict.fromkeys(r.payload for r in resolved.values() if isinstance(r, VirtualId)))
-    new: dict[str, TrackRef] = {}
-    if missing:
-        # Every external song must exist in the catalog before anything is written.
-        records = await asyncio.gather(*(services.catalog.track(v) for v in missing))
-        new = await run_in_threadpool(_materialize, services, records)
-    refs: dict[str, TrackRef] = {
-        raw: new[target.payload] if isinstance(target, VirtualId) else target
-        for raw, target in resolved.items()
-    }
-    # A `yt:` id kept while its track is pending gets its download requested (one job per
-    # track: the queue deduplicates).
-    wanted = {
-        refs[raw].id: (refs[raw], raw[len(SONG_PREFIX) :])
-        for raw in refs
-        if raw.startswith(SONG_PREFIX)
-    }
-    await run_in_threadpool(_request_jobs, services, list(wanted.values()), user_id)
+    # Every external song must exist in the catalog before anything is written.
+    records = await asyncio.gather(*(services.catalog.track(v) for v in missing))
+    refs = await run_in_threadpool(
+        _materialize_and_request, services, resolved, list(records), user_id
+    )
     return [refs[raw].id for raw in raw_ids]

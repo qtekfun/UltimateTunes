@@ -198,3 +198,27 @@ def test_xml(lib: Harness) -> None:
     assert "<replayGain/>" in xml
     assert 'playCount="1"' in xml
     assert lib.rest("star", fmt="xml", id="nope").text.count('<error code="70"') == 1
+
+
+def test_keeping_a_pending_track_by_its_uuid_requests_it(lib: Harness) -> None:
+    pending_orchard(lib)
+    lib.ok("star", id=ORCHARD)
+    assert jobs(lib) == [("Rb8Tn3ZcYv0", "queued", 30)]
+    # Library songs never get a job.
+    lib.ok("star", id=lib.ids()["Brasas"])
+    assert len(jobs(lib)) == 1
+
+
+def test_materialize_and_enqueue_are_one_transaction(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("queue down")
+
+    monkeypatch.setattr(lib.services.jobs, "enqueue_in", broken)
+    r = lib.rest("star", id="yt:Qx7Lm2pZ0aB")
+    assert r.json()["subsonic-response"]["error"]["code"] == 0
+    # Nothing was left behind: no pending track, no alias, no star.
+    assert lib.one("SELECT COUNT(*) FROM tracks WHERE status = 'pending'") == 0
+    assert lib.one("SELECT COUNT(*) FROM track_aliases") == 0
+    assert lib.one("SELECT COUNT(*) FROM starred_tracks") == 0

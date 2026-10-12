@@ -205,7 +205,7 @@ def test_stop_ends_the_scan_early(lib: Harness) -> None:
     assert (result.added, result.unchanged, result.skipped) == (0, 0, 0)
 
 
-def test_list_files_skips_links_and_needs_a_local_root(lib: Harness, tmp_path: Path) -> None:
+def test_list_files_skips_links_and_hidden_paths(lib: Harness, tmp_path: Path) -> None:
     outside = tmp_path / "outside.opus"
     outside.write_bytes(b"x")
     (lib.music / "link.opus").symlink_to(outside)
@@ -213,13 +213,24 @@ def test_list_files_skips_links_and_needs_a_local_root(lib: Harness, tmp_path: P
     (lib.music / ".cache" / "x.opus").write_bytes(b"x")
     files = list(list_files(lib.services.library))
     assert "link.opus" not in files
+    assert ".hidden.opus" not in files
     assert not any(f.startswith(".cache") for f in files)
-
-    class NoRoot:
-        pass
-
-    assert list(list_files(NoRoot())) == []  # type: ignore[arg-type]
     assert list(list_files(LocalLibraryStore(tmp_path / "missing"))) == []
+
+
+def test_a_refused_path_does_not_end_the_scan(lib: Harness) -> None:
+    store = lib.services.library
+    real_walk = store.walk
+
+    def walk() -> Any:
+        yield "bad\\name.opus"
+        yield from real_walk()
+
+    lib.services.library.walk = walk  # type: ignore[method-assign]
+    files = list(list_files(store))
+    assert "bad\\name.opus" not in files
+    assert "Marisol Vega/Salt & Ember/03 - Brasas.flac" in files
+    assert scanner(lib).scan().unchanged == 3
 
 
 def test_read_tags_numbers_and_gains() -> None:
