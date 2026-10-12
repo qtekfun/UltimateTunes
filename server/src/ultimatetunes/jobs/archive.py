@@ -98,25 +98,21 @@ def move_track_references(conn: Connection, source: str, target: str) -> None:
     _merge_stats(conn, source, target)
 
 
-_SOURCE_STAT = (
-    "(SELECT p.{col} FROM user_track_stats p"
-    " WHERE p.user_id = user_track_stats.user_id AND p.track_id = ?)"
+# The source row of the same user (correlated subqueries), and a portable "greatest":
+# neither MAX(a, b) (SQLite) nor GREATEST (PostgreSQL) is shared.
+_ADD_STATS = (
+    "UPDATE user_track_stats SET play_count = play_count + (SELECT p.play_count"
+    " FROM user_track_stats p WHERE p.user_id = user_track_stats.user_id AND p.track_id = ?),"
+    " last_played_at = CASE WHEN (SELECT p.last_played_at FROM user_track_stats p"
+    " WHERE p.user_id = user_track_stats.user_id AND p.track_id = ?) > last_played_at"
+    " OR last_played_at IS NULL THEN (SELECT p.last_played_at FROM user_track_stats p"
+    " WHERE p.user_id = user_track_stats.user_id AND p.track_id = ?) ELSE last_played_at END"
+    " WHERE track_id = ? AND user_id IN (SELECT user_id FROM user_track_stats WHERE track_id = ?)"
 )
 
 
 def _merge_stats(conn: Connection, source: str, target: str) -> None:
-    count = _SOURCE_STAT.format(col="play_count")
-    last = _SOURCE_STAT.format(col="last_played_at")
-    # Portable "greatest": neither MAX(a, b) (SQLite) nor GREATEST (PostgreSQL) is shared.
-    conn.execute(
-        f"UPDATE user_track_stats SET play_count = play_count + {count},"  # noqa: S608  # nosec B608
-        f" last_played_at = CASE WHEN {last} IS NOT NULL"
-        f" AND (last_played_at IS NULL OR {last} > last_played_at)"
-        f" THEN {last} ELSE last_played_at END"
-        " WHERE track_id = ? AND user_id IN"
-        " (SELECT user_id FROM user_track_stats WHERE track_id = ?)",
-        (source, source, source, source, target, source),
-    )
+    conn.execute(_ADD_STATS, (source, source, source, target, source))
     conn.execute(
         "INSERT INTO user_track_stats (user_id, track_id, play_count, last_played_at)"
         " SELECT s.user_id, ?, s.play_count, s.last_played_at FROM user_track_stats s"

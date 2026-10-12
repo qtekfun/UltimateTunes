@@ -8,15 +8,18 @@ The worker token is checked before (`internal_api.py`). Handlers are thin: the q
 problems by the app.
 """
 
+from functools import partial
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.services import services
+from ultimatetunes.errors import InvalidParameter
 from ultimatetunes.jobs.archive import archive_finalizer
 from ultimatetunes.jobs.queue import Claimed, JobResult, Lease, ProgressReport
 from ultimatetunes.jobs.settings import JobsSettings
@@ -24,8 +27,10 @@ from ultimatetunes.jobs.workers import CanaryResult, WorkerRegistry
 
 router = APIRouter()
 
-JobId = Annotated[str, Path(alias="jobId", min_length=1, max_length=64)]
-WorkerId = Annotated[str, Path(alias="workerId", min_length=1, max_length=100)]
+JobId = Annotated[str, Path(alias="jobId")]
+WorkerId = Annotated[str, Path(alias="workerId")]
+MAX_ID = 64
+MAX_WORKER_ID = 100
 LeaseSeconds = Annotated[int, Field(ge=15, le=300)]
 StagingPath = Annotated[str, Field(min_length=1, max_length=1024)]
 FailCode = Literal[
@@ -158,8 +163,31 @@ def _settings(request: Request) -> JobsSettings:
     return found if isinstance(found, JobsSettings) else JobsSettings()
 
 
+async def _body[M: BaseModel](request: Request, model: type[M]) -> M:
+    """The JSON body, validated only now: the router's token check has already run, so a
+    caller without the token learns nothing about the bodies (always the same 401)."""
+    raw = await request.body()
+    try:
+        return model.model_validate_json(raw or b"null")
+    except ValidationError as exc:
+        fields = sorted({".".join(str(p) for p in e["loc"]) or "body" for e in exc.errors()})
+        raise InvalidParameter(f"Invalid: {', '.join(fields)}") from exc
+
+
+def _job_id(job_id: str) -> str:
+    # Unknown ids are simply not found; only absurd lengths are refused up front.
+    if len(job_id) > MAX_ID:
+        raise InvalidParameter("Invalid: jobId")
+    return job_id
+
+
 @router.post("/internal/v1/jobs/claim")
-def claim_job(request: Request, body: ClaimBody) -> Response:
+async def claim_job(request: Request) -> Response:
+    body = await _body(request, ClaimBody)
+    return await run_in_threadpool(_claim, request, body)
+
+
+def _claim(request: Request, body: ClaimBody) -> Response:
     claimed = services(request).jobs.claim(
         body.worker_id, lease_s=body.lease_seconds, kinds=tuple(dict.fromkeys(body.kinds))
     )
@@ -170,13 +198,18 @@ def claim_job(request: Request, body: ClaimBody) -> Response:
 
 
 @router.post("/internal/v1/jobs/{jobId}/heartbeat")
-def heartbeat(request: Request, job_id: JobId, body: HeartbeatBody) -> Response:
-    lease = services(request).jobs.heartbeat(job_id, body.lease_id, lease_s=body.lease_seconds)
+async def heartbeat(request: Request, job_id: JobId) -> Response:
+    body = await _body(request, HeartbeatBody)
+    jobs = services(request).jobs
+    lease = await run_in_threadpool(
+        jobs.heartbeat, _job_id(job_id), body.lease_id, lease_s=body.lease_seconds
+    )
     return JSONResponse(_lease(lease))
 
 
 @router.post("/internal/v1/jobs/{jobId}/progress")
-def report_progress(request: Request, job_id: JobId, body: ProgressBody) -> Response:
+async def report_progress(request: Request, job_id: JobId) -> Response:
+    body = await _body(request, ProgressBody)
     report = ProgressReport(
         state=body.state,
         progress=body.progress,
@@ -189,12 +222,14 @@ def report_progress(request: Request, job_id: JobId, body: ProgressBody) -> Resp
         content_type=body.content_type,
         progressive=body.progressive,
     )
-    lease = services(request).jobs.progress(job_id, body.lease_id, report)
+    jobs = services(request).jobs
+    lease = await run_in_threadpool(jobs.progress, _job_id(job_id), body.lease_id, report)
     return JSONResponse(_lease(lease))
 
 
 @router.post("/internal/v1/jobs/{jobId}/complete")
-def complete_job(request: Request, job_id: JobId, body: CompleteBody) -> Response:
+async def complete_job(request: Request, job_id: JobId) -> Response:
+    body = await _body(request, CompleteBody)
     svc = services(request)
     finalize = archive_finalizer(
         svc.library,
@@ -202,30 +237,44 @@ def complete_job(request: Request, job_id: JobId, body: CompleteBody) -> Respons
         library_path=body.library_path,
         now=format_ts(svc.clock.now()),
     )
-    return JSONResponse(_result(svc.jobs.complete(job_id, body.lease_id, finalize)))
+    result = await run_in_threadpool(svc.jobs.complete, _job_id(job_id), body.lease_id, finalize)
+    return JSONResponse(_result(result))
 
 
 @router.post("/internal/v1/jobs/{jobId}/fail")
-def fail_job(request: Request, job_id: JobId, body: FailBody) -> Response:
-    result = services(request).jobs.fail(
-        job_id,
-        body.lease_id,
-        error_code=body.error_code,
-        retryable=body.retryable,
-        message=body.message,
+async def fail_job(request: Request, job_id: JobId) -> Response:
+    body = await _body(request, FailBody)
+    result = await run_in_threadpool(
+        partial(
+            services(request).jobs.fail,
+            _job_id(job_id),
+            body.lease_id,
+            error_code=body.error_code,
+            retryable=body.retryable,
+            message=body.message,
+        )
     )
     return JSONResponse(_result(result))
 
 
 @router.put("/internal/v1/workers/{workerId}/status")
-def report_worker_status(request: Request, worker_id: WorkerId, body: WorkerStatusBody) -> Response:
+async def report_worker_status(request: Request, worker_id: WorkerId) -> Response:
+    body = await _body(request, WorkerStatusBody)
+    if len(worker_id) > MAX_WORKER_ID:
+        raise InvalidParameter("Invalid: workerId")
     svc = services(request)
     canary = (
         None
         if body.canary is None
         else CanaryResult(body.canary.at, body.canary.ok, body.canary.message)
     )
-    commands = WorkerRegistry(svc.db, svc.clock).report(
-        worker_id, version=body.version, ytdlp_version=body.ytdlp_version, canary=canary
+    commands = await run_in_threadpool(
+        partial(
+            WorkerRegistry(svc.db, svc.clock).report,
+            worker_id,
+            version=body.version,
+            ytdlp_version=body.ytdlp_version,
+            canary=canary,
+        )
     )
     return JSONResponse({"commands": commands})

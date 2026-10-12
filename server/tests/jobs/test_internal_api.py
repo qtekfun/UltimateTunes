@@ -216,3 +216,21 @@ def test_a_lost_app_state_falls_back_to_default_settings(client: TestClient) -> 
     del client.app.state.jobs_settings  # type: ignore[attr-defined]
     r = client.post("/internal/v1/jobs/claim", json={"workerId": "w1"}, headers=AUTH)
     assert r.headers["retry-after"] == "2"
+
+
+def test_the_token_is_checked_before_the_body(client: TestClient) -> None:
+    r = client.post("/internal/v1/jobs/claim", content=b"{not json")
+    assert (r.status_code, r.json()["code"]) == (401, "invalid_worker_token")
+    r = client.post("/internal/v1/jobs/claim", content=b"{not json", headers=AUTH)
+    assert (r.status_code, r.json()["code"]) == (400, "invalid_parameter")
+    r = client.post("/internal/v1/jobs/claim", headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Invalid: body"
+
+
+def test_absurd_ids_are_refused(client: TestClient) -> None:
+    r = client.post(f"/internal/v1/jobs/{'j' * 65}/heartbeat", json={"leaseId": "l"}, headers=AUTH)
+    assert r.json()["detail"] == "Invalid: jobId"
+    status = {"version": "v", "ytdlpVersion": "y"}
+    r = client.put(f"/internal/v1/workers/{'w' * 101}/status", json=status, headers=AUTH)
+    assert r.json()["detail"] == "Invalid: workerId"

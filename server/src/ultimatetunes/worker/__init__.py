@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The download worker (no database access). Owned by PLAN T08.
 
-T02 ships:
-- `downloader`: the `Downloader` protocol, progress/result records, `DownloadError`, and
-  `build_downloader(settings, staging)`, which T08 points at the real implementation.
-- `fake`: `FakeDownloader`, which writes a short silent Ogg/Opus file (`assets/`) slowly into
-  staging.
-- `loop`: the worker main loop (idles until SIGTERM for now), `cli`: the `worker` command,
-  `settings`: `WorkerSettings` (`UT_*` env vars).
-T08 adds the loop on the internal worker API, the real downloader and its self-update here.
+- `loop`: the main loop (claim with a lease, heartbeat, download, progress, archive,
+  complete/fail), `run_worker` (the `worker` command, SIGTERM-safe) and `build_worker`.
+- `client`: `WorkerApi`, the internal worker API over httpx.
+- `downloader`: the `Downloader` protocol, progress/result records and `DownloadError`;
+  `ytdlp`: `YtDlpDownloader` (the zipapp as a subprocess, spike T03c); `fake`: `FakeDownloader`.
+- `ytdlp_runtime`: the zipapp in `/opt/ytdlp`, its seed install and verified self-update.
+- `archiver`: the `Archiver` protocol between download and `complete` (implemented by T09).
+- `settings`: `WorkerSettings` (`UT_*` env vars).
 """

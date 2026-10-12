@@ -13,11 +13,11 @@ from ultimatetunes.settings import Settings
 from ultimatetunes.worker.downloader import (
     DownloadError,
     DownloadProgress,
-    UnavailableDownloader,
     build_downloader,
     check_video_id,
 )
 from ultimatetunes.worker.fake import FakeDownloader, silence_opus
+from ultimatetunes.worker.ytdlp import YtDlpDownloader
 
 pytestmark = pytest.mark.anyio
 
@@ -123,12 +123,16 @@ async def test_invalid_ids_never_reach_the_downloader(staging: LocalStagingStore
 
 
 async def test_build_downloader(settings: Settings, staging: LocalStagingStore) -> None:
-    pending = build_downloader(settings, staging)
-    assert isinstance(pending, UnavailableDownloader)
-    with pytest.raises(DownloadError):
-        await pending.download("Qx7Lm2pZ0aB", "job", ignore)
+    real = build_downloader(settings, staging)
+    assert isinstance(real, YtDlpDownloader)
     fake = build_downloader(settings.model_copy(update={"fake_youtube": True}), staging)
     assert isinstance(fake, FakeDownloader)
+
+
+def test_a_download_error_can_only_be_made_stricter() -> None:
+    assert DownloadError(WorkerErrorCode.NETWORK_ERROR, "x").retryable
+    assert not DownloadError(WorkerErrorCode.NETWORK_ERROR, "x", retryable=False).retryable
+    assert not DownloadError(WorkerErrorCode.VIDEO_UNAVAILABLE, "x", retryable=True).retryable
 
 
 def test_worker_error_codes_know_if_they_are_retryable() -> None:
