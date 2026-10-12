@@ -4,18 +4,35 @@
 {% block title %}{{ _("Audit log") }}{% endblock %}
 {% block content %}
 <h1>{{ _("Audit log") }}</h1>
+<p class="hint">{{ _("Sign-ins, account and key changes, and every action taken in this panel, newest first. Secrets are never recorded.") }}</p>
+<form class="inline filters" method="get" action="/admin/audit">
+  <label>{{ _("Action") }}
+    <select name="action">
+      <option value="">{{ _("All") }}</option>
+      {% for name in actions %}<option value="{{ name }}"{% if name == action %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>{{ _("Who") }}
+    <select name="actor">
+      <option value="">{{ _("All") }}</option>
+      {% for user in users %}<option value="{{ user.id }}"{% if user.id == actor %} selected{% endif %}>{{ user.username }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="secondary" type="submit">{{ _("Filter") }}</button>
+  {% if action or actor %}<a href="/admin/audit">{{ _("Clear") }}</a>{% endif %}
+</form>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("When") }}</th><th>{{ _("Who") }}</th><th>{{ _("From") }}</th><th>{{ _("Action") }}</th><th>{{ _("Target") }}</th><th>{{ _("Detail") }}</th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("When") }}</th><th scope="col">{{ _("Who") }}</th><th scope="col">{{ _("From") }}</th><th scope="col">{{ _("Action") }}</th><th scope="col">{{ _("Target") }}</th><th scope="col">{{ _("Detail") }}</th></tr></thead>
   <tbody>
   {% for entry, detail in entries %}
   <tr>
-    <td class="muted">{{ entry.occurred_at }}</td>
-    <td>{{ names.get(entry.actor_user_id, "-") if entry.actor_user_id else "-" }}</td>
-    <td class="muted">{{ entry.actor_ip or "-" }}</td>
-    <td><code>{{ entry.action }}</code></td>
-    <td>{{ entry.target_type or "" }} <code class="muted">{{ entry.target_id or "" }}</code></td>
-    <td>{{ detail }}</td>
+    <td data-label="{{ _("When") }}" class="muted nowrap">{{ entry.occurred_at }}</td>
+    <td data-label="{{ _("Who") }}">{{ names.get(entry.actor_user_id, "-") if entry.actor_user_id else "-" }}</td>
+    <td data-label="{{ _("From") }}" class="muted">{{ entry.actor_ip or "-" }}</td>
+    <td data-label="{{ _("Action") }}"><code>{{ entry.action }}</code></td>
+    <td data-label="{{ _("Target") }}">{{ entry.target_type or "" }} <code class="muted">{{ entry.target_id or "" }}</code></td>
+    <td data-label="{{ _("Detail") }}">{{ detail }}</td>
   </tr>
   {% else %}
   <tr><td colspan="6" class="muted">{{ _("Nothing here.") }}</td></tr>
@@ -23,4 +40,5 @@
   </tbody>
 </table>
 </div>
+{% include "_pager.html" %}
 {% endblock %}

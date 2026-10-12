@@ -374,7 +374,8 @@ def test_library_page_without_disk_usage(
     monkeypatch.setattr(services_of(client).library, "usage", broken)
     page = client.get("/admin/library")
     assert page.status_code == 200
-    assert "Disk free" not in page.text
+    assert "Disk used" not in page.text
+    assert '<div class="value bad">?</div>' in page.text
 
 
 def test_delete_track_removes_rows_file_and_renumbers_playlists(

@@ -2,26 +2,37 @@
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
 {% extends "base.html" %}
 {% block title %}{{ _("Users") }}{% endblock %}
+{# A <progress> bar: inline styles are not allowed by the panel's CSP. #}
+{% macro meter(used, cap) %}
+{% set share = (used / cap) if cap else 0 %}
+<progress class="meter{{ ' bad' if share >= 1 else (' warn' if share >= 0.8 else '') }}" value="{{ [used, cap] | min }}" max="{{ cap }}" aria-hidden="true"></progress>
+{% endmacro %}
 {% block content %}
 <h1>{{ _("Users") }}</h1>
+<p class="hint">{{ _("Downloads: queued or running jobs, and bytes downloaded in the last 24 hours, against the per-user limits. Catalog and search: requests left in each user's YouTube Music budget (they refill over time).") }}</p>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("Username") }}</th><th>{{ _("Role") }}</th><th>{{ _("Status") }}</th><th>{{ _("Last sign-in") }}</th><th>{{ _("Actions") }}</th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Username") }}</th><th scope="col">{{ _("Role") }}</th><th scope="col">{{ _("Status") }}</th><th scope="col">{{ _("Last sign-in") }}</th><th scope="col">{{ _("Downloads") }}</th><th scope="col">{{ _("Downloaded in 24 h") }}</th><th scope="col">{{ _("Catalog / search left") }}</th><th scope="col">{{ _("Actions") }}</th></tr></thead>
   <tbody>
   {% for user in users %}
+  {% set used = usage.get(user.id) %}
+  {% set catalog, search = budgets[user.id] %}
   <tr>
-    <td>{{ user.username }}</td>
-    <td>{{ _("Administrator") if user.role == "admin" else _("User") }}</td>
-    <td>{% if user.is_disabled %}<span class="bad">{{ _("Disabled") }}</span>{% else %}<span class="ok">{{ _("Active") }}</span>{% endif %}</td>
-    <td class="muted">{{ user.last_login_at or "-" }}</td>
-    <td>
+    <td data-label="{{ _("Username") }}"><strong>{{ user.username }}</strong>{% if user.id == admin.user.id %} <span class="muted">({{ _("you") }})</span>{% endif %}</td>
+    <td data-label="{{ _("Role") }}">{{ _("Administrator") if user.role == "admin" else _("User") }}</td>
+    <td data-label="{{ _("Status") }}">{% if user.is_disabled %}<span class="bad">{{ _("Disabled") }}</span>{% else %}<span class="ok">{{ _("Active") }}</span>{% endif %}</td>
+    <td data-label="{{ _("Last sign-in") }}" class="muted">{{ user.last_login_at or "-" }}</td>
+    <td data-label="{{ _("Downloads") }}" class="nowrap">{{ used.active_jobs if used else 0 }} / {{ limits.max_queued_jobs_per_user }}{{ meter(used.active_jobs if used else 0, limits.max_queued_jobs_per_user) }}</td>
+    <td data-label="{{ _("Downloaded in 24 h") }}" class="nowrap">{{ (used.bytes_24h if used else 0) | size }} / {{ limits.max_download_bytes_per_day_per_user | size }}{{ meter(used.bytes_24h if used else 0, limits.max_download_bytes_per_day_per_user) }}</td>
+    <td data-label="{{ _("Catalog / search left") }}" class="nowrap"><span class="{{ 'warn' if catalog.low else '' }}">{{ catalog.left }}/{{ catalog.burst }}</span> · <span class="{{ 'warn' if search.low else '' }}">{{ search.left }}/{{ search.burst }}</span></td>
+    <td data-label="{{ _("Actions") }}">
       {% if user.id != admin.user.id %}
-      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}"{% if not user.is_disabled %} data-confirm="{{ _("Disable %(name)s? Their API keys stop working until you enable the account again.", name=user.username) }}"{% endif %}>
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="action" value="{{ 'enable' if user.is_disabled else 'disable' }}">
-        <button class="secondary" type="submit">{{ _("Enable") if user.is_disabled else _("Disable") }}</button>
+        <button class="{{ 'secondary' if user.is_disabled else 'danger' }}" type="submit">{{ _("Enable") if user.is_disabled else _("Disable") }}</button>
       </form>
-      <form class="inline" method="post" action="/admin/users/{{ user.id }}">
+      <form class="inline" method="post" action="/admin/users/{{ user.id }}" data-confirm="{{ _("Change the role of %(name)s?", name=user.username) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="action" value="role">
         <input type="hidden" name="role" value="{{ 'user' if user.role == 'admin' else 'admin' }}">
@@ -31,7 +42,7 @@
       <form class="inline" method="post" action="/admin/users/{{ user.id }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="action" value="password">
-        <input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="{{ _("New password") }}" aria-label="{{ _("New password") }}" required>
+        <input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="{{ _("New password") }}" aria-label="{{ _("New password for %(name)s", name=user.username) }}" required>
         <button class="secondary" type="submit">{{ _("Set password") }}</button>
       </form>
       <form class="inline" method="post" action="/admin/users/{{ user.id }}">
@@ -42,6 +53,8 @@
       </form>
     </td>
   </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">{{ _("Nothing here.") }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
@@ -57,5 +70,6 @@
     </label>
     <button type="submit">{{ _("Create user") }}</button>
   </form>
+  <p class="hint">{{ _("Next: give each of their devices its own API key, on the API keys page.") }}</p>
 </div>
 {% endblock %}

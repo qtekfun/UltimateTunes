@@ -69,6 +69,13 @@ class MemoryRateLimiter:
     def locked(self, key: str) -> Decision:
         return self._lockout(self._buckets.get(key), self._clock.monotonic())
 
+    def peek(self, key: str, limit: Limit) -> float:
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            return limit.burst
+        elapsed = max(0.0, self._clock.monotonic() - bucket.updated)
+        return min(limit.burst, bucket.tokens + elapsed * limit.rate_per_s)
+
     def record_failure(self, key: str, *, max_failures: int, lockout_s: float) -> Decision:
         if max_failures < 1 or lockout_s <= 0:
             raise ValueError("max_failures and lockout_s must be positive")

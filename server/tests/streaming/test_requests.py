@@ -266,10 +266,10 @@ async def test_a_password_user_is_capped_per_user(
         first = Listening()
         group.start_soon(first.run, live.client, "/rest/stream", params, {})
         dl = await requested(live)
-        assert (
-            live.services.inflight.listeners("stream:key:user:0199d6a2-4c1e-7b3a-9f10-2a6c8e01e003")
-            == 1
-        )
+        # The download is requested before the stream is admitted: wait for the admission
+        # (the slot of the user, since a password user has no key id), never race it.
+        slot = "stream:key:user:0199d6a2-4c1e-7b3a-9f10-2a6c8e01e003"
+        await until(lambda: live.services.inflight.listeners(slot) == 1)
         capped = await live.client.get("/rest/stream", params=params)
         assert capped.status_code == 503
         dl.finish()
