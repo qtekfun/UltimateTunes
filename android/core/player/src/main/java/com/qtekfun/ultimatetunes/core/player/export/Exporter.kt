@@ -10,6 +10,7 @@ import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.Serializable
 
 /** A song's whole file on the phone: its exact [length] and its bytes. */
@@ -32,6 +33,9 @@ enum class WriteOutcome {
     /** Another file holds the name: nothing was written and nothing was touched. */
     NAME_TAKEN
 }
+
+/** The export was stopped (its worker was cancelled) between two songs. */
+class ExportStoppedException : CancellationException("Export stopped")
 
 /** A failure to read the song's own bytes (not the folder's fault). */
 class SourceReadException(cause: IOException) : IOException(cause)
@@ -89,11 +93,13 @@ data class ExportReport(val exported: Int, val skipped: List<SkippedTrack>) {
 class Exporter(private val source: ExportSource, private val target: ExportTarget) {
     /**
      * Exports [tracks] (each once), calling [onProgress] with the songs handled so far and the
-     * total before each one and at the end.
+     * total before each one and at the end. [isStopped] is asked before each song: once true, the
+     * export ends there with [ExportStoppedException] (the song being copied is finished first).
      */
     fun export(
         tracks: List<PlayableTrack>,
         aliases: Map<SongId, SongId> = emptyMap(),
+        isStopped: () -> Boolean = { false },
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): ExportReport {
         val unique = tracks.distinctBy { it.id }
@@ -101,6 +107,7 @@ class Exporter(private val source: ExportSource, private val target: ExportTarge
         val names = HashSet<String>()
         var exported = 0
         unique.forEachIndexed { index, track ->
+            if (isStopped()) throw ExportStoppedException()
             onProgress(index, unique.size)
             when (val reason = exportOne(track, aliases, names)) {
                 null -> exported++
