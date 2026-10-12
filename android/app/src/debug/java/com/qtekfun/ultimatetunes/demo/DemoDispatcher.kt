@@ -500,9 +500,9 @@ internal class DemoDispatcher(
         }
 
     private fun audio(seconds: Int?): MockResponse = MockResponse.Builder()
-        .addHeader("Content-Type", "audio/wav")
+        .addHeader("Content-Type", DemoAudio.CONTENT_TYPE)
         .addHeader("Accept-Ranges", "none")
-        .body(Buffer().write(DemoAudio.wav(seconds)))
+        .body(Buffer().write(DemoAudio.flac(seconds)))
         .build()
 
     private fun image(id: String, size: Int?): MockResponse {

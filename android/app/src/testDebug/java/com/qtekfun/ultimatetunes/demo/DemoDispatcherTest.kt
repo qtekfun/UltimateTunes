@@ -195,12 +195,15 @@ class DemoDispatcherTest {
         }
         val stream = checkNotNull(api.streamUrl(album.song.first().id))
         client.newCall(Request.Builder().url(stream).build()).execute().use {
-            val wav = it.body.bytes()
-            assertEquals("RIFF", wav.copyOfRange(0, 4).decodeToString())
-            // As long as the song says: 44-byte header, then 16-bit mono at the byte rate.
-            val byteRate = java.nio.ByteBuffer.wrap(wav, 28, 4)
-                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
-            assertEquals(album.song.first().duration, (wav.size - 44) / byteRate)
+            val song = album.song.first()
+            val flac = it.body.bytes()
+            assertEquals("fLaC", flac.copyOfRange(0, 4).decodeToString())
+            assertEquals(song.size, flac.size.toLong())
+            // As long as the song says: STREAMINFO's sample rate (20 bits) and total samples.
+            val info = java.nio.ByteBuffer.wrap(flac, 18, 8).long
+            val rate = (info ushr 44).toInt()
+            val samples = info and 0xF_FFFF_FFFFL
+            assertEquals(song.duration, (samples / rate).toInt())
         }
     }
 
