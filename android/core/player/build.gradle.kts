@@ -25,6 +25,9 @@ dependencies {
     // Brings the client and pins OkHttp to the app's version (media3-datasource-okhttp asks for 4.x).
     api(project(":core:api"))
     implementation(libs.kotlinx.coroutines.android)
+    // The offline selection, and its sync in the background (RF-12).
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

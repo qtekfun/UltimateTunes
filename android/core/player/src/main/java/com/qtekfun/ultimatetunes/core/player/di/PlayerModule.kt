@@ -7,6 +7,8 @@ package com.qtekfun.ultimatetunes.core.player.di
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
@@ -18,7 +20,7 @@ import com.qtekfun.ultimatetunes.core.player.cache.AdjustableLruEvictor
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 import com.qtekfun.ultimatetunes.core.player.media.MediaCaches
 import com.qtekfun.ultimatetunes.core.player.media.MediaDataSources
-import com.qtekfun.ultimatetunes.core.player.offline.FileOfflineSelection
+import com.qtekfun.ultimatetunes.core.player.offline.DataStoreOfflineSelection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineDownloads
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelectionStore
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSyncer
@@ -69,7 +71,11 @@ object PlayerModule {
     @Provides
     @Singleton
     fun offlineSelection(@ApplicationContext context: Context): OfflineSelectionStore =
-        FileOfflineSelection(File(context.noBackupFilesDir, "offline_selection.json"))
+        DataStoreOfflineSelection(
+            PreferenceDataStoreFactory.create {
+                context.preferencesDataStoreFile("offline_selection")
+            }
+        )
 
     @Provides
     fun offlineSyncer(

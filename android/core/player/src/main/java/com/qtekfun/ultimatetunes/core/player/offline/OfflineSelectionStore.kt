@@ -3,18 +3,12 @@
 
 package com.qtekfun.ultimatetunes.core.player.offline
 
-import java.io.File
-import java.io.IOException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
 /** Where the [OfflineSelection] is kept. */
@@ -25,59 +19,26 @@ interface OfflineSelectionStore {
     suspend fun update(transform: (OfflineSelection) -> OfflineSelection)
 }
 
-/**
- * [OfflineSelectionStore] as one JSON file, replaced atomically (written aside, then renamed).
- * Changes are serialised by a mutex; the file is read once, on first use.
- */
-class FileOfflineSelection(
-    private val file: File,
-    private val io: CoroutineDispatcher = Dispatchers.IO
-) : OfflineSelectionStore {
-    private val mutex = Mutex()
-    private val state = MutableStateFlow<OfflineSelection?>(null)
-
-    override val selection: Flow<OfflineSelection> = flowOfLoaded()
+/** [OfflineSelectionStore] as JSON in a Preferences DataStore. */
+class DataStoreOfflineSelection(private val dataStore: DataStore<Preferences>) :
+    OfflineSelectionStore {
+    override val selection: Flow<OfflineSelection> = dataStore.data.map { decode(it[KEY]) }
 
     override suspend fun update(transform: (OfflineSelection) -> OfflineSelection) {
-        mutex.withLock {
-            val next = transform(loaded())
-            withContext(io) { write(next) }
-            state.value = next
+        dataStore.edit { prefs -> prefs[KEY] = JSON.encodeToString(transform(decode(prefs[KEY]))) }
+    }
+
+    private fun decode(text: String?): OfflineSelection = text?.let {
+        try {
+            JSON.decodeFromString<OfflineSelection>(it)
+        } catch (ignored: IllegalArgumentException) {
+            // Unreadable (SerializationException is one): start over rather than crash.
+            null
         }
-    }
-
-    private fun flowOfLoaded(): Flow<OfflineSelection> = flow {
-        mutex.withLock { loaded() }
-        emitAll(state.filterNotNull())
-    }
-
-    /** The selection, read from the file the first time. Call with the mutex held. */
-    private suspend fun loaded(): OfflineSelection =
-        state.value ?: withContext(io) { read() }.also { state.value = it }
-
-    private fun read(): OfflineSelection = try {
-        if (file.exists()) {
-            JSON.decodeFromString<OfflineSelection>(
-                file.readText()
-            )
-        } else {
-            OfflineSelection()
-        }
-    } catch (ignored: IOException) {
-        OfflineSelection()
-    } catch (ignored: IllegalArgumentException) {
-        // Unreadable (SerializationException is one): start over rather than crash.
-        OfflineSelection()
-    }
-
-    private fun write(selection: OfflineSelection) {
-        file.parentFile?.mkdirs()
-        val temp = File(file.parentFile, file.name + ".tmp")
-        temp.writeText(JSON.encodeToString(selection))
-        if (!temp.renameTo(file)) throw IOException("Could not save the offline selection")
-    }
+    } ?: OfflineSelection()
 
     private companion object {
+        val KEY = stringPreferencesKey("offline_selection")
         val JSON = Json { ignoreUnknownKeys = true }
     }
 }

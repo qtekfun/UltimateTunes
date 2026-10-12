@@ -3,6 +3,9 @@
 
 package com.qtekfun.ultimatetunes.core.player.offline
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.Album
@@ -24,14 +27,12 @@ import java.io.IOException
 import java.nio.file.Path
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 
 private fun lib(n: Int) = SongId("0190a5c8-0000-7000-8000-%012d".format(n))
@@ -249,15 +250,16 @@ class OfflineSyncerTest {
     }
 }
 
-class FileOfflineSelectionTest {
+class DataStoreOfflineSelectionTest {
     @TempDir
     lateinit var dir: Path
 
     @Test
     fun `the selection survives a round trip and junk reads as empty`() = runTest {
-        val file = File(dir.toFile(), "sub/selection.json")
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val store = FileOfflineSelection(file, dispatcher)
+        val dataStore = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(dir.toFile(), "sel.preferences_pb")
+        }
+        val store = DataStoreOfflineSelection(dataStore)
         assertTrue(store.selection.first().isEmpty)
 
         store.update {
@@ -267,23 +269,12 @@ class FileOfflineSelectionTest {
                 aliases = mapOf(yt('A') to lib(2))
             )
         }
-        val read = FileOfflineSelection(file, dispatcher).selection.first()
+        val read = store.selection.first()
         assertEquals(listOf(lib(1)), read.tracks.map { it.id })
         assertEquals("A", read.collections.single().name)
         assertEquals(mapOf(yt('A') to lib(2)), read.aliases)
-        assertEquals(read, store.selection.first())
 
-        file.writeText("{not json")
-        assertTrue(FileOfflineSelection(file, dispatcher).selection.first().isEmpty)
-    }
-
-    @Test
-    fun `an unreadable or unwritable file does not crash reads, and fails writes`() = runTest {
-        val folder = File(dir.toFile(), "folder")
-        folder.mkdirs()
-        // A directory where the file should be: reading fails with an IOException.
-        val store = FileOfflineSelection(folder, StandardTestDispatcher(testScheduler))
+        dataStore.edit { it[stringPreferencesKey("offline_selection")] = "{not json" }
         assertTrue(store.selection.first().isEmpty)
-        assertThrows<IOException> { store.update { it.copy(tracks = listOf(track(lib(1)))) } }
     }
 }
