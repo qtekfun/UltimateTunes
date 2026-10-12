@@ -165,9 +165,6 @@ class Recorder:
 
 
 def test_songs_without_a_file_go_to_the_streaming_seam(lib: Harness) -> None:
-    # Until PLAN T16: not implemented (HTTP 501, error 0).
-    r = lib.client.get("/rest/stream", params={"apiKey": "utk_ana", "id": "yt:Qx7Lm2pZ0aB"})
-    assert r.status_code == 501
     recorder = Recorder()
     lib.client.app.state.pending_streams = recorder  # type: ignore[attr-defined]
     assert stream(lib, "yt:Qx7Lm2pZ0aB").content == b"growing"

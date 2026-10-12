@@ -32,7 +32,7 @@ def test_startup_scan(migrated: Settings, monkeypatch: pytest.MonkeyPatch, enabl
     services = build_services(migrated, FakeClock())
     try:
         app = create_app(services=services)
-        assert isinstance(app.state.pending_streams, NotStreamingYet)
+        assert not isinstance(app.state.pending_streams, NotStreamingYet)
         with TestClient(app):
             if enabled:
                 app.state.library_scan.join(10)
