@@ -2,15 +2,24 @@
 {# SPDX-License-Identifier: GPL-3.0-or-later #}
 {% extends "base.html" %}
 {% block title %}{{ _("Library") }}{% endblock %}
-{% macro delete_form(kind, item_id) %}
-<form class="inline" method="post" action="/admin/library/{{ kind }}/{{ item_id }}/delete">
+{% macro delete_form(kind, item_id, label) %}
+<form class="inline" method="post" action="/admin/library/{{ kind }}/{{ item_id }}/delete" data-confirm="{{ _("Delete %(name)s from the library and from disk? This cannot be undone.", name=label) }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label class="check"><input type="checkbox" name="confirm" value="yes" required>{{ _("Sure") }}</label>
   <button class="danger" type="submit">{{ _("Delete") }}</button>
 </form>
 {% endmacro %}
+{% macro reviewed_form(item_id) %}
+<form class="inline" method="post" action="/admin/library/tracks/{{ item_id }}/reviewed">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button class="secondary" type="submit">{{ _("Mark reviewed") }}</button>
+</form>
+{% endmacro %}
 {% block content %}
 <h1>{{ _("Library") }}</h1>
+{% if low_disk_since %}
+<p class="error" role="alert">{{ _("Downloads are paused: low disk space since %(since)s.", since=low_disk_since) }}</p>
+{% endif %}
 <div class="grid">
   <div class="card stat"><div class="muted">{{ _("Tracks") }}</div><div class="value">{{ stats.tracks }}</div></div>
   <div class="card stat"><div class="muted">{{ _("Albums") }}</div><div class="value">{{ stats.albums }}</div></div>
@@ -19,50 +28,60 @@
   {% if usage %}
   <div class="card stat"><div class="muted">{{ _("Disk used") }}</div><div class="value">{{ usage.used_bytes | size }}</div></div>
   <div class="card stat"><div class="muted">{{ _("Disk free") }}</div><div class="value">{{ usage.free_bytes | size }}</div></div>
+  {% else %}
+  <div class="card stat"><div class="muted">{{ _("Disk free") }}</div><div class="value bad">?</div></div>
   {% endif %}
 </div>
 
-<h2>{{ _("Need review") }} ({{ stats.needs_review }})</h2>
+<h2 id="review">{{ _("Need review") }} ({{ stats.needs_review }})</h2>
+<p class="hint">{{ _("MusicBrainz had no strong match for these songs, so they keep the YouTube Music tags. Check them in a player: mark them reviewed to keep them as they are, or delete them (a new search fetches them again).") }}</p>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("Song") }}</th><th>{{ _("Album") }}</th><th>{{ _("Status") }}</th><th></th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Song") }}</th><th scope="col">{{ _("Album") }}</th><th scope="col">{{ _("Status") }}</th><th scope="col"><span class="muted">{{ _("Actions") }}</span></th></tr></thead>
   <tbody>
   {% for track in review %}
-  <tr><td>{{ track.artist_name }} – {{ track.title }}</td><td>{{ track.album_name or "-" }}</td><td>{{ track.status }}</td><td>{{ delete_form("tracks", track.id) }}</td></tr>
+  <tr>
+    <td data-label="{{ _("Song") }}">{{ track.artist_name }} – {{ track.title }}</td>
+    <td data-label="{{ _("Album") }}">{{ track.album_name or "-" }}</td>
+    <td data-label="{{ _("Status") }}">{{ track.status }}</td>
+    <td>{{ reviewed_form(track.id) }}{{ delete_form("tracks", track.id, track.title) }}</td>
+  </tr>
   {% else %}
-  <tr><td colspan="4" class="muted">{{ _("Nothing here.") }}</td></tr>
+  <tr><td colspan="4" class="muted">{{ _("No track needs review.") }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+{% include "_pager.html" %}
 
 <h2>{{ _("Find tracks and albums to delete") }}</h2>
-<form class="inline" method="get" action="/admin/library">
-  <input name="q" value="{{ query }}" maxlength="100" aria-label="{{ _("Search") }}">
+<form class="inline" method="get" action="/admin/library" role="search">
+  <input name="q" type="search" value="{{ query }}" maxlength="100" aria-label="{{ _("Search") }}" placeholder="{{ _("Title or album name") }}">
   <button class="secondary" type="submit">{{ _("Search") }}</button>
 </form>
 {% if query %}
 <div class="card table-wrap">
 <h2>{{ _("Albums") }}</h2>
-<table>
+<table class="cards">
   <tbody>
   {% for album in albums %}
-  <tr><td>{{ album.artist }} – {{ album.name }}{% if album.year %} ({{ album.year }}){% endif %}</td><td>{{ _("%(count)s tracks", count=album.track_count) }}</td><td>{{ delete_form("albums", album.id) }}</td></tr>
+  <tr><td>{{ album.artist }} – {{ album.name }}{% if album.year %} ({{ album.year }}){% endif %}</td><td>{{ _("%(count)s tracks", count=album.track_count) }}</td><td>{{ delete_form("albums", album.id, album.name) }}</td></tr>
   {% else %}
   <tr><td class="muted">{{ _("Nothing here.") }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
 <h2>{{ _("Tracks") }}</h2>
-<table>
+<table class="cards">
   <tbody>
   {% for track in tracks %}
-  <tr><td>{{ track.artist_name }} – {{ track.title }}</td><td>{{ track.album_name or "-" }}</td><td>{{ track.status }}</td><td>{{ delete_form("tracks", track.id) }}</td></tr>
+  <tr><td>{{ track.artist_name }} – {{ track.title }}</td><td>{{ track.album_name or "-" }}</td><td>{{ track.status }}</td><td>{{ delete_form("tracks", track.id, track.title) }}</td></tr>
   {% else %}
   <tr><td class="muted">{{ _("Nothing here.") }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+{% if albums | length >= 200 or tracks | length >= 200 %}<p class="hint">{{ _("Only the first 200 matches are shown: refine the search.") }}</p>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

@@ -5,6 +5,7 @@
 {% block content %}
 <h1>yt-dlp</h1>
 <div class="card">
+  <p class="hint">{{ _("The worker updates yt-dlp by itself every day (signed releases only) and runs the canary, a test download of one fixed Creative Commons song, daily. Use these buttons after a wave of failed downloads; the next worker report (within minutes) picks the command up.") }}</p>
   <form class="inline" method="post" action="/admin/ytdlp/update">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">{{ _("Update yt-dlp now") }}</button>
@@ -17,11 +18,11 @@
 </div>
 <h2>{{ _("Workers") }}</h2>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("Worker") }}</th><th>{{ _("Version") }}</th><th>yt-dlp</th><th>{{ _("Last report") }}</th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Worker") }}</th><th scope="col">{{ _("Version") }}</th><th scope="col">yt-dlp</th><th scope="col">{{ _("Last report") }}</th></tr></thead>
   <tbody>
   {% for worker in workers %}
-  <tr><td><code>{{ worker.worker_id }}</code></td><td>{{ worker.version or "-" }}</td><td>{{ worker.ytdlp_version or "-" }}</td><td class="muted">{{ worker.last_seen_at }}</td></tr>
+  <tr><td data-label="{{ _("Worker") }}"><code>{{ worker.worker_id }}</code></td><td data-label="{{ _("Version") }}">{{ worker.version or "-" }}</td><td data-label="yt-dlp">{{ worker.ytdlp_version or "-" }}</td><td data-label="{{ _("Last report") }}" class="muted">{{ worker.last_seen_at }}</td></tr>
   {% else %}
   <tr><td colspan="4" class="muted">{{ _("No worker has reported yet.") }}</td></tr>
   {% endfor %}
@@ -30,11 +31,11 @@
 </div>
 <h2>{{ _("Canary runs") }}</h2>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("When") }}</th><th>{{ _("Source") }}</th><th>{{ _("Result") }}</th><th>yt-dlp</th><th>{{ _("Message") }}</th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("When") }}</th><th scope="col">{{ _("Source") }}</th><th scope="col">{{ _("Result") }}</th><th scope="col">yt-dlp</th><th scope="col">{{ _("Message") }}</th></tr></thead>
   <tbody>
   {% for run in canaries %}
-  <tr><td class="muted">{{ run.ran_at }}</td><td>{{ run.source }}</td><td class="{{ 'ok' if run.ok else 'bad' }}">{{ _("OK") if run.ok else _("Failed") }}</td><td>{{ run.ytdlp_version or "-" }}</td><td>{{ run.message or "" }}</td></tr>
+  <tr><td data-label="{{ _("When") }}" class="muted">{{ run.ran_at }}</td><td data-label="{{ _("Source") }}">{{ run.source }}</td><td data-label="{{ _("Result") }}" class="{{ 'ok' if run.ok else 'bad' }}">{{ _("OK") if run.ok else _("Failed") }}</td><td data-label="yt-dlp">{{ run.ytdlp_version or "-" }}</td><td data-label="{{ _("Message") }}">{{ run.message or "" }}</td></tr>
   {% else %}
   <tr><td colspan="5" class="muted">{{ _("none yet") }}</td></tr>
   {% endfor %}
@@ -43,11 +44,11 @@
 </div>
 <h2>{{ _("Commands") }}</h2>
 <div class="card table-wrap">
-<table>
-  <thead><tr><th>{{ _("Command") }}</th><th>{{ _("Requested") }}</th><th>{{ _("Delivered") }}</th></tr></thead>
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Command") }}</th><th scope="col">{{ _("Requested") }}</th><th scope="col">{{ _("Delivered") }}</th></tr></thead>
   <tbody>
   {% for command in commands %}
-  <tr><td><code>{{ command.command }}</code></td><td class="muted">{{ command.created_at }}</td><td class="muted">{% if command.delivered_at %}{{ command.delivered_at }} → {{ command.delivered_to }}{% else %}{{ _("waiting") }}{% endif %}</td></tr>
+  <tr><td data-label="{{ _("Command") }}"><code>{{ command.command }}</code></td><td data-label="{{ _("Requested") }}" class="muted">{{ command.created_at }}</td><td data-label="{{ _("Delivered") }}" class="muted">{% if command.delivered_at %}{{ command.delivered_at }} → {{ command.delivered_to }}{% else %}{{ _("waiting") }}{% endif %}</td></tr>
   {% else %}
   <tr><td colspan="3" class="muted">{{ _("Nothing here.") }}</td></tr>
   {% endfor %}
