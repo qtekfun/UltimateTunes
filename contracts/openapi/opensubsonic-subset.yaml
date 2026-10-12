@@ -1560,7 +1560,7 @@ paths:
       summary: Cover image
       description: |-
         Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
-        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) answer error 70 (no image) until SPEC §11's pending approval of the YouTube image hosts is granted: the server fetches no external image before that (contracts/ids.md).
+        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) return the catalog thumbnail, fetched only from the approved YouTube image hosts and cached on disk; error 70 when there is none or it fails the host/type/size rules (contracts/ids.md).
         v1 may ignore `size` and return the stored image unscaled (no image library is approved yet). `HEAD` is accepted (no body).
       parameters:
       - $ref: '#/components/parameters/v'
@@ -1630,7 +1630,7 @@ paths:
       summary: Cover image (form POST)
       description: |-
         Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
-        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) answer error 70 (no image) until SPEC §11's pending approval of the YouTube image hosts is granted: the server fetches no external image before that (contracts/ids.md).
+        Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) return the catalog thumbnail, fetched only from the approved YouTube image hosts and cached on disk; error 70 when there is none or it fails the host/type/size rules (contracts/ids.md).
         v1 may ignore `size` and return the stored image unscaled (no image library is approved yet).
       parameters: []
       responses:
