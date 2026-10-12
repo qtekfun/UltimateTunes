@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#payload_too_large",
+    "title": "Payload too large",
+    "status": 413,
+    "detail": "Body over 64 KiB",
+    "code": "payload_too_large",
+    "instance": "/ut/v1/…"
+}

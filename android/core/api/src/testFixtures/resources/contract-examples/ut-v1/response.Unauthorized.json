@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#invalid_api_key",
+    "title": "Invalid API key",
+    "status": 401,
+    "detail": "The API key is unknown or revoked",
+    "code": "invalid_api_key",
+    "instance": "/ut/v1/…"
+}

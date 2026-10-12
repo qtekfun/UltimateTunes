@@ -1,0 +1,21 @@
+{
+    "name": "UltimateTunes",
+    "version": "0.1.0",
+    "apiVersion": "1",
+    "openSubsonic": {
+        "apiVersion": "1.16.1",
+        "extensions": [
+            "apiKeyAuthentication",
+            "formPost",
+            "songLyrics"
+        ]
+    },
+    "capabilities": {
+        "externalSearch": true,
+        "radio": true,
+        "lyrics": true,
+        "youtubeMusicImport": true,
+        "spotifyImport": false,
+        "streamingWhileDownloading": true
+    }
+}

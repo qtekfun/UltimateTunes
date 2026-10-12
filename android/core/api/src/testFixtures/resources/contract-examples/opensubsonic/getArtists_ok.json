@@ -1,0 +1,53 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "artists": {
+            "ignoredArticles": "The El La Los Las Le Les",
+            "index": [
+                {
+                    "name": "M",
+                    "artist": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "name": "Marisol Vega",
+                            "coverArt": "ar-0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002",
+                            "albumCount": 1,
+                            "musicBrainzId": "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e02",
+                            "sortName": "Vega, Marisol"
+                        }
+                    ]
+                },
+                {
+                    "name": "N",
+                    "artist": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+                            "name": "Northbound Static",
+                            "coverArt": "ar-0199d6a2-4c1e-7b3a-9f10-2a6c8e01a003",
+                            "albumCount": 1,
+                            "musicBrainzId": "",
+                            "sortName": "Northbound Static"
+                        }
+                    ]
+                },
+                {
+                    "name": "P",
+                    "artist": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "name": "The Paper Lanterns",
+                            "coverArt": "ar-0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                            "albumCount": 1,
+                            "musicBrainzId": "5f0c2d6e-8b1a-4c3d-9e7f-1a2b3c4d5e01",
+                            "sortName": "Paper Lanterns, The"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

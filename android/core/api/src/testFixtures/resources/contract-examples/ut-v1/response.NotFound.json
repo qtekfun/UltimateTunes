@@ -1,0 +1,8 @@
+{
+    "type": "https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#not_found",
+    "title": "Not found",
+    "status": 404,
+    "detail": "No such track",
+    "code": "not_found",
+    "instance": "/ut/v1/…"
+}

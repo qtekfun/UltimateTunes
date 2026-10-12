@@ -1,0 +1,75 @@
+{
+    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e017001",
+    "source": "ytmusic",
+    "sourceUrl": "https://music.youtube.com/playlist?list=PLx9Kd2Lm4Qp7Wz1Rt5Vb8Nc3Hy6Jf0Ga",
+    "name": "Road Trip 2026",
+    "createdAt": "2026-10-12T08:00:00.000Z",
+    "state": "done",
+    "total": 3,
+    "matched": 2,
+    "notFound": 1,
+    "progress": 1,
+    "playlistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001",
+    "error": null,
+    "updatedAt": "2026-10-12T08:01:12.000Z",
+    "finishedAt": "2026-10-12T08:01:12.000Z",
+    "items": [
+        {
+            "position": 0,
+            "sourceTitle": "Lighthouse Keeper",
+            "sourceArtist": "The Paper Lanterns",
+            "sourceAlbum": "Harbour Lights",
+            "sourceDurationSec": 214,
+            "state": "matched",
+            "matchScore": 0.97,
+            "track": {
+                "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+                "title": "Lighthouse Keeper",
+                "artist": "The Paper Lanterns",
+                "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+                "album": "Harbour Lights",
+                "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                "durationSec": 214,
+                "year": 2023,
+                "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+                "isExternal": false,
+                "libraryState": "ready"
+            },
+            "error": null
+        },
+        {
+            "position": 1,
+            "sourceTitle": "Copper Fields",
+            "sourceArtist": "Marisol Vega",
+            "sourceAlbum": null,
+            "sourceDurationSec": 199,
+            "state": "matched",
+            "matchScore": 0.88,
+            "track": {
+                "id": "yt:Rb4Tn8wKx1c",
+                "title": "Copper Fields",
+                "artist": "Marisol Vega",
+                "artistId": "ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA",
+                "album": "Copper Fields",
+                "albumId": "ytalbum:MPREb_W2pZ7nQx4Ld",
+                "durationSec": 198,
+                "year": null,
+                "coverArt": "yt:Rb4Tn8wKx1c",
+                "isExternal": true,
+                "libraryState": "pending"
+            },
+            "error": null
+        },
+        {
+            "position": 2,
+            "sourceTitle": "Untitled Demo 4",
+            "sourceArtist": "Northbound Static",
+            "sourceAlbum": null,
+            "sourceDurationSec": 95,
+            "state": "not_found",
+            "matchScore": null,
+            "track": null,
+            "error": null
+        }
+    ]
+}
