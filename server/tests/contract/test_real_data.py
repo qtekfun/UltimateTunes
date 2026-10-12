@@ -252,14 +252,6 @@ def ut(method: str, path: str, **parts: Any) -> Any:
     return call(UT, method, path, headers=headers, **parts)
 
 
-def implemented(response: Any) -> Any:
-    """A contract stub answers 501 until its owner task lands: skipped, not failed, so the
-    check turns itself on with the implementation."""
-    if response.status_code == 501:
-        pytest.skip(f"not implemented yet: {response.request.method} {response.request.url}")
-    return response
-
-
 @pytest.mark.parametrize(
     ("path", "query"),
     [
@@ -278,8 +270,22 @@ def test_ut_v1_reads(path: str, query: dict[str, Any]) -> None:
 
 def test_ut_v1_track_status_of_library_and_external_songs(ids: dict[str, str]) -> None:
     for item in (ids["Brasas"], YT_OTHER):
-        response = implemented(ut("GET", "/ut/v1/tracks/{id}/status", path_parameters={"id": item}))
+        response = ut("GET", "/ut/v1/tracks/{id}/status", path_parameters={"id": item})
         assert response.status_code == 200, response.text
+
+
+def test_ut_v1_track_request_of_library_and_external_songs(ids: dict[str, str]) -> None:
+    ready = ut("POST", "/ut/v1/tracks/{id}/request", path_parameters={"id": ids["Brasas"]})
+    assert ready.status_code == 200, ready.text
+    queued = ut(
+        "POST",
+        "/ut/v1/tracks/{id}/request",
+        path_parameters={"id": YT_OTHER},
+        body={"reason": "prefetch"},
+        media_type="application/json",
+    )
+    assert queued.status_code == 202, queued.text
+    assert queued.json()["state"] == "queued"
 
 
 def test_ut_v1_radio_from_a_scanned_song_without_a_youtube_alias(ids: dict[str, str]) -> None:
