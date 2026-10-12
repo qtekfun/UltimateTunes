@@ -245,7 +245,7 @@ class FakeRunner:
             return ProcessResult(0, json.dumps(body).encode(), b"")
         if "-filter_complex" in args:
             return ProcessResult(0, b"", ebur128(self.lufs, self.peak))
-        muxer = args[args.index("-f") + 1]
+        muxer = args[len(args) - 1 - args[::-1].index("-f") + 1]  # the output format (last -f)
         copy_fixture(ARCHIVES[muxer], target)
         return ProcessResult(0, b"", b"")
 
