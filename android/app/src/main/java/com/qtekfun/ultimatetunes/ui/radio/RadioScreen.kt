@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -77,7 +77,9 @@ private fun LazyListScope.stations(content: RadioContent, onOpenStation: (SongId
         item { MessageState(stringResource(R.string.radio_empty), icon = R.drawable.ic_radio) }
         return
     }
-    items(content.featured, key = { "featured-${it.seedId.value}" }) { station ->
+    itemsIndexed(content.featured, key = { i, s ->
+        "featured-$i-${s.seedId.value}"
+    }) { _, station ->
         StationCard(
             station = station,
             onClick = { onOpenStation(station.seedId) },
@@ -88,7 +90,9 @@ private fun LazyListScope.stations(content: RadioContent, onOpenStation: (SongId
     }
     if (content.fromSongs.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.radio_from_songs)) }
-        items(content.fromSongs, key = { "song-${it.seedId.value}" }) { station ->
+        itemsIndexed(content.fromSongs, key = { i, s ->
+            "song-$i-${s.seedId.value}"
+        }) { _, station ->
             NavigationRow(
                 title = station.title,
                 subtitle = station.subtitle,

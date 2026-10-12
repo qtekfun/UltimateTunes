@@ -5,7 +5,6 @@ package com.qtekfun.ultimatetunes.ui.connect
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
@@ -24,6 +23,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 enum class ConnectError {
     /** The address is not a URL. */
     INVALID_URL,
+
+    /** A plain `http://` address, which this build refuses: use `https://`. */
+    INSECURE_URL,
 
     /** The key does not have the shape of an UltimateTunes key (`utk_…`). */
     INVALID_KEY,
@@ -51,17 +53,23 @@ data class ConnectUiState(
     val connectedTo: String? = null
 ) {
     val canConnect: Boolean get() = !checking && serverUrl.isNotBlank() && apiKey.isNotBlank()
+
+    /** Never shows the key, which may be typed in full. */
+    override fun toString(): String =
+        "ConnectUiState(serverUrl=$serverUrl, apiKey=redacted, checking=$checking, " +
+            "error=$error, connectedTo=$connectedTo)"
 }
 
 /**
  * The Connect screen (RF-11): server URL and API key, checked against the server (`GET
- * /ut/v1/server`, then `GET /ut/v1/me` with the key) before they are kept in [configSource].
- * Keeping them across restarts (Keystore-encrypted) is PLAN T17.
+ * /ut/v1/server`, then `GET /ut/v1/me` with the key) before [gate] keeps them. Keeping them
+ * across restarts (Keystore-encrypted) is PLAN T17.
  */
 @HiltViewModel
 class ConnectViewModel @Inject constructor(
     private val api: TunesApi,
-    private val configSource: InMemoryServerConfigSource
+    private val gate: ConnectionGate,
+    private val cleartext: CleartextPolicy
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = mutableState.asStateFlow()
@@ -81,6 +89,7 @@ class ConnectViewModel @Inject constructor(
         val key = current.apiKey.trim()
         val invalid = when {
             url == null -> ConnectError.INVALID_URL
+            !url.isHttps && !cleartext.isPermitted(url.host) -> ConnectError.INSECURE_URL
             !ApiKeySecret.isWellFormed(key) -> ConnectError.INVALID_KEY
             else -> null
         }
@@ -106,7 +115,7 @@ class ConnectViewModel @Inject constructor(
         data class Failed(val error: ConnectError) : CheckResult
     }
 
-    /** Checks the address, then the key (kept in [configSource] only if it works). */
+    /** Checks the address, then the key (kept by [gate] only if it works). */
     private suspend fun check(url: HttpUrl, key: ApiKeySecret): CheckResult =
         when (val info = api.serverInfo(url)) {
             is TunesResult.Success -> checkKey(url, key, info.value.name)
@@ -115,20 +124,13 @@ class ConnectViewModel @Inject constructor(
             is TunesResult.Failure -> CheckResult.Failed(ConnectError.SERVER_ERROR)
         }
 
-    private suspend fun checkKey(url: HttpUrl, key: ApiKeySecret, serverName: String): CheckResult {
-        val previous = configSource.config.value
-        configSource.set(ServerConfig(url, key))
-        val me = api.me()
-        if (me is TunesResult.Success) return CheckResult.Connected(serverName)
-        configSource.set(previous)
-        return CheckResult.Failed(
-            when (me) {
-                is TunesResult.Unauthorized -> ConnectError.KEY_REFUSED
-                is TunesResult.NetworkError -> ConnectError.UNREACHABLE
-                else -> ConnectError.SERVER_ERROR
-            }
-        )
-    }
+    private suspend fun checkKey(url: HttpUrl, key: ApiKeySecret, serverName: String): CheckResult =
+        when (gate.tryConfig(ServerConfig(url, key)) { api.me() }) {
+            is TunesResult.Success -> CheckResult.Connected(serverName)
+            is TunesResult.Unauthorized -> CheckResult.Failed(ConnectError.KEY_REFUSED)
+            is TunesResult.NetworkError -> CheckResult.Failed(ConnectError.UNREACHABLE)
+            is TunesResult.Failure -> CheckResult.Failed(ConnectError.SERVER_ERROR)
+        }
 
     companion object {
         /**

@@ -93,7 +93,9 @@ fun StationScreen(
                     if (station.upNext.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.station_up_next)) }
                     }
-                    itemsIndexed(station.upNext, key = { _, t -> t.id.value }) { index, track ->
+                    itemsIndexed(station.upNext, key = { i, t ->
+                        "$i-${t.id.value}"
+                    }) { index, track ->
                         TrackRow(
                             track = track,
                             // The queue starts with the seed, so up-next index i is queue index i + 1.

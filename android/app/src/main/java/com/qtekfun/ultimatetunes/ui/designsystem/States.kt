@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -91,14 +92,22 @@ fun MessageState(
     }
 }
 
-/** A load error with "Try Again". */
+/** Goes back to the Connect screen (provided by the app's root). */
+val LocalReconnect = staticCompositionLocalOf<() -> Unit> { {} }
+
+/**
+ * A load error. A refused key or a missing server offer "Connect Again" (back to the Connect
+ * screen, never a dead end); anything else "Try Again".
+ */
 @Composable
 fun ErrorState(error: LoadError, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    val needsConnect = error == LoadError.UNAUTHORIZED || error == LoadError.NOT_CONFIGURED
+    val reconnect = LocalReconnect.current
     MessageState(
         message = stringResource(error.messageRes()),
         icon = R.drawable.ic_cloud,
-        actionLabel = stringResource(R.string.retry),
-        onAction = onRetry,
+        actionLabel = stringResource(if (needsConnect) R.string.connect_again else R.string.retry),
+        onAction = if (needsConnect) reconnect else onRetry,
         modifier = modifier
     )
 }

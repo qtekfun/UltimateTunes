@@ -19,6 +19,8 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
+import com.qtekfun.ultimatetunes.core.api.ServerConfig
+import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_API_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_SERVER_URL_TAG
@@ -100,6 +102,19 @@ class NavigationTest {
 
         waitFor(hasText(text(R.string.connect_error_key_refused)))
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun aKeyRefusedLaterLeadsBackToConnect() {
+        configSource.set(
+            ServerConfig(FakeTunesApi.config.baseUrl, ApiKeySecret("utk_" + "Y".repeat(43)))
+        )
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+
+        waitFor(hasText(text(R.string.error_unauthorized)))
+        compose.onNodeWithText(text(R.string.connect_again)).performClick()
+
+        waitFor(hasTestTag(CONNECT_BUTTON_TAG))
     }
 
     @Test

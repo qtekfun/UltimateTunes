@@ -27,9 +27,3 @@ enum class Tab(val route: String, @StringRes val label: Int, @DrawableRes val ic
     /** Test tag of the tab's bar item. */
     val testTag: String get() = "tab.$route"
 }
-
-/** Top-level routes: the Connect screen, then the tabs. */
-object AppRoutes {
-    const val CONNECT = "connect"
-    const val MAIN = "main"
-}

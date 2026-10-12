@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
-  SPDX-License-Identifier: GPL-3.0-or-later
-  Shape after the Material icons (Apache-2.0).
+  SPDX-FileCopyrightText: Google LLC
+  SPDX-License-Identifier: Apache-2.0
+  Path data of a Material icon (https://github.com/google/material-design-icons).
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"

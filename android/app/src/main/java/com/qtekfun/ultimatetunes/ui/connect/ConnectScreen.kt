@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -26,10 +27,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,13 +65,10 @@ const val CONNECT_SERVER_URL_TAG = "connect.serverUrl"
 const val CONNECT_API_KEY_TAG = "connect.apiKey"
 const val CONNECT_BUTTON_TAG = "connect.button"
 
-/** The Connect screen with its view model; [onConnected] runs once the key works. */
+/** The Connect screen with its view model; the root moves on once the key works. */
 @Composable
-fun ConnectRoute(onConnected: () -> Unit, viewModel: ConnectViewModel = hiltViewModel()) {
+fun ConnectRoute(viewModel: ConnectViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LaunchedEffect(state.connectedTo) {
-        if (state.connectedTo != null) onConnected()
-    }
     ConnectScreen(
         state = state,
         onServerUrlChange = viewModel::onServerUrlChange,
@@ -82,6 +80,7 @@ fun ConnectRoute(onConnected: () -> Unit, viewModel: ConnectViewModel = hiltView
 @StringRes
 private fun ConnectError.messageRes(): Int = when (this) {
     ConnectError.INVALID_URL -> R.string.connect_error_invalid_url
+    ConnectError.INSECURE_URL -> R.string.connect_error_insecure_url
     ConnectError.INVALID_KEY -> R.string.connect_error_invalid_key
     ConnectError.UNREACHABLE -> R.string.connect_error_unreachable
     ConnectError.NOT_A_SERVER -> R.string.connect_error_not_a_server
@@ -98,16 +97,13 @@ fun ConnectScreen(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .safeDrawingPadding()
-            .imePadding(),
-        contentAlignment = Alignment.TopCenter
-    ) {
+    // A Surface, not a plain Box: it sets the content colour, so text follows light and dark.
+    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
+                .safeDrawingPadding()
+                .imePadding()
+                .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 480.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
@@ -151,6 +147,7 @@ private fun ConnectHeader() {
     Text(
         text = stringResource(R.string.connect_title),
         style = MaterialTheme.typography.displaySmall,
+        color = MaterialTheme.colorScheme.onBackground,
         textAlign = TextAlign.Center,
         modifier = Modifier.semantics { heading() }
     )
@@ -177,7 +174,8 @@ private fun ConnectFields(
         placeholder = { Text(stringResource(R.string.connect_server_url_hint)) },
         singleLine = true,
         enabled = !state.checking,
-        isError = state.error == ConnectError.INVALID_URL,
+        isError = state.error == ConnectError.INVALID_URL ||
+            state.error == ConnectError.INSECURE_URL,
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Uri,
             imeAction = ImeAction.Next,

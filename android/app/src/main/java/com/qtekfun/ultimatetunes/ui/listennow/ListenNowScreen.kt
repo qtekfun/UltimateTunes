@@ -108,7 +108,7 @@ private fun LazyListScope.content(
     if (content.stations.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.listen_now_stations)) }
         item {
-            Shelf(content.stations, key = { it.seedId.value }) { station ->
+            Shelf(content.stations) { station ->
                 StationCard(
                     station = station,
                     onClick = { onOpenStation(station.seedId) },
@@ -120,7 +120,7 @@ private fun LazyListScope.content(
     if (content.recentlyPlayed.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.listen_now_recently_played)) }
         item {
-            Shelf(content.recentlyPlayed, key = { it.id.value }) { ShelfAlbumCard(it) }
+            Shelf(content.recentlyPlayed) { ShelfAlbumCard(it) }
         }
     }
     if (content.mostPlayed.isNotEmpty()) {
@@ -144,7 +144,7 @@ private fun LazyListScope.content(
 /** Albums in a two-column grid of large rounded artwork, inside the screen's list. */
 private fun LazyListScope.artworkGrid(albums: List<AlbumTile>) {
     val rows = albums.chunked(GRID_COLUMNS)
-    itemsIndexed(rows, key = { _, row -> "grid-" + row.joinToString { it.id.value } }) { _, row ->
+    itemsIndexed(rows, key = { i, _ -> "grid-$i" }) { _, row ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()

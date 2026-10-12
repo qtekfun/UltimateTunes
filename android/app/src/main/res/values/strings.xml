@@ -27,6 +27,7 @@
     <string name="connect_qr_unavailable">Scanning the QR code of the admin panel arrives in a later version. Copy the key from the panel for now.</string>
     <string name="connect_help">Create a key for this device in your server\'s admin panel. It is shown only once.</string>
     <string name="connect_error_invalid_url">That doesn\'t look like a server address.</string>
+    <string name="connect_error_insecure_url">Use an https:// address: this app only talks to servers over HTTPS.</string>
     <string name="connect_error_invalid_key">An UltimateTunes key starts with utk_ and has 47 characters.</string>
     <string name="connect_error_unreachable">Nothing answered at that address. Check it and your connection.</string>
     <string name="connect_error_not_a_server">Something answered, but it isn\'t an UltimateTunes server.</string>
@@ -54,6 +55,7 @@
 
     <!-- Common -->
     <string name="loading">Loading</string>
+    <string name="connect_again">Connect Again</string>
     <string name="retry">Try Again</string>
     <string name="back">Back</string>
     <string name="error_network">Can\'t reach your server. Check your connection.</string>

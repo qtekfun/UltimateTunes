@@ -4,13 +4,25 @@
 package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.lifecycle.ViewModel
-import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
+import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 
-/** Whether the app starts on the Connect screen or on the tabs. */
+/**
+ * Whether the app shows the Connect screen or the tabs, derived from the configured server: a
+ * fresh process without one, or a key the server refused, always lands on Connect.
+ */
 @HiltViewModel
-class AppViewModel @Inject constructor(private val configSource: ServerConfigSource) : ViewModel() {
-    /** True when a server URL and key are already configured. */
-    val isConfigured: Boolean get() = configSource.config.value != null
+class AppViewModel @Inject constructor(private val gate: ConnectionGate) : ViewModel() {
+    val showConnect: StateFlow<Boolean> =
+        gate.needsConnect.stateIn(viewModelScope, SharingStarted.Eagerly, gate.needsConnectNow)
+
+    /** Drops the refused or missing configuration and goes back to Connect. */
+    fun reconnect() {
+        gate.disconnect()
+    }
 }

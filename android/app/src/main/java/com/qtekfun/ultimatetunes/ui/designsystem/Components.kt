@@ -62,20 +62,15 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** A horizontal shelf of [items] under the screen margins. */
+/** A horizontal shelf of [items] under the screen margins (keyed by position: items may repeat). */
 @Composable
-fun <T> Shelf(
-    items: List<T>,
-    key: (T) -> Any,
-    modifier: Modifier = Modifier,
-    itemContent: @Composable (T) -> Unit
-) {
+fun <T> Shelf(items: List<T>, modifier: Modifier = Modifier, itemContent: @Composable (T) -> Unit) {
     LazyRow(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = Dimens.ScreenMargin),
         horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceM)
     ) {
-        items(items, key = key) { itemContent(it) }
+        items(items) { itemContent(it) }
     }
 }
 

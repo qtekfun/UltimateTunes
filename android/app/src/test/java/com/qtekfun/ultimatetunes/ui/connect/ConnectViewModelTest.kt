@@ -32,7 +32,8 @@ class ConnectViewModelTest {
     fun setUp() {
         server = FakeTunesServer().start()
         source = InMemoryServerConfigSource()
-        viewModel = ConnectViewModel(apiWith(source), source)
+        viewModel =
+            ConnectViewModel(apiWith(source), ConnectionGate(source), CleartextPolicy { true })
     }
 
     @AfterEach
@@ -150,6 +151,33 @@ class ConnectViewModelTest {
 
         assertEquals(ConnectError.INVALID_URL, viewModel.state.value.error)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `plain http is refused where the network security config forbids it`() = runTest {
+        val strict = ConnectViewModel(apiWith(source), ConnectionGate(source)) { host ->
+            host ==
+                "10.0.2.2"
+        }
+        strict.onServerUrlChange("http://music.example.net")
+        strict.onApiKeyChange(FakeTunesServer.API_KEY)
+
+        strict.connect()
+
+        assertEquals(ConnectError.INSECURE_URL, strict.state.value.error)
+        assertEquals(0, server.requestCount)
+
+        // The emulator's host may use http in debug builds; https is always fine.
+        strict.onServerUrlChange("https://music.example.net")
+        assertNull(strict.state.value.error)
+    }
+
+    @Test
+    fun `the state never prints the key`() {
+        enter()
+        val text = viewModel.state.value.toString()
+        assertFalse(FakeTunesServer.API_KEY in text, text)
+        assertTrue("apiKey=redacted" in text, text)
     }
 
     @Test
