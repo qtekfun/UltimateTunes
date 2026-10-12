@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What each admin page shows and does: users, keys (with the QR code), downloads queue,
-library, yt-dlp, audit log, and the public landing page. Templates escape user input."""
+library, yt-dlp and audit log. Templates escape user input."""
 
 import re
 from pathlib import Path
@@ -13,7 +13,6 @@ from starlette.requests import Request
 
 from tests.admin.conftest import People, csrf_of
 from tests.auth.conftest import USER_PASSWORD
-from ultimatetunes import __version__
 from ultimatetunes.admin import qr
 from ultimatetunes.admin.routes import (
     check_server_url,
@@ -34,22 +33,6 @@ ESCAPED = "&lt;script&gt;alert(1)&lt;/script&gt;"
 def services_of(client: TestClient) -> Services:
     found: Services = client.app.state.services  # type: ignore[attr-defined]
     return found
-
-
-# ---------------------------------------------------------------------- landing page
-
-
-def test_landing_page_says_little(client: TestClient, people: People) -> None:
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "UltimateTunes server is running." in r.text
-    assert __version__ in r.text
-    assert 'href="/admin"' in r.text
-    for leak in ("alice", "bob", "/music", "stylesheet", "<script"):
-        assert leak not in r.text
-    es = client.get("/", headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.5"})
-    assert "El servidor de UltimateTunes está funcionando." in es.text
-    assert '<html lang="es">' in es.text
 
 
 # ---------------------------------------------------------------------- users

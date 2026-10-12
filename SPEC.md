@@ -101,6 +101,20 @@ Optional push of failed downloads/canary to an ntfy topic or webhook configured 
 ### RF-14 Export to the phone
 The user can **export** tracks, albums or playlists that are fully available on the phone as **library tracks** (offline downloads, or library tracks completely in the cache; bytes cached under a `yt:` id from a first play are not exported because they predate tagging) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 
+### RF-15 Web player
+The api serves a web player for browsers at `/` (the home page: the sign-in form, or Listen Now with a session) and under `/web` (`docs/web-player.md`). It covers:
+- Listen Now, Radio (stations from favourite songs, artist radio), Library (albums, artists, playlists, favourites), and Search with library results first and YouTube Music results in their own section;
+- album, artist and playlist pages with play and shuffle;
+- playlists: create, rename, delete, add, remove, move;
+- playlist import from a URL or a file;
+- download state of `yt:` songs and "download to the library";
+- a player bar plus a full-screen "now playing" view with blurred artwork and synced lyrics (tap to seek);
+- a queue you can reorder, shuffle and repeat;
+- Media Session controls and keyboard shortcuts;
+- settings: theme light/dark/system, language en/es, change password, list and revoke your own API keys, sign out.
+
+The look follows §5 on desktop and phone. It talks only to its own server, through the same rules and per-user limits as every client: the OpenSubsonic and `/ut/v1` handlers are called as the signed-in user. Jinja + the vendored HTMX + small own scripts, no build step, en/es.
+
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
 - Bottom bar with 4 tabs: **Listen Now, Radio, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
@@ -119,7 +133,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 
 ## 7. Security
 - Threat model and checklist in `SECURITY.md` (T22 completes it). Highlights: API keys hashed and revocable; Argon2id; rate limit per IP and per key with temporary lockout; audit log; strict input validation (video ids, URLs allowlist, path sanitizer); subprocesses with argument lists; worker isolated from the DB and from inbound traffic; non-root, read-only containers; secrets from env/Docker secrets; logs redact secrets.
-- Transport: HTTPS everywhere outside localhost. PoC through `tailscale serve`. Public phase: reverse proxy (Caddy example) with TLS, HSTS, request limits; `/admin` stays LAN/Tailscale-only unless the admin opts in.
+- Transport: HTTPS everywhere outside localhost. PoC through `tailscale serve`. Public phase: reverse proxy (Caddy example) with TLS, HSTS, request limits; `/admin` stays LAN/Tailscale-only unless the admin opts in. The web player (`/`, `/web`) signs in with a password and a signed session cookie, never with an API key in the browser (§11, web player).
 - Android: API key stored encrypted with the Android Keystore; cleartext traffic forbidden in release (debug allows the emulator host only); no secrets in logs.
 
 ## 8. Quality and CI
@@ -178,7 +192,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - **Covers of external items** (YouTube image hosts approved 2026-10-12): `getCoverArt` of a virtual id fetches the catalog thumbnail over HTTPS from the exact host list only, no redirects, image types only, ≤ 5 MiB, cached in a bounded disk cache under `/data`; the worker uses Cover Art Archive first and the YouTube thumbnail as a fallback (contracts/ids.md). `getCoverArt` may ignore `size` in v1 and return the stored image (no image library is approved).
 - **`/rest` details**: an unknown `/rest/<name>` answers error 0 (HTTP 200, requested format) before authentication; `HEAD` is accepted on `stream`, `download` and `getCoverArt` (no body).
 - **Internal worker API**: v1 serves it on the api's single listener (8044), reachable only over the internal Docker network; a missing or unconfigured token gets the same generic 401. **T22 item**: a separate internal listener (or equivalent isolation) before any public exposure. An invalid video id is the non-retryable worker error `invalid_video_id`.
-- **Extension points for parallel streams** (coordinator-owned, so Wave 1 streams never edit shared files): commands come from a registry (`commands.py`, `AREAS`) filled by each area's `cli.py` (`worker/cli.py` → `worker`, `auth/cli.py` for T04's `bootstrap-admin`, `canary/cli.py` for T19's `canary`); per-area settings live in `<area>/settings.py` (`AreaSettings`, same `UT_` prefix); `app.py` calls `install(app, services)` of each area's `web.py` (auth, library, jobs, streaming, admin), where an area adds routes, middleware or state. The server canary lives in `ultimatetunes/canary/` (T19). `GET /ut/v1/server` belongs to T05.
+- **Extension points for parallel streams** (coordinator-owned, so Wave 1 streams never edit shared files): commands come from a registry (`commands.py`, `AREAS`) filled by each area's `cli.py` (`worker/cli.py` → `worker`, `auth/cli.py` for T04's `bootstrap-admin`, `canary/cli.py` for T19's `canary`); per-area settings live in `<area>/settings.py` (`AreaSettings`, same `UT_` prefix); `app.py` calls `install(app, services)` of each area's `web.py` (auth, library, jobs, streaming, admin, canary, and the web player `web/web.py`), where an area adds routes, middleware or state. The server canary lives in `ultimatetunes/canary/` (T19). `GET /ut/v1/server` belongs to T05.
 - **Small schema rules**: the rate limiter purges by last activity (`touched_at`), so a failure count lives as long as failures keep coming within the purge window; playlist and play-queue entries are rewritten by delete-and-reinsert in one transaction (positions are part of the key); `tracks.format` accepts only `opus`, `m4a`, `mp3`, `flac`, `ogg`, and the library scan skips other files. The fake downloader writes a bundled 2 s silent Ogg/Opus file (CC0, generated with FFmpeg); API keys are redacted from logs wherever `utk_` + 43 characters appear.
 - **Errors**: `/rest` errors are HTTP 200 with a failed envelope, except the statuses listed in `contracts/errors.md` (429 rate limit, 501 stubs, and on binary endpoints 206/416 for ranges, 404 for error 70 after a failed download, 503 for the listener cap); ut-v1 and the worker API use RFC 9457 problems with stable codes; one mapping table in `errors.py` per `contracts/errors.md`. Token auth (`t`/`s`) answers 42 per this spec (OpenSubsonic suggests 41); the Android client treats both alike, and T19 checks a third-party client.
 - **Wire conventions**: camelCase JSON in every API; API keys are `utk_` + 43 base64url characters, stored as SHA-256; timestamps are fixed-width `YYYY-MM-DDTHH:MM:SS.mmmZ`; portable SQL uses `?` placeholders (the PostgreSQL driver converts them).
@@ -325,3 +339,25 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken by the author — full player transition (#64, 2026-10-12)
 - The author found the shared-element close animation ugly on the Pixel 8 (the mini player expanded and the tabs reflowed under the closing player). The full player now slides fully up and down (320 ms) as a sheet that follows the finger; past 120 dp or on a fast flick it closes. The mini player keeps its place while the full player is open, which is hidden from TalkBack. The shared-element artwork transition is dropped (§5 updated); the author accepted trying it and changing it again if it does not convince.
+
+### Taken by the coordinator — web player (#66, 2026-10-12)
+1. **Web player at `/` and `/web`**, served by the api (RF-15). It uses Jinja, the admin panel's vendored HTMX (served again at `/web/static/htmx.min.js`) and its own small scripts (`theme.js`, `player.js`) and stylesheet, with no build step, CDN or new dependency. The admin panel's public landing page at `/` is removed (no contract defined it). With `UT_WEB_ENABLED=false`, `/` only says the server runs and `/web` answers 404.
+2. **Sessions** reuse the admin machinery (itsdangerous `SessionCodec`) with the web player's own salts and a per-user epoch (`web.session_epoch.<user id>` in `settings`), for any role.
+   - The cookie `ut_web_session` is `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`.
+   - Its lifetime is `UT_WEB_SESSION_TTL_S`: 7 days by default, at most 30.
+   - It is signed with `UT_ADMIN_SESSION_SECRET`.
+   - Signing out ends every web session of the user, copies included; a new password ends them too (and re-signs-in the browser that changed it).
+3. **Sign-in** (`POST /web/login`) is `AuthService.verify_password(trusted=trusted_origin(request))`, exactly like `POST /ut/v1/keys`: rate limit, and per-IP and split per-username lockout. It is not limited to the admin networks. It is audited as `web.login`/`web.logout`.
+4. **CSRF** on every change: the session token as form field `csrf` or header `X-CSRF-Token` (HTMX, `player.js`), plus `Sec-Fetch-Site`. The login form uses a double-submit cookie.
+5. **Headers** on `/` and `/web/*`:
+   - CSP: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
+   - `no-store` on pages, `nosniff`, `DENY`, `no-referrer`, COOP/CORP/COEP;
+   - a 64 KiB body cap.
+   - There is no inline script or style and no `innerHTML`. HTMX keeps no history snapshots, and a history miss asks the server.
+6. **Media and uploads**:
+   - Audio and covers go through `/web/stream/{id}` and `/web/cover/{id}`, which are the OpenSubsonic handlers behind the session cookie (Range, streaming while downloading). No API key is ever in a URL or in the browser.
+   - `/web/imports/file` takes up to the imports API's cap.
+   - The language choice is a cookie `ut_web_lang`. The theme and the volume live in `localStorage` (display preferences only).
+   - The web player never creates API keys (a key is shown once and must not land in a page); it lists and revokes the user's own.
+7. **Same rules as every client**: every page and action calls the OpenSubsonic handler, or the `/ut/v1` imports/tracks handler, in-process as the signed-in user. Ownership, stars, "keep", the per-user search bucket, the catalog budget (`set_caller`), the download gates and the listener caps all apply. Each user also gets the request rate of one API key (`web:user:<id>`). Playlist "move" rewrites the playlist (`createPlaylist` with `playlistId`), since OpenSubsonic has no move.
+8. **Admin panel**: `AdminGate` covers `/admin` only. The proxies route `/` and `/web` through the client routers (`deploy/`); Authelia in front of the web player is optional.

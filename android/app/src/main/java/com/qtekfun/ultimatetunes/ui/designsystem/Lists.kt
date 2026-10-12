@@ -44,7 +44,8 @@ const val GRID_COLUMNS = 2
 
 /**
  * A row of a mixed list (search results, favourites): artwork, title, a subtitle and, for an item
- * only on YouTube Music, the cloud and "Not in library yet". TalkBack reads it as one item.
+ * only on YouTube Music, the cloud ("Not in library yet" when there is no subtitle). TalkBack reads
+ * it as one item, the note included.
  */
 @Composable
 fun ItemRow(
@@ -114,7 +115,9 @@ private fun ItemSubtitle(subtitle: String?, externalLabel: String?) {
                     .padding(end = Dimens.SpaceXS)
             )
         }
-        val text = listOfNotNull(subtitle, externalLabel).joinToString(" · ")
+        // The cloud says "not in the library" (TalkBack reads it in full); the words show only
+        // when there is no subtitle, so they never push the artist out of the row, as in song rows.
+        val text = subtitle?.takeIf { it.isNotEmpty() } ?: externalLabel.orEmpty()
         if (text.isNotEmpty()) {
             Text(
                 text = text,

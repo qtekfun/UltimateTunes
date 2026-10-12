@@ -37,6 +37,8 @@
     </plurals>
     <string name="event_downloading">Descargando para escuchar sin conexión</string>
     <string name="event_download_removed">Descarga eliminada</string>
+    <string name="event_favourite_added">Añadida a Favoritos</string>
+    <string name="event_favourite_removed">Quitada de Favoritos</string>
     <plurals name="event_export_started">
         <item quantity="one">Exportando %1$d canción…</item>
         <item quantity="many">Exportando %1$d canciones…</item>

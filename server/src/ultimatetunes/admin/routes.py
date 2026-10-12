@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The admin panel at `/admin` (SPEC RF-10) and the public landing page at `/`.
+"""The admin panel at `/admin` (SPEC RF-10). (`/` is the web player's, `web/routes.py`.)
 
 Server-rendered Jinja pages; HTMX (vendored, `static/admin/`) only refreshes the download queue.
 Every page works without JavaScript. Who may call what is decided in `security.py`; every
 handler here depends on `current_admin` (pages) or `posted` (state changes: admin + CSRF),
-except the login form, the landing page and the two static files.
+except the login form and the two static files.
 
 State changes answer with a redirect back to their page (`?done=<code>`, a fixed message) or
 with the page and an error message. Users, keys and the audit log go through T04's
@@ -68,7 +68,6 @@ from ultimatetunes.search.guard import GuardedCatalog
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-root_router = APIRouter()
 
 STATIC_FILES = {"htmx.min.js": "text/javascript", "admin.css": "text/css"}
 MAX_SERVER_URL = 120
@@ -303,13 +302,7 @@ def _forbidden(request: Request, message: str) -> Response:
     )
 
 
-# ---------------------------------------------------------------------- landing page and static
-
-
-@root_router.get("/", include_in_schema=False)
-def landing(request: Request) -> HTMLResponse:
-    """Public: says the server runs, its version and where the panel is. Nothing else."""
-    return page(request, "landing.html")
+# ---------------------------------------------------------------------- static
 
 
 @router.get("/admin/static/{name}", include_in_schema=False)

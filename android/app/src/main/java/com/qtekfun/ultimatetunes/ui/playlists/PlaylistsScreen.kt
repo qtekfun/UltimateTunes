@@ -19,14 +19,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +50,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
 import com.qtekfun.ultimatetunes.ui.designsystem.TextInputDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
+import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.PlaylistTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -109,12 +107,12 @@ fun PlaylistsScreen(
     actions: PlaylistsActions
 ) {
     var naming by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
-    MessageEffect(state.message, snackbar, actions.messageShown)
+    val snackbar = rememberScreenSnackbar()
+    MessageEffect(state.message, snackbar.state, actions.messageShown)
     LargeTitleScaffold(
         title = stringResource(R.string.library_playlists),
         onBack = navigator.back,
-        snackbarHost = { SnackbarHost(snackbar) }
+        snackbarHost = snackbar.host
     ) { inner ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
