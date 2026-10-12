@@ -1,1 +1,1 @@
-First test version, for trying the new design. You can connect to your server with an API key; Listen Now and music playback arrive in the next versions.
+First test version, for trying the new design. It cannot connect to a server or play music yet.
