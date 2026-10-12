@@ -31,6 +31,7 @@ from ultimatetunes.db.repository import Repository
 from ultimatetunes.errors import InvalidStateTransition, LeaseLost, NotFound, PathRejected
 from ultimatetunes.ids import new_id
 from ultimatetunes.jobs import state as sm
+from ultimatetunes.jobs.gate import DownloadGate
 from ultimatetunes.jobs.signal import JobSignal
 
 JobState = Literal["queued", "downloading", "tagging", "ready", "failed", "cancelled"]
@@ -315,12 +316,20 @@ class SqliteJobQueue:
         clock: Clock,
         *,
         rand: Callable[[], float] | None = None,
+        gate: DownloadGate | None = None,
         signal: JobSignal | None = None,
     ) -> None:
         self._db = db
         self._clock = clock
         self._rand = rand or secrets.SystemRandom().random
+        # The abuse limits (jobs/gate.py); None (tests of the queue alone) checks nothing.
+        self._gate = gate
         self.signal = signal or JobSignal()
+
+    def _admit(self, conn: Connection, track_id: str, requested_by: str | None) -> None:
+        """A download is about to start for `track_id`: the gate may refuse it."""
+        if self._gate is not None:
+            self._gate.check_new_download(conn, track_id, requested_by)
 
     def _now(self) -> str:
         return format_ts(self._clock.now())
@@ -350,6 +359,7 @@ class SqliteJobQueue:
         jobs = _Jobs(conn)
         existing = jobs.by_track("download", track_id)
         if existing is None:
+            self._admit(conn, track_id, requested_by)
             job_id = new_id(self._clock)
             jobs.run(
                 "INSERT INTO jobs (id, kind, track_id, yt_video_id, state, priority,"
@@ -361,25 +371,35 @@ class SqliteJobQueue:
             self.signal.notify()
             return self._require(conn, job_id)
         if existing.state in (sm.JobState.FAILED, sm.JobState.CANCELLED):
-            self._requeue(conn, existing, priority, now)
+            self._admit(conn, track_id, requested_by)
+            self._requeue(conn, existing, priority, now, requested_by)
             self.signal.notify()
-        elif existing.state == sm.JobState.QUEUED and priority > existing.priority:
-            jobs.run(
-                "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
-                (priority, now, existing.id),
-            )
+        elif existing.state == sm.JobState.QUEUED:
+            if priority > existing.priority:
+                jobs.run(
+                    "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
+                    (priority, now, existing.id),
+                )
+            if self._gate is not None and requested_by is not None:
+                # A job waiting on its requester's daily allowance moves to a requester that
+                # has some left, so it is claimed (jobs/gate.py).
+                self._gate.adopt(conn, existing.id, requested_by)
         return self._require(conn, existing.id)
 
     @staticmethod
-    def _requeue(conn: Connection, job: Job, priority: int, now: str) -> None:
+    def _requeue(
+        conn: Connection, job: Job, priority: int, now: str, requested_by: str | None
+    ) -> None:
         """A new request for a failed or cancelled job: back to the queue, attempts reset,
-        its track pending again (ut-v1 `requestTrack`)."""
+        its track pending again (ut-v1 `requestTrack`). The new requester is charged for it
+        (abuse limits), unless the request has no user."""
         sm.check_transition(job.state, sm.JobState.QUEUED)
         conn.execute(
             "UPDATE jobs SET state = 'queued', attempts = 0, priority = ?, not_before = NULL,"
             " error_code = NULL, error_message = NULL, cancel_requested = 0,"
+            " requested_by = COALESCE(?, requested_by),"
             " finished_at = NULL, updated_at = ? WHERE id = ?",
-            (priority, now, job.id),
+            (priority, requested_by, now, job.id),
         )
         conn.execute(
             "UPDATE tracks SET status = 'pending', updated_at = ?"
@@ -445,12 +465,20 @@ class SqliteJobQueue:
         marks = ", ".join("?" for _ in kinds)
         with self._db.transaction() as conn:
             self._expire(conn, now)
+            # Abuse limits (jobs/gate.py): nothing while space is low, and no job of a user
+            # over the daily bytes.
+            limit_sql: str = ""
+            limit_params: tuple[object, ...] = ()
+            if self._gate is not None:
+                if not self._gate.note_space(conn):
+                    return None
+                limit_sql, limit_params = self._gate.claimable_sql()
             for _ in range(CLAIM_TRIES):
                 row = conn.execute(
                     f"SELECT id FROM jobs WHERE state = 'queued' AND kind IN ({marks})"  # noqa: S608  # nosec B608
-                    " AND (not_before IS NULL OR not_before <= ?)"
+                    f" AND (not_before IS NULL OR not_before <= ?){limit_sql}"
                     " ORDER BY priority DESC, created_at ASC, id ASC LIMIT 1",
-                    (*kinds, now),
+                    (*kinds, now, *limit_params),
                 ).fetchone()
                 if row is None:
                     return None
@@ -538,6 +566,10 @@ class SqliteJobQueue:
             # taken the job since it was read; then nothing is written and the lease is lost.
             if updated != 1:
                 raise LeaseLost()
+            if self._gate is not None:
+                # The new bytes of this attempt go to the requester's daily count.
+                delta = report.bytes_downloaded - (job.bytes_downloaded or 0)
+                self._gate.charge(conn, job_id, delta)
         return Lease(lease_id, expires, _heartbeat_s(lease_s), bool(job.cancel_requested))
 
     def release(  # noqa: PLR0913 - keyword-only fields of a release

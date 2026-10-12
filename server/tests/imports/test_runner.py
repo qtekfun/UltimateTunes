@@ -9,6 +9,7 @@ import anyio
 import pytest
 
 from tests.imports.conftest import USER, FixtureCatalog
+from ultimatetunes.core.caller import current_bucket, set_caller
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services
 from ultimatetunes.errors import FeatureNotImplemented, RateLimited, UpstreamUnavailable
@@ -17,7 +18,13 @@ from ultimatetunes.imports import render
 from ultimatetunes.imports.files import SourceItem
 from ultimatetunes.imports.repository import ImportRepository, ImportRow, TrackRow
 from ultimatetunes.imports.runner import MAX_PAUSES, ImportRunner
-from ultimatetunes.search.catalog import CatalogParseError, CatalogThrottled, CatalogUnavailable
+from ultimatetunes.jobs.gate import RETRY_SPACE_S
+from ultimatetunes.search.catalog import (
+    CatalogParseError,
+    CatalogThrottled,
+    CatalogTrack,
+    CatalogUnavailable,
+)
 from ultimatetunes.search.fake import PLAYLIST_ID
 
 pytestmark = pytest.mark.anyio
@@ -336,3 +343,114 @@ async def test_a_read_that_keeps_pausing_fails_the_import(
         await runner.run(import_id)
     row = load(services, import_id)
     assert (row.state, row.error_code, row.pauses) == ("failed", "upstream_unavailable", 5)
+
+
+# ---------------------------------------------------------------- download limits
+
+
+async def test_a_song_too_long_to_download_fails_only_its_item(
+    services: Services, catalog: FixtureCatalog
+) -> None:
+    catalog.tracks["Wq5Jd7HsKe2"] = replace(catalog.tracks["Wq5Jd7HsKe2"], duration_s=7200)
+    items = (
+        SourceItem("Night Ferry", ("The Paper Lanterns",), video_id="Wq5Jd7HsKe2"),
+        SourceItem("Glass Orchard", ("The Paper Lanterns",), video_id="Rb8Tn3ZcYv0"),
+    )
+    import_id = new_import(
+        services, source="ytmusic", playlist_id=PLAYLIST_ID, items=items, state="matching"
+    )
+    await ImportRunner.of(services).run(import_id)
+    body = report(services, import_id)
+    assert [i["state"] for i in body["items"]] == ["failed", "matched"]
+    assert "1800 seconds" in body["items"][0]["error"]
+    with services.db.read() as conn:
+        long_tracks = conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE yt_video_id = 'Wq5Jd7HsKe2'"
+        ).scalar()
+        requested = conn.execute("SELECT requested_by FROM jobs").fetchall()
+    # Nothing was written for the refused song; the other one is charged to the import's owner.
+    assert long_tracks == 0
+    assert [r["requested_by"] for r in requested] == [USER]
+
+
+async def test_low_disk_space_pauses_the_import_until_its_retry_after(
+    services: Services, catalog: FixtureCatalog, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    items = (SourceItem("Glass Orchard", ("The Paper Lanterns",), video_id="Rb8Tn3ZcYv0"),)
+    import_id = new_import(
+        services, source="ytmusic", playlist_id=PLAYLIST_ID, items=items, state="matching"
+    )
+    runner = ImportRunner.of(services)
+    free = [0]
+    monkeypatch.setattr(services.library, "free_bytes", lambda: free[0])
+    await runner.run(import_id)
+    body = report(services, import_id)
+    assert (body["state"], body["items"][0]["state"]) == ("matching", "pending")
+    # Not counted as a pause, and no resume (nor a direct run) before the Retry-After.
+    assert load(services, import_id).pauses == 0
+    with services.db.read() as conn:
+        assert conn.execute("SELECT pauses FROM import_items").scalar() == 0
+    assert runner.waiting(import_id)
+    clock.advance(RETRY_SPACE_S - 1)
+    assert runner.stale([(import_id, "2000-01-01T00:00:00.000Z")]) == []
+    free[0] = 1 << 40
+    calls = len(catalog.calls)
+    await runner.run(import_id)
+    assert len(catalog.calls) == calls
+    assert report(services, import_id)["items"][0]["state"] == "pending"
+    clock.advance(1)
+    assert runner.stale([(import_id, "2000-01-01T00:00:00.000Z")]) == [import_id]
+    await runner.run(import_id)
+    assert report(services, import_id)["items"][0]["state"] == "matched"
+
+
+async def test_an_import_over_the_limits_never_fails_items_for_it(
+    services: Services, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    items = (SourceItem("Glass Orchard", ("The Paper Lanterns",), video_id="Rb8Tn3ZcYv0"),)
+    import_id = new_import(
+        services, source="ytmusic", playlist_id=PLAYLIST_ID, items=items, state="matching"
+    )
+    monkeypatch.setattr(services.staging, "free_bytes", lambda: 0)
+    runner = ImportRunner.of(services)
+    for _ in range(MAX_PAUSES * 2):
+        await runner.run(import_id)
+        clock.advance(RETRY_SPACE_S)
+    body = report(services, import_id)
+    assert (body["state"], body["items"][0]["state"]) == ("matching", "pending")
+
+
+def test_without_a_cache_nothing_waits(services: Services) -> None:
+    runner = ImportRunner(
+        db=services.db,
+        clock=services.clock,
+        catalog=services.catalog,
+        jobs=services.jobs,
+        inflight=services.inflight,
+        limiter=services.rate_limiter,
+    )
+    runner._wait("x", 60)
+    assert not runner.waiting("x")
+
+
+async def test_import_lookups_are_not_charged_to_a_user(
+    services: Services, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str | None] = []
+    real = catalog.track
+
+    async def track(video_id: str) -> CatalogTrack:
+        seen.append(current_bucket())
+        return await real(video_id)
+
+    monkeypatch.setattr(catalog, "track", track)
+    items = (SourceItem("Night Ferry", ("The Paper Lanterns",), video_id="Wq5Jd7HsKe2"),)
+    import_id = new_import(
+        services, source="ytmusic", playlist_id=PLAYLIST_ID, items=items, state="matching"
+    )
+    set_caller(USER)
+    try:
+        await ImportRunner.of(services).run(import_id)
+    finally:
+        set_caller(None)
+    assert seen == [None]

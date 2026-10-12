@@ -31,6 +31,11 @@ Rate limit and lockout (`core.ratelimit`):
   behind a shared home IP must not lock out the whole household, and a 256-bit key cannot be
   guessed, so the lockout there only stops the noise.
 - Password checks also take a token from `auth:login:<ip>`.
+- IPv6 clients are counted by their /64 (`throttle.client_key`), at most
+  `auth_argon2_concurrency` Argon2 verifications run at once (`throttle.Argon2Slots`), and a
+  global failure budget per minute (`auth:global`) locks password checks and unknown keys while
+  it is exceeded (auth/throttle.py). Password checks from the admin's own networks (`trusted`:
+  the admin panel, behind its allowlist) are neither refused by it nor counted in it.
 
 Secrets (keys, passwords, hashes) never reach a log line, an audit entry or an error message.
 """
@@ -55,6 +60,7 @@ from ultimatetunes.auth.repository import (
     audit_detail,
 )
 from ultimatetunes.auth.settings import AuthSettings
+from ultimatetunes.auth.throttle import Argon2Slots, client_key, shared_slots
 from ultimatetunes.core.authn import Principal, Role
 from ultimatetunes.core.clock import Clock, format_ts, parse_ts
 from ultimatetunes.core.ratelimit import Limit, RateLimiter
@@ -89,6 +95,9 @@ TOUCH_EVERY_S = 60
 ROLES: tuple[Role, ...] = ("admin", "user")
 _USERNAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 MAX_KEY_NAME = 100
+# The global failure budget (auth/throttle.py): its token bucket, and the lock it sets.
+GLOBAL_FAILURES = "auth:global:failures"
+GLOBAL_LOCK = "auth:global"
 
 
 def normalize_username(username: str) -> str:
@@ -143,19 +152,22 @@ class CreatedKey:
 
 
 class AuthService:
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the shared services it checks credentials with
         self,
         db: Database,
         clock: Clock,
         limiter: RateLimiter,
         settings: AuthSettings | None = None,
         passwords: Passwords | None = None,
+        *,
+        slots: Argon2Slots | None = None,
     ) -> None:
         self._db = db
         self._clock = clock
         self._limiter = limiter
         self._settings = settings or AuthSettings()
         self._passwords = passwords or Passwords()
+        self._slots = slots or shared_slots()
 
     @classmethod
     def from_services(
@@ -219,6 +231,7 @@ class AuthService:
         owner = self._owner(key)
         if owner is None or (username is not None and owner.username != username):
             self._refuse_locked(self._ip_bucket(client_ip))
+            self._refuse_global(trusted=False)
             self._fail(invalid, client_ip)
         if owner.revoked_at is not None or owner.is_disabled:
             # A real key, revoked or of a disabled user: a stale device, not a guess. Refused
@@ -247,7 +260,7 @@ class AuthService:
 
     @staticmethod
     def _ip_bucket(client_ip: str | None) -> str:
-        return f"auth:ip:{client_ip or 'unknown'}"
+        return f"auth:ip:{client_key(client_ip)}"
 
     @staticmethod
     def _user_bucket(username: str, *, trusted: bool) -> str:
@@ -262,7 +275,12 @@ class AuthService:
                 raise RateLimited(decision.retry_after_s)
 
     def _fail(
-        self, error: TunesError, client_ip: str | None, user_bucket: str | None = None
+        self,
+        error: TunesError,
+        client_ip: str | None,
+        user_bucket: str | None = None,
+        *,
+        trusted: bool = False,
     ) -> NoReturn:
         """Counts the failure (per IP, and in `user_bucket` for passwords), then raises `error`.
         Locking a bucket is logged and audited."""
@@ -277,7 +295,33 @@ class AuthService:
                 _, kind, target = bucket.split(":", 2)
                 log.warning("auth lockout of %s %s for %d s", kind, target, decision.retry_after_s)
                 self._audit(None, client_ip, AuditEvent("auth.lockout", kind, target))
+        if not trusted:
+            self._count_global_failure(client_ip)
         raise error
+
+    def _refuse_global(self, *, trusted: bool) -> None:
+        """429 while the global failure budget is locked, except for the admin's own networks
+        (module doc): strangers can never lock an admin out of LAN/Tailscale logins."""
+        if not trusted:
+            self._refuse_locked(GLOBAL_LOCK)
+
+    def _count_global_failure(self, client_ip: str | None) -> None:
+        """One failure of the global budget; past it, `auth:global` is locked (module doc)."""
+        per_min = self._settings.auth_max_failures_global_per_min
+        if self._limiter.hit(GLOBAL_FAILURES, Limit(per_min / 60, per_min)).allowed:
+            return
+        lockout_s = self._settings.auth_global_lockout_s
+        self._limiter.record_failure(GLOBAL_LOCK, max_failures=1, lockout_s=lockout_s)
+        log.warning("auth lockout of everyone for %d s: too many failures", lockout_s)
+        self._audit(None, client_ip, AuditEvent("auth.lockout", "global", None))
+
+    def _password_matches(self, user: User | None, password: str) -> bool:
+        """Argon2 under a slot (auth/throttle.py); an unknown user burns the same time."""
+        with self._slots.slot():
+            if user is None:
+                self._passwords.burn(password)
+                return False
+            return self._passwords.verify(user.password_hash, password)
 
     # ------------------------------------------------------------------ passwords
 
@@ -287,25 +331,24 @@ class AuthService:
         """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
         and unknown user give the same `AuthenticationFailed` in the same time. `trusted`: the
         request comes from the admin's own networks (`core.forwarded.trusted_origin`); it picks
-        the per-username lockout counter (module docstring)."""
+        the per-username lockout counter (module docstring), and such checks are neither refused
+        by the global failure budget nor counted in it."""
         if not client_ip:
             raise Forbidden("Password checks need the client address")
         name = normalize_username(username)
         user_bucket = self._user_bucket(name, trusted=trusted)
         self._refuse_locked(self._ip_bucket(client_ip), user_bucket)
+        self._refuse_global(trusted=trusted)
         limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
-        decision = self._limiter.hit(f"auth:login:{client_ip}", limit)
+        decision = self._limiter.hit(f"auth:login:{client_key(client_ip)}", limit)
         if not decision.allowed:
             raise RateLimited(decision.retry_after_s)
         with self._db.read() as conn:
             user = UserRepository(conn).by_username(name)
-        if user is None:
-            self._passwords.burn(password)
-            self._fail(AuthenticationFailed(), client_ip, user_bucket)
-        if not self._passwords.verify(user.password_hash, password):
-            self._fail(AuthenticationFailed(), client_ip, user_bucket)
+        if not self._password_matches(user, password) or user is None:
+            self._fail(AuthenticationFailed(), client_ip, user_bucket, trusted=trusted)
         if user.is_disabled:
-            self._fail(AccountDisabled(), client_ip, user_bucket)
+            self._fail(AccountDisabled(), client_ip, user_bucket, trusted=trusted)
         self._limiter.record_success(self._ip_bucket(client_ip))
         self._limiter.record_success(user_bucket)
         new_hash = (

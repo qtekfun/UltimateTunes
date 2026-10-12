@@ -16,8 +16,9 @@ secret of sorts); only its host is.
 `NotificationSweep` runs in the api: every `UT_ADMIN_NOTIFY_INTERVAL_S` it collects the jobs
 that failed and the canary runs that failed since its cursor (also in `settings`), moves the
 cursor with a compare-and-set (so with several replicas one of them sends), then sends one
-message. Nothing is sent before a target is configured, and configuring one starts the cursor
-at that moment (no backlog).
+message. It also says when downloads were paused for low disk space (`jobs.gate.LOW_DISK_KEY`)
+since the cursor. Nothing is sent before a target is configured, and configuring one starts
+the cursor at that moment (no backlog).
 """
 
 import asyncio
@@ -36,6 +37,7 @@ from ultimatetunes.admin.repository import AdminRepository
 from ultimatetunes.core.clock import Clock, format_ts
 from ultimatetunes.db.database import Database
 from ultimatetunes.errors import InvalidParameter
+from ultimatetunes.jobs.gate import LOW_DISK_KEY
 
 log = logging.getLogger(__name__)
 
@@ -214,11 +216,18 @@ def _header_safe(text: str) -> str:
 
 
 def compose(
-    jobs: list[tuple[str, str, str | None]], canaries: list[tuple[str, str | None]]
+    jobs: list[tuple[str, str, str | None]],
+    canaries: list[tuple[str, str | None]],
+    low_disk_since: str | None = None,
 ) -> Message | None:
-    if not jobs and not canaries:
+    if not jobs and not canaries and low_disk_since is None:
         return None
     lines: list[str] = []
+    if low_disk_since is not None:
+        lines.append(
+            f"Downloads paused since {low_disk_since}: less than UT_MIN_FREE_BYTES free on"
+            " /music or /staging."
+        )
     if jobs:
         lines.append(f"{len(jobs)} download(s) failed:")
         lines.extend(
@@ -248,8 +257,11 @@ class NotificationSweep:
             if cursor is None:
                 repo.put_setting(KEY_CURSOR, now, now)
                 return None
+            low_disk = repo.setting(LOW_DISK_KEY)
             message = compose(
-                repo.failed_jobs_between(cursor, now), repo.failed_canaries_between(cursor, now)
+                repo.failed_jobs_between(cursor, now),
+                repo.failed_canaries_between(cursor, now),
+                low_disk if low_disk is not None and cursor < low_disk <= now else None,
             )
             if not repo.swap_setting(KEY_CURSOR, cursor, now, now) or message is None:
                 return None

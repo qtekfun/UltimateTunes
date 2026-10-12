@@ -11,6 +11,7 @@ from typing import Any
 import anyio
 import pytest
 
+from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.storage import LocalStagingStore
 from ultimatetunes.errors import WorkerErrorCode
 from ultimatetunes.worker import ytdlp
@@ -79,6 +80,7 @@ def test_the_command_line_is_a_list_with_the_id_after_double_dash(tmp_path: Path
         clients="default",
         out_dir=tmp_path,
         video_id="-x7Lm2pZ0aB",
+        limits=DownloadLimits(max_track_duration_s=1200, max_download_bytes=50_000_000),
     )
     assert args[:4] == ["/usr/bin/python3", "-I", "-S", "/opt/ytdlp/current/yt-dlp"]
     assert args[-2:] == ["--", "https://www.youtube.com/watch?v=-x7Lm2pZ0aB"]
@@ -88,8 +90,28 @@ def test_the_command_line_is_a_list_with_the_id_after_double_dash(tmp_path: Path
     assert pairs["--js-runtimes"] == "deno:/usr/local/bin/deno"
     assert pairs["--extractor-args"] == "youtube:player_client=default"
     assert pairs["--output"] == "-x7Lm2pZ0aB.%(ext)s"
+    # Abuse limits: a strict duration filter (an unknown duration does not pass) and a size cap.
+    assert pairs["--match-filter"] == "duration<=1200"
+    assert pairs["--max-filesize"] == "50000000"
+    assert args.index("--match-filter") < args.index("--")
+    # The screen output stays on, so a skip on a limit can be told apart from a bug.
+    assert "--no-quiet" in args
     for flag in ("--ignore-config", "--no-remote-components", "--no-js-runtimes", "--newline"):
         assert flag in args
+
+
+def test_the_limits_must_be_positive_integers(tmp_path: Path) -> None:
+    broken = DownloadLimits.model_construct(max_track_duration_s=0, max_download_bytes=1)
+    with pytest.raises(ValueError, match="positive"):
+        build_args(
+            python="python3",
+            zipapp=Path("/z"),
+            deno=Path("/d"),
+            clients="default",
+            out_dir=tmp_path,
+            video_id="OkWebm00001",
+            limits=broken,
+        )
 
 
 def test_the_environment_carries_no_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,3 +332,57 @@ async def test_the_current_link_is_resolved_once_per_download(
     resolving = YtDlpDownloader(staging, WorkerSettings(), Zipapp(link), runner=runner)
     await resolving.download("OkWebm00001", JOB_DIR, Recorder())
     assert seen[0][3] == str(FAKE_ZIPAPP.resolve())
+
+
+# ---------------------------------------------------------------- abuse limits
+
+SMALL = DownloadLimits.model_construct(max_track_duration_s=1800, max_download_bytes=10_000)
+
+
+def limited(staging: LocalStagingStore) -> YtDlpDownloader:
+    return YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), limits=SMALL)
+
+
+@pytest.mark.parametrize("video", ["TooLongVid1", "HugeFile001"])
+async def test_a_video_skipped_on_a_limit_fails_for_good(
+    staging: LocalStagingStore, video: str
+) -> None:
+    recorder = Recorder()
+    with pytest.raises(DownloadError) as caught:
+        await limited(staging).download(video, JOB_DIR, recorder)
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.VIDEO_UNAVAILABLE, False)
+    assert "larger than this server allows" in caught.value.message
+    assert recorder.reports == []
+
+
+async def test_a_silent_exit_without_a_file_is_retried(staging: LocalStagingStore) -> None:
+    with pytest.raises(DownloadError) as caught:
+        await limited(staging).download("SilentExit1", JOB_DIR, Recorder())
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.INTERNAL_ERROR, True)
+
+
+async def test_a_download_growing_past_the_size_limit_is_stopped(
+    staging: LocalStagingStore,
+) -> None:
+    recorder = Recorder()
+    with pytest.raises(DownloadError) as caught:
+        await limited(staging).download("GrowsHuge01", JOB_DIR, recorder)
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.VIDEO_UNAVAILABLE, False)
+    assert "10000 bytes" in caught.value.message
+    # Stopped at the first report over the limit, before yt-dlp finished.
+    assert all(r.downloaded_bytes <= 10_000 for r in recorder.reports)
+    assert not staging.exists(f"{JOB_DIR}/GrowsHuge01.webm")
+
+
+async def test_an_announced_size_over_the_limit_is_stopped(staging: LocalStagingStore) -> None:
+    # The size is known up front but yt-dlp did not skip it (e.g. an older yt-dlp).
+    tight = DownloadLimits.model_construct(max_track_duration_s=1800, max_download_bytes=4000)
+    downloader_ = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), limits=tight)
+    with pytest.raises(DownloadError) as caught:
+        await downloader_.download("OkWebm00001", JOB_DIR, Recorder())
+    assert caught.value.code == WorkerErrorCode.VIDEO_UNAVAILABLE
+
+
+async def test_the_default_limits_let_ordinary_songs_through(staging: LocalStagingStore) -> None:
+    result = await downloader(staging).download("HugeFile001", JOB_DIR, Recorder())
+    assert result.size_bytes == 4100 * 8
