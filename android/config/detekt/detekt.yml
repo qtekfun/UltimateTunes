@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Overrides on top of detekt's default configuration (buildUponDefaultConfig), shared by every
+# module through the convention plugins. Keep this list short and justify every entry.
+
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: true
+
+naming:
+  FunctionNaming:
+    # Composables are PascalCase by Compose API guidelines.
+    ignoreAnnotated:
+      - Composable
+
+complexity:
+  LongParameterList:
+    # Composables expose many optional parameters with defaults.
+    ignoreDefaultParameters: true
+
+style:
+  UnusedPrivateMember:
+    # Private @Preview functions are only referenced by the IDE.
+    ignoreAnnotated:
+      - Preview
+  MagicNumber:
+    # detekt's default test exclusions, plus color and typography tokens,
+    # which are literal values by nature.
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/*.kts'
+      - '**/ui/theme/**'

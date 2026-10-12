@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The server image is built from the repository root (it needs VERSION and the migrations).
+# Allowlist: only what server/Dockerfile copies.
+*
+!VERSION
+!server/pyproject.toml
+!server/uv.lock
+!server/src
+!contracts/db/migrations
+**/__pycache__
