@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Test stack: built from source, no persistent volumes, fake YouTube (never real downloads).
+#   docker compose -f server/compose.test.yaml up --build --wait
+# The api answers on http://localhost:8044 (the Android emulator reaches it at 10.0.2.2:8044).
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+
+services:
+  migrate:
+    <<: *hardening
+    build: &build
+      context: ..
+      dockerfile: server/Dockerfile
+    image: ultimatetunes-server:test
+    command: ["migrate"]
+    volumes: [data:/data]
+
+  api:
+    <<: *hardening
+    build: *build
+    image: ultimatetunes-server:test
+    command: ["api"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      UT_LOG_LEVEL: DEBUG
+    ports: ["127.0.0.1:8044:8044"]
+    volumes: [data:/data, music:/music, staging:/staging]
+    networks: [default, internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8044/readyz', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  worker:
+    <<: *hardening
+    build: *build
+    image: ultimatetunes-server:test
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes: [music:/music, staging:/staging, ytdlp:/opt/ytdlp]
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  data:
+  music:
+  staging:
+  ytdlp:
