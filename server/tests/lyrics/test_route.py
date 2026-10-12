@@ -53,7 +53,8 @@ def services(settings: Settings, clock: FakeClock) -> Services:
     conn = migrate.connect(settings.database_file)
     migrate.migrate(conn, CONTRACTS / "db" / "migrations", clock)
     conn.close()
-    svc = build_services(settings, clock)
+    # The real LRCLIB client (answered by respx); `fake_youtube` would select the fake one.
+    svc = build_services(settings.model_copy(update={"fake_youtube": False}), clock)
     svc.authenticator = AllowAll()
     return svc
 
