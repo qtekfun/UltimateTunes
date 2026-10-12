@@ -275,7 +275,10 @@ async def test_each_user_has_a_bucket_of_external_searches(
         assert await songs(USER) == [LIGHTHOUSE, LOW_TIDE, TIDEWATER]
     assert "external search limit" in caplog.text
     assert await songs("another-user") == with_external
-    assert await songs(None) == with_external  # no user, no bucket (internal callers)
+    # No user: one shared bucket, never a bypass.
+    assert await songs(None) == with_external
+    assert await songs(None) == with_external
+    assert await songs(None) == [LIGHTHOUSE, LOW_TIDE, TIDEWATER]
     clock.advance(10)
     assert await songs(USER) == with_external
     # The empty query never reaches YouTube Music and costs nothing.

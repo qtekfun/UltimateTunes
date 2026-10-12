@@ -161,9 +161,10 @@ class SearchService:
 
     def _external_allowed(self, user_id: str | None) -> bool:
         """The caller's bucket of external searches (`search:user:<id>`) still has a token."""
-        if self._limiter is None or user_id is None:
+        if self._limiter is None:
             return True
-        decision = self._limiter.hit(USER_BUCKET + user_id, self._user_limit)
+        # Callers without a user (none today) share one bucket rather than bypassing it.
+        decision = self._limiter.hit(USER_BUCKET + (user_id or "-"), self._user_limit)
         if not decision.allowed:
             log.info("external search limit reached for a user, answering from the library")
         return decision.allowed
