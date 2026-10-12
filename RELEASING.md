@@ -7,6 +7,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Releases are manual and tag-driven, like UltimateCalendar. One version for the server and the app.
 
+## Publishing is paused
+
+Since 2026-10-12 nothing is published: no `v*` tags, no GHCR image, no GitHub Release (GitHub Actions are disabled: no spending, everything lives on the author's homelab; SPEC §11). Until the author decides otherwise, a release is local:
+
+- **APK**: built by the author with the release keystore kept in `~/keys` (signed locally, `./gradlew assembleRelease` with `UT_KEYSTORE_FILE` pointing at it and the other `UT_*` variables set) and installed on the phone with `adb install -r` (never uninstall first).
+- **Server**: the image is built locally (`docker build -f server/Dockerfile .`) on or for the homelab and run there with Compose; migrations first with `ultimatetunes migrate`.
+- `VERSION`, `CHANGELOG.md` and the store changelogs still change only in a release PR, as below.
+
+Everything below describes the tag-driven pipeline **when publishing is enabled** again.
+
 ## Versions
 
 - The version lives in one place: the root `VERSION` file, SemVer (`1.2.3`) or `1.2.3-rc.N` for a release candidate. `android/` and `server/pyproject.toml` read it.
