@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.core.api.internal
 
+import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
@@ -339,9 +340,9 @@ internal class OkHttpTunesApi(
         return exchange(Request.Builder().url(url).get().build()) { answer ->
             val envelope = envelopeOf(answer.body)
             if (envelope == null) {
-                TunesResult.ProtocolError("No subsonic-response in the answer", answer.code)
+                withoutDocument(answer, "rest/$endpoint", "subsonic-response")
             } else {
-                decodeEnvelope(envelope, answer, decode)
+                decodeEnvelope(envelope, answer, "rest/$endpoint", decode)
             }
         }
     }
@@ -371,8 +372,9 @@ internal class OkHttpTunesApi(
     private fun <T> decodeEnvelope(
         envelope: JsonObject,
         answer: HttpAnswer,
+        operation: String,
         decode: (JsonObject) -> T
-    ): TunesResult<T> = readable(answer) {
+    ): TunesResult<T> = readable(answer, operation) {
         val status = json.decodeFromJsonElement(SubsonicStatus.serializer(), envelope)
         val error = status.error
         when {
@@ -460,37 +462,58 @@ internal class OkHttpTunesApi(
             .header("Accept", "application/json, application/problem+json")
             .apply { if (!authenticated) tag(NoAuth::class.java, NoAuth) }
             .build()
+        val operation = (UT_PATH + path.first()).joinToString("/")
         return exchange(request) { answer ->
-            readable(answer) {
+            readable(answer, operation) {
                 if (answer.isSuccessful) {
-                    TunesResult.Success(
-                        decode(answer.body)
-                    )
+                    TunesResult.Success(decode(answer.body))
                 } else {
-                    problem(answer)
+                    problem(answer, operation)
                 }
             }
         }
     }
 
-    /** Runs [read]; JSON that does not match the models becomes [TunesResult.ProtocolError]. */
+    /**
+     * Runs [read]; JSON that does not match the models becomes [TunesResult.ProtocolError] with a
+     * fixed reason. The parser's message is dropped on purpose: it quotes the body, which can hold
+     * a secret (the new key of `POST /ut/v1/keys`).
+     */
     private inline fun <T> readable(
         answer: HttpAnswer,
+        operation: String,
         read: () -> TunesResult<T>
     ): TunesResult<T> = try {
         read()
-    } catch (e: SerializationException) {
-        TunesResult.ProtocolError(e.message ?: "Unreadable response", answer.code)
-    } catch (e: IllegalArgumentException) {
-        TunesResult.ProtocolError(e.message ?: "Unreadable response", answer.code)
+    } catch (_: SerializationException) {
+        TunesResult.ProtocolError("Malformed response for $operation", answer.code)
+    } catch (_: IllegalArgumentException) {
+        TunesResult.ProtocolError("Malformed response for $operation", answer.code)
     }
 
-    private fun problem(answer: HttpAnswer): TunesResult.Failure {
+    /**
+     * An answer without the expected [document] (an HTML page of a reverse proxy, say). A 401 is
+     * still a credential problem, so it is [TunesResult.Unauthorized] on both APIs.
+     */
+    private fun withoutDocument(
+        answer: HttpAnswer,
+        operation: String,
+        document: String
+    ): TunesResult.Failure = if (answer.code == ErrorMapping.HTTP_UNAUTHORIZED) {
+        ErrorMapping.failure(
+            TunesError(ErrorKind.UNKNOWN, "HTTP 401 without a $document"),
+            answer.code
+        )
+    } else {
+        TunesResult.ProtocolError(
+            "HTTP ${answer.code} without a $document for $operation",
+            answer.code
+        )
+    }
+
+    private fun problem(answer: HttpAnswer, operation: String): TunesResult.Failure {
         if (answer.contentType?.contains("json") != true) {
-            return TunesResult.ProtocolError(
-                "HTTP ${answer.code} without a problem document",
-                answer.code
-            )
+            return withoutDocument(answer, operation, "problem document")
         }
         val problem = json.decodeFromString(Problem.serializer(), answer.body)
         val retryAfter = ErrorMapping.retryAfter(answer.retryAfter, clock)

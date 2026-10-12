@@ -160,6 +160,52 @@ class TunesApiErrorsTest {
     }
 
     @Test
+    fun `a non-JSON 401 of a reverse proxy is unauthorized on both APIs`() = runTest {
+        val page = MockResponse(
+            code = 401,
+            headers = headersOf("Content-Type", "text/html", "WWW-Authenticate", "Basic"),
+            body = "<html>401 Authorization Required</html>"
+        )
+        server.dispatcher.override("rest/ping") { page }
+        server.dispatcher.override("ut/v1/me") { page }
+        val api = server.createApi(clock)
+        val rest = api.ping()
+        assertTrue(rest is TunesResult.Unauthorized, "$rest")
+        assertEquals(401, (rest as TunesResult.Unauthorized).httpStatus)
+        val ut = api.me()
+        assertTrue(ut is TunesResult.Unauthorized, "$ut")
+    }
+
+    @Test
+    fun `a malformed answer never repeats the body, which may hold a secret`() = runTest {
+        val secret = FakeTunesServer.API_KEY
+        server.dispatcher.override("ut/v1/keys") {
+            MockResponse(
+                code = 201,
+                headers = headersOf("Content-Type", "application/json"),
+                body = "{\"key\": 42, \"secret\": \"$secret\"}"
+            )
+        }
+        server.dispatcher.override("rest/getSong") {
+            json(
+                200,
+                "{\"subsonic-response\":{\"status\":\"ok\",\"song\":{\"title\":\"$secret\"}}}"
+            )
+        }
+        val api = server.createApi(clock)
+        val created = api.createKey(server.baseUrl, "alice", "pw", "Pixel 9")
+        assertTrue(created is TunesResult.ProtocolError, "$created")
+        created as TunesResult.ProtocolError
+        assertEquals("Malformed response for ut/v1/keys", created.reason)
+        assertFalse(created.toString().contains(secret))
+        assertFalse(created.toString().contains("utk_"))
+
+        val song = api.song(SongId("s")) as TunesResult.ProtocolError
+        assertEquals("Malformed response for rest/getSong", song.reason)
+        assertFalse(song.toString().contains(secret))
+    }
+
+    @Test
     fun `a non-JSON error page is a protocol error`() = runTest {
         server.dispatcher.override("ut/v1/me") {
             MockResponse(

@@ -96,7 +96,12 @@ enum class ErrorKind(val isAuthentication: Boolean = false) {
     INVALID_API_KEY(isAuthentication = true),
     ACCOUNT_DISABLED(isAuthentication = true),
 
-    /** Authenticated but not allowed. OpenSubsonic code 50 also covers a disabled account. */
+    /**
+     * Authenticated but not allowed. On `/rest` this is code 50, which the contract also uses for
+     * a disabled account (`ACCOUNT_DISABLED` exists only on `/ut/v1`), so the UI should not
+     * claim "not your playlist" from a `/rest` FORBIDDEN alone: say "not allowed" and, if it
+     * keeps happening, check the account with `TunesApi.me()`.
+     */
     FORBIDDEN,
     NOT_FOUND,
     CONFLICT,

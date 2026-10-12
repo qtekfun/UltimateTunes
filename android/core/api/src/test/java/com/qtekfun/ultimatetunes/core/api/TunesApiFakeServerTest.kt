@@ -551,6 +551,11 @@ class TunesApiFakeServerTest {
                 assertEquals("audio/ogg", it.header("Content-Type"))
                 assertEquals("bytes", it.header("Accept-Ranges"))
                 assertTrue(it.body.bytes().isNotEmpty())
+                // The key is added by a *network* interceptor: the request the caller (Media3)
+                // sees on the response stays credential-free. An application interceptor would
+                // put the key here.
+                assertNull(it.request.url.queryParameter("apiKey"))
+                assertFalse(it.request.url.toString().contains(FakeTunesServer.API_KEY))
             }
             assertEquals(FakeTunesServer.API_KEY, server.takeRequest().url.queryParameter("apiKey"))
 
