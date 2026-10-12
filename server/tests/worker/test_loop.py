@@ -584,7 +584,9 @@ async def test_build_worker_picks_the_downloader(settings: Settings) -> None:
         )
         assert isinstance(fake.downloader, FakeDownloader)
         assert (fake.runtime, fake.worker_id) == (None, "w9")
-        real = build_worker(settings, WorkerSettings(), client)
+        real = build_worker(
+            settings.model_copy(update={"fake_youtube": False}), WorkerSettings(), client
+        )
         assert isinstance(real.downloader, YtDlpDownloader)
         assert real.runtime is not None
         assert real.worker_id == loop.default_worker_id()
