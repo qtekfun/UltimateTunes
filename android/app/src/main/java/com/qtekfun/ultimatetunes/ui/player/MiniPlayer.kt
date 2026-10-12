@@ -46,8 +46,8 @@ private val SwipeThreshold = 56.dp
 
 /**
  * The mini player pinned above the tab bar: artwork, title, artist, play/pause and next. Tap opens
- * the full player; swipe left or right skips (also TalkBack actions). [artworkModifier] carries
- * the shared-element transition into the full player.
+ * the full player; swipe left or right skips (also TalkBack actions). [artworkModifier] decorates
+ * the artwork.
  */
 @Composable
 fun MiniPlayer(

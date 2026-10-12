@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -37,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -76,6 +78,7 @@ import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** Test tags of the full player. */
 const val FULL_PLAYER_TAG = "player.full"
@@ -98,8 +101,8 @@ private const val PAUSED_ARTWORK_SCALE = 0.84f
 
 /**
  * The full player (SPEC §5): big artwork, colours from the artwork over its blurred copy,
- * scrubber, controls and the queue sheet. [artworkModifier] carries the shared-element
- * transition from the mini player. Dragging down or [onCollapse] closes it.
+ * scrubber, controls and the queue sheet. [artworkModifier] decorates the big artwork.
+ * Dragging down moves it with the finger and, past a threshold, closes it, as [onCollapse] does.
  */
 @Composable
 fun FullPlayer(
@@ -119,17 +122,29 @@ fun FullPlayer(
     LaunchedEffect(track.id, showLyrics) { if (showLyrics) onShowLyrics(track.id) }
     val collapse by rememberUpdatedState(onCollapse)
     val threshold = with(LocalDensity.current) { CollapseThreshold.toPx() }
+    // The player follows the finger down; past the threshold it closes, otherwise it springs back.
+    val drag = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer { translationY = drag.value }
             .background(Brush.verticalGradient(listOf(colors.top, colors.bottom)))
             .pointerInput(threshold) {
-                var total = 0f
                 detectVerticalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = { if (total > threshold) collapse() }
-                ) { _, dragAmount -> total += dragAmount }
+                    onDragEnd = {
+                        if (drag.value > threshold) {
+                            collapse()
+                        } else {
+                            scope.launch { drag.animateTo(0f) }
+                        }
+                    },
+                    onDragCancel = { scope.launch { drag.animateTo(0f) } }
+                ) { change, dragAmount ->
+                    change.consume()
+                    scope.launch { drag.snapTo((drag.value + dragAmount).coerceAtLeast(0f)) }
+                }
             }
             .testTag(FULL_PLAYER_TAG)
     ) {
