@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Users, API keys and authentication. Owned by PLAN T04 (100 % coverage).
 
-T02 ships `build_authenticator` returning `PendingAuthenticator`, which refuses every
-authenticated call with `FeatureNotImplemented`; T04 replaces it with the real
-`core.authn.Authenticator` (API keys, key-as-password, errors 42/43/44, rate limit, lockout)
-and fills `routes` (`/ut/v1/me`, `/ut/v1/keys`).
+`build_authenticator` gives `core.services` the real `core.authn.Authenticator`: an
+`AuthService` (`service.py`: API keys, key as password, errors 10/40/42/43/44/50, rate limit
+and lockout, audit log). `PendingAuthenticator` is only the placeholder `build_services` holds
+while it builds the services the real one needs.
 """
 
 from collections.abc import Mapping, Sequence
@@ -19,16 +19,20 @@ if TYPE_CHECKING:
 
 
 class PendingAuthenticator:
+    """Refuses every call: in place only until `build_authenticator` replaces it."""
+
     def authenticate_subsonic(
         self, params: Mapping[str, Sequence[str]], client_ip: str | None
     ) -> Principal:
-        raise FeatureNotImplemented("Authentication is not implemented yet")
+        raise FeatureNotImplemented("Authentication is not ready yet")
 
     def authenticate_api_key(
         self, header_key: str | None, query_key: str | None, client_ip: str | None
     ) -> Principal:
-        raise FeatureNotImplemented("Authentication is not implemented yet")
+        raise FeatureNotImplemented("Authentication is not ready yet")
 
 
 def build_authenticator(services: "Services") -> Authenticator:
-    return PendingAuthenticator()
+    from ultimatetunes.auth.service import AuthService  # noqa: PLC0415 - avoids an import cycle
+
+    return AuthService.from_services(services)
