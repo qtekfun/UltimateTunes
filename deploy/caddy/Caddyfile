@@ -86,6 +86,17 @@ music.example.org {
 	# 		events 5
 	# 		window 1m
 	# 	}
+	# 	# The web player's sign-in form (a password check open to the Internet). The api adds
+	# 	# its own per-IP limit and a growing per-username delay.
+	# 	zone web_login_per_ip {
+	# 		match {
+	# 			method POST
+	# 			path /web/login
+	# 		}
+	# 		key {remote_host}
+	# 		events 10
+	# 		window 1m
+	# 	}
 	# }
 
 	reverse_proxy 127.0.0.1:8044 {

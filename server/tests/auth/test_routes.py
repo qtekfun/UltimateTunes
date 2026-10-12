@@ -154,12 +154,12 @@ def test_create_key_with_a_key_of_another_user(client: TestClient, auth: AuthSer
 
 def test_create_key_lockout_answers_429(client: TestClient, auth: AuthService) -> None:
     body = {"username": "alice", "password": "guess", "name": "x"}
-    for _ in range(2):
-        problem(client.post("/ut/v1/keys", json=body), 401, "authentication_failed")
+    problem(client.post("/ut/v1/keys", json=body), 401, "authentication_failed")
+    # From outside, the username waits (1 s after one failure, growing) instead of a lockout.
     body["password"] = ADMIN_PASSWORD
     r = client.post("/ut/v1/keys", json=body)
     problem(r, 429, "rate_limited")
-    assert r.headers["retry-after"] == "60"
+    assert r.headers["retry-after"] == "1"
 
 
 def test_create_key_request_hides_the_password() -> None:

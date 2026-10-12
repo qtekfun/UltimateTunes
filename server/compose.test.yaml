@@ -28,6 +28,8 @@ services:
     build: *build
     image: ultimatetunes-server:test
     command: ["api"]
+    # As in compose.yaml: the api never runs anything from /tmp.
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     depends_on:
       migrate:
         condition: service_completed_successfully

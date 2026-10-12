@@ -10,6 +10,11 @@ the limits; this module only does the arithmetic and keeps the state in `rate_li
   A locked key is refused until the lockout ends.
 - `record_failure(key, ...)` counts a failure (wrong password, invalid key); reaching
   `max_failures` locks the key for `lockout_s` and starts a new count.
+- `record_failure_backoff(key, base_s=..., max_s=...)` counts a failure and locks the key for
+  a delay that doubles with each consecutive failure (`base_s`, `2 * base_s`, ... at most
+  `max_s`). The count is kept until `record_success` (or an idle purge): it slows a guesser
+  down without ever locking the key for long.
+- `failures(key)` is the current failure count (0 for an unknown key).
 - `record_success(key)` clears the failure count.
 - `purge_idle(idle_s)` forgets keys with no activity (hit, failure or success) for `idle_s`
   and no running lockout. So a failure count lives as long as failures keep coming less than
@@ -57,6 +62,12 @@ class RateLimiter(Protocol):
         """Refused when this failure locked the key."""
         ...
 
+    def record_failure_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+        """Counts a failure and locks the key for the backoff delay of that count."""
+        ...
+
+    def failures(self, key: str) -> int: ...
+
     def record_success(self, key: str) -> None: ...
 
     def purge_idle(self, idle_s: float) -> int:
@@ -66,6 +77,18 @@ class RateLimiter(Protocol):
 
 def _ceil_s(seconds: float) -> int:
     return max(1, math.ceil(seconds))
+
+
+# Past this many doublings every sensible `max_s` is reached; it keeps `2 ** n` small.
+_MAX_DOUBLINGS = 40
+
+
+def backoff_delay(failures: int, *, base_s: float, max_s: float) -> float:
+    """`base_s * 2 ** (failures - 1)`, at most `max_s` (shared by every implementation)."""
+    if base_s <= 0 or max_s <= 0:
+        raise ValueError("base_s and max_s must be positive")
+    doublings = min(max(failures, 1) - 1, _MAX_DOUBLINGS)
+    return float(min(max_s, base_s * 2**doublings))
 
 
 @dataclass
@@ -165,6 +188,22 @@ class SqliteRateLimiter:
                 decision = Decision(allowed=False, retry_after_s=_ceil_s(lockout_s))
             self._save(conn, key, bucket)
         return decision
+
+    def record_failure_backoff(self, key: str, *, base_s: float, max_s: float) -> Decision:
+        backoff_delay(1, base_s=base_s, max_s=max_s)  # refuses bad parameters before writing
+        now = self._clock.now()
+        with self._db.transaction() as conn:
+            bucket = self._load(conn, key) or _Bucket(_FULL, format_ts(now), 0, None)
+            bucket.failures += 1
+            delay = backoff_delay(bucket.failures, base_s=base_s, max_s=max_s)
+            bucket.locked_until = format_ts(now + timedelta(seconds=delay))
+            self._save(conn, key, bucket)
+        return Decision(allowed=False, retry_after_s=_ceil_s(delay))
+
+    def failures(self, key: str) -> int:
+        with self._db.read() as conn:
+            bucket = self._load(conn, key)
+        return 0 if bucket is None else bucket.failures
 
     def record_success(self, key: str) -> None:
         with self._db.transaction() as conn:

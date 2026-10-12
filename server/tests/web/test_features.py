@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from tests.web.conftest import People, csrf_of, ids, login, make_client
 from tests.web.test_pages import HX, songs_of
 from ultimatetunes.auth.service import AuthService
+from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import Services
 from ultimatetunes.web.security import LANG_COOKIE, SESSION_COOKIE
 
@@ -187,7 +188,7 @@ def test_language_choice_overrides_the_browser(client: TestClient, ana: str) -> 
     assert bad.status_code == 400
 
 
-def test_change_password(app_factory: object, people: People) -> None:
+def test_change_password(app_factory: object, people: People, clock: FakeClock) -> None:
     new = secrets.token_urlsafe(18)
     with make_client(app_factory) as laptop, make_client(app_factory) as phone:
         csrf = login(laptop, people.ana)
@@ -198,6 +199,7 @@ def test_change_password(app_factory: object, people: People) -> None:
         )
         assert wrong.status_code == 400
         assert "The current password is wrong." in wrong.text
+        clock.advance(1)  # the wrong guess delays the next check of the username by 1 s
         mismatch = laptop.post(
             "/web/settings/password",
             data={"csrf": csrf, "current": people.ana.password, "new": new, "confirm": new + "x"},
