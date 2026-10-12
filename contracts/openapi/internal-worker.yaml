@@ -61,7 +61,8 @@ info:
        The api either reserves `libraryPath` for this job (`merged: false`), or finds that the recording is
        already in the library (`merged: true`, `trackId` of the existing track).
     2. Only when `merged: false`: the worker moves the file into `/music` at `libraryPath` atomically (never
-       overwriting another file).
+       overwriting another file). If the same file (same SHA-256) is already there, register adopted it (a retry
+       after a crash between the move and `complete`) and the worker skips the move.
     3. `complete`. The api checks the file (unless merged), sets the track `ready` (or applies the merge, see
        `contracts/ids.md`) and the job `ready`.
     A duplicate file never reaches `/music`; the api cleans the staging directory as usual.
@@ -270,7 +271,7 @@ paths:
         Called after the worker built and tagged the archive file in its staging directory (`stagingPath`), and **before** anything is written to `/music`.
         - **Same recording already in the library** (same MusicBrainz recording id as a `ready` track): the api answers `merged: true` with that track's ids and records the decision on the job (`jobs.merge_into_track_id`). Nothing is reserved; the worker must **not** move the file into `/music`. The merge itself (alias, stars, playlist entries, history) is applied by `complete` (contracts/ids.md).
         - **Otherwise**: the api creates or reuses the artist and album (by MusicBrainz id, else YouTube id, else normalized name), fills the pending track's metadata and file columns (status stays `pending`), and reserves `libraryPath` for this job (`jobs.library_path`, unique). Answer `merged: false`. The worker then moves the file there.
-        Idempotent on (`jobId`, `libraryPath`): repeating it returns the same result. Registering again with another `libraryPath` (a retry) replaces this job's reservation. A path that another track or job already holds, or a file that already exists there, is `conflict` (409). The reservation is released when the job goes back to `queued` or ends without `ready`.
+        Idempotent on (`jobId`, `libraryPath`): repeating it returns the same result. Registering again with another `libraryPath` (a retry) replaces this job's reservation. A path that another track or job already holds is `conflict` (409). A file that already exists at `libraryPath` is **adopted** (no conflict) when no track row owns that path and its SHA-256 equals `file.sha256`: it is this job's own file, moved by an earlier attempt that died before `complete`, and the worker skips the move. Any other existing file there is `conflict`. The reservation is released when the job goes back to `queued` or ends without `ready`.
       requestBody:
         required: true
         content:
