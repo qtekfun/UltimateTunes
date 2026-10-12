@@ -19,6 +19,7 @@ from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.ratelimit import SqliteRateLimiter
 from ultimatetunes.db import Database
 from ultimatetunes.errors import InvalidId, NotFound, UpstreamUnavailable
+from ultimatetunes.ids.resolve import TrackRef
 from ultimatetunes.lyrics.lrclib import LrclibClient
 from ultimatetunes.lyrics.repository import LyricsRepository, LyricsTrack, StoredLyrics
 from ultimatetunes.lyrics.service import (
@@ -176,6 +177,36 @@ def test_not_found_is_a_negative_entry_retried_later(
     assert row.retry_after is None
 
 
+@pytest.mark.parametrize("lyrics", [None, "", "  \n "])
+def test_record_without_lyrics_is_a_negative_entry(
+    service: LyricsService,
+    db: Database,
+    clock: FakeClock,
+    lrclib: respx.MockRouter,
+    lyrics: str | None,
+) -> None:
+    add_track(db, clock)
+    body = {
+        "id": 4242009,
+        "instrumental": False,
+        "plainLyrics": lyrics,
+        "syncedLyrics": lyrics,
+    }
+    route = lrclib.get("/api/get").respond(200, json=body)
+    assert service.structured_lyrics(TRACK_ID) == []
+    row = stored(db)
+    assert row is not None
+    assert row.not_found
+    assert row.retry_after == "2026-10-19T08:00:00.000Z"
+    assert (row.synced_lrc, row.plain_text) == (None, None)
+    clock.advance(86400)
+    assert service.structured_lyrics(TRACK_ID) == []
+    assert route.call_count == 1
+    clock.advance(6 * 86400)
+    found(lrclib)
+    assert len(service.structured_lyrics(TRACK_ID)) == 2
+
+
 def test_due_negative_entry_stays_empty_when_lrclib_fails(
     service: LyricsService, db: Database, clock: FakeClock, lrclib: respx.MockRouter
 ) -> None:
@@ -314,7 +345,7 @@ def test_unknown_library_id(service: LyricsService) -> None:
         service.structured_lyrics("0199d6a2-4c1e-7b3a-9f10-2a6c8e01ffff")
 
 
-TRACK = LyricsTrack(TRACK_ID, "ready", "T", "A", None, None, None)
+TRACK = LyricsTrack(TRACK_ID, "T", "A", None, None)
 
 
 def row(**changes: object) -> StoredLyrics:
@@ -375,3 +406,15 @@ def test_render_malformed_lrc_with_plain_text_serves_the_plain_text() -> None:
 )
 def test_render_nothing_to_show(stored_row: StoredLyrics) -> None:
     assert render(TRACK, stored_row) == []
+
+
+def test_track_deleted_after_resolution_is_not_found(
+    service: LyricsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gone = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01fffe"
+    monkeypatch.setattr(
+        "ultimatetunes.lyrics.repository.resolve_track",
+        lambda conn, song_id: TrackRef(gone, "ready"),
+    )
+    with pytest.raises(NotFound):
+        service.structured_lyrics(gone)

@@ -11,8 +11,9 @@ Lookup of a library track:
    TtlCache entry per track), and within our own token bucket (`RateLimiter`, one key for the
    whole server). A refused or failed lookup raises `UpstreamUnavailable` (error 0) when
    nothing is stored, or answers the stale negative entry (empty list) when one exists.
-4. Found → stored (`source = 'lrclib'`, `source_ref` = the LRCLIB record id). 404 → stored as
-   a negative entry retried after `lyrics_not_found_retry_days`.
+4. Found → stored (`source = 'lrclib'`, `source_ref` = the LRCLIB record id). 404, or a record
+   that is not instrumental but has neither synced nor plain lyrics → stored as a negative
+   entry retried after `lyrics_not_found_retry_days`.
 
 External songs (`yt:` ids without a library track) have no row to store into: they answer an
 empty list and LRCLIB is not asked (SPEC §11, T10).
@@ -127,6 +128,8 @@ class LyricsService:
     def _save(self, track: LyricsTrack, outcome: _Outcome) -> StoredLyrics:
         now = self.clock.now()
         record = outcome.record
+        if record is not None and not record.instrumental and not _has_text(record):
+            record = None  # a record without lyrics: retried later, like a 404
         row = StoredLyrics(
             track_id=track.id,
             source=SOURCE,
@@ -154,6 +157,10 @@ class LyricsService:
         with self.db.transaction() as conn:
             LyricsRepository(conn).save(row)
         return row
+
+
+def _has_text(record: LrclibRecord) -> bool:
+    return bool((record.synced_lyrics or "").strip() or (record.plain_lyrics or "").strip())
 
 
 def _entry(track: LyricsTrack, lang: str, synced: bool, lines: object) -> dict[str, object]:
