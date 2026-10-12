@@ -24,7 +24,15 @@
     <string name="connect_button">Conectar</string>
     <string name="connect_checking">Comprobando…</string>
     <string name="connect_scan_qr">Escanear código QR</string>
-    <string name="connect_qr_unavailable">Escanear el código QR del panel de administración llegará en una versión posterior. De momento, copia la clave desde el panel.</string>
+    <string name="connect_qr_how">Abre la cámara del móvil y apúntala al código QR del panel de administración (Claves). La cámara te ofrecerá abrir UltimateTunes.</string>
+    <string name="connect_link_title">¿Conectar con %1$s?</string>
+    <string name="connect_link_message">Un enlace ha abierto UltimateTunes con la dirección de un servidor y una clave de API. Continúa solo si viene del panel de administración de tu propio servidor.</string>
+    <string name="connect_link_replaces">Sustituye a tu conexión actual en cuanto el servidor y la clave nuevos funcionen.</string>
+    <string name="connect_link_refused_title">No se puede usar este enlace</string>
+    <string name="connect_link_error_malformed">Esto no es un enlace de conexión de UltimateTunes. Crea una clave en el panel de administración y vuelve a escanear su código QR.</string>
+    <string name="connect_link_error_invalid_url">La dirección del servidor de este enlace no es válida.</string>
+    <string name="connect_link_error_insecure_url">La dirección del servidor de este enlace usa http://. Esta app solo se conecta a servidores por HTTPS.</string>
+    <string name="connect_link_error_invalid_key">La clave de API de este enlace no es una clave válida de UltimateTunes.</string>
     <string name="connect_help">Crea una clave para este dispositivo en el panel de administración de tu servidor. Solo se muestra una vez.</string>
     <string name="connect_error_invalid_url">Eso no parece la dirección de un servidor.</string>
     <string name="connect_error_insecure_url">Usa una dirección https://: esta app solo se conecta a servidores por HTTPS.</string>

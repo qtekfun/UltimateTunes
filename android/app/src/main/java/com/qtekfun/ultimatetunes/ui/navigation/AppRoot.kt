@@ -10,12 +10,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qtekfun.ultimatetunes.ui.connect.ConnectLinkRoute
 import com.qtekfun.ultimatetunes.ui.connect.ConnectRoute
 import com.qtekfun.ultimatetunes.ui.designsystem.LocalReconnect
 
 /**
  * The app's root: the Connect screen while no working server is configured, else the tabs
  * ([MainScreen]). Screens that hit a refused key offer "Connect Again" through [LocalReconnect].
+ * A connect link (the admin panel's QR code) asks for confirmation over either of them.
  */
 @Composable
 fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
@@ -31,6 +33,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                     onNotificationsAnswered = viewModel::onNotificationsAsked
                 )
             }
+            ConnectLinkRoute()
         }
     }
 }

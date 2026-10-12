@@ -80,8 +80,9 @@ fun ConnectRoute(viewModel: ConnectViewModel = hiltViewModel()) {
     )
 }
 
+/** The message of each check failure, shared with the connect-link dialog. */
 @StringRes
-private fun ConnectError.messageRes(): Int = when (this) {
+internal fun ConnectError.messageRes(): Int = when (this) {
     ConnectError.INVALID_URL -> R.string.connect_error_invalid_url
     ConnectError.INSECURE_URL -> R.string.connect_error_insecure_url
     ConnectError.INVALID_KEY -> R.string.connect_error_invalid_key
@@ -91,7 +92,9 @@ private fun ConnectError.messageRes(): Int = when (this) {
     ConnectError.SERVER_ERROR -> R.string.connect_error_server
 }
 
-/** Server address and API key (RF-11); the QR code of the admin panel comes later. */
+/**
+ * Server address and API key (RF-11), or how to use the admin panel's QR code with the camera app.
+ */
 @Composable
 fun ConnectScreen(
     state: ConnectUiState,
@@ -257,8 +260,8 @@ private fun ConnectActions(state: ConnectUiState, onConnect: () -> Unit) {
             Text(stringResource(R.string.connect_button))
         }
     }
-    // Placeholder for the QR code of the admin panel (RF-11); scanning needs a camera library
-    // that is not approved yet.
+    // The admin panel's QR code is read by the phone's own camera app, which opens the
+    // `ultimatetunes://connect` link (ConnectLinkViewModel): no camera library in the app.
     OutlinedButton(
         onClick = { qrInfoShown = true },
         shape = Dimens.PillShape,
@@ -273,7 +276,7 @@ private fun ConnectActions(state: ConnectUiState, onConnect: () -> Unit) {
     }
     if (qrInfoShown) {
         Text(
-            text = stringResource(R.string.connect_qr_unavailable),
+            text = stringResource(R.string.connect_qr_how),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
