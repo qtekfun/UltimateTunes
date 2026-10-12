@@ -38,7 +38,7 @@ from ultimatetunes.core.services import Services
 from ultimatetunes.errors import NotFound, PathRejected, StreamFailed, TooManyListeners
 from ultimatetunes.ids.resolve import TrackRef, materialize_song, resolve_track
 from ultimatetunes.ids.virtual import VirtualId
-from ultimatetunes.jobs.queue import PRIORITY_STREAM
+from ultimatetunes.jobs.queue import PRIORITY_STREAM, Job
 from ultimatetunes.library.stream import (
     CHUNK,
     CONTENT_TYPES,
@@ -183,7 +183,7 @@ class StreamingWhileDownloading:
         if video is None:
             raise NotFound("Song not found")
         if head:
-            return await self._head(req, video, download=download)
+            return await self._head(req, target, video, download=download)
         job_id = await self._request(req, target, video)
         if job_id is None:
             return await self._library(req, download=download)
@@ -233,8 +233,28 @@ class StreamingWhileDownloading:
 
     # ------------------------------------------------------------------ HEAD
 
-    async def _head(self, req: "SubsonicRequest", video: str, *, download: bool) -> Response:
-        job = await run_in_threadpool(self._services.jobs.by_video, video)
+    def _job_of(self, track_id: str) -> Job | None:
+        with self._services.db.read() as conn:
+            found = conn.execute(
+                "SELECT id FROM jobs WHERE kind = 'download' AND track_id = ?", (track_id,)
+            ).scalar()
+        return None if found is None else self._services.jobs.get(str(found))
+
+    async def _head(
+        self,
+        req: "SubsonicRequest",
+        target: TrackRef | VirtualId,
+        video: str,
+        *,
+        download: bool,
+    ) -> Response:
+        job = None
+        if isinstance(target, VirtualId):
+            # Checked like a GET (an unknown id is not found), but nothing is written: a
+            # virtual id has no track, so no job either.
+            await self._services.catalog.track(video)
+        else:
+            job = await run_in_threadpool(self._job_of, target.id)
         plan = plan_start(view_of(job)) if job is not None else Wait()
         if isinstance(plan, Fail):
             raise StreamFailed()

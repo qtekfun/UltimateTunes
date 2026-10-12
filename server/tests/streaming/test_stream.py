@@ -96,7 +96,7 @@ async def test_two_clients_share_one_download(live: Live) -> None:
 
 
 async def test_a_failure_mid_stream_cuts_the_transfer_and_retries_get_error_70(
-    live: Live,
+    live: Live, caplog: pytest.LogCaptureFixture
 ) -> None:
     async with anyio.create_task_group() as group:
         listening = start(live, group)
@@ -108,6 +108,9 @@ async def test_a_failure_mid_stream_cuts_the_transfer_and_retries_get_error_70(
     # Cut before Content-Length: the client sees a broken transfer, never a short success.
     assert isinstance(listening.error, httpx.RemoteProtocolError)
     assert len(listening.body) == 300
+    # One warning says why; it is not an unexpected error of the app.
+    assert "stream of job" in caplog.text
+    assert "unhandled error" not in caplog.text
     again = await live.client.get("/rest/stream", params=live.params(live.song()))
     assert again.status_code == 404
     assert envelope_code(again) == 70

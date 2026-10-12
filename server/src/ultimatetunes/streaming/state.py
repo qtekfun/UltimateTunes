@@ -23,8 +23,9 @@ Once the headers are out, `step` moves one listener (`Cursor`) forward:
 - `Wait` for the next report when it has sent everything reported so far;
 - `Done` once it has sent its whole range (or the whole file when chunked);
 - `Abort` (cut the transfer without a clean end) when the job failed or is gone, when the size
-  at `finished` differs from the announced one, or when a retry downloads another format or
-  another exact size;
+  at `finished` differs from the announced one (or the file grows past it), when a retry
+  downloads another format or another exact size, or when a chunked listener that followed a
+  retry has already sent more bytes than the retry's final file holds;
 - `Follow` a retry that downloads the same format and size: the bytes are the same, so the
   listener goes on from the new attempt's file at its offset.
 
@@ -187,14 +188,28 @@ def _follow(cursor: Cursor, view: JobView) -> Wait | Abort | Follow:
     return Follow(replace(cursor, attempt_seq=view.attempt_seq))
 
 
+def _broken(cursor: Cursor, view: JobView) -> Abort | None:
+    """Bytes that cannot be the ones this listener announced or already sent."""
+    if cursor.size is not None and view.bytes_downloaded > cursor.size:
+        return Abort("the download grew past the announced size")
+    if not view.complete:
+        return None
+    if cursor.size is not None and view.bytes_downloaded != cursor.size:
+        return Abort("the final size differs from the announced one")
+    if cursor.offset > view.bytes_downloaded:
+        # A chunked listener that followed a retry and already sent more than its final file.
+        return Abort("the listener passed the end of the final file")
+    return None
+
+
 def _read_on(cursor: Cursor, view: JobView) -> Read | Wait | Done | Abort:
     """The listener and the worker are on the same attempt."""
+    broken = _broken(cursor, view)
+    if broken is not None:
+        return broken
     end = cursor.end
-    if view.complete:
-        if cursor.size is not None and view.bytes_downloaded != cursor.size:
-            return Abort("the final size differs from the announced one")
-        if end is None:
-            end = view.bytes_downloaded
+    if view.complete and end is None:
+        end = view.bytes_downloaded
     if end is not None and cursor.offset >= end:
         return Done()
     available = view.bytes_downloaded if end is None else min(view.bytes_downloaded, end)

@@ -12,11 +12,12 @@ it no longer needs go (`state.cleanup_plan`):
 
 The janitor reads the job before deleting, and a sweep lists the directories before reading the
 jobs: a directory that exists was created by a claim that the job row already shows, so the
-attempt a worker is writing is never deleted.
+attempt a worker is writing is never deleted. The sweep also removes attempt directories left
+empty and job directories with nothing left in them (`rmdir`, which refuses a directory that
+is not empty).
 """
 
 import logging
-from collections import defaultdict
 
 from ultimatetunes.core.inflight import InFlight
 from ultimatetunes.core.storage import StagingStore
@@ -26,6 +27,9 @@ from ultimatetunes.streaming.state import cleanup_plan
 from ultimatetunes.streaming.watch import view_of
 
 log = logging.getLogger(__name__)
+
+# Any valid name: its parent is the staging root.
+PROBE = ".janitor"
 
 
 def listeners_key(job_id: str) -> str:
@@ -55,27 +59,51 @@ class StagingJanitor:
         plan = cleanup_plan(view_of(job), self._inflight.listeners(listeners_key(job_id)))
         if plan.whole:
             return int(self._delete(job_id))
-        return sum(self._delete(f"{job_id}/{seq}") for seq in range(1, plan.upto + 1))
+        deleted = sum(self._delete(f"{job_id}/{seq}") for seq in range(1, plan.upto + 1))
+        return deleted + self._remove_if_empty(job_id)
 
-    def _present(self) -> dict[str, set[str]]:
-        """Job directory → the attempt directories that hold files (`<jobId>/<attemptSeq>/…`)."""
-        found: dict[str, set[str]] = defaultdict(set)
-        for rel in self._staging.walk():
-            parts = rel.split("/")
-            if len(parts) >= 3 and parts[1].isdigit():  # noqa: PLR2004 - job/attempt/file
-                found[parts[0]].add(parts[1])
+    def _directories(self) -> dict[str, set[str]]:
+        """Job directory → its attempt directories (`<jobId>/<attemptSeq>/`), empty ones too.
+        Listed on the store's directory tree (`local_path`); other entries are left alone."""
+        try:
+            root = self._staging.local_path(PROBE).parent
+            jobs = [e for e in root.iterdir() if e.is_dir() and not e.is_symlink()]
+        except (OSError, PathRejected) as exc:
+            log.warning("staging sweep cannot list %s: %s", "/staging", exc)
+            return {}
+        found: dict[str, set[str]] = {}
+        for job in sorted(jobs):
+            try:
+                attempts = {
+                    e.name
+                    for e in job.iterdir()
+                    if e.name.isdigit() and e.is_dir() and not e.is_symlink()
+                }
+            except OSError:
+                continue
+            found[job.name] = attempts
         return found
 
+    def _remove_if_empty(self, rel: str) -> bool:
+        """`rmdir`: only an empty directory goes (a worker that creates it again is fine)."""
+        try:
+            self._staging.local_path(rel).rmdir()
+        except (OSError, PathRejected):
+            return False
+        return True
+
     def sweep(self) -> int:
-        """Deletes every attempt directory nobody needs; returns how many."""
+        """Deletes every attempt directory nobody needs, and job directories left empty;
+        returns how many directories went."""
         deleted = 0
-        for job_id, attempts in sorted(self._present().items()):
+        for job_id, attempts in self._directories().items():
             job = self._jobs.get(job_id)
             plan = cleanup_plan(view_of(job), self._inflight.listeners(listeners_key(job_id)))
             if plan.whole:
                 deleted += self._delete(job_id)
                 continue
-            for seq in sorted(attempts):
+            for seq in sorted(attempts, key=int):
                 if plan.covers(int(seq)):
                     deleted += self._delete(f"{job_id}/{seq}")
+            deleted += self._remove_if_empty(job_id)
         return deleted

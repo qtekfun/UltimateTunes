@@ -100,9 +100,10 @@ def test_the_sweep_cleans_what_nobody_needs(setup: Setup) -> None:
     setup.claim()
     setup.file("stray.txt")  # not a job directory: untouched
     setup.file(f"{running}/notes.txt")  # not an attempt directory: untouched
-    assert setup.janitor.sweep() == 2
+    # ready/, failed/1/ and then failed/ itself, left empty.
+    assert setup.janitor.sweep() == 3
     assert not setup.exists(ready)
-    assert not setup.exists(f"{failed}/1")
+    assert not setup.exists(failed)
     assert setup.exists(f"{running}/1/x.webm")
     assert setup.exists("stray.txt")
     assert setup.exists(f"{running}/notes.txt")
@@ -121,3 +122,43 @@ def test_a_failed_delete_is_logged_and_skipped(
     monkeypatch.setattr(setup.staging, "delete", broken)
     assert setup.janitor.clean_job(job) == 0
     assert "staging cleanup" in caplog.text
+
+
+def test_the_sweep_removes_empty_directories(setup: Setup) -> None:
+    failed = setup.job("t1", "Rb8Tn3ZcYv0")
+    setup.claim()
+    setup.state(failed, "failed")
+    (setup.root / failed / "1" / "x.webm").unlink()  # an empty attempt directory
+    running = setup.job("t2", "Wq5Jd7HsKe2")
+    setup.claim()
+    (setup.root / running / "1" / "x.webm").unlink()  # the current attempt, still empty
+    (setup.root / running / "scratch").mkdir()  # not an attempt directory
+    (setup.root / "0199d6a2-4c1e-7b3a-9f10-2a6c8e019998").mkdir()  # an empty orphan
+    assert setup.janitor.sweep() == 3
+    assert not setup.exists(failed)
+    assert not setup.exists("0199d6a2-4c1e-7b3a-9f10-2a6c8e019998")
+    assert setup.exists(f"{running}/1")
+    assert setup.exists(f"{running}/scratch")
+
+
+def test_a_sweep_that_cannot_list_staging_does_nothing(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refused(rel: str) -> Path:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(setup.staging, "local_path", refused)
+    assert setup.janitor.sweep() == 0
+    assert "cannot list" in caplog.text
+
+
+def test_an_unreadable_job_directory_is_skipped(setup: Setup) -> None:
+    job = setup.job("t1", "Rb8Tn3ZcYv0")
+    setup.claim()
+    setup.state(job, "failed")
+    directory = setup.root / job
+    directory.chmod(0o000)
+    try:
+        assert setup.janitor.sweep() == 0
+    finally:
+        directory.chmod(0o755)

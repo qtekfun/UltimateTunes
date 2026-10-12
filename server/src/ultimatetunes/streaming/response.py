@@ -3,16 +3,19 @@
 """`TailResponse`: the body of a growing file, and what ends it.
 
 - The body is an async iterator (`service.tail`) that raises `StreamAborted` when the transfer
-  must be cut. The response then raises it again **after** the last chunk it sent, so the server
+  must be cut. The response then returns **without** the final body message, so the server
   closes the connection without a clean end: before `Content-Length` bytes, or without the
   final zero-length chunk (contracts/errors.md, T03a: never pass a broken file off as
-  complete).
+  complete). The body already logged why (one warning); nothing reaches the app's
+  unexpected-error handler. This relies on the middleware stack being plain ASGI, as it is
+  (a `BaseHTTPMiddleware` around `/rest` would end the body cleanly instead).
 - A client that goes away is noticed at once, even while the body waits for the next report
   (the body is cancelled), so its listener slot is freed without waiting for more bytes.
 - `release` runs exactly once whatever happens (the listener slots, the watcher, the cleanup),
   even when the body never starts.
 """
 
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 
 import anyio
@@ -48,7 +51,6 @@ class TailResponse(Response):
         await send({"type": "http.response.body", "body": b"", "more_body": False})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        aborted: StreamAborted | None = None
         try:
             async with anyio.create_task_group() as group:
 
@@ -58,13 +60,10 @@ class TailResponse(Response):
                     group.cancel_scope.cancel()
 
                 group.start_soon(disconnect)
-                try:
+                # A cut transfer simply stops here: no final body message.
+                with contextlib.suppress(StreamAborted):
                     await self._send_body(send)
-                except StreamAborted as exc:
-                    aborted = exc
                 group.cancel_scope.cancel()
         finally:
             with anyio.CancelScope(shield=True):
                 await self._release()
-        if aborted is not None:
-            raise aborted
