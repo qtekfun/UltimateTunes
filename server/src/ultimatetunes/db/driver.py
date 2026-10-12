@@ -25,6 +25,13 @@ Params = Sequence[object]
 # How long a SQLite connection waits for the write lock before failing.
 SQLITE_BUSY_TIMEOUT_MS = 5000
 
+# `PRAGMA optimize` checking every table, not only the ones this connection used, and running
+# ANALYZE (bit 0x02) where statistics are missing or stale. SQLite >= 3.46 (the image ships
+# 3.46); older versions ignore the 0x10000 bit. Without statistics the planner picks
+# low-selectivity indexes (e.g. `ix_tracks_status`) and browse queries get O(albums x tracks)
+# (issue #54).
+SQLITE_OPTIMIZE = "PRAGMA optimize=0x10002"
+
 
 class DatabaseError(Exception):
     """Any driver error, translated so callers never import a driver module."""
@@ -65,6 +72,16 @@ class Connection(Protocol):
         ...
 
     def table_exists(self, name: str) -> bool: ...
+
+    def optimize(self) -> None:
+        """Refreshes the query planner statistics of the tables that need it (SQLite
+        `PRAGMA optimize`, PostgreSQL `ANALYZE`). Writes statistics: writer connections only."""
+        ...
+
+    def reload_statistics(self) -> None:
+        """Makes this connection use statistics another connection refreshed (SQLite caches
+        them per connection; a no-op on PostgreSQL)."""
+        ...
 
     def close(self) -> None: ...
 
@@ -119,6 +136,13 @@ class SqliteConnection:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
         ).fetchone()
         return found is not None
+
+    def optimize(self) -> None:
+        self.execute(SQLITE_OPTIMIZE)
+
+    def reload_statistics(self) -> None:
+        # Documented way to make a connection re-read sqlite_stat1 written by another one.
+        self.execute("ANALYZE sqlite_schema")
 
     def close(self) -> None:
         self.raw.close()
@@ -191,6 +215,12 @@ class PostgresConnection:
             (name,),
         ).fetchone()
         return found is not None
+
+    def optimize(self) -> None:
+        self.execute("ANALYZE")
+
+    def reload_statistics(self) -> None:
+        """PostgreSQL shares statistics between sessions."""
 
     def close(self) -> None:
         self.raw.close()
