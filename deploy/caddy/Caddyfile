@@ -9,6 +9,14 @@
 # Replace music.example.org with your name; Caddy gets and renews the certificate itself
 # (ports 80 and 443 must reach it). Then set in the server's .env:
 #   UT_TRUSTED_PROXIES=<the Docker bridge gateway the api sees, see deploy/README.md>
+# and in Caddy's environment the networks allowed to open /admin through it (space-separated,
+# narrow: your LAN's /24 and your tailnet, never a Docker bridge range such as 172.16.0.0/12):
+#   UT_ADMIN_LAN_RANGES="192.168.1.0/24"
+#   UT_ADMIN_TAILNET_RANGES="100.64.0.0/10 fd7a:115c:a1e0::/48"
+#
+# Caddy must be the edge: never put a tunnel or another proxy (Cloudflare Tunnel, ngrok, an
+# SSH forward, Tailscale Funnel) in front of it. Caddy would see the tunnel's local address as
+# the client, so /admin and every per-IP limit would treat the whole Internet as your LAN.
 
 {
 	# Caddy is the edge: it believes no X-Forwarded-For from its own clients and sends the
@@ -33,23 +41,52 @@ music.example.org {
 	}
 
 	# The admin panel stays LAN/Tailscale-only (SPEC section 7). The api checks it too
-	# (UT_ADMIN_ALLOWED_NETWORKS), this refuses it one step earlier. Remove only if you opted in.
+	# (UT_ADMIN_ALLOWED_NETWORKS), this refuses it one step earlier. Explicit ranges, not
+	# `private_ranges`: that includes the Docker bridges (172.16.0.0/12), from which the worker
+	# or any other container on the host could reach this Caddy. No loopback either: a local
+	# tunnel would arrive from it; on the host itself use 127.0.0.1:8044. Remove only if you
+	# opted in.
 	@admin_from_outside {
 		path /admin /admin/*
-		not remote_ip private_ranges 100.64.0.0/10 fd7a:115c:a1e0::/48
+		not remote_ip {$UT_ADMIN_LAN_RANGES:192.168.1.0/24} {$UT_ADMIN_TAILNET_RANGES:100.64.0.0/10 fd7a:115c:a1e0::/48}
 	}
 	respond @admin_from_outside 403
 
-	# The internal worker API is not even on this port; never route it.
+	# The internal worker API is not even on this port; never route it. The readiness probe is
+	# for the host's own health checks (127.0.0.1:8044/readyz), not for the Internet.
 	respond /internal/* 404
+	respond /readyz 404
 
-	# Request limits. The largest legitimate body is a playlist import file (1 MiB).
+	# Request limits. The largest legitimate body is a playlist import file (1 MiB); OpenSubsonic
+	# form bodies are read before their key is checked, so they get a tighter cap (the api caps
+	# them at 1 MiB too).
+	request_body /rest/* {
+		max_size 1MB
+	}
 	request_body {
 		max_size 2MB
 	}
 
-	# Per-IP request rate limits need the third-party caddy-ratelimit module; the api already
-	# limits authentication per IP and key with lockout, and external searches per user.
+	# Per-IP request rate limits need the third-party caddy-ratelimit module (build Caddy with
+	# `xcaddy build --with github.com/mholt/caddy-ratelimit`, then uncomment). Recommended for a
+	# public server: the api limits authentication per IP and key with lockout and external
+	# searches per user, but not plain request volume.
+	# rate_limit {
+	# 	zone per_ip {
+	# 		key {remote_host}
+	# 		events 300
+	# 		window 1m
+	# 	}
+	# 	zone keys_per_ip {
+	# 		match {
+	# 			method POST
+	# 			path /ut/v1/keys
+	# 		}
+	# 		key {remote_host}
+	# 		events 5
+	# 		window 1m
+	# 	}
+	# }
 
 	reverse_proxy 127.0.0.1:8044 {
 		# Streams of long tracks: no response timeout, but give up on a dead upstream fast.
