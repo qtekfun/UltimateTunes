@@ -95,7 +95,7 @@ uploaded by its author:
 |-------|-------|
 | Title | Sauropod Spotting |
 | Author and channel | Kevin MacLeod (official channel, `UCSZXFhRIx6b0dFX3xS8L1yQ`, incompetech.com) |
-| Video id | `6pEWHaIhxOg` (`https://www.youtube.com/watch?v=6pEWHaIhxOg`), about 3:51 |
+| Video id | `6pEWHaIhxOg` (`https://www.youtube.com/watch?v=6pEWHaIhxOg`); the track is 3:45 in the incompetech.com catalogue |
 | License | Creative Commons Attribution 4.0 International (CC BY 4.0), as stated by the author for his catalogue on incompetech.com and on the channel |
 | Attribution | "Sauropod Spotting" Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0, http://creativecommons.org/licenses/by/4.0/ |
 | Search query | `Kevin MacLeod Sauropod Spotting` |

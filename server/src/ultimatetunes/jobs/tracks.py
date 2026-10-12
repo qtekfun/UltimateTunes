@@ -127,25 +127,29 @@ def resolve(services: Services, raw: str) -> TrackRef | VirtualId:
         return resolve_track(conn, raw)
 
 
-def request_in(  # noqa: PLR0913 - the resolved request and who asks
+def request_in(
     services: Services,
     raw: str,
-    target: TrackRef | VirtualId,
     track: CatalogTrack | None,
     *,
     reason: Reason,
     user_id: str,
 ) -> tuple[bool, TrackStatus]:
-    """(queued, status) after requesting `raw`; `queued` is False when it is already ready."""
+    """(queued, status) after requesting `raw`; `queued` is False when it is already ready.
+
+    `track` is the catalog record of a `yt:` id that had no library track when the caller looked
+    (before the catalog call). The id is resolved again inside the write transaction, so a track
+    archived (or removed) meanwhile answers what it is now, never a stale 202."""
     with services.db.transaction() as conn:
-        if track is not None:
-            ref = materialize_song(conn, services.clock, track)
-            video: str | None = track.video_id
-        elif isinstance(target, TrackRef):
-            ref = target
+        current = resolve_track(conn, raw)  # `NotFound` for a library id that is gone
+        if isinstance(current, TrackRef):
+            ref = current
             stored = conn.execute("SELECT yt_video_id FROM tracks WHERE id = ?", (ref.id,)).scalar()
             video = None if stored is None else str(stored)
-        else:
+        elif track is not None:
+            ref = materialize_song(conn, services.clock, track)
+            video = track.video_id
+        else:  # a virtual id always comes with its catalog record
             raise NotFound("Song not found")
         if ref.status == "ready":
             return False, _status_in(conn, raw)

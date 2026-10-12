@@ -10,6 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
@@ -241,3 +242,42 @@ def test_install_runs_the_canary_during_the_app_lifespan(services: Services, db:
             time.sleep(0.01)
     [row] = runs(db)
     assert row["ok"] == 1
+
+
+class SlowAndBroken(FakeMusicCatalog):
+    """The search hangs until released, then every call fails (a long failing run)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = anyio.Event()
+        self.release = anyio.Event()
+
+    async def search_songs(self, query: str, limit: int) -> list[Any]:
+        self.started.set()
+        await self.release.wait()
+        self.fail_with = CatalogParseError("search: no shelf")
+        return await super().search_songs(query, limit)
+
+
+async def test_a_long_failing_run_is_notified_even_if_a_sweep_ran_meanwhile(
+    services: Services, db: Database, clock: FakeClock
+) -> None:
+    save_target(db, clock, Target("ntfy", "https://ntfy.example.net/ut-alerts"))
+    clock.advance(1)
+    catalog = SlowAndBroken()
+    sender = Recorder()
+    sweep = NotificationSweep(db, clock, sender)  # type: ignore[arg-type]
+    canary = web.ApiCanary(services, CanarySettings(), catalog=lambda: catalog)
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(canary.run_now)
+        await catalog.started.wait()
+        clock.advance(120)  # the run goes on for minutes...
+        await sweep.run_once()  # ...while a sweep moves the cursor past its start
+        clock.advance(120)
+        catalog.release.set()
+    clock.advance(1)
+    await sweep.run_once()
+    [message] = sender.sent
+    assert "layout changed" in message.body
+    [row] = runs(db)
+    assert row["ok"] == 0

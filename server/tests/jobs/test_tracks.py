@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
 
@@ -17,7 +18,6 @@ from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.db import Database
 from ultimatetunes.errors import NotFound
-from ultimatetunes.ids.virtual import VirtualId
 from ultimatetunes.jobs import tracks
 from ultimatetunes.jobs.queue import PRIORITY_KEEP, PRIORITY_PREFETCH, ProgressReport
 from ultimatetunes.settings import Settings
@@ -221,6 +221,43 @@ def test_bad_requests(api: Api) -> None:
 
 def test_a_virtual_id_needs_its_catalog_record(api: Api) -> None:
     with pytest.raises(NotFound):
+        tracks.request_in(api.services, SONG, None, reason="keep", user_id=ANA.user_id)
+
+
+def test_a_track_archived_after_the_catalog_lookup_answers_ready(api: Api) -> None:
+    record = anyio.run(api.services.catalog.track, VIDEO)  # looked up while SONG had no track
+    now = format_ts(api.clock.now())
+    track_id = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c0ee"
+    api.sql(
+        "INSERT INTO tracks (id, status, title, title_norm, artist_name, path, yt_video_id,"
+        " created_at, updated_at) VALUES (?, 'ready', 'T', 't', 'A', 'A/T.opus', ?, ?, ?)",
+        (track_id, VIDEO, now, now),
+    )
+    queued, found = tracks.request_in(
+        api.services, SONG, record, reason="keep", user_id=ANA.user_id
+    )
+    assert not queued
+    assert (found.state, found.track_id) == ("ready", track_id)
+    assert api.sql("SELECT COUNT(*) FROM jobs") == 0
+
+
+def test_a_track_removed_meanwhile_is_not_found(api: Api) -> None:
+    with pytest.raises(NotFound):
         tracks.request_in(
-            api.services, SONG, VirtualId("song", VIDEO), None, reason="keep", user_id=ANA.user_id
+            api.services,
+            "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c0ff",
+            None,
+            reason="keep",
+            user_id=ANA.user_id,
         )
+
+
+def test_status_needs_an_api_key(api: Api) -> None:
+    r = api.client.get(f"/ut/v1/tracks/{SONG}/status")
+    assert r.status_code == 401
+    assert (
+        api.client.get(
+            f"/ut/v1/tracks/{SONG}/status", headers={"X-Api-Key": "utk_nobody"}
+        ).status_code
+        == 401
+    )

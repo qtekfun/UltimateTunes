@@ -70,6 +70,7 @@ class Check:
 @dataclass(frozen=True)
 class Report:
     source: Source
+    # When the run finished (not when it started): see `CatalogCanary.run`.
     ran_at: str
     checks: tuple[Check, ...]
 
@@ -150,7 +151,6 @@ class CatalogCanary:
         self._album: str | None = None
 
     async def run(self) -> Report:
-        ran_at = format_ts(self._clock.now())
         checks = []
         for name, work in (
             ("search", self._search),
@@ -159,7 +159,9 @@ class CatalogCanary:
             ("playlist", self._playlist),
         ):
             checks.append(await run_check(name, self._clock, self._timeout_s, work))
-        return Report("api", ran_at, tuple(checks))
+        # Stamped when the run ends: a notification sweep that ran meanwhile has its cursor
+        # before this time, so a failed run is never skipped.
+        return Report("api", format_ts(self._clock.now()), tuple(checks))
 
     async def _search(self) -> str:
         songs = await self._catalog.search_songs(self._targets.query, 10)
@@ -214,9 +216,9 @@ class DownloadCanary:
         self._token = token
 
     async def run(self) -> Report:
-        ran_at = format_ts(self._clock.now())
         check = await run_check("download", self._clock, self._timeout_s, self._download)
-        return Report("worker", ran_at, (check,))
+        # Stamped when the run ends (see `CatalogCanary.run`).
+        return Report("worker", format_ts(self._clock.now()), (check,))
 
     async def _download(self) -> str:
         job_dir = f"{STAGING_ROOT}/{self._token()}"
