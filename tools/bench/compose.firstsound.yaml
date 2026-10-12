@@ -4,7 +4,8 @@
 # Third file on top of server/compose.test.yaml and tools/bench/compose.bench.yaml (PLAN T21):
 # the worker runs tools/bench/throttled_worker.py (the production loop with a throttled fake
 # download of a generated tone) instead of `ultimatetunes worker`. Paths are relative to
-# server/ (the first compose file). tools/bench/first_sound.sh sets UT_BENCH_AUDIO_DIR.
+# server/ (the first compose file). Set UT_BENCH_AUDIO_DIR to the folder of tone.opus
+# (docs/measurements.md, Rerunning); tools/bench/first_byte.sh then measures.
 # `:z` relabels the bind mounts for SELinux hosts (Fedora); it is a no-op elsewhere.
 
 services:

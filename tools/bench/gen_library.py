@@ -7,11 +7,11 @@ Every file is the 2 s silent CC0 Opus clip of the fake downloader with invented 
 seed: the same arguments always give the same library.
 
     uv run --project server python tools/bench/gen_library.py OUT_DIR [--tracks 50000]
-        [--per-album 10] [--albums-per-artist 2] [--seed 21]
+        [--per-album 10] [--albums-per-artist 2] [--seed 21] [--queries FILE]
 
-Layout: `OUT_DIR/<Artist>/<Album>/NN - <Title>.opus` (the archive layout of the server).
-It also writes `OUT_DIR/../bench-queries.txt`: one artist, album or title word per line, used by
-the search benchmarks (`library_bench.py --queries`).
+Layout: `OUT_DIR/music/<Artist>/<Album>/NN - <Title>.opus` (the archive layout of the server;
+copy `OUT_DIR/music` into the music volume). It also writes `OUT_DIR/bench-queries.txt` (or
+`--queries FILE`): one artist, album or title word per line, for `library_bench.py --queries`.
 """
 
 import argparse
@@ -65,7 +65,15 @@ def unique(rng: random.Random, seen: set[str], make: Callable[[random.Random], s
             return value
 
 
-def generate(out: Path, tracks: int, per_album: int, albums_per_artist: int, seed: int) -> int:
+def generate(  # noqa: PLR0913 - the shape of the library
+    out: Path,
+    queries_file: Path,
+    *,
+    tracks: int,
+    per_album: int,
+    albums_per_artist: int,
+    seed: int,
+) -> int:
     rng = random.Random(seed)  # noqa: S311 - invented names, not security
     out.mkdir(parents=True, exist_ok=True)
     artists_seen: set[str] = set()
@@ -105,7 +113,7 @@ def generate(out: Path, tracks: int, per_album: int, albums_per_artist: int, see
         if written % 5000 < per_album * albums_per_artist:
             print(f"{written} tracks", file=sys.stderr)
     rng.shuffle(queries)
-    (out.parent / "bench-queries.txt").write_text("\n".join(queries) + "\n", encoding="utf-8")
+    queries_file.write_text("\n".join(queries) + "\n", encoding="utf-8")
     return written
 
 
@@ -116,9 +124,19 @@ def main() -> int:
     parser.add_argument("--per-album", type=int, default=10)
     parser.add_argument("--albums-per-artist", type=int, default=2)
     parser.add_argument("--seed", type=int, default=21)
+    parser.add_argument("--queries", type=Path, help="default: OUT_DIR/bench-queries.txt")
     args = parser.parse_args()
-    n = generate(args.out, args.tracks, args.per_album, args.albums_per_artist, args.seed)
-    print(f"generated {n} tracks in {args.out}")
+    music = args.out / "music"
+    queries = args.queries or args.out / "bench-queries.txt"
+    n = generate(
+        music,
+        queries,
+        tracks=args.tracks,
+        per_album=args.per_album,
+        albums_per_artist=args.albums_per_artist,
+        seed=args.seed,
+    )
+    print(f"generated {n} tracks in {music}, queries in {queries}")
     return 0
 
 

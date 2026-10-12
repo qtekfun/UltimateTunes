@@ -8,9 +8,9 @@
 Against a server with `UT_FAKE_YOUTUBE=false` this reaches the REAL YouTube Music through the
 server (ytmusicapi): keep it a small, polite sample. One `search3` costs three catalog requests
 (songs, albums, artists), so the default gap of 3 s between searches keeps the average at
-<= 1 request per second, and the defaults send 30 searches in all. `--distinct` searches use
-queries never sent before in this run (cold TTL cache); `--repeat` then repeats some of them
-(warm cache). The queries are plain words, no names of real people.
+<= 1 request per second; the gap can never go below 1 s, and at most 30 searches are sent.
+`--distinct` searches use queries never sent before in this run (cold TTL cache); `--repeat`
+then repeats some of them (warm cache). The queries are plain words, no names of real people.
 
 Prints, per search: latency, how many external (`yt:`, `ytalbum:`, `ytartist:`)
 songs/albums/artists came back, and a summary with p50/p95/max for the cold and the warm
@@ -19,7 +19,7 @@ of `search_external_timeout_s` ran out or the catalog failed).
 """
 
 import argparse
-import statistics
+import math
 import sys
 import time
 from pathlib import Path
@@ -35,18 +35,22 @@ QUERIES = [
     "morning bossa", "tidal wave",
 ]  # fmt: skip
 
+# Never faster than one search3 (three catalog requests) per second.
+MIN_GAP_S = 1.0
+
 
 def percentile(values: list[float], pct: float) -> float:
+    """Nearest rank: the smallest sample with at least `pct` % of the samples at or below it
+    (p50 included; the same definition as first_byte.sh and docs/measurements.md)."""
     ordered = sorted(values)
-    rank = max(0, min(len(ordered) - 1, round(pct / 100 * len(ordered) + 0.5) - 1))
-    return ordered[rank]
+    return ordered[max(0, math.ceil(pct / 100 * len(ordered)) - 1)]
 
 
 def summary(label: str, values: list[float]) -> str:
     if not values:
         return f"{label}: no samples"
     return (
-        f"{label}: n={len(values)} p50={statistics.median(values):.0f} ms"
+        f"{label}: n={len(values)} p50={percentile(values, 50):.0f} ms"
         f" p95={percentile(values, 95):.0f} ms max={max(values):.0f} ms"
     )
 
@@ -66,6 +70,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.distinct > len(QUERIES) or args.distinct + args.repeat > 30:
         parser.error("at most 30 searches in all (a polite sample)")
+    if args.gap_s < MIN_GAP_S:
+        parser.error(f"--gap-s must be at least {MIN_GAP_S} s (a polite sample)")
     key = args.key_file.read_text(encoding="utf-8").strip()
     client = httpx.Client(base_url=args.base, timeout=30)
     common = {"f": "json", "v": "1.16.1", "c": "ut-bench", "apiKey": key}

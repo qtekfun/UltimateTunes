@@ -5,8 +5,8 @@
 Real downloads are not allowed in tests and measurements (CLAUDE.md), so the external
 first-sound run replaces only the downloader: the same claim, progress reports, streaming while
 downloading, archive and tagging as `ultimatetunes worker`, but the bytes come from a generated
-audio file (`UT_BENCH_AUDIO`, made by `tools/bench/first_sound.sh`, no real music) at a modelled
-YouTube pace:
+audio file (`UT_BENCH_AUDIO`: an ffmpeg tone, see docs/measurements.md; no real music) at a
+modelled YouTube pace:
 
 - `UT_BENCH_FIRST_BYTE_S` (default 1.8): yt-dlp extraction plus googlevideo time to headers on
   the default client path, measured in spike T03c (1.5-1.8 s + 30-80 ms). 3.9 models the

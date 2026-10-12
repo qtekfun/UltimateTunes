@@ -7,15 +7,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 These are the SPEC §6 targets, measured on 2026-10-12 against `master` at `91366b8` (T18). The scripts are in `tools/bench/`, so anyone can rerun them. No real music was used and nothing was downloaded from YouTube. The only real-network part is a polite sample of 30 searches against YouTube Music, sent through the server (ytmusicapi from the author's home IP, approved for T21).
 
+**Percentiles** are nearest-rank everywhere (scripts and tables): p*N* is the ⌈N/100 · n⌉-th smallest sample, p50 included, so a p95 over 30 samples is the 29th.
+
 ## Summary
 
 | SPEC §6 target | Result | Verdict |
 | --- | --- | --- |
 | Idle RAM, api + worker ≤ 200 MB | **92 MiB** just after start (fake or real config). **143 MiB** after real searches. **158 MiB** after browsing the 50,000-track library | Met |
 | `search3` with external results ≤ 2 s p95 | Real YouTube Music, cold cache: **722 ms p50 / 1,039 ms p95**, max 1,677 ms (n = 25). Warm TTL cache: **195 / 256 ms** (n = 5) | Met |
-| Smooth browse with 50,000 tracks | Every endpoint is ≤ 166 ms p95 except **`getArtists`, at 19.6 s p50 / 23.5 s p95**. With `ANALYZE` statistics it drops to 38 / 48 ms (issue #54) | **Not met** until #54 is fixed |
-| First sound, library track ≤ 1 s | Server time to first audio byte **12 ms p50 / 18 ms p95**. On the phone: **not measured** (see below) | Server side met. Phone pending |
-| First sound, external track ≤ 5 s | Server time to first audio byte **3.0 s p50 / 3.4 s p95**, with a modelled YouTube that gives its first byte after 1.8 s. On the phone: **not measured** | Server side met with ~1.6 s left for the client. The idle worker's 2 s poll costs ~1 s of it (issue #55) |
+| Smooth browse with 50,000 tracks | **As shipped:** `getArtists` **18.1 s p50 / 18.5 s p95**; library-only `search3` 66 ms p50 / **690 ms p95**; empty-query `search3` sync page 212 / 253 ms; every other endpoint ≤ 90 ms p95. **After `ANALYZE`** (issue #54): every endpoint ≤ 162 ms p95, `getArtists` 43 / 46 ms | **Not met** as shipped; met once #54 is fixed |
+| First sound, library track ≤ 1 s | Server time to first audio byte **12 ms p50 / 18 ms p95** as shipped (9 / 10 ms after `ANALYZE`). On the phone: **not measured** (see below) | Server side met. Phone pending |
+| First sound, external track ≤ 5 s | Server time to first audio byte **3.0 s p50 / 3.4 s p95** (second run: 2.6 / 3.6 s), with a modelled YouTube that gives its first byte after 1.8 s. On the phone: **not measured** | Server side met with ~1.6 s left for the client. The idle worker's 2 s poll costs ~1 s of it (issue #55) |
 
 ## Machine and setup
 
@@ -24,7 +26,7 @@ These are the SPEC §6 targets, measured on 2026-10-12 against `master` at `9136
   ```sh
   docker compose -p ut-bench -f server/compose.test.yaml -f tools/bench/compose.bench.yaml up -d --build --wait
   ```
-- **Accounts:** an admin is created with `ultimatetunes bootstrap-admin`. An API key comes from `POST /ut/v1/keys`, and the scripts read it from a file.
+- **Accounts:** an admin is created with `ultimatetunes bootstrap-admin`, with the password read on standard input from a mode-600 file. An API key comes from `POST /ut/v1/keys`. The scripts read the key from a file and never put it on a command line.
 
 ## 1. Idle RAM (api + worker)
 
@@ -44,35 +46,39 @@ Notes:
 
 ## 2. Library browse with 50,000 tracks
 
-**Library:** `tools/bench/gen_library.py OUT --tracks 50000` generates 2,500 invented artists, 5,000 albums (10 tracks each) and 50,000 files. Each file is the 2 s CC0 silent Opus clip with invented Vorbis tags, about 200 MB on disk. Generation takes 5 s. The files are copied into the `music` volume (`tar | docker exec -i … tar -x`) and registered with `ultimatetunes scan-library` inside the api container, as an admin would do it.
+**Library:** `tools/bench/gen_library.py OUT_DIR --tracks 50000` generates 2,500 invented artists, 5,000 albums (10 tracks each) and 50,000 files. Each file is the 2 s CC0 silent Opus clip with invented Vorbis tags, about 200 MB on disk, in `OUT_DIR/music`, plus `OUT_DIR/bench-queries.txt` for the search rows. Generation takes 5 s. The files are copied into the `music` volume (`tar | docker exec -i … tar -x`) and registered with `ultimatetunes scan-library` inside the api container, as an admin would do it.
 
 | Step | Result |
 | --- | --- |
-| First scan (50,000 new files) | **7 min 44 s**, about 108 files/s and 9 ms per file. Peak RSS 32 MB |
+| First scan (50,000 new files) | **7 min 44 s**, and 7 min 45 s on a second fresh stack: about 108 files/s and 9 ms per file. Peak RSS 32 MB |
 | Rescan, nothing changed | **4.3 s** |
 | Database size | **43.7 MB** (`ultimatetunes.db`), plus a 4.3 MB WAL |
 
-**Latency method:** `tools/bench/library_bench.py --key-file KEY --queries bench-queries.txt --samples 30 --budget-s 90`. It uses one HTTP client, sends one request at a time (like the phone), makes 2 warm-up calls per endpoint, and picks a random offset or id per sample. The search3 rows use `UT_EXTERNAL_SEARCH=false`, which makes them library-only. Times are milliseconds on the host, client included.
+**Latency method:** `tools/bench/library_bench.py --key-file KEY --queries OUT_DIR/bench-queries.txt --samples 30 --budget-s 90`. It uses one HTTP client, sends one request at a time (like the phone), makes 2 warm-up calls per endpoint, and picks a random offset or id per sample. The search3 rows use `UT_EXTERNAL_SEARCH=false`, which makes them library-only. Times are milliseconds on the host, client included.
+
+The two columns come from the same stack and data, one right after the other: first as shipped, then after one `ANALYZE` run in the container (the fix proposed in #54).
 
 | Endpoint | As shipped (no statistics): p50 / p95 / max | After `ANALYZE` (#54): p50 / p95 / max | Response size |
 | --- | --- | --- | --- |
-| `getArtists` (all 2,500) | **19,597 / 23,528 / 23,528** (n = 5) | **37.8 / 48.2 / 48.3** | 359 KB |
-| `getAlbumList2` alphabeticalByName, 50, random offset | 93.7 / 141.6 / 143.0 | 80.7 / 97.6 / 98.7 | 25 KB |
-| `getAlbumList2` newest, 50 | 85.9 / 89.5 / 91.9 | 82.2 / 106.0 / 113.2 | 25 KB |
-| `getAlbumList2` random, 50 | 81.4 / 89.8 / 97.2 | 80.3 / 101.3 / 108.5 | 25 KB |
-| `getAlbum` (10 songs) | 25.4 / 30.6 / 33.7 | 9.1 / 10.0 / 10.2 | 10 KB |
-| `getArtist` | 32.5 / 39.3 / 41.6 | 8.6 / 9.5 / 9.5 | 1.3 KB |
-| `search3` library-only, 20/20/20 | 70.3 / 659.5 / 779.9 | 127.8 / 142.6 / 151.1 | up to ~25 KB |
-| `search3` empty query, 500 songs, random offset (client sync) | 209.5 / 266.0 / 266.8 | 103.5 / 166.9 / 168.4 | 498 KB |
+| `getArtists` (all 2,500) | **18,073 / 18,516 / 18,516** (n = 5, budget cut) | **42.9 / 45.9 / 46.9** | 359 KB |
+| `getAlbumList2` alphabeticalByName, 50, random offset | 87.3 / 89.7 / 90.3 | 81.6 / 84.2 / 85.8 | 25 KB |
+| `getAlbumList2` newest, 50 | 86.1 / 87.5 / 94.3 | 75.6 / 83.7 / 85.4 | 25 KB |
+| `getAlbumList2` random, 50 | 81.5 / 85.0 / 86.6 | 71.1 / 74.5 / 77.3 | 25 KB |
+| `getAlbum` (10 songs) | 24.3 / 26.3 / 28.7 | 8.8 / 9.8 / 9.8 | 10 KB |
+| `getArtist` | 29.2 / 35.9 / 36.8 | 8.6 / 9.8 / 9.9 | 1.3 KB |
+| `search3` library-only, 20/20/20 | 66.3 / **689.9** / 702.2 | 120.2 / 134.3 / 135.2 | up to ~25 KB |
+| `search3` empty query, 500 songs, random offset (client sync) | 212.4 / 252.7 / 253.5 | 94.5 / 161.8 / 164.2 | 498 KB |
+
+An earlier run on another fresh stack (p50 then computed as the median) agrees within ~10 %, except `getArtists` at 19.6 s p50 / 23.5 s p95 as shipped.
 
 Findings:
-- **`getArtists` is O(albums × tracks)** (issue #54, label `perf`). Nothing ever runs `ANALYZE`, so SQLite has no statistics. It then resolves `EXISTS (SELECT 1 FROM tracks WHERE album_id = ? AND status = 'ready')` through `ix_tracks_status` (every track is `ready`) instead of `ix_tracks_album`. A single `ANALYZE` fixes it (21.4 s → 25 ms for the bare query). The fix belongs in the SQLite driver (`PRAGMA optimize`) and at the end of `scan-library`/`migrate`, which is outside T21's paths. The search3 artist query has the same shape, which explains its library-only p95 of 660 ms.
+- **`getArtists` is O(albums × tracks)** (issue #54, label `perf`). Nothing ever runs `ANALYZE`, so SQLite has no statistics. It then resolves `EXISTS (SELECT 1 FROM tracks WHERE album_id = ? AND status = 'ready')` through `ix_tracks_status` (every track is `ready`) instead of `ix_tracks_album`. A single `ANALYZE` fixes it (21.4 s → 25 ms for the bare query). The fix belongs in the SQLite driver (`PRAGMA optimize`) and at the end of `scan-library`/`migrate`, which is outside T21's paths. The search3 artist query has the same shape, which explains its library-only p95 of 690 ms as shipped. After `ANALYZE` its p50 rises from 66 to 120 ms while its p95 drops from 690 to 134 ms: the planner trades a few fast queries for no slow ones.
 - `getAlbumList2` aggregates every album on each call (~80 ms). That is fine for 50,000 tracks. A denormalised count would only matter well beyond that size.
 - The first scan, at ~9 ms per file, has one transaction per file. That is acceptable for a one-off import (≈ 8 min for 50,000 files). It is noted here, not filed: SPEC sets no scan target.
 
 ## 3. `search3` with external results
 
-**Method:** `tools/bench/search_bench.py --key-file KEY` runs against the stack with `UT_FAKE_YOUTUBE=false`, so the server calls the **real YouTube Music** through ytmusicapi from the home IP. The 50,000-track library is in place, and the defaults are those of `SearchSettings`: a 1.5 s external budget, 3 threads, and a 2 req/s bucket. The sample is 25 distinct plain-word queries (no names of real people), then 5 of them repeated. That is 30 searches, 3 s apart. One search3 makes 3 catalog requests (songs, albums, artists), so the average is ≤ 1 request/s. The search asks for 20 songs, 10 albums and 5 artists.
+**Method:** `tools/bench/search_bench.py --key-file KEY` (it refuses more than 30 searches or a gap under 1 s) runs against the stack with `UT_FAKE_YOUTUBE=false`, so the server calls the **real YouTube Music** through ytmusicapi from the home IP. The 50,000-track library is in place, and the defaults are those of `SearchSettings`: a 1.5 s external budget, 3 threads, and a 2 req/s bucket. The sample is 25 distinct plain-word queries (no names of real people), then 5 of them repeated. That is 30 searches, 3 s apart. One search3 makes 3 catalog requests (songs, albums, artists), so the average is ≤ 1 request/s. The search asks for 20 songs, 10 albums and 5 artists.
 
 | Searches | p50 | p95 | max |
 | --- | --- | --- | --- |
@@ -86,21 +92,25 @@ Findings:
 
 ### Server side (measured)
 
-**Method:** `tools/bench/first_byte.sh KEY 2` measures curl's time to the first audio byte of `/rest/stream`. That is everything the phone waits for before ExoPlayer can buffer.
+**Method:** `tools/bench/first_byte.sh KEY_FILE ut-bench 2` measures curl's time to the first audio byte of `/rest/stream`. That is everything the phone waits for before ExoPlayer can buffer.
 
 - **External:** the stack runs with `tools/bench/compose.firstsound.yaml`. Its worker is the production loop (`build_worker`: the same claim, progress reports, streaming while downloading, archive and tagging), with only the downloader replaced by `tools/bench/throttled_worker.py`. That downloader serves a generated 240 s, 128 kbit/s Opus tone (4.6 MB, ffmpeg `sine`, no real music) as follows:
   - **Assumption:** the first byte comes **1.8 s** after the job starts. That is yt-dlp's default-client extraction (1.5–1.8 s) plus googlevideo's 30–80 ms to headers, both measured in spike T03c.
   - **Assumption:** the rest arrives at a throttled **1 MB/s**, far below the home link and ~60× the audio bitrate.
   - Progress is reported every 0.25 s, with the exact size known from the first report.
-  - Each round starts from never-played songs: `reset_external.py` forgets the 7 fake-catalog songs.
+  - Each round starts from never-played songs: `reset_external.py PROJECT` forgets the 7 fake-catalog songs.
 - **Library:** 30 random songs of the 50,000-track library.
 
 | Track | n | p50 | p95 | max |
 | --- | --- | --- | --- | --- |
-| External, first play (modelled YouTube: 1.8 s to first byte, 1 MB/s) | 14 | **3,004 ms** | **3,435 ms** | 3,435 ms |
-| Library | 30 | **12 ms** | **18 ms** | 22 ms |
+| External, first play (modelled YouTube: 1.8 s to first byte, 1 MB/s), run 1 | 14 | **3,004 ms** | **3,435 ms** | 3,435 ms |
+| External, same, run 2 (after the review fixes; database analysed) | 14 | **2,583 ms** | **3,625 ms** | 3,625 ms |
+| Library, run 1 (as shipped) | 30 | **12 ms** | **18 ms** | 22 ms |
+| Library, run 2 (after `ANALYZE`) | 30 | **9 ms** | **10 ms** | 13 ms |
 
-That leaves ~1.2 s between the 1.8 s modelled YouTube time and the 3.0 s first byte. Most of it is the **idle worker's claim poll**: every 2 s, with an immediate `204`, so 0–2 s and ≈ 1 s on average. The ≤ 0.25 s progress cadence adds the rest. Issue #55 proposes a long-poll or wake-up claim. On the `web_embedded` + Deno fallback (3.7–3.8 s extraction), the server-side first byte would be ≈ 5 s, which misses the target before the client even starts. That makes #55 and the default-client path matter.
+The spread between the two external runs is the claim poll below: where in its 2 s cycle each request lands.
+
+That leaves ~0.8–1.8 s between the 1.8 s modelled YouTube time and the first byte. Most of it is the **idle worker's claim poll**: every 2 s, with an immediate `204`, so 0–2 s and ≈ 1 s on average. The ≤ 0.25 s progress cadence adds the rest. Issue #55 proposes a long-poll or wake-up claim. On the `web_embedded` + Deno fallback (3.7–3.8 s extraction), the server-side first byte would be ≈ 5 s, which misses the target before the client even starts. That makes #55 and the default-client path matter.
 
 ### On the phone (not measured)
 
@@ -113,21 +123,25 @@ The plan: debug build of `master` on the author's Pixel 8 (Android 17, CP3A.2609
 ## Rerunning
 
 ```sh
-B=tools/bench; C="docker compose -p ut-bench -f server/compose.test.yaml -f $B/compose.bench.yaml"
+B=tools/bench; W=$(mktemp -d); C="docker compose -p ut-bench -f server/compose.test.yaml -f $B/compose.bench.yaml"
 UT_EXTERNAL_SEARCH=false $C up -d --build --wait
-uv run --project server python $B/gen_library.py /tmp/ut-bench/music
-tar -C /tmp/ut-bench/music -cf - . | docker exec -i ut-bench-api-1 tar -C /music -xf - --no-same-owner
+uv run --project server python $B/gen_library.py "$W/lib"        # $W/lib/music + $W/lib/bench-queries.txt
+tar -C "$W/lib/music" -cf - . | docker exec -i ut-bench-api-1 tar -C /music -xf - --no-same-owner
 time docker exec ut-bench-api-1 ultimatetunes scan-library
-docker exec -e UT_BOOTSTRAP_ADMIN_PASSWORD=… ut-bench-api-1 ultimatetunes bootstrap-admin bench
-curl -s -X POST localhost:18044/ut/v1/keys -H 'content-type: application/json' \
-  -d '{"username":"bench","password":"…","name":"bench"}'   # save .secret to KEY
-uv run --project server python $B/library_bench.py --key-file KEY --queries /tmp/ut-bench/bench-queries.txt
+(umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$W/admin.pw")   # mode 600
+docker exec -i ut-bench-api-1 ultimatetunes bootstrap-admin bench < "$W/admin.pw"   # password on stdin
+python3 -c 'import json, sys; print(json.dumps({"username": "bench", "name": "bench",
+  "password": open(sys.argv[1]).read().strip()}))' "$W/admin.pw" |
+  curl -s -X POST localhost:18044/ut/v1/keys -H 'content-type: application/json' --data-binary @- |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["secret"])' > "$W/key"
+uv run --project server python $B/library_bench.py --key-file "$W/key" --queries "$W/lib/bench-queries.txt"
 $B/idle_ram.sh ut-bench
 UT_FAKE_YOUTUBE=false $C up -d --wait     # real YouTube Music: a small sample only
-uv run --project server python $B/search_bench.py --key-file KEY
-mkdir -p /tmp/ut-bench/audio && ffmpeg -f lavfi -i sine=frequency=440:duration=240:sample_rate=48000 \
-  -af volume=0.2 -c:a libopus -b:a 128k /tmp/ut-bench/audio/tone.opus
-UT_BENCH_AUDIO_DIR=/tmp/ut-bench/audio $C -f $B/compose.firstsound.yaml up -d --wait
-$B/first_byte.sh KEY 2
-$C down -v
+uv run --project server python $B/search_bench.py --key-file "$W/key"
+mkdir -p "$W/audio" && ffmpeg -f lavfi -i sine=frequency=440:duration=240:sample_rate=48000 \
+  -af volume=0.2 -c:a libopus -b:a 128k "$W/audio/tone.opus"
+UT_BENCH_AUDIO_DIR="$W/audio" $C -f $B/compose.firstsound.yaml up -d --wait
+$B/first_byte.sh "$W/key" ut-bench 2
+UT_BENCH_AUDIO_DIR="$W/audio" $C -f $B/compose.firstsound.yaml down -v
+rm -rf "$W"
 ```

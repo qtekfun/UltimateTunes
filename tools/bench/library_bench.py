@@ -3,7 +3,7 @@
 """Latency of the library browse endpoints against a running server (PLAN T21).
 
     uv run --project server python tools/bench/library_bench.py --base http://127.0.0.1:18044 \
-        --key-file KEY [--queries bench-queries.txt] [--samples 30] [--budget-s 120]
+        --key-file KEY [--queries OUT_DIR/bench-queries.txt] [--samples 30] [--budget-s 120]
         [--tracks 50000 --albums 5000]
 
 Sends OpenSubsonic requests one after another (one client, like the phone), after two warm-up
@@ -14,8 +14,8 @@ one does not hold the run for an hour. Library-only search needs the server star
 """
 
 import argparse
+import math
 import random
-import statistics
 import sys
 import time
 from collections.abc import Callable
@@ -28,9 +28,10 @@ Params = dict[str, str | int]
 
 
 def percentile(values: list[float], pct: float) -> float:
+    """Nearest rank: the smallest sample with at least `pct` % of the samples at or below it
+    (p50 included; the same definition as first_byte.sh and docs/measurements.md)."""
     ordered = sorted(values)
-    rank = max(0, min(len(ordered) - 1, round(pct / 100 * len(ordered) + 0.5) - 1))
-    return ordered[rank]
+    return ordered[max(0, math.ceil(pct / 100 * len(ordered)) - 1)]
 
 
 class Bench:
@@ -65,7 +66,7 @@ class Bench:
         row = (
             label,
             len(times),
-            statistics.median(times),
+            percentile(times, 50),
             percentile(times, 95),
             max(times),
             size,
