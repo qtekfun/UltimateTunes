@@ -11,16 +11,21 @@ from typing import Any, override
 
 REDACTED = "[REDACTED]"
 
-# Query or form parameters that carry credentials (OpenSubsonic: apiKey, p, t, s).
+# Query or form parameters that carry credentials (OpenSubsonic: apiKey, p, t, s), also URL-encoded.
 _PARAM = re.compile(
-    r"(?P<key>(?:^|[?&;\s])(?:apiKey|api_key|p|t|s|password|token|secret)=)(?P<value>[^&;\s\"']+)",
+    r"(?P<key>(?:^|[?&;\s]|%26|%3F)(?:apiKey|api_key|p|t|s|password|token|secret)(?:=|%3D))"
+    r"(?P<value>[^&;\s\"'%]+(?:%(?!26)[0-9A-F]{2}[^&;\s\"'%]*)*)",
     re.IGNORECASE,
 )
-# Header-like or key/value pairs: "Authorization: Bearer x", "cookie=x", "password: x".
+# Key/value pairs in headers, JSON or free text: "Authorization: Bearer x", '"apiKey": "x"'.
 _PAIR = re.compile(
-    r"(?P<key>\b(?:authorization|cookie|set-cookie|x-api-key|password|token|secret)\b"
-    r"\s*[:=]\s*)(?P<value>(?:bearer\s+|basic\s+)?[^\s,;\"']+)",
+    r"(?P<key>\b(?:authorization|x-api-key|api[-_]?key|password|passwd|token|secret)\b"
+    r"[\"']?\s*[:=]\s*[\"']?)(?P<value>(?:bearer\s+|basic\s+)?[^\s,;\"']+)",
     re.IGNORECASE,
+)
+# A cookie header holds several cookies: hide all of them, up to the end of the line.
+_COOKIE = re.compile(
+    r"(?P<key>\b(?:set-)?cookie[\"']?\s*[:=]\s*)(?P<value>[^\r\n]+)", re.IGNORECASE
 )
 _SECRET_KEY = re.compile(
     r"apikey|api_key|password|passwd|token|secret|cookie|authorization", re.IGNORECASE
@@ -28,7 +33,8 @@ _SECRET_KEY = re.compile(
 
 
 def redact(text: str) -> str:
-    """Hides credential values in free text (URLs, headers, key=value pairs)."""
+    """Hides credential values in free text (URLs, headers, JSON, key=value pairs)."""
+    text = _COOKIE.sub(lambda m: m.group("key") + REDACTED, text)
     text = _PARAM.sub(lambda m: m.group("key") + REDACTED, text)
     return _PAIR.sub(lambda m: m.group("key") + REDACTED, text)
 

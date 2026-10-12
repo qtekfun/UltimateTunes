@@ -32,6 +32,11 @@ SECRET = "s3cr3t-Value_42"
         f"password: {SECRET}",
         f"X-Api-Key: {SECRET}",
         f"token={SECRET}",
+        f"apikey: {SECRET}",
+        f"api_key: {SECRET}",
+        f'{{"apiKey": "{SECRET}", "f": "json"}}',
+        f"GET /x?next=%2Frest%3Fu%3Dana%26apiKey%3D{SECRET}%26f%3Djson",
+        f"Cookie: a=1; session={SECRET}; csrf={SECRET}",
     ],
 )
 def test_redact_hides_credentials(text: str) -> None:
