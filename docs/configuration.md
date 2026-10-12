@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Everything the server reads is an environment variable starting with `UT_` (12-factor: no config files, nothing stored in the container). The api and the worker run from the same image and read the same names; the **Container** column says which of them uses each one.
 
-- **Secrets** (`UT_WORKER_TOKEN`, `UT_ADMIN_SESSION_SECRET`, `UT_BOOTSTRAP_ADMIN_PASSWORD`) can also be Docker secrets: a file named after the variable in lower case, prefix included, in `/run/secrets/` (for example `/run/secrets/ut_worker_token`). [`server/compose.yaml`](../server/compose.yaml) mounts them that way. Never put secrets in `.env` files you commit.
+- **Secrets** (`UT_WORKER_TOKEN`, `UT_ADMIN_SESSION_SECRET`, `UT_BOOTSTRAP_ADMIN_PASSWORD`, `UT_NOTIFY_TOKEN`, `UT_NOTIFY_USERNAME`, `UT_NOTIFY_PASSWORD`) can also be Docker secrets: a file named after the variable in lower case, prefix included, in `/run/secrets/` (for example `/run/secrets/ut_worker_token`). [`server/compose.yaml`](../server/compose.yaml) mounts them that way. Never put secrets in `.env` files you commit.
 - **Booleans** accept `true`/`false` (also `1`/`0`, `yes`/`no`). **Sizes** are in bytes, **durations** in the unit the name ends with (`_S` seconds, `_H` hours, `_DAYS` days).
 - A value out of its allowed range stops the container at start with a validation error naming the variable.
 - Unknown `UT_*` variables are ignored, so a typo does not fail: check the name against this table.
@@ -55,6 +55,12 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_ADMIN_ALLOWED_NETWORKS` | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,fc00::/7,fe80::/10,100.64.0.0/10,fd7a:115c:a1e0::/48` | api | Comma-separated CIDRs allowed to reach `/admin` (loopback, private LAN ranges, link-local and Tailscale). Anything else gets 403 before any other check. Narrow it to your tailnet and your LAN's /24 (deploy/README.md). `0.0.0.0/0,::/0` opts in to access from anywhere. |
 | `UT_ADMIN_PUBLIC_URL` | (unset) | api | The https address the app should use, prefilled in the new-key form (for example `https://music.example.com`). Unset: the address the browser used, when it is https. |
 | `UT_ADMIN_NOTIFY_INTERVAL_S` | `60` | api | How often failed downloads, failed canary runs and low disk space are checked for notifications (the target is set in the panel). |
+| `UT_NOTIFY_TOKEN` | (unset) | api | ntfy access token for a notification server that requires login, sent as `Authorization: Bearer`. Either this or `UT_NOTIFY_USERNAME` + `UT_NOTIFY_PASSWORD`, never both; needs `UT_NOTIFY_HOST`. Prefer the Docker secret. Never entered in the panel. |
+| `UT_NOTIFY_USERNAME` | (unset) | api | User for HTTP Basic login to the notification server, together with `UT_NOTIFY_PASSWORD` (no `:`); needs `UT_NOTIFY_HOST`. Prefer the Docker secret. |
+| `UT_NOTIFY_PASSWORD` | (unset) | api | Password for that HTTP Basic login. Prefer the Docker secret. |
+| `UT_NOTIFY_HOST` | (unset) | api | Host name (optional `:port`, default 443) the notification credentials may go to, for example `ntfy.example.com`. Required with credentials; a target URL on any other host gets none (deploy/README.md, "Notifications with ntfy"). |
+| `UT_WEB_ENABLED` | `true` | api | Serve the web player at `/web`; off, every `/web` path answers 404. |
+| `UT_WEB_SESSION_TTL_S` | `604800` | api | Lifetime of a web player session (7 days; between 5 minutes and 30 days). Its cookies are signed with `UT_ADMIN_SESSION_SECRET`. |
 | `UT_BOOTSTRAP_ADMIN_USERNAME` | (unset) | api | With `UT_BOOTSTRAP_ADMIN_PASSWORD`: creates the first admin when the api starts with no users. There is never a default password. |
 | `UT_BOOTSTRAP_ADMIN_PASSWORD` | (unset) | api | Password of that first admin (12 characters or more). Remove it once the admin exists (deploy/README.md, "Bootstrap admin password"); `docker compose run --rm api bootstrap-admin <name>` asks for it instead. |
 | `UT_AUTH_MAX_FAILURES_PER_IP` | `10` | api | Failed sign-ins or key checks from one IP (IPv6: its /64) before that IP is locked for `UT_AUTH_LOCKOUT_S`. |

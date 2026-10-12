@@ -270,11 +270,13 @@ ES: dict[str, str] = {
     "Requested": "Pedida",
     "Delivered": "Entregada",
     # Notifications
-    "Failed downloads and failed canary runs can be sent to an ntfy topic or a webhook. "
-    "The server contacts only this address.": (
-        "Las descargas y pruebas canario fallidas pueden enviarse a un tema de ntfy o a un"
-        " webhook. El servidor solo contacta con esta dirección."
+    "Failed downloads, failed canary runs and low disk space can be sent to an ntfy topic or"
+    " a webhook. The server contacts only this address.": (
+        "Las descargas y pruebas canario fallidas y la falta de espacio en disco pueden"
+        " enviarse a un tema de ntfy o a un webhook. El servidor solo contacta con esta"
+        " dirección."
     ),
+    "Check that the address works.": "Comprueba que la dirección funciona.",
     "URL (https only)": "URL (solo https)",
     "Send a test notification": "Enviar una notificación de prueba",
     "Credentials": "Credenciales",

@@ -159,7 +159,7 @@ Filter by **Action** (for example `key.revoke` or `user.disable`) and by **Who**
 
 ## Notifications
 
-Optionally, the server reports failed downloads, failed canary runs and low disk space to an [ntfy](https://ntfy.sh) topic or a webhook. Choose the kind, enter the https URL, **Save**, then **Send a test notification**. The server contacts only that address, and refuses loopback, link-local and similar local addresses. The checks run every `UT_ADMIN_NOTIFY_INTERVAL_S` (60 s). See [deploy/README.md](../deploy/README.md) for ntfy servers that require a login.
+Optionally, the server reports failed downloads, failed canary runs and low disk space to an [ntfy](https://ntfy.sh) topic or a webhook. Choose the kind, enter the https URL, **Save**, then **Send a test notification**. The server contacts only that address, and refuses loopback, link-local and similar local addresses. The checks run every `UT_ADMIN_NOTIFY_INTERVAL_S` (60 s). For an ntfy server that requires a login, set `UT_NOTIFY_TOKEN` (or `UT_NOTIFY_USERNAME` and `UT_NOTIFY_PASSWORD`) and `UT_NOTIFY_HOST` as Docker secrets or environment variables and restart the api; the page then shows which kind is set and warns when the URL is not on that host, because credentials are sent only there. They are never typed into the panel ([deploy/README.md, "Notifications with ntfy"](../deploy/README.md#notifications-with-ntfy)).
 
 ## Backups and restore
 
