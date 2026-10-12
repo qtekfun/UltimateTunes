@@ -11,6 +11,7 @@ import java.io.IOException
 import java.io.InputStream
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -214,6 +215,22 @@ class ExportTest {
             )
             assertTrue(copied.contentEquals(opus))
             assertEquals(listOf(0 to 1, 1 to 1), progress)
+        }
+
+        @Test
+        fun `a stopped export ends between two songs, the one being copied finished`() {
+            files[SongId("lib-1")] = opus
+            files[SongId("lib-2")] = opus
+            var asked = 0
+
+            assertThrows(ExportStoppedException::class.java) {
+                exporter.export(
+                    listOf(track("lib-1", "One", number = 1), track("lib-2", "Two", number = 2)),
+                    isStopped = { asked++ > 0 }
+                )
+            }
+
+            assertEquals(listOf("01 - One.opus"), written.keys.map { it.last() })
         }
 
         @Test

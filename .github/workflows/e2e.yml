@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# End-to-end suite, server side (PLAN T20): builds the test stack (fake YouTube, never a real
+# download), runs server/tests/e2e against the real containers over HTTP, tears it down.
+# Manual, or on a PR labelled `e2e`. The device side runs locally on a phone (tools/e2e/run.sh
+# with UT_E2E_DEVICE).
+
+name: e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          working-directory: server
+
+      # Up, admin, pytest tests/e2e, down (trap); prints the stack's logs when something fails.
+      - name: End-to-end (server side)
+        run: tools/e2e/run.sh

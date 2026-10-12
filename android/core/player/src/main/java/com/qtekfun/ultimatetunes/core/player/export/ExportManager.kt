@@ -102,9 +102,14 @@ class ExportManager @Inject constructor(
         if (mutableStatus.value is ExportStatus.Finished) mutableStatus.value = ExportStatus.Idle
     }
 
-    /** Runs the export kept in [requestFile] (by the worker), then deletes that file. */
+    /**
+     * Runs the export kept in [requestFile] (by the worker), then deletes that file. When
+     * [isStopped] turns true it ends between two songs with [ExportStoppedException] and keeps
+     * the file, so WorkManager's next attempt runs it again.
+     */
     internal fun run(
         requestFile: File,
+        isStopped: () -> Boolean,
         onProgress: (done: Int, total: Int) -> Unit
     ): ExportReport? {
         val request = read(requestFile) ?: return null
@@ -114,7 +119,8 @@ class ExportManager @Inject constructor(
         )
         val report = exporter.export(
             tracks = request.tracks,
-            aliases = request.aliases.entries.associate { SongId(it.key) to SongId(it.value) }
+            aliases = request.aliases.entries.associate { SongId(it.key) to SongId(it.value) },
+            isStopped = isStopped
         ) { done, total ->
             mutableStatus.value = ExportStatus.Running(done, total)
             onProgress(done, total)

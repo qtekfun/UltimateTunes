@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Benchmark scripts (PLAN T21): the server's rules, but they are standalone scripts that print
+# their results and use fixed sampling numbers.
+#   (cd server && uv run ruff check ../tools/bench && uv run mypy --strict ../tools/bench/*.py)
+extend = "../../server/pyproject.toml"
+
+[lint]
+extend-ignore = ["INP001", "T201", "PLR2004"]
