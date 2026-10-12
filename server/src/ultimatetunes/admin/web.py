@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 from ultimatetunes.admin import notify, routes
 from ultimatetunes.admin.security import AdminGate, SessionCodec
+from ultimatetunes.core.forwarded import TRUSTED_NETWORKS_STATE
 from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.netaddr import LOOPBACK
@@ -60,6 +61,9 @@ def install(
         app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]
     denied = services.settings.worker_network_list
     app.add_middleware(AdminGate, networks=settings.networks(), denied=denied)
+    # The same networks decide which per-user login lockout counter a password check moves
+    # (`AuthService.verify_password`): inside them, or outside.
+    setattr(app.state, TRUSTED_NETWORKS_STATE, (settings.networks(), denied))
     # Whoever may reach the panel may also read the `/readyz` detail.
     setattr(app.state, PROBE_NETWORKS_STATE, LOOPBACK + settings.networks())
     sweep = notify.NotificationSweep(services.db, services.clock, sender)

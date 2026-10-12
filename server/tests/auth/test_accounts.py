@@ -77,9 +77,42 @@ def test_password_failures_lock_the_username_across_ips(
         service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.3")
     assert caught.value.retry_after_s == 60
     lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
-    assert [(e.target_type, e.target_id) for e in lockout] == [("user", "alice")]
+    assert [(e.target_type, e.target_id) for e in lockout] == [("user-out", "alice")]
     clock.advance(60)
     assert service.verify_password("alice", ADMIN_PASSWORD, IP).id == admin.user_id
+
+
+def test_strangers_cannot_lock_out_logins_from_trusted_networks(
+    service: AuthService, admin: Account
+) -> None:
+    """Audit M1: wrong passwords from the Internet (`POST /ut/v1/keys`) lock only the outside
+    counter; the admin still logs in from LAN/Tailscale."""
+    for ip in ("203.0.113.1", "203.0.113.2"):
+        with pytest.raises(AuthenticationFailed):
+            service.create_key_with_password("alice", "guess", "Laptop", ip)
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.3")
+    assert service.verify_password("alice", ADMIN_PASSWORD, IP, trusted=True).id == admin.user_id
+    created = service.create_key_with_password(
+        "alice", ADMIN_PASSWORD, "Phone", IP, trusted=True
+    )
+    assert created.key.user_id == admin.user_id
+    # The outside counter is still locked: a success inside does not reset it.
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, "203.0.113.4")
+
+
+def test_failures_from_trusted_networks_lock_only_the_inside_counter(
+    service: AuthService, admin: Account
+) -> None:
+    for ip in ("192.168.1.10", "192.168.1.11"):
+        with pytest.raises(AuthenticationFailed):
+            service.verify_password("alice", "guess", ip, trusted=True)
+    with pytest.raises(RateLimited):
+        service.verify_password("alice", ADMIN_PASSWORD, "192.168.1.12", trusted=True)
+    lockout = [e for e in service.recent_audit() if e.action == "auth.lockout"]
+    assert [(e.target_type, e.target_id) for e in lockout] == [("user", "alice")]
+    assert service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP).id == admin.user_id
 
 
 def test_password_failures_lock_the_ip(service: AuthService, admin: Account) -> None:
