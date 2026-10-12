@@ -1,0 +1,16 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Sign in") }}{% endblock %}
+{% block content %}
+<div class="card login">
+  <h1>{{ _("Sign in") }}</h1>
+  <form class="stack" method="post" action="/admin/login">
+    <input type="hidden" name="csrf" value="{{ login_token }}">
+    <label>{{ _("Username") }}<input name="username" autocomplete="username" required autofocus></label>
+    <label>{{ _("Password") }}<input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">{{ _("Sign in") }}</button>
+  </form>
+  <p class="muted">{{ _("The panel needs HTTPS (for example tailscale serve) or localhost.") }}</p>
+</div>
+{% endblock %}

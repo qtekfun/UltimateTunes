@@ -1,0 +1,68 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Library") }}{% endblock %}
+{% macro delete_form(kind, item_id) %}
+<form class="inline" method="post" action="/admin/library/{{ kind }}/{{ item_id }}/delete">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="check"><input type="checkbox" name="confirm" value="yes" required>{{ _("Sure") }}</label>
+  <button class="danger" type="submit">{{ _("Delete") }}</button>
+</form>
+{% endmacro %}
+{% block content %}
+<h1>{{ _("Library") }}</h1>
+<div class="grid">
+  <div class="card stat"><div class="muted">{{ _("Tracks") }}</div><div class="value">{{ stats.tracks }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Albums") }}</div><div class="value">{{ stats.albums }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Artists") }}</div><div class="value">{{ stats.artists }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Music files") }}</div><div class="value">{{ stats.track_bytes | size }}</div></div>
+  {% if usage %}
+  <div class="card stat"><div class="muted">{{ _("Disk used") }}</div><div class="value">{{ usage.used_bytes | size }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Disk free") }}</div><div class="value">{{ usage.free_bytes | size }}</div></div>
+  {% endif %}
+</div>
+
+<h2>{{ _("Need review") }} ({{ stats.needs_review }})</h2>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("Song") }}</th><th>{{ _("Album") }}</th><th>{{ _("Status") }}</th><th></th></tr></thead>
+  <tbody>
+  {% for track in review %}
+  <tr><td>{{ track.artist_name }} – {{ track.title }}</td><td>{{ track.album_name or "-" }}</td><td>{{ track.status }}</td><td>{{ delete_form("tracks", track.id) }}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">{{ _("Nothing here.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>{{ _("Find tracks and albums to delete") }}</h2>
+<form class="inline" method="get" action="/admin/library">
+  <input name="q" value="{{ query }}" maxlength="100" aria-label="{{ _("Search") }}">
+  <button class="secondary" type="submit">{{ _("Search") }}</button>
+</form>
+{% if query %}
+<div class="card table-wrap">
+<h2>{{ _("Albums") }}</h2>
+<table>
+  <tbody>
+  {% for album in albums %}
+  <tr><td>{{ album.artist }} – {{ album.name }}{% if album.year %} ({{ album.year }}){% endif %}</td><td>{{ _("%(count)s tracks", count=album.track_count) }}</td><td>{{ delete_form("albums", album.id) }}</td></tr>
+  {% else %}
+  <tr><td class="muted">{{ _("Nothing here.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>{{ _("Tracks") }}</h2>
+<table>
+  <tbody>
+  {% for track in tracks %}
+  <tr><td>{{ track.artist_name }} – {{ track.title }}</td><td>{{ track.album_name or "-" }}</td><td>{{ track.status }}</td><td>{{ delete_form("tracks", track.id) }}</td></tr>
+  {% else %}
+  <tr><td class="muted">{{ _("Nothing here.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
