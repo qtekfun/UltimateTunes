@@ -28,6 +28,7 @@ AREAS: tuple[str, ...] = (
     "ultimatetunes.cli",  # api, migrate (coordinator)
     "ultimatetunes.worker.cli",  # worker (PLAN T08)
     "ultimatetunes.auth.cli",  # e.g. bootstrap-admin (PLAN T04)
+    "ultimatetunes.library.cli",  # scan-library (PLAN T05)
     "ultimatetunes.canary.cli",  # canary (PLAN T19)
 )
 

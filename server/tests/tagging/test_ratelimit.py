@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The worker's in-process `RateLimiter` (100 % coverage, same rules as the SQLite one)."""
+
+import pytest
+
+from ultimatetunes.core.clock import FakeClock
+from ultimatetunes.core.ratelimit import Decision, Limit, RateLimiter
+from ultimatetunes.tagging.ratelimit import MemoryRateLimiter, wait_for_token
+
+pytestmark = pytest.mark.anyio
+ONE_PER_S = Limit(1.0, 1.0)
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+def test_it_is_a_rate_limiter() -> None:
+    limiter: RateLimiter = MemoryRateLimiter(FakeClock())
+    assert limiter.hit("k", ONE_PER_S).allowed
+
+
+def test_buckets_refill_over_time() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    limit = Limit(rate_per_s=0.5, burst=2)
+    assert limiter.hit("k", limit).allowed
+    assert limiter.hit("k", limit).allowed
+    assert limiter.hit("k", limit) == Decision(allowed=False, retry_after_s=2)
+    clock.advance(1)
+    assert limiter.hit("k", limit) == Decision(allowed=False, retry_after_s=1)
+    clock.advance(1)
+    assert limiter.hit("k", limit).allowed
+    clock.advance(100)
+    assert limiter.hit("k", limit, cost=2).allowed
+    assert limiter.hit("other", limit).allowed
+
+
+def test_failures_lock_the_key_until_the_lockout_ends() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    assert limiter.locked("k").allowed
+    assert limiter.record_failure("k", max_failures=2, lockout_s=10).allowed
+    assert limiter.record_failure("k", max_failures=2, lockout_s=10) == Decision(False, 10)
+    assert limiter.locked("k") == Decision(False, 10)
+    assert limiter.hit("k", ONE_PER_S) == Decision(False, 10)
+    clock.advance(10)
+    assert limiter.locked("k").allowed
+    assert limiter.hit("k", ONE_PER_S).allowed
+
+
+def test_success_clears_the_failure_count() -> None:
+    limiter = MemoryRateLimiter(FakeClock())
+    limiter.record_success("missing")
+    limiter.record_failure("k", max_failures=2, lockout_s=10)
+    limiter.record_success("k")
+    assert limiter.record_failure("k", max_failures=2, lockout_s=10).allowed
+
+
+@pytest.mark.parametrize(("failures", "lockout"), [(0, 1.0), (1, 0.0)])
+def test_failure_limits_must_be_positive(failures: int, lockout: float) -> None:
+    with pytest.raises(ValueError, match="positive"):
+        MemoryRateLimiter(FakeClock()).record_failure("k", max_failures=failures, lockout_s=lockout)
+
+
+def test_purge_forgets_idle_keys_but_not_running_lockouts() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    limiter.hit("idle", ONE_PER_S)
+    limiter.record_failure("locked", max_failures=1, lockout_s=1000)
+    limiter.record_failure("expired", max_failures=1, lockout_s=5)
+    clock.advance(60)
+    limiter.hit("fresh", ONE_PER_S)
+    assert limiter.purge_idle(30) == 2
+    assert limiter.purge_idle(30) == 0
+    assert limiter.locked("locked").allowed is False
+
+
+async def test_wait_for_token_sleeps_until_allowed() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        clock.advance(seconds)
+
+    for _ in range(3):
+        await wait_for_token(limiter, "musicbrainz:global", ONE_PER_S, sleep)
+    assert slept == [1, 1]
