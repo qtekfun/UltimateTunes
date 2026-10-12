@@ -9,6 +9,7 @@ import pytest
 
 from tests.streaming.harness import AUDIO, VIDEO, Download, Listening, Live, until
 from ultimatetunes.jobs.queue import PRIORITY_STREAM
+from ultimatetunes.streaming import service
 
 pytestmark = pytest.mark.anyio
 
@@ -251,3 +252,86 @@ async def test_a_retry_with_another_format_cuts_the_stream(live: Live) -> None:
         retry.write(100)
         await listening.done.wait()
     assert isinstance(listening.error, httpx.RemoteProtocolError)
+
+
+async def test_a_listener_finds_the_file_renamed_before_the_report(live: Live) -> None:
+    async with anyio.create_task_group() as group:
+        first = start(live, group)
+        dl = await requested(live)
+        dl.write(100)
+        await until(lambda: len(first.body) == 100)
+        # The worker renamed the file; its `finished` report is still on its way.
+        live.services.staging.rename(dl.part, dl.final)
+        late = start(live, group, key="utk_bob")
+        await until(lambda: len(late.body) == 100)
+        # The worker writes on through its open handle (same inode), then reports.
+        with live.services.staging.open_write(dl.final, append=True) as out:
+            out.write(AUDIO[100:])
+        dl.written = len(AUDIO)
+        dl.finished = True
+        dl.report(state="tagging")
+        await first.done.wait()
+        await late.done.wait()
+    assert bytes(first.body) == bytes(late.body) == AUDIO
+
+
+async def test_reported_bytes_that_never_appear_cut_the_stream(
+    live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service, "MISSING_BYTES_GRACE_S", 0.2)
+    async with anyio.create_task_group() as group:
+        listening = start(live, group)
+        dl = await requested(live)
+        dl.write(100)
+        await until(lambda: len(listening.body) == 100)
+        dl.written = 500  # reported, but not on disk
+        dl.report()
+        await listening.done.wait()
+    assert isinstance(listening.error, httpx.RemoteProtocolError)
+    assert len(listening.body) == 100
+
+
+async def test_a_vanished_staging_file_cuts_the_stream(
+    live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service, "MISSING_BYTES_GRACE_S", 0.2)
+    async with anyio.create_task_group() as group:
+        first = start(live, group)
+        dl = await requested(live)
+        dl.write(100)
+        await until(lambda: len(first.body) == 100)
+        live.services.staging.delete(dl.part)
+        late = start(live, group, key="utk_bob")
+        await late.done.wait()
+        first.stop.set()
+    assert late.status == 200
+    assert isinstance(late.error, httpx.RemoteProtocolError)
+    assert not late.body
+
+
+async def test_an_unreadable_staging_file_cuts_the_stream(live: Live) -> None:
+    async with anyio.create_task_group() as group:
+        dl_task = start(live, group)
+        dl = await requested(live)
+        # A directory where the file should be: reading it is an I/O error.
+        (live.services.settings.staging_dir / dl.part).mkdir(parents=True)
+        dl.written = 100
+        dl.report()
+        await dl_task.done.wait()
+    assert isinstance(dl_task.error, httpx.RemoteProtocolError)
+
+
+async def test_a_failing_cleanup_never_breaks_a_stream(
+    live: Live, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def broken(job_id: str) -> int:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(live.client_app.state.staging_janitor, "clean_job", broken)
+    async with anyio.create_task_group() as group:
+        listening = start(live, group)
+        dl = await requested(live)
+        dl.finish()
+        await listening.done.wait()
+    assert bytes(listening.body) == AUDIO
+    await until(lambda: "staging cleanup of job" in caplog.text)
