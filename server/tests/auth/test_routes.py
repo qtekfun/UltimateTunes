@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from tests.auth.conftest import ADMIN_PASSWORD, USER_PASSWORD, fast_passwords
 from ultimatetunes.app import create_app
 from ultimatetunes.auth import web
+from ultimatetunes.auth.routes import CreateKeyRequest
 from ultimatetunes.auth.service import HELP_URL, AuthService
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.clock import FakeClock
@@ -157,6 +158,15 @@ def test_create_key_lockout_answers_429(client: TestClient, auth: AuthService) -
     r = client.post("/ut/v1/keys", json=body)
     problem(r, 429, "rate_limited")
     assert r.headers["retry-after"] == "60"
+
+
+def test_create_key_request_hides_the_password() -> None:
+    body = CreateKeyRequest.model_validate_json(
+        '{"username": "alice", "password": "a secret passphrase", "name": "x"}'
+    )
+    assert body.password.get_secret_value() == "a secret passphrase"
+    assert "a secret passphrase" not in repr(body)
+    assert "a secret passphrase" not in str(body)
 
 
 # ---------------------------------------------------------------- authenticated routes

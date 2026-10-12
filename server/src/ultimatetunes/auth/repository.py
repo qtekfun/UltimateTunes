@@ -3,7 +3,7 @@
 """Users, API keys and the audit log (tables of contracts/db/migrations/0001_init.sql)."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ultimatetunes.db.repository import Repository, to_db_bool
 
@@ -17,7 +17,7 @@ _KEY_COLUMNS = "id, user_id, name, prefix, created_at, last_used_at, last_used_i
 class User:
     id: str
     username: str
-    password_hash: str
+    password_hash: str = field(repr=False)
     role: str
     is_disabled: bool
     created_at: str

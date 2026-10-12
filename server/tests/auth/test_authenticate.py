@@ -183,25 +183,6 @@ def test_ut_conflicting_and_missing_and_invalid(service: AuthService, admin: Acc
     assert caught.value.help_url is None
 
 
-def test_identify_reads_the_caller_without_side_effects(
-    service: AuthService, db: Database, admin: Account, user: Account
-) -> None:
-    assert service.identify(admin.key, None).api_key_id == admin.key_id
-    assert key_row(db, admin.key_id)["last_used_at"] is None
-    with pytest.raises(ConflictingAuth):
-        service.identify(admin.key, user.key)
-    with pytest.raises(InvalidApiKey):
-        service.identify(None, None)
-    with pytest.raises(InvalidApiKey):
-        service.identify(UNKNOWN_KEY, None)
-    service.revoke_key(admin.key_id, actor=None)
-    with pytest.raises(InvalidApiKey):
-        service.identify(admin.key, None)
-    service.set_disabled(user.user_id, True, actor=None)
-    with pytest.raises(AccountDisabled):
-        service.identify(None, user.key)
-
-
 # ---------------------------------------------------------------- last use
 
 
@@ -276,15 +257,39 @@ def test_invalid_keys_lock_the_ip(
         service.authenticate_subsonic(params(apiKey=UNKNOWN_KEY), IP)
 
 
-def test_disabled_user_failures_count(service: AuthService, user: Account) -> None:
+def test_stale_devices_never_lock_out_their_ip(
+    service: AuthService, admin: Account, user: Account
+) -> None:
+    """A disabled user's device (or one with a revoked key) polling all day is not guessing."""
     service.set_disabled(user.user_id, True, actor=None)
-    for _ in range(3):
+    for _ in range(50):
         with pytest.raises(AccountDisabled):
-            service.authenticate_subsonic(params(apiKey=user.key), None)
+            service.authenticate_subsonic(params(apiKey=user.key), IP)
+    revoked = service.create_key(admin.user_id, "Old tablet", actor=None)
+    service.revoke_key(revoked.key.id, actor=None)
+    for _ in range(50):
+        with pytest.raises(InvalidApiKey):
+            service.authenticate_api_key(revoked.secret, None, IP)
+    # The household IP is not locked: an unknown key still gets 44, not 429.
+    with pytest.raises(InvalidApiKey):
+        service.authenticate_subsonic(params(apiKey=UNKNOWN_KEY), IP)
+    assert [e for e in service.recent_audit() if e.action == "auth.lockout"] == []
+
+
+def test_stale_devices_get_429_while_the_ip_is_locked(
+    service: AuthService, admin: Account, user: Account
+) -> None:
+    for _ in range(3):
+        with pytest.raises(InvalidApiKey):
+            service.authenticate_subsonic(params(apiKey=UNKNOWN_KEY), None)
+    service.set_disabled(user.user_id, True, actor=None)
     with pytest.raises(RateLimited):
-        service.authenticate_subsonic(params(apiKey=UNKNOWN_KEY), None)
-    entries = [e for e in service.recent_audit() if e.action == "auth.lockout"]
-    assert entries[0].target_id == "unknown"
+        service.authenticate_subsonic(params(apiKey=user.key), None)
+    service.revoke_key(admin.key_id, actor=None)
+    with pytest.raises(RateLimited):
+        service.authenticate_api_key(admin.key, None, None)
+    (entry,) = [e for e in service.recent_audit() if e.action == "auth.lockout"]
+    assert entry.target_id == "unknown"
 
 
 def test_no_key_ever_matches_by_prefix_or_hash(service: AuthService, admin: Account) -> None:

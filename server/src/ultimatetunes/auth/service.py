@@ -17,7 +17,11 @@ On `/ut/v1`: `X-Api-Key` or `apiKey`, both only when equal (`conflicting_auth`).
 Rate limit and lockout (`core.ratelimit`):
 - Every request with a valid key takes a token from `auth:key:<id>`.
 - Failures (40, 44, 50) count per IP (`auth:ip:<ip>`), and password failures also per username
-  (`auth:user:<name>`). Reaching the limit locks that bucket for `auth_lockout_s`.
+  (`auth:user:<name>`). Reaching the limit locks that bucket for `auth_lockout_s`. A key that
+  exists but is revoked or belongs to a disabled user is refused without counting (a stale
+  device is not guessing), so it never locks out its IP.
+- Password checks need the client address: without one they are refused (`Forbidden`), so
+  anonymous callers never share one lockout bucket. A reverse proxy must forward client IPs.
 - A locked IP gets 429 instead of 40/44 for bad credentials, and password checks are refused
   before Argon2 runs. A **valid API key is never refused for its IP's lockout**: one stale device
   behind a shared home IP must not lock out the whole household, and a 256-bit key cannot be
@@ -30,7 +34,7 @@ Secrets (keys, passwords, hashes) never reach a log line, an audit entry or an e
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, NoReturn
 
@@ -58,6 +62,7 @@ from ultimatetunes.errors import (
     AuthenticationRequired,
     Conflict,
     ConflictingAuth,
+    Forbidden,
     InvalidApiKey,
     InvalidParameter,
     NotFound,
@@ -129,8 +134,8 @@ class AuditEvent:
 @dataclass(frozen=True)
 class CreatedKey:
     key: ApiKey
-    # The full key: returned once to the caller, never stored or logged.
-    secret: str
+    # The full key: returned once to the caller, never stored, logged or shown by repr.
+    secret: str = field(repr=False)
 
 
 class AuthService:
@@ -183,17 +188,6 @@ class AuthService:
             raise AuthenticationRequired()
         return self._by_key(key, client_ip, InvalidApiKey())
 
-    def identify(self, header_key: str | None, query_key: str | None) -> Principal:
-        """The caller of a request whose key `authenticate_api_key` already accepted: no rate
-        limit, no failure count, no last-use update (a route needing the `Principal` again)."""
-        key = self._one_key(header_key, query_key)
-        owner = self._owner(key or "")
-        if owner is None or owner.revoked_at is not None:
-            raise InvalidApiKey()
-        if owner.is_disabled:
-            raise AccountDisabled()
-        return self._principal(owner)
-
     @staticmethod
     def _one_key(header_key: str | None, query_key: str | None) -> str | None:
         if header_key and query_key and header_key != query_key:
@@ -219,15 +213,14 @@ class AuthService:
         username: str | None = None,
     ) -> Principal:
         owner = self._owner(key)
-        if (
-            owner is None
-            or owner.revoked_at is not None
-            or (username is not None and owner.username != username)
-        ):
+        if owner is None or (username is not None and owner.username != username):
             self._refuse_locked(self._ip_bucket(client_ip))
             self._fail(invalid, client_ip)
-        if owner.is_disabled:
-            self._fail(AccountDisabled(), client_ip)
+        if owner.revoked_at is not None or owner.is_disabled:
+            # A real key, revoked or of a disabled user: a stale device, not a guess. Refused
+            # (429 while the IP is locked) but never counted, so it cannot lock out its IP.
+            self._refuse_locked(self._ip_bucket(client_ip))
+            raise invalid if owner.revoked_at is not None else AccountDisabled()
         limit = Limit(self._settings.auth_key_rate_per_s, self._settings.auth_key_burst)
         decision = self._limiter.hit(f"auth:key:{owner.key_id}", limit)
         if not decision.allowed:
@@ -285,10 +278,12 @@ class AuthService:
     def verify_password(self, username: str, password: str, client_ip: str | None) -> User:
         """Checks an account password (admin panel login, `POST /ut/v1/keys`). Wrong password
         and unknown user give the same `AuthenticationFailed` in the same time."""
+        if not client_ip:
+            raise Forbidden("Password checks need the client address")
         name = normalize_username(username)
         self._refuse_locked(self._ip_bucket(client_ip), self._user_bucket(name))
         limit = Limit(self._settings.auth_login_rate_per_s, self._settings.auth_login_burst)
-        decision = self._limiter.hit(f"auth:login:{client_ip or 'unknown'}", limit)
+        decision = self._limiter.hit(f"auth:login:{client_ip}", limit)
         if not decision.allowed:
             raise RateLimited(decision.retry_after_s)
         with self._db.read() as conn:

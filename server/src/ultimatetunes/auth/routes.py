@@ -3,22 +3,22 @@
 """`/ut/v1/me` and `/ut/v1/keys` (contracts/openapi/ut-v1.yaml). Owner: PLAN T04.
 
 Routes in `router` need an API key: `ut/__init__.py` authenticates it (rate limit, last use)
-before the handler runs, and `caller` below reads the `Principal` back without counting the
-request twice. `POST /ut/v1/keys` is in `public_router`: it authenticates with username and
-password (`AuthService.create_key_with_password`).
+before the handler runs; handlers depend on the same `current_principal`, which FastAPI caches
+per request, so the key is checked once. `POST /ut/v1/keys` is in `public_router`: it
+authenticates with username and password (`AuthService.create_key_with_password`).
 """
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
 from ultimatetunes.auth.repository import ApiKey
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.web import auth_service
-from ultimatetunes.core.authn import Principal
+from ultimatetunes.core.authn import Principal, current_principal
 from ultimatetunes.errors import InvalidParameter, PayloadTooLarge
 
 router = APIRouter()
@@ -33,11 +33,8 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def caller(request: Request, service: Service) -> Principal:
-    return service.identify(request.headers.get("x-api-key"), request.query_params.get("apiKey"))
-
-
-Caller = Annotated[Principal, Depends(caller)]
+# The same dependency as the router's, so FastAPI resolves the caller once per request.
+Caller = Annotated[Principal, Depends(current_principal)]
 
 
 def key_json(key: ApiKey, current_key_id: str | None) -> dict[str, object]:
@@ -75,7 +72,7 @@ class CreateKeyRequest(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=1024)
+    password: SecretStr = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=100)
 
 
@@ -102,7 +99,7 @@ async def create_key(request: Request, service: Service) -> Response:
     created = await run_in_threadpool(
         service.create_key_with_password,
         body.username,
-        body.password,
+        body.password.get_secret_value(),
         body.name,
         _client_ip(request),
         request.headers.get("x-api-key") or request.query_params.get("apiKey") or None,

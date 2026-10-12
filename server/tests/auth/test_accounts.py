@@ -21,6 +21,7 @@ from ultimatetunes.errors import (
     AuthenticationFailed,
     Conflict,
     ConflictingAuth,
+    Forbidden,
     InvalidApiKey,
     InvalidParameter,
     NotFound,
@@ -102,10 +103,32 @@ def test_login_rate_limit(db: Database, clock: FakeClock, auth_settings: AuthSet
     tight = auth_settings.model_copy(update={"auth_login_burst": 2.0})
     service = AuthService(db, clock, SqliteRateLimiter(db, clock), tight, fast_passwords())
     service.create_user("alice", ADMIN_PASSWORD, "admin", actor=None)
-    service.verify_password("alice", ADMIN_PASSWORD, None)
-    service.verify_password("alice", ADMIN_PASSWORD, None)
+    service.verify_password("alice", ADMIN_PASSWORD, IP)
+    service.verify_password("alice", ADMIN_PASSWORD, IP)
     with pytest.raises(RateLimited):
-        service.verify_password("alice", ADMIN_PASSWORD, None)
+        service.verify_password("alice", ADMIN_PASSWORD, IP)
+    assert service.verify_password("alice", ADMIN_PASSWORD, OTHER_IP).username == "alice"
+
+
+@pytest.mark.parametrize("client_ip", [None, ""])
+def test_password_checks_need_the_client_address(
+    service: AuthService, admin: Account, client_ip: str | None
+) -> None:
+    with pytest.raises(Forbidden):
+        service.verify_password("alice", ADMIN_PASSWORD, client_ip)
+    with pytest.raises(Forbidden):
+        service.create_key_with_password("alice", ADMIN_PASSWORD, "Laptop", client_ip)
+
+
+def test_repr_never_shows_secrets(service: AuthService, admin: Account) -> None:
+    user = service.get_user(admin.user_id)
+    assert user.password_hash not in repr(user)
+    assert user.password_hash not in str(user)
+    assert "password_hash" not in repr(user)
+    created = service.create_key(admin.user_id, "Laptop", actor=None)
+    for text in (repr(created), str(created), repr(created.key)):
+        assert created.secret not in text
+    assert "secret" not in repr(created)
 
 
 def test_password_is_rehashed_when_parameters_change(
