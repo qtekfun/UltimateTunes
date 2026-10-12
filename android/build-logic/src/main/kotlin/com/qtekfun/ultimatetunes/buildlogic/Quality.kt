@@ -109,6 +109,8 @@ internal fun Project.configureQuality() {
     // SPDX ids (MIT, BSD-2-Clause, BSD-3-Clause, ISC...) only when a dependency needs them.
     extensions.configure<LicenseeExtension> {
         allow("Apache-2.0")
+        // The protobuf runtime DataStore embeds (datastore-preferences-external-protobuf).
+        allow("BSD-3-Clause")
     }
 
     // The "critical" coverage variant (debug build) of every module: :app merges them and verifies
