@@ -38,3 +38,5 @@ server/reports/
 # Misc
 .DS_Store
 .claude/settings.local.json
+# Gradle --dry-run output of --write-verification-metadata
+*.dryrun.xml
