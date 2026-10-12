@@ -21,9 +21,13 @@ attempt adds to the count (it never starts again), and a job queued again by som
 leaves the bytes already downloaded with the first user.
 
 `claim` (`claimable_sql`) skips the jobs of users over their daily bytes, so queuing many jobs
-before the first one finishes cannot overshoot by more than the jobs already running, and hands
-out nothing at all while space is low. The low-space state is kept in the `settings` table
-(`LOW_DISK_KEY`, the moment it began): it is logged once when it starts and once when it ends,
+before the first one finishes cannot overshoot by more than the jobs already running. When
+another user asks for such a queued job and still has allowance left, the job moves to them
+(`adopt`), so a song one user cannot afford is never stuck for everyone else. `claim` also
+hands out nothing at all while space is low. The low-space state is kept in the `settings` table
+(`LOW_DISK_KEY`, the moment it began): it starts below `UT_MIN_FREE_BYTES` and ends only above
+it plus `RESUME_MARGIN` (hysteresis, so a disk hovering at the limit does not flap); it is
+logged once when it starts and once when it ends,
 reported by the admin notifications (admin/notify.py) and shown in the `/readyz` detail.
 """
 
@@ -47,6 +51,8 @@ DAY = timedelta(hours=24)
 # Usage rows older than this are deleted when a user's next hour starts.
 KEEP_USAGE = timedelta(hours=48)
 LOW_DISK_KEY = "downloads.low_disk_since"
+# Downloads resume only above `UT_MIN_FREE_BYTES` times this.
+RESUME_MARGIN = 1.1
 _ACTIVE = "('queued', 'downloading', 'tagging')"
 
 
@@ -64,9 +70,11 @@ class DownloadGate:
 
     # ------------------------------------------------------------------ disk space
 
-    def has_space(self) -> bool:
-        """Every store has at least `UT_MIN_FREE_BYTES` free (a store that cannot say is full)."""
-        minimum = self._limits.min_free_bytes
+    def has_space(self, minimum: float | None = None) -> bool:
+        """Every store has at least `minimum` (default `UT_MIN_FREE_BYTES`) free (a store that
+        cannot say is full)."""
+        if minimum is None:
+            minimum = self._limits.min_free_bytes
         for store in self._stores:
             try:
                 free = store.free_bytes()
@@ -78,18 +86,23 @@ class DownloadGate:
 
     def note_space(self, conn: Connection) -> bool:
         """`has_space`, recording a change of state (logged once each way, module doc)."""
-        ok = self.has_space()
         since = conn.execute("SELECT value FROM settings WHERE key = ?", (LOW_DISK_KEY,)).scalar()
+        threshold = self._limits.min_free_bytes * (1 if since is None else RESUME_MARGIN)
+        ok = self.has_space(threshold)
         if not ok and since is None:
             now = format_ts(self._clock.now())
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            # Another replica may record it at the same moment: the first one wins.
+            if conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT (key) DO NOTHING",
                 (LOW_DISK_KEY, now, now),
-            )
-            log.warning("downloads paused: less than UT_MIN_FREE_BYTES free on /music or /staging")
+            ).rowcount:
+                log.warning(
+                    "downloads paused: less than UT_MIN_FREE_BYTES free on /music or /staging"
+                )
         elif ok and since is not None:
-            conn.execute("DELETE FROM settings WHERE key = ?", (LOW_DISK_KEY,))
-            log.warning("downloads resumed: free space is back above UT_MIN_FREE_BYTES")
+            if conn.execute("DELETE FROM settings WHERE key = ?", (LOW_DISK_KEY,)).rowcount:
+                log.warning("downloads resumed: free space is back above UT_MIN_FREE_BYTES")
         return ok
 
     def check_space(self) -> None:
@@ -124,13 +137,29 @@ class DownloadGate:
         if int(str(active or 0)) >= self._limits.max_queued_jobs_per_user:
             log.info("download refused: a user reached UT_MAX_QUEUED_JOBS_PER_USER")
             raise RateLimited(RETRY_QUEUED_S, "Too many downloads queued for this account")
+        if self._over_allowance(conn, user_id):
+            log.info("download refused: a user reached UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER")
+            raise RateLimited(RETRY_BYTES_S, "This account's daily download allowance is used up")
+
+    def _over_allowance(self, conn: Connection, user_id: str) -> bool:
         spent = conn.execute(
             "SELECT SUM(bytes) FROM download_usage WHERE user_id = ? AND hour_start >= ?",
             (user_id, self._window_start()),
         ).scalar()
-        if int(str(spent or 0)) >= self._limits.max_download_bytes_per_day_per_user:
-            log.info("download refused: a user reached UT_MAX_DOWNLOAD_BYTES_PER_DAY_PER_USER")
-            raise RateLimited(RETRY_BYTES_S, "This account's daily download allowance is used up")
+        return int(str(spent or 0)) >= self._limits.max_download_bytes_per_day_per_user
+
+    def adopt(self, conn: Connection, job_id: str, user_id: str) -> bool:
+        """Moves a queued job whose requester is over the daily bytes to `user_id`, when that
+        user has allowance left (module doc). True when it moved."""
+        owner = conn.execute("SELECT requested_by FROM jobs WHERE id = ?", (job_id,)).scalar()
+        if owner is None or owner == user_id or not self._over_allowance(conn, str(owner)):
+            return False
+        if self._over_allowance(conn, user_id):
+            return False
+        conn.execute(
+            "UPDATE jobs SET requested_by = ? WHERE id = ? AND state = 'queued'", (user_id, job_id)
+        )
+        return True
 
     def _window_start(self) -> str:
         """The first hour row inside the last 24 hours."""

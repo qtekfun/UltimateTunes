@@ -374,11 +374,16 @@ class SqliteJobQueue:
             self._admit(conn, track_id, requested_by)
             self._requeue(conn, existing, priority, now, requested_by)
             self.signal.notify()
-        elif existing.state == sm.JobState.QUEUED and priority > existing.priority:
-            jobs.run(
-                "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
-                (priority, now, existing.id),
-            )
+        elif existing.state == sm.JobState.QUEUED:
+            if priority > existing.priority:
+                jobs.run(
+                    "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
+                    (priority, now, existing.id),
+                )
+            if self._gate is not None and requested_by is not None:
+                # A job waiting on its requester's daily allowance moves to a requester that
+                # has some left, so it is claimed (jobs/gate.py).
+                self._gate.adopt(conn, existing.id, requested_by)
         return self._require(conn, existing.id)
 
     @staticmethod

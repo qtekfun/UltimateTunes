@@ -11,12 +11,14 @@ from ultimatetunes.db import Database
 from ultimatetunes.errors import InvalidParameter, RateLimited
 from ultimatetunes.jobs.gate import (
     LOW_DISK_KEY,
+    RESUME_MARGIN,
     RETRY_BYTES_S,
     RETRY_QUEUED_S,
     RETRY_SPACE_S,
     DownloadGate,
+    hour_start,
 )
-from ultimatetunes.jobs.queue import PRIORITY_KEEP, Claimed, SqliteJobQueue
+from ultimatetunes.jobs.queue import PRIORITY_KEEP, PRIORITY_STREAM, Claimed, SqliteJobQueue
 
 GIB = 1024**3
 ALICE = "0199d6a2-0000-7000-8000-00000000a11c"
@@ -157,7 +159,7 @@ def test_low_disk_space_refuses_new_downloads_and_claims(
         since = conn.execute("SELECT value FROM settings WHERE key = ?", (LOW_DISK_KEY,)).scalar()
     assert since == format_ts(clock.now())
     assert caplog.text.count("downloads paused") == 1
-    low.free = 2 * GIB
+    low.free = 3 * GIB
     claimed = queue.claim("w1", lease_s=60)
     assert claimed is not None
     queue.claim("w1", lease_s=60)
@@ -343,3 +345,81 @@ def test_the_limits_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("UT_MIN_FREE_BYTES", "0")
     loaded = DownloadLimits()
     assert (loaded.max_track_duration_s, loaded.min_free_bytes) == (600, 0)
+
+
+def test_a_job_stuck_on_its_requesters_allowance_moves_to_who_asks_next(
+    db: Database, clock: FakeClock, queue: SqliteJobQueue
+) -> None:
+    keep(queue, add_track(db, clock, 1))
+    clock.advance(1)
+    waiting = add_track(db, clock, 2)
+    job_id = keep(queue, waiting)
+    download(queue, 10_000)  # Alice is now over her allowance
+    assert queue.claim("w2", lease_s=60) is None
+    # Bob streams the same song: the job moves to him, is claimed, and charged to him.
+    queue.enqueue(
+        track_id=waiting[0], video_id=waiting[1], priority=PRIORITY_STREAM, requested_by=BOB
+    )
+    claimed = queue.claim("w2", lease_s=60)
+    assert claimed is not None
+    assert claimed.job.id == job_id
+    queue.progress(claimed.job.id, claimed.lease.lease_id, report(claimed, bytes_downloaded=700))
+    assert (usage(db, ALICE), usage(db, BOB)) == (10_000, 700)
+
+
+def test_a_job_moves_only_to_a_requester_with_allowance_left(
+    db: Database, clock: FakeClock, queue: SqliteJobQueue
+) -> None:
+    gate = queue._gate
+    assert gate is not None
+    keep(queue, add_track(db, clock, 1))
+    clock.advance(1)
+    job_id = keep(queue, add_track(db, clock, 2))
+    with db.transaction() as conn:
+        # Alice still has allowance: nothing moves.
+        assert gate.adopt(conn, job_id, BOB) is False
+        assert gate.adopt(conn, job_id, ALICE) is False
+    download(queue, 10_000)
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO download_usage (user_id, hour_start, bytes) VALUES (?, ?, 10000)",
+            (BOB, hour_start(clock.now())),
+        )
+        # Bob is over his allowance too: nothing moves.
+        assert gate.adopt(conn, job_id, BOB) is False
+    with db.transaction() as conn:
+        conn.execute("UPDATE jobs SET requested_by = NULL WHERE id = ?", (job_id,))
+        # A job without a requester is claimable anyway.
+        assert gate.adopt(conn, job_id, BOB) is False
+
+
+def test_downloads_resume_only_with_a_margin_above_the_threshold(
+    db: Database, clock: FakeClock, queue: SqliteJobQueue, music: Disk
+) -> None:
+    keep(queue, add_track(db, clock, 1))
+    music.free = 2 * GIB - 1
+    assert queue.claim("w1", lease_s=60) is None
+    music.free = 2 * GIB  # back at the threshold, but not above the margin
+    assert queue.claim("w1", lease_s=60) is None
+    music.free = int(2 * GIB * RESUME_MARGIN) + 1
+    assert queue.claim("w1", lease_s=60) is not None
+
+
+def test_a_low_disk_state_recorded_by_another_replica_is_kept(
+    db: Database,
+    clock: FakeClock,
+    queue: SqliteJobQueue,
+    music: Disk,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    gate = queue._gate
+    assert gate is not None
+    music.free = 0
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, 'earlier', 'earlier')",
+            (LOW_DISK_KEY,),
+        )
+        assert gate.note_space(conn) is False
+        conn.execute("DELETE FROM settings WHERE key = ?", (LOW_DISK_KEY,))
+    assert "downloads paused" not in caplog.text
