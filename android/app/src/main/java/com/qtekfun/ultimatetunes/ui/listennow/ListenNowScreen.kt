@@ -3,13 +3,8 @@
 
 package com.qtekfun.ultimatetunes.ui.listennow
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -23,8 +18,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
-import com.qtekfun.ultimatetunes.ui.designsystem.AlbumCard
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
@@ -34,7 +29,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.Shelf
 import com.qtekfun.ultimatetunes.ui.designsystem.ShelfAlbumCard
 import com.qtekfun.ultimatetunes.ui.designsystem.StationCard
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
-import com.qtekfun.ultimatetunes.ui.model.AlbumTile
+import com.qtekfun.ultimatetunes.ui.designsystem.albumGrid
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
@@ -49,6 +44,7 @@ fun ListenNowRoute(
     contentPadding: PaddingValues,
     onPlay: (List<TrackTile>, Int) -> Unit,
     onOpenStation: (SongId) -> Unit,
+    onOpenAlbum: (AlbumId) -> Unit,
     viewModel: ListenNowViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -57,7 +53,8 @@ fun ListenNowRoute(
         contentPadding = contentPadding,
         onRetry = viewModel::load,
         onPlay = onPlay,
-        onOpenStation = onOpenStation
+        onOpenStation = onOpenStation,
+        onOpenAlbum = onOpenAlbum
     )
 }
 
@@ -69,7 +66,8 @@ fun ListenNowScreen(
     onRetry: () -> Unit,
     onPlay: (List<TrackTile>, Int) -> Unit,
     onOpenStation: (SongId) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenAlbum: (AlbumId) -> Unit = {}
 ) {
     LargeTitleScaffold(
         title = stringResource(R.string.tab_listen_now),
@@ -85,7 +83,7 @@ fun ListenNowScreen(
             when (state) {
                 LoadState.Loading -> item { LoadingState() }
                 is LoadState.Failed -> item { ErrorState(state.error, onRetry) }
-                is LoadState.Ready -> content(state.value, onPlay, onOpenStation)
+                is LoadState.Ready -> content(state.value, onPlay, onOpenStation, onOpenAlbum)
             }
         }
     }
@@ -94,7 +92,8 @@ fun ListenNowScreen(
 private fun LazyListScope.content(
     content: ListenNowContent,
     onPlay: (List<TrackTile>, Int) -> Unit,
-    onOpenStation: (SongId) -> Unit
+    onOpenStation: (SongId) -> Unit,
+    onOpenAlbum: (AlbumId) -> Unit
 ) {
     if (content.isEmpty) {
         item {
@@ -120,7 +119,7 @@ private fun LazyListScope.content(
     if (content.recentlyPlayed.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.listen_now_recently_played)) }
         item {
-            Shelf(content.recentlyPlayed) { ShelfAlbumCard(it) }
+            Shelf(content.recentlyPlayed) { ShelfAlbumCard(it, onClick = { onOpenAlbum(it.id) }) }
         }
     }
     if (content.mostPlayed.isNotEmpty()) {
@@ -137,28 +136,9 @@ private fun LazyListScope.content(
     }
     if (content.recentlyAdded.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.listen_now_recently_added)) }
-        artworkGrid(content.recentlyAdded)
+        albumGrid(content.recentlyAdded, keyPrefix = "grid") { onOpenAlbum(it.id) }
     }
 }
-
-/** Albums in a two-column grid of large rounded artwork, inside the screen's list. */
-private fun LazyListScope.artworkGrid(albums: List<AlbumTile>) {
-    val rows = albums.chunked(GRID_COLUMNS)
-    itemsIndexed(rows, key = { i, _ -> "grid-$i" }) { _, row ->
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Dimens.ScreenMargin)
-                .padding(bottom = Dimens.SpaceL),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceM)
-        ) {
-            row.forEach { album -> AlbumCard(album, modifier = Modifier.weight(1f)) }
-            repeat(GRID_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
-        }
-    }
-}
-
-private const val GRID_COLUMNS = 2
 
 @Preview(name = "Listen Now, light", showBackground = true, heightDp = 1400)
 @Preview(

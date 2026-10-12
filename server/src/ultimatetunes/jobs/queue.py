@@ -156,6 +156,19 @@ class JobQueue(Protocol):
         self, *, track_id: str, video_id: str, priority: int, requested_by: str | None = None
     ) -> Job: ...
 
+    def enqueue_in(
+        self,
+        conn: Connection,
+        *,
+        track_id: str,
+        video_id: str,
+        priority: int,
+        requested_by: str | None = None,
+    ) -> Job:
+        """`enqueue` inside the caller's transaction, so creating a track and its job is one
+        atomic step (contracts/ids.md, materialization)."""
+        ...
+
     def get(self, job_id: str) -> Job | None: ...
 
     def by_video(self, video_id: str) -> Job | None: ...
@@ -305,27 +318,44 @@ class SqliteJobQueue:
     def enqueue(
         self, *, track_id: str, video_id: str, priority: int, requested_by: str | None = None
     ) -> Job:
-        now = self._now()
         with self._db.transaction() as conn:
-            jobs = _Jobs(conn)
-            existing = jobs.by_track("download", track_id)
-            if existing is None:
-                job_id = new_id(self._clock)
-                jobs.run(
-                    "INSERT INTO jobs (id, kind, track_id, yt_video_id, state, priority,"
-                    " requested_by, created_at, updated_at)"
-                    " VALUES (?, 'download', ?, ?, 'queued', ?, ?, ?, ?)",
-                    (job_id, track_id, video_id, priority, requested_by, now, now),
-                )
-                return self._require(conn, job_id)
-            if existing.state in (sm.JobState.FAILED, sm.JobState.CANCELLED):
-                self._requeue(conn, existing, priority, now)
-            elif existing.state == sm.JobState.QUEUED and priority > existing.priority:
-                jobs.run(
-                    "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
-                    (priority, now, existing.id),
-                )
-            return self._require(conn, existing.id)
+            return self.enqueue_in(
+                conn,
+                track_id=track_id,
+                video_id=video_id,
+                priority=priority,
+                requested_by=requested_by,
+            )
+
+    def enqueue_in(
+        self,
+        conn: Connection,
+        *,
+        track_id: str,
+        video_id: str,
+        priority: int,
+        requested_by: str | None = None,
+    ) -> Job:
+        now = self._now()
+        jobs = _Jobs(conn)
+        existing = jobs.by_track("download", track_id)
+        if existing is None:
+            job_id = new_id(self._clock)
+            jobs.run(
+                "INSERT INTO jobs (id, kind, track_id, yt_video_id, state, priority,"
+                " requested_by, created_at, updated_at)"
+                " VALUES (?, 'download', ?, ?, 'queued', ?, ?, ?, ?)",
+                (job_id, track_id, video_id, priority, requested_by, now, now),
+            )
+            return self._require(conn, job_id)
+        if existing.state in (sm.JobState.FAILED, sm.JobState.CANCELLED):
+            self._requeue(conn, existing, priority, now)
+        elif existing.state == sm.JobState.QUEUED and priority > existing.priority:
+            jobs.run(
+                "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
+                (priority, now, existing.id),
+            )
+        return self._require(conn, existing.id)
 
     @staticmethod
     def _requeue(conn: Connection, job: Job, priority: int, now: str) -> None:
