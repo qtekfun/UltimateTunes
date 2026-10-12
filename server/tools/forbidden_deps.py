@@ -28,6 +28,7 @@ FORBIDDEN = (
     "newrelic*",
     "bugsnag*",
     "rollbar*",
+    "fastapi",  # THROWAWAY: proves the gate fails CI; never merged
 )
 
 # Allowed although they look related, with the reason.
