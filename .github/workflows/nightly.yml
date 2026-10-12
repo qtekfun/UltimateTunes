@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Nightly and on demand:
-# - canary (manual only): the only job allowed to reach YouTube Music. It searches and downloads one
-#   fixed Creative Commons track with the current yt-dlp and ytmusicapi. GitHub runner IPs get
-#   YouTube's bot wall (T03c), so the scheduled canary runs on the server (reported in the admin
-#   panel) and this job is best effort.
+# - canary (manual only): the only job allowed to reach YouTube Music. `ultimatetunes canary`
+#   (PLAN T19) runs the catalog checks (search, radio, album page, playlist read) and downloads
+#   one fixed Creative Commons track (docs/compat.md) with the current yt-dlp and ytmusicapi,
+#   then deletes it. GitHub runner IPs get YouTube's bot wall (T03c), so the scheduled canary
+#   runs on the server (reported in the admin panel) and this job is best effort.
 # - audit: dependency vulnerabilities (server and image).
 # - android-ui: instrumented tests on an emulator against the test stack (fake YouTube).
 #   Also on PRs labelled `ui-tests`.
@@ -40,8 +41,9 @@ jobs:
       - name: Build the image
         run: docker build -f server/Dockerfile -t ultimatetunes-server:canary .
 
-      # Updates yt-dlp inside the container first, exactly as production does. The `canary`
-      # command arrives with PLAN T19 (until then this manual job fails on purpose).
+      # Same command as by hand on the server: yt-dlp is installed from the image's verified
+      # seed into /opt/ytdlp, the track goes to /staging and is deleted. One JSON report per
+      # side on stdout; the exit code is 1 when any check failed.
       - name: Canary
         run: docker run --rm --read-only --tmpfs /tmp --tmpfs /staging --tmpfs /opt/ytdlp ultimatetunes-server:canary canary
 
