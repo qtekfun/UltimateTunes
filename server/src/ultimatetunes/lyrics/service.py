@@ -34,6 +34,7 @@ from ultimatetunes.core.clock import Clock, format_ts
 from ultimatetunes.core.ratelimit import Limit, RateLimiter
 from ultimatetunes.db.database import Database
 from ultimatetunes.errors import UpstreamUnavailable
+from ultimatetunes.lyrics.fake import FakeLrclib
 from ultimatetunes.lyrics.lrc import parse_lrc, plain_lines
 from ultimatetunes.lyrics.lrclib import (
     LrclibClient,
@@ -41,6 +42,7 @@ from ultimatetunes.lyrics.lrclib import (
     LrclibRecord,
     LrclibThrottled,
     LrclibUnavailable,
+    LyricsSource,
 )
 from ultimatetunes.lyrics.repository import LyricsRepository, LyricsTrack, StoredLyrics
 from ultimatetunes.lyrics.settings import LyricsSettings
@@ -69,7 +71,7 @@ class LyricsService:
     cache: TtlCache
     rate_limiter: RateLimiter
     clock: Clock
-    client: LrclibClient
+    client: LyricsSource
     settings: LyricsSettings
 
     @property
@@ -199,11 +201,15 @@ def build_lyrics_service(
 ) -> LyricsService:
     """The service over the api's shared `Services` (cheap: no connection is opened here)."""
     settings = settings or LyricsSettings()
+    client: LyricsSource = LrclibClient(timeout_s=settings.lyrics_timeout_s)
+    if services.settings.fake_youtube:
+        # The test stack never reaches LRCLIB (like the fake catalog and downloader).
+        client = FakeLrclib()
     return LyricsService(
         db=services.db,
         cache=services.cache,
         rate_limiter=services.rate_limiter,
         clock=services.clock,
-        client=LrclibClient(timeout_s=settings.lyrics_timeout_s),
+        client=client,
         settings=settings,
     )

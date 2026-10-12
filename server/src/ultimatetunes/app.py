@@ -27,6 +27,7 @@ from starlette.responses import Response
 from ultimatetunes import __version__, health
 from ultimatetunes.admin import web as admin_web
 from ultimatetunes.auth import web as auth_web
+from ultimatetunes.canary import web as canary_web
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.errors import InternalError, InvalidParameter, TunesError
 from ultimatetunes.internal_api import build_internal_router
@@ -46,8 +47,15 @@ class AreaHook(Protocol):
     def install(self, app: FastAPI, services: Services) -> None: ...
 
 
-# Owners: auth T04, library T05, jobs T08, streaming T16, admin T15.
-AREAS: tuple[AreaHook, ...] = (auth_web, library_web, jobs_web, streaming_web, admin_web)
+# Owners: auth T04, library T05, jobs T08, streaming T16, admin T15, canary T19.
+AREAS: tuple[AreaHook, ...] = (
+    auth_web,
+    library_web,
+    jobs_web,
+    streaming_web,
+    admin_web,
+    canary_web,
+)
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
