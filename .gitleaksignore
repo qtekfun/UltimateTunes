@@ -4,3 +4,5 @@
 # Reviewed false positives only, one per line (gitleaks fingerprint), with the reason.
 # Public GPG key fingerprint of yt-dlp's release signing key in the T03c spike report, not a secret.
 e756789353503664b177cfeed3383d2b3d13e3a8:docs/spikes/T03c.md:generic-api-key:184
+# Same public yt-dlp signer fingerprint, in an intermediate T08 commit (PR #24); later commits use the grouped form.
+19593d0c3ee4ba14d32870d79b2852b62f239200:server/src/ultimatetunes/worker/settings.py:generic-api-key:20

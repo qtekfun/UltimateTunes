@@ -95,6 +95,7 @@ async def test_unavailable_catalog_refuses_everything() -> None:
 
 
 def test_build_catalog(settings: Settings, db: Database, clock: FakeClock) -> None:
+    settings = settings.model_copy(update={"fake_youtube": False})
     assert isinstance(build_catalog(settings), GuardedCatalog)
     shared = build_catalog(
         settings,
