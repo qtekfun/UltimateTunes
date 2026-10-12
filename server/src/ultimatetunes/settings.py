@@ -26,12 +26,15 @@ _SECRETS_DIR = Path("/run/secrets")
 
 
 def settings_config() -> SettingsConfigDict:
-    """`UT_*` env vars, secrets also as files in `/run/secrets`, unknown variables ignored."""
+    """`UT_*` env vars, secrets also as files in `/run/secrets`, unknown variables ignored,
+    and validation errors that never repeat the refused value."""
     return SettingsConfigDict(
         env_prefix="UT_",
         secrets_dir=_SECRETS_DIR if _SECRETS_DIR.is_dir() else None,
         extra="ignore",
         frozen=True,
+        # A refused value is never echoed in the error: it may be a token or a password.
+        hide_input_in_errors=True,
     )
 
 

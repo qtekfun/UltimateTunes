@@ -12,7 +12,8 @@
 # shared network are what make every client address below trustworthy.
 #
 # Routed (Host = UT_PUBLIC_HOST):
-#   /, /rest/*, /ut/v1/*   API keys, no Authelia; per-client rate limit and in-flight cap
+#   /rest/*, /ut/v1/*      API keys, no Authelia; per-client rate limit and in-flight cap
+#   /, /web/*              the web player (its own sign-in and session cookie), same limits
 #   POST /ut/v1/keys       password login: LAN only (devices get their key at home)
 #   /admin                 LAN only, then Authelia, then the api's own allowlist and login
 #   /readyz                LAN only
@@ -118,17 +119,18 @@ services:
       traefik.http.routers.ut-cf-write.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-write.tls: "true"
       traefik.http.routers.ut-cf-write.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-write.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)
+      traefik.http.routers.ut-cf-write.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`)) && !Method(`GET`) && !Method(`HEAD`)
       traefik.http.routers.ut-cf-write.priority: "20"
       traefik.http.routers.ut-cf-write.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit,ut-cf-body-limit
       traefik.http.routers.ut-cf-write.service: ut-cf-api
 
-      # Clients: OpenSubsonic (/rest), the app (/ut/v1) and the landing page. API keys, NO
-      # Authelia (a login redirect would break every client).
+      # Clients: OpenSubsonic (/rest), the app (/ut/v1) and the web player (/ and /web, which
+      # signs in with its own form and cookie). NO Authelia here (a login redirect would break
+      # every API client); to put the web player behind Authelia, see ../README.md.
       traefik.http.routers.ut-cf-client.entrypoints: ${UT_TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.ut-cf-client.tls: "true"
       traefik.http.routers.ut-cf-client.tls.certresolver: ${UT_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      traefik.http.routers.ut-cf-client.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))
+      traefik.http.routers.ut-cf-client.rule: Host(`${UT_PUBLIC_HOST}`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`) || Path(`/`))
       traefik.http.routers.ut-cf-client.priority: "10"
       traefik.http.routers.ut-cf-client.middlewares: ut-cf-headers,ut-cf-inflight,ut-cf-ratelimit
       traefik.http.routers.ut-cf-client.service: ut-cf-api

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """App hook of the admin panel (`app.AREAS`). Owner: PLAN T15.
 
-Mounts `/admin` and `/`, the `AdminGate` middleware (network allowlist, body cap, security
+Mounts `/admin`, the `AdminGate` middleware (network allowlist, body cap, security
 headers), the panel's exception handlers, and the notification sweep, which runs inside the
 app's lifespan (wrapped here so `app.py` stays untouched).
 """
@@ -46,7 +46,7 @@ def install(
     auth = getattr(app.state, "auth", None)
     if not isinstance(auth, AuthService):
         auth = AuthService.from_services(services)
-    sender = sender or notify.Sender()
+    sender = sender or notify.Sender(credentials=notify.Credentials.from_settings(settings))
     app.state.admin = routes.AdminState(
         services=services,
         auth=auth,
@@ -55,7 +55,6 @@ def install(
         templates=routes.Templates(),
         sender=sender,
     )
-    app.include_router(routes.root_router)
     app.include_router(routes.router)
     for exc_class, handler in routes.handlers().items():
         app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]

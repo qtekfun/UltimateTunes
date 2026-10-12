@@ -1,0 +1,18 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid, empty with context %}
+{% block title %}{{ _("Albums") }}{% endblock %}
+{% block content %}
+<h1 class="large" tabindex="-1">{{ _("Library") }}</h1>
+{% include "_library_tabs.html" %}
+{% if albums %}
+{{ album_grid(albums, _("Albums")) }}
+<nav class="pager" aria-label="{{ _("Pages") }}">
+  {% if prev_offset is not none %}<a href="/web/library?offset={{ prev_offset }}">{{ _("Previous page") }}</a>{% endif %}
+  {% if next_offset is not none %}<a href="/web/library?offset={{ next_offset }}">{{ _("Next page") }}</a>{% endif %}
+</nav>
+{% else %}
+{{ empty(_("No albums yet."), "/web/search", _("Search")) }}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# Error page without a session: no shell, no player. #}
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% block title %}{% endblock %} · UltimateTunes</title>
+<link rel="stylesheet" href="/web/static/web.css?v={{ version }}">
+</head>
+<body class="login-body"><main class="login">{% block content %}{% endblock %}</main></body>
+</html>

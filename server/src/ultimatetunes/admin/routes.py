@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The admin panel at `/admin` (SPEC RF-10) and the public landing page at `/`.
+"""The admin panel at `/admin` (SPEC RF-10). (`/` is the web player's, `web/routes.py`.)
 
 Server-rendered Jinja pages; HTMX (vendored, `static/admin/`) only refreshes the download queue.
 Every page works without JavaScript. Who may call what is decided in `security.py`; every
 handler here depends on `current_admin` (pages) or `posted` (state changes: admin + CSRF),
-except the login form, the landing page and the two static files.
+except the login form and the two static files.
 
 State changes answer with a redirect back to their page (`?done=<code>`, a fixed message) or
 with the page and an error message. Users, keys and the audit log go through T04's
@@ -75,7 +75,6 @@ from ultimatetunes.search.settings import SearchSettings
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-root_router = APIRouter()
 
 STATIC_FILES = {
     "htmx.min.js": "text/javascript",
@@ -108,6 +107,11 @@ DONE = {
     "notify_saved": "Notification settings saved.",
     "notify_sent": "Test notification sent.",
     "notify_failed": "The test notification could not be delivered.",
+    "notify_rejected": (
+        "ntfy rejected the credentials (HTTP 401 or 403). Check the access token, or the user"
+        " and password, and that this user may write to the topic."
+    ),
+    "notify_rejected_webhook": "The webhook rejected the credentials (HTTP 401 or 403).",
 }
 
 
@@ -347,13 +351,7 @@ def _forbidden(request: Request, message: str) -> Response:
     )
 
 
-# ---------------------------------------------------------------------- landing page and static
-
-
-@root_router.get("/", include_in_schema=False)
-def landing(request: Request) -> HTMLResponse:
-    """Public: says the server runs, its version and where the panel is. Nothing else."""
-    return page(request, "landing.html")
+# ---------------------------------------------------------------------- static
 
 
 @router.get("/admin/static/{name}", include_in_schema=False)
@@ -987,10 +985,19 @@ def _notifications_page(
     request: Request, admin: Admin, *, error: str | None = None, status: int = 200
 ) -> Response:
     target = notify.load_target(state(request).services.db)
+    sender = state(request).sender
     return page(
         request,
         "notifications.html",
-        {"target": target, "kinds": notify.KINDS},
+        {
+            "target": target,
+            "kinds": notify.KINDS,
+            "auth_kind": sender.auth_kind,
+            "auth_host": sender.credentials_host,
+            "auth_mismatch": target is not None
+            and sender.auth_kind is not None
+            and not sender.credentials_apply(target),
+        },
         admin=admin,
         error=error,
         status=status,
@@ -1044,7 +1051,7 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
     message = notify.Message(
         "UltimateTunes test", "Notifications from your UltimateTunes server work."
     )
-    sent = await st.sender.send(target, message)
+    outcome = await st.sender.deliver(target, message)
 
     def record() -> None:
         with st.services.db.transaction() as conn:
@@ -1054,8 +1061,20 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
                 actor_id=post.admin.user.id,
                 ip=post.admin.ip,
                 action="notify.test",
-                detail={"kind": target.kind, "host": target.host, "sent": sent},
+                # Which kind of credentials went along, never their value.
+                detail={
+                    "kind": target.kind,
+                    "host": target.host,
+                    "auth": (st.sender.auth_kind or "none")
+                    if st.sender.credentials_apply(target)
+                    else "none",
+                    "outcome": outcome,
+                },
             )
 
     await run_in_threadpool(record)
-    return back("/admin/notifications", "notify_sent" if sent else "notify_failed")
+    if outcome == "rejected":
+        done = "notify_rejected" if target.kind == "ntfy" else "notify_rejected_webhook"
+    else:
+        done = "notify_sent" if outcome == "sent" else "notify_failed"
+    return back("/admin/notifications", done)
