@@ -51,7 +51,11 @@ data class TrackTile(
     /** Position on its album, shown in album lists. */
     val trackNumber: Int? = null,
     /** Where "Go to Artist" leads; null when unknown. */
-    val artistId: ArtistId? = null
+    val artistId: ArtistId? = null,
+    /** Disc of [trackNumber] on its album. */
+    val discNumber: Int? = null,
+    /** The album's artist, when known and different from [artist]. */
+    val albumArtist: String? = null
 )
 
 /** An artist in a list or a grid. */

@@ -180,4 +180,19 @@ class ListeningSyncTest {
         assertTrue(ScrobbleRule.isPlayed(positionMs = 240_000, durationMs = 3_600_000))
         assertFalse(ScrobbleRule.isPlayed(positionMs = 239_999, durationMs = 3_600_000))
     }
+
+    @Test
+    fun `a queue that could not be read is tried again, and nothing is saved meanwhile`() =
+        runTest {
+            coEvery { api.playQueue() } returns TunesResult.NetworkError(java.io.IOException("x"))
+            started()
+            player.mutableState.update { it.copy(positionMs = 1) }
+            coVerify(exactly = 2) { api.playQueue() }
+
+            coEvery { api.playQueue() } returns TunesResult.Success(saved)
+            player.mutableState.update { it.copy(positionMs = 2) }
+            assertEquals(Triple(1, 73_500L, false), player.played)
+            player.mutableState.update { it.copy(positionMs = 3) }
+            coVerify(exactly = 3) { api.playQueue() }
+        }
 }

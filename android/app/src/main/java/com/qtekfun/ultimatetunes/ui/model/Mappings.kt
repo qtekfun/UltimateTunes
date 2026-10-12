@@ -33,7 +33,9 @@ fun Song.toTile(api: TunesApi, fallbackArtist: String = ""): TrackTile = TrackTi
     isExternal = isExternal,
     albumId = albumId,
     trackNumber = track,
-    artistId = artistId ?: artists.firstOrNull()?.id
+    artistId = artistId ?: artists.firstOrNull()?.id,
+    discNumber = discNumber,
+    albumArtist = displayAlbumArtist ?: albumArtists.firstOrNull()?.name
 )
 
 fun Album.toTile(api: TunesApi): AlbumTile = AlbumTile(

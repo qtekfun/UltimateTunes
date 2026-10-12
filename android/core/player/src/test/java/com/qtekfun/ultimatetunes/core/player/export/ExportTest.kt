@@ -21,23 +21,61 @@ class ExportTest {
         title: String = "Lighthouse Keeper",
         artist: String = "The Paper Lanterns",
         album: String? = "Harbour Lights",
-        number: Int? = 3
-    ) = PlayableTrack(SongId(id), title, artist, album, trackNumber = number)
+        number: Int? = 3,
+        disc: Int? = null,
+        albumArtist: String? = null
+    ) = PlayableTrack(
+        SongId(id),
+        title,
+        artist,
+        album,
+        trackNumber = number,
+        discNumber = disc,
+        albumArtist = albumArtist
+    )
 
     @Nested
     inner class Naming {
         @Test
-        fun `Artist, Album and a numbered title with the extension`() {
+        fun `the server's layout - album artist, album and a numbered title`() {
             assertEquals(
                 listOf("The Paper Lanterns", "Harbour Lights", "03 - Lighthouse Keeper.opus"),
                 ExportNaming.pathOf(track("a"), "opus")
             )
+            assertEquals(
+                listOf("Various Artists", "Harbour Lights", "03 - Lighthouse Keeper.opus"),
+                ExportNaming.pathOf(track("a", albumArtist = "Various Artists"), "opus")
+            )
+            assertEquals(
+                "The Paper Lanterns",
+                ExportNaming.pathOf(track("a", albumArtist = " "), "opus")[0]
+            )
         }
 
         @Test
-        fun `missing parts get stand-ins and no number means just the title`() {
+        fun `discs after the first number their songs D-NN`() {
             assertEquals(
-                listOf("Unknown Artist", "Unknown Album", "Unknown.m4a"),
+                "2-04 - Intro.m4a",
+                ExportNaming.pathOf(track("a", "Intro", number = 4, disc = 2), "m4a").last()
+            )
+            assertEquals(
+                "04 - Intro.m4a",
+                ExportNaming.pathOf(track("a", "Intro", number = 4, disc = 1), "m4a").last()
+            )
+            assertEquals(
+                "Intro.m4a",
+                ExportNaming.pathOf(track("a", "Intro", number = 0, disc = 2), "m4a").last()
+            )
+            assertEquals(
+                "Intro.m4a",
+                ExportNaming.pathOf(track("a", "Intro", number = 1000), "m4a").last()
+            )
+        }
+
+        @Test
+        fun `missing parts get the server's stand-ins`() {
+            assertEquals(
+                listOf("Unknown Artist", "Unknown Album", "Untitled.m4a"),
                 ExportNaming.pathOf(
                     track("a", title = " ", artist = "...", album = null, number = null),
                     "m4a"
@@ -45,15 +83,30 @@ class ExportTest {
             )
             assertEquals(
                 "Song",
-                ExportNaming.pathOf(track("a", title = "Song", number = 0), "").last()
+                ExportNaming.pathOf(track("a", title = "Song", number = null), "").last()
             )
+        }
+
+        @Test
+        fun `a suffix tells apart two songs with one name and survives truncation`() {
+            assertEquals(
+                "03 - Lighthouse Keeper (lib-2).opus",
+                ExportNaming.pathOf(track("a"), "opus", suffix = "lib-2").last()
+            )
+            val long = ExportNaming.pathOf(
+                track("a", title = "x".repeat(300)),
+                "opus",
+                "lib-2"
+            ).last()
+            assertTrue(long.endsWith(" (lib-2).opus"))
+            assertEquals(ExportNaming.MAX_COMPONENT_BYTES, long.toByteArray().size)
         }
 
         @Test
         fun `names are safe on any file system`() {
             assertEquals("AC_DC", ExportNaming.sanitize("AC/DC"))
             assertEquals("a_b_c_d_e_f_g_h_i", ExportNaming.sanitize("a\\b:c*d?e\"f<g>h|i"))
-            assertEquals("Fiesta", ExportNaming.sanitize(" ..Fi​es\u0000ta.. "))
+            assertEquals("Fiesta", ExportNaming.sanitize(" ..Fi\u200Bes\u0000ta.. "))
             assertEquals("_CON", ExportNaming.sanitize("CON"))
             assertEquals("_lpt1.txt", ExportNaming.sanitize("lpt1.txt"))
             assertEquals("fi", ExportNaming.sanitize("\uFB01"))
@@ -62,19 +115,14 @@ class ExportTest {
 
         @Test
         fun `long names are cut to 180 bytes without splitting a character`() {
-            val long = "ñ".repeat(200)
-            val name = ExportNaming.sanitize(long)
+            val name = ExportNaming.sanitize("ñ".repeat(200))
             assertEquals(90, name.length)
-            assertTrue(name.toByteArray().size <= ExportNaming.MAX_COMPONENT_BYTES)
-
             val file = ExportNaming
                 .pathOf(track("a", title = "x".repeat(300), number = 12), "flac")
                 .last()
-            assertTrue(file.endsWith(".flac"))
-            assertTrue(file.startsWith("12 - x"))
+            assertTrue(file.startsWith("12 - x") && file.endsWith(".flac"))
             assertEquals(ExportNaming.MAX_COMPONENT_BYTES, file.toByteArray().size)
-
-            val emoji = ExportNaming.sanitize("🎵".repeat(60))
+            val emoji = ExportNaming.sanitize("\uD83C\uDFB5".repeat(60))
             assertEquals(45, emoji.codePointCount(0, emoji.length))
         }
     }
@@ -115,23 +163,38 @@ class ExportTest {
         }
         private val files = mutableMapOf<SongId, ByteArray>()
         private val written = mutableMapOf<List<String>, ByteArray>()
+        private val taken = mutableMapOf<List<String>, WriteOutcome>()
         private var failWrites = false
-        private var failReads = false
+        private var failReadsAfter: Int? = null
 
         private val source = ExportSource { id ->
             files[id]?.let { bytes ->
-                if (failReads) {
-                    object : InputStream() {
-                        override fun read(): Int = throw IOException("gone")
-                    }
-                } else {
+                val failAt = failReadsAfter
+                val stream = if (failAt == null) {
                     ByteArrayInputStream(bytes)
+                } else {
+                    object : InputStream() {
+                        var at = 0
+
+                        override fun read(): Int = if (at >=
+                            failAt
+                        ) {
+                            throw IOException("gone")
+                        } else {
+                            bytes[at++].toInt() and 0xFF
+                        }
+                    }
                 }
+                SourceFile(bytes.size.toLong(), stream)
             }
         }
-        private val target = ExportTarget { path, content ->
+        private val target = ExportTarget { path, length, content ->
+            taken[path]?.let { return@ExportTarget it }
             if (failWrites) throw IOException("full")
-            written[path] = ByteArrayOutputStream().also { content.copyTo(it) }.toByteArray()
+            val bytes = ByteArrayOutputStream().also { content.copyTo(it) }.toByteArray()
+            assertEquals(length, bytes.size.toLong())
+            written[path] = bytes
+            WriteOutcome.WRITTEN
         }
         private val exporter = Exporter(source, target)
 
@@ -154,6 +217,40 @@ class ExportTest {
         }
 
         @Test
+        fun `two songs never get the same file - the later one gets its id`() {
+            files[SongId("lib-1")] = opus
+            files[SongId("lib-2")] = opus
+            files[SongId("lib-3")] = opus
+            val intro1 = track("lib-1", "Intro", number = 1, disc = 1)
+            val intro2 = track("lib-2", "Intro", number = 1, disc = 2)
+            val intro2Again = track("lib-3", "intro", number = 1, disc = 2)
+
+            val report = exporter.export(listOf(intro1, intro2, intro2Again))
+
+            assertEquals(3, report.exported)
+            assertEquals(
+                setOf("01 - Intro.opus", "2-01 - Intro.opus", "2-01 - intro (lib-3).opus"),
+                written.keys.map { it.last() }.toSet()
+            )
+        }
+
+        @Test
+        fun `a file already in the folder is never touched`() {
+            files[SongId("lib-1")] = opus
+            files[SongId("lib-2")] = opus
+            val path = ExportNaming.pathOf(track("lib-1"), "opus")
+            taken[path] = WriteOutcome.NAME_TAKEN
+            taken[ExportNaming.pathOf(track("lib-2", "Other"), "opus")] =
+                WriteOutcome.ALREADY_EXPORTED
+
+            val report = exporter.export(listOf(track("lib-1"), track("lib-2", "Other")))
+
+            assertEquals(1, report.exported)
+            assertEquals(listOf(SkipReason.ALREADY_IN_FOLDER), report.skipped.map { it.reason })
+            assertTrue(written.isEmpty())
+        }
+
+        @Test
         fun `a yt song goes under its library id, or is skipped without one`() {
             files[SongId("lib-9")] = opus
             // Bytes cached under the yt: id predate tagging: never used.
@@ -166,10 +263,7 @@ class ExportTest {
             )
 
             assertEquals(1, report.exported)
-            assertEquals(
-                listOf(SkipReason.NOT_IN_LIBRARY),
-                report.skipped.map { it.reason }
-            )
+            assertEquals(listOf(SkipReason.NOT_IN_LIBRARY), report.skipped.map { it.reason })
             assertEquals("Other", report.skipped.single().track.title)
         }
 
@@ -189,13 +283,23 @@ class ExportTest {
                 listOf(SkipReason.WRITE_FAILED),
                 exporter.export(listOf(track("ok"))).skipped.map { it.reason }
             )
+        }
 
-            failWrites = false
-            failReads = true
+        @Test
+        fun `a song that cannot be read, even halfway through the copy, is not on the phone`() {
+            files[SongId("ok")] = opus
+
+            failReadsAfter = 0
             assertEquals(
                 listOf(SkipReason.NOT_ON_PHONE),
                 exporter.export(listOf(track("ok"))).skipped.map { it.reason }
             )
+            failReadsAfter = 150
+            assertEquals(
+                listOf(SkipReason.NOT_ON_PHONE),
+                exporter.export(listOf(track("ok"))).skipped.map { it.reason }
+            )
+            assertTrue(written.isEmpty())
         }
     }
 }

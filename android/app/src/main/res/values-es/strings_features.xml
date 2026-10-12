@@ -60,6 +60,8 @@
     <string name="export_skip_not_in_library">aún no está en la biblioteca</string>
     <string name="export_skip_not_on_phone">no está entera en el teléfono</string>
     <string name="export_skip_unknown_format">formato desconocido</string>
+    <string name="export_skip_already_in_folder">otro archivo tiene su nombre en la carpeta</string>
+    <string name="event_export_busy">Hay otra exportación en curso. Vuelve a intentarlo cuando termine.</string>
     <string name="export_skip_write_failed">no se pudo escribir</string>
     <string name="export_running_banner">Exportando %1$d de %2$d…</string>
     <string name="downloads_export_all">Exportar todo</string>

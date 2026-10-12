@@ -149,8 +149,16 @@ class FakeExports(folder: String? = null) : Exports {
         mutableFolder.value = uri
     }
 
-    override fun start(folder: String, tracks: List<PlayableTrack>, aliases: Map<SongId, SongId>) {
+    var busy = false
+
+    override suspend fun start(
+        folder: String,
+        tracks: List<PlayableTrack>,
+        aliases: Map<SongId, SongId>
+    ): Boolean {
+        if (busy) return false
         started += Triple(folder, tracks, aliases)
+        return true
     }
 
     override fun dismiss() {

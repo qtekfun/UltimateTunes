@@ -17,7 +17,6 @@ import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 import com.qtekfun.ultimatetunes.core.player.media.MediaCacheView
 import com.qtekfun.ultimatetunes.core.player.media.MediaCaches
-import java.io.InputStream
 
 /**
  * Songs fully on the phone (RF-14): an offline download first, else a library song complete in
@@ -25,7 +24,7 @@ import java.io.InputStream
  * network. Both caches hold the server's original file (`download` and `stream` never transcode).
  */
 class CacheExportSource(private val caches: MediaCaches) : ExportSource {
-    override fun open(id: SongId): InputStream? {
+    override fun open(id: SongId): SourceFile? {
         val key = CachePolicy.cacheKey(id)
         val cache = if (id.isExternal) {
             null
@@ -37,7 +36,8 @@ class CacheExportSource(private val caches: MediaCaches) : ExportSource {
             val spec = DataSpec.Builder().setUri("$SCHEME:${Uri.encode(key)}".toUri())
                 .setKey(key)
                 .build()
-            DataSourceInputStream(CacheDataSource(it, null), spec)
+            val length = MediaCacheView(it).contentLength(key) ?: 0
+            SourceFile(length, DataSourceInputStream(CacheDataSource(it, null), spec))
         }
     }
 

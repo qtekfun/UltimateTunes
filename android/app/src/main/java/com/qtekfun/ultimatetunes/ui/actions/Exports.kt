@@ -31,7 +31,12 @@ interface Exports {
     /** Keeps [uri], a folder just picked with the system picker, for this and later exports. */
     suspend fun setFolder(uri: String)
 
-    fun start(folder: String, tracks: List<PlayableTrack>, aliases: Map<SongId, SongId>)
+    /** Starts an export; false while another one runs (nothing starts then). */
+    suspend fun start(
+        folder: String,
+        tracks: List<PlayableTrack>,
+        aliases: Map<SongId, SongId>
+    ): Boolean
 
     /** The report was shown. */
     fun dismiss()
@@ -63,8 +68,11 @@ class SafExports @Inject constructor(
         prefs.setExportFolder(uri)
     }
 
-    override fun start(folder: String, tracks: List<PlayableTrack>, aliases: Map<SongId, SongId>) =
-        manager.start(folder.toUri(), tracks, aliases)
+    override suspend fun start(
+        folder: String,
+        tracks: List<PlayableTrack>,
+        aliases: Map<SongId, SongId>
+    ): Boolean = manager.start(folder.toUri(), tracks, aliases)
 
     override fun dismiss() = manager.dismiss()
 

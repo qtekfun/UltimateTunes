@@ -91,7 +91,11 @@ class AlbumViewModel @Inject constructor(
                     year = album.year,
                     genre = album.genre,
                     durationSec = album.duration,
-                    tracks = album.song.map { it.toTile(api, fallbackArtist = artist) },
+                    tracks = album.song.map { song ->
+                        song.toTile(api, fallbackArtist = artist).let { tile ->
+                            tile.copy(albumArtist = tile.albumArtist ?: artist.ifEmpty { null })
+                        }
+                    },
                     isFavourite = album.starred != null
                 )
             }

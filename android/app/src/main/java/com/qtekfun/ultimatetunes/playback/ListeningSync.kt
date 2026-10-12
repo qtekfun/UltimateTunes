@@ -64,27 +64,31 @@ class ListeningSync internal constructor(
         scope.launch { scrobble() }
     }
 
-    /** Each time the app is connected and the player reports its (maybe empty) queue. */
+    /**
+     * Each time the app is connected and the player reports its (maybe empty) queue. The queue
+     * counts as restored only once that worked (or there was nothing to restore into): a failed
+     * `getPlayQueue` is tried again on the next change, and nothing is saved meanwhile.
+     */
     private suspend fun restoreQueues() {
         combine(gate.needsConnect, player.state) { needsConnect, state ->
             !needsConnect && state.connected
         }.collect { ready ->
-            if (ready && !restored) {
-                restore()
-                restored = true
-            }
+            if (ready && !restored) restored = restore()
         }
     }
 
-    private suspend fun restore() {
-        if (player.state.value.queue.isNotEmpty()) return
-        val saved = (api.playQueue() as? TunesResult.Success)?.value
+    /** True once there is nothing left to restore. */
+    private suspend fun restore(): Boolean {
+        if (player.state.value.queue.isNotEmpty()) return true
+        val result = api.playQueue()
+        val saved = (result as? TunesResult.Success)?.value
         val tiles = saved?.entry.orEmpty().map { it.toTile(api) }
         // The user may have started something meanwhile: that wins.
         if (saved != null && tiles.isNotEmpty() && player.state.value.queue.isEmpty()) {
             val index = tiles.indexOfFirst { it.id == saved.current }.coerceAtLeast(0)
             player.play(tiles, index, saved.position ?: 0, playWhenReady = false)
         }
+        return result is TunesResult.Success
     }
 
     @OptIn(FlowPreview::class)

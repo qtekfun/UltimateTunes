@@ -7,11 +7,13 @@ import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import java.text.Normalizer
 
 /**
- * Where an exported song goes inside the folder the user picked (RF-14): `Artist/Album/NN -
- * Title.ext`, the server's library layout (SPEC §11, T09), with every part sanitized the same
- * way so it is a valid name on any file system: NFKC, `/\:*?"<>|` replaced by `_`, control and
- * invisible characters dropped, leading and trailing dots and spaces stripped, Windows reserved
- * names prefixed with `_`, at most [MAX_COMPONENT_BYTES] bytes of UTF-8.
+ * Where an exported song goes inside the folder the user picked (RF-14): the server's library
+ * layout (`server/src/ultimatetunes/paths/library.py`, SPEC §11 T09) — `AlbumArtist/Album/NN -
+ * Title.ext`, `D-NN` on discs after the first, `Title.ext` without a track number, and a
+ * ` (<suffix>)` that tells apart two songs that would get the same name. Every part is sanitized
+ * the same way so it is a valid name on any file system: NFKC, `/\\:*?"<>|` replaced by `_`,
+ * control and invisible characters dropped, leading and trailing dots and spaces stripped,
+ * Windows reserved names prefixed with `_`, at most [MAX_COMPONENT_BYTES] bytes of UTF-8.
  */
 object ExportNaming {
     /** Longest name of one folder or file, in UTF-8 bytes. */
@@ -19,8 +21,10 @@ object ExportNaming {
 
     const val UNKNOWN_ARTIST = "Unknown Artist"
     const val UNKNOWN_ALBUM = "Unknown Album"
-    const val UNKNOWN_TITLE = "Unknown"
+    const val UNTITLED = "Untitled"
 
+    private const val MAX_NUMBER = 999
+    private const val MAX_SUFFIX_BYTES = 64
     private const val TRACK_DIGITS = 2
     private val FORBIDDEN = Regex("""[/\\:*?"<>|]""")
     private val RESERVED = Regex(
@@ -28,20 +32,35 @@ object ExportNaming {
         RegexOption.IGNORE_CASE
     )
 
-    /** The folders and the file name of [track] with [extension] (without the dot). */
-    fun pathOf(track: PlayableTrack, extension: String): List<String> {
-        val title = sanitize(track.title).ifEmpty { UNKNOWN_TITLE }
-        val number = track.trackNumber?.takeIf { it > 0 }
-            ?.toString()?.padStart(TRACK_DIGITS, '0')
+    /**
+     * The folders and the file name of [track] with [extension] (without the dot), with
+     * [suffix] added to the title when given.
+     */
+    fun pathOf(track: PlayableTrack, extension: String, suffix: String? = null): List<String> {
         val ext = sanitize(extension)
-        val suffix = if (ext.isEmpty()) "" else ".$ext"
-        val base = if (number == null) title else "$number - $title"
+        val dotExt = if (ext.isEmpty()) "" else ".$ext"
+        val tail = suffix?.let { " (${truncate(sanitize(it).ifEmpty { "x" }, MAX_SUFFIX_BYTES)})" }
+            .orEmpty()
+        val prefix = prefixOf(track.trackNumber, track.discNumber)
+        val room = MAX_COMPONENT_BYTES - utf8(prefix) - utf8(dotExt) - utf8(tail)
+        val title = truncate(sanitize(track.title).ifEmpty { UNTITLED }, room).trimEnd(' ', '.')
+        val artist = track.albumArtist?.takeIf { sanitize(it).isNotEmpty() } ?: track.artist
         return listOf(
-            sanitize(track.artist).ifEmpty { UNKNOWN_ARTIST },
+            sanitize(artist).ifEmpty { UNKNOWN_ARTIST },
             sanitize(track.album.orEmpty()).ifEmpty { UNKNOWN_ALBUM },
-            truncate(base, MAX_COMPONENT_BYTES - suffix.toByteArray().size) + suffix
+            prefix + title.ifEmpty { UNTITLED } + tail + dotExt
         )
     }
+
+    /** `NN - `, `D-NN - ` from the second disc, or nothing without a track number. */
+    private fun prefixOf(trackNumber: Int?, discNumber: Int?): String {
+        val track = trackNumber?.takeIf { it in 1..MAX_NUMBER } ?: return ""
+        val disc = discNumber?.takeIf { it in 2..MAX_NUMBER }
+        val number = track.toString().padStart(TRACK_DIGITS, '0')
+        return if (disc == null) "$number - " else "$disc-$number - "
+    }
+
+    private fun utf8(text: String): Int = text.toByteArray().size
 
     /** [name] as one safe path component (empty when nothing is left). */
     fun sanitize(name: String): String {

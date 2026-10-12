@@ -44,6 +44,9 @@ sealed interface ActionEvent {
 
     data class ExportStarted(val count: Int) : ActionEvent
 
+    /** Another export is still running; this one did not start. */
+    data object ExportBusy : ActionEvent
+
     data class Failed(val error: LoadError) : ActionEvent
 }
 
@@ -238,8 +241,14 @@ class LibraryActionsViewModel @Inject constructor(
 
     private suspend fun startExport(folder: String, tracks: List<TrackTile>) {
         val aliases = offline.selection.first().aliases
-        exports.start(folder, tracks.map { it.toPlayable() }, aliases)
-        event(ActionEvent.ExportStarted(tracks.distinctBy { it.id }.size))
+        val started = exports.start(folder, tracks.map { it.toPlayable() }, aliases)
+        event(
+            if (started) {
+                ActionEvent.ExportStarted(tracks.distinctBy { it.id }.size)
+            } else {
+                ActionEvent.ExportBusy
+            }
+        )
     }
 
     private fun setFavourite(id: SongId, favourite: Boolean) {

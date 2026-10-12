@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  The test APK only: a documents provider over a folder of the test package, so the export's
+  Storage Access Framework writes run against a real provider without touching the phone's files.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.qtekfun.ultimatetunes.export.TestDocumentsProvider"
+            android:authorities="com.qtekfun.ultimatetunes.test.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+    </application>
+</manifest>

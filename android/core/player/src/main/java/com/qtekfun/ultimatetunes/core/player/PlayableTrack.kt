@@ -26,7 +26,11 @@ data class PlayableTrack(
     val artistId: ArtistId? = null,
     val durationMs: Long? = null,
     val artworkUrl: String? = null,
-    val trackNumber: Int? = null
+    val trackNumber: Int? = null,
+    /** Disc of [trackNumber] on its album (export names: `D-NN` from the second disc). */
+    val discNumber: Int? = null,
+    /** The album's artist, the export folder; null when it is the song's [artist]. */
+    val albumArtist: String? = null
 ) {
     /** True for a YouTube Music song not archived in the library yet. */
     val isExternal: Boolean get() = id.isExternal
@@ -47,7 +51,9 @@ data class PlayableTrack(
             artistId = song.artistId,
             durationMs = song.duration?.let { it * MS_PER_SECOND },
             artworkUrl = song.coverArt?.let { api.coverArtUrl(it, ARTWORK_PX)?.toString() },
-            trackNumber = song.track
+            trackNumber = song.track,
+            discNumber = song.discNumber,
+            albumArtist = song.displayAlbumArtist ?: song.albumArtists.firstOrNull()?.name
         )
     }
 }

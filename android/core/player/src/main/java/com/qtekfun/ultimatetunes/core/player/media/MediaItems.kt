@@ -26,12 +26,14 @@ import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 object MediaItems {
     private const val EXTRA_ALBUM_ID = "ut.albumId"
     private const val EXTRA_ARTIST_ID = "ut.artistId"
+    private const val EXTRA_ALBUM_ARTIST = "ut.albumArtist"
 
     /** [track] as a media item for a controller: id and metadata, no URI. */
     fun of(track: PlayableTrack): MediaItem {
         val extras = Bundle().apply {
             track.albumId?.let { putString(EXTRA_ALBUM_ID, it.value) }
             track.artistId?.let { putString(EXTRA_ARTIST_ID, it.value) }
+            track.albumArtist?.let { putString(EXTRA_ALBUM_ARTIST, it) }
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
@@ -39,6 +41,7 @@ object MediaItems {
             .setAlbumTitle(track.album)
             .setArtworkUri(track.artworkUrl?.let(Uri::parse))
             .setTrackNumber(track.trackNumber)
+            .setDiscNumber(track.discNumber)
             .setDurationMs(track.durationMs)
             .setIsPlayable(true)
             .setIsBrowsable(false)
@@ -67,7 +70,9 @@ object MediaItems {
             artistId = metadata.extras?.getString(EXTRA_ARTIST_ID)?.let(::ArtistId),
             durationMs = metadata.durationMs,
             artworkUrl = metadata.artworkUri?.toString(),
-            trackNumber = metadata.trackNumber
+            trackNumber = metadata.trackNumber,
+            discNumber = metadata.discNumber,
+            albumArtist = metadata.extras?.getString(EXTRA_ALBUM_ARTIST)
         )
     }
 

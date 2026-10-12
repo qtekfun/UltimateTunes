@@ -19,9 +19,11 @@ import java.io.IOException
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -61,18 +63,30 @@ class ExportManager @Inject constructor(
 
     /**
      * Exports [tracks] to [tree] (a folder granted with the system picker, its permission
-     * persisted). [aliases] maps `yt:` ids to the library ids the server gave them.
+     * persisted). [aliases] maps `yt:` ids to the library ids the server gave them. One export
+     * at a time: false, and nothing starts, while another one runs.
      */
-    fun start(tree: Uri, tracks: List<PlayableTrack>, aliases: Map<SongId, SongId> = emptyMap()) {
-        if (tracks.isEmpty()) return
+    suspend fun start(
+        tree: Uri,
+        tracks: List<PlayableTrack>,
+        aliases: Map<SongId, SongId> = emptyMap()
+    ): Boolean {
+        val current = mutableStatus.value
+        val claimed = tracks.isNotEmpty() && current !is ExportStatus.Running &&
+            mutableStatus.compareAndSet(
+                current,
+                ExportStatus.Running(0, tracks.distinctBy { it.id }.size)
+            )
+        if (!claimed) return tracks.isEmpty()
         val request = ExportRequest(
             tree = tree.toString(),
             tracks = tracks,
             aliases = aliases.entries.associate { it.key.value to it.value.value }
         )
-        val file = File(folder.apply { mkdirs() }, "${UUID.randomUUID()}.json")
-        file.writeText(JSON.encodeToString(request))
-        mutableStatus.value = ExportStatus.Running(0, tracks.distinctBy { it.id }.size)
+        val file = withContext(Dispatchers.IO) {
+            File(folder.apply { mkdirs() }, "${UUID.randomUUID()}.json")
+                .apply { writeText(JSON.encodeToString(request)) }
+        }
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
@@ -80,6 +94,7 @@ class ExportManager @Inject constructor(
                 .setInputData(workDataOf(ExportWorker.KEY_REQUEST to file.absolutePath))
                 .build()
         )
+        return true
     }
 
     /** The report was shown: back to idle. */
@@ -95,7 +110,7 @@ class ExportManager @Inject constructor(
         val request = read(requestFile) ?: return null
         val exporter = Exporter(
             CacheExportSource(caches),
-            DocumentTreeTarget(context.contentResolver, request.tree.toUri())
+            DocumentTreeTarget(SafDocumentTree(context.contentResolver, request.tree.toUri()))
         )
         val report = exporter.export(
             tracks = request.tracks,
@@ -109,17 +124,24 @@ class ExportManager @Inject constructor(
         return report
     }
 
-    /** The request in [file], only if this class wrote it (its own folder) and it is readable. */
+    /**
+     * The request in [file], only if this class wrote it (its own folder); an unreadable one is
+     * deleted. Called from the worker, off the main thread.
+     */
     private fun read(file: File): ExportRequest? {
         if (file.parentFile?.canonicalPath != folder.canonicalPath) return null
-        return try {
+        val request = try {
             JSON.decodeFromString<ExportRequest>(file.readText())
         } catch (ignored: IOException) {
             null
         } catch (ignored: SerializationException) {
-            file.delete()
             null
         }
+        if (request == null) {
+            file.delete()
+            mutableStatus.value = ExportStatus.Idle
+        }
+        return request
     }
 
     private companion object {

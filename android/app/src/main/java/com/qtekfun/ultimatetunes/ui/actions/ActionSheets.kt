@@ -185,6 +185,7 @@ private fun SkipReason.labelRes(): Int = when (this) {
     SkipReason.NOT_IN_LIBRARY -> R.string.export_skip_not_in_library
     SkipReason.NOT_ON_PHONE -> R.string.export_skip_not_on_phone
     SkipReason.UNKNOWN_FORMAT -> R.string.export_skip_unknown_format
+    SkipReason.ALREADY_IN_FOLDER -> R.string.export_skip_already_in_folder
     SkipReason.WRITE_FAILED -> R.string.export_skip_write_failed
 }
 
@@ -226,6 +227,8 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         is ActionEvent.ExportStarted ->
             pluralStringResource(R.plurals.event_export_started, event.count, event.count)
+
+        ActionEvent.ExportBusy -> stringResource(R.string.event_export_busy)
 
         is ActionEvent.Failed -> stringResource(event.error.messageRes())
     }

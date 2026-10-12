@@ -264,4 +264,15 @@ class LibraryActionsViewModelTest {
         viewModel.dismissExport()
         assertEquals(ExportStatus.Idle, viewModel.state.value.export)
     }
+
+    @Test
+    fun `an export while another one runs does not start and says why`() = runTest {
+        val exports = FakeExports(folder = "content://tree/kept").apply { busy = true }
+        val viewModel = viewModel(exports)
+
+        viewModel.export(listOf(tile(1)))
+
+        assertEquals(ActionEvent.ExportBusy, viewModel.state.awaitFirst { it.event != null }.event)
+        assertTrue(exports.started.isEmpty())
+    }
 }
