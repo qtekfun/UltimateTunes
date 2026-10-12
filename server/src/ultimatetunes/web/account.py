@@ -13,6 +13,9 @@ keyboard shortcuts.
 - API keys: the caller's own, listed and revoked through `AuthService` (`revoke_own_key`: a key
   of another user is `not_found`). Keys are created in the app or the admin panel, never here:
   a key is shown once and must not land in a browser page.
+- Sign out every device: revokes every API key of the caller and ends every web and admin
+  session of it, this one included (`AuthService.sign_out_everywhere`, audited). Only the
+  caller's own account (no user id in the request), after ticking a confirmation box.
 
 Confirmations are fixed messages chosen by `?done=<code>`: nothing from the query is echoed.
 """
@@ -40,7 +43,7 @@ from ultimatetunes.web.routes import (
     page,
     state,
 )
-from ultimatetunes.web.security import HOME, LANG_COOKIE, LANG_TTL_S, PREFIX
+from ultimatetunes.web.security import HOME, LANG_COOKIE, LANG_TTL_S, PREFIX, SESSION_COOKIE
 
 router = APIRouter(route_class=WebRoute)
 SETTINGS = PREFIX + "/settings"
@@ -51,6 +54,7 @@ ERRORS = {
     "attempts": "Too many attempts. Wait and try again.",
     "current": "The current password is wrong.",
     "policy": "The new password needs 12 to 1024 characters.",
+    "confirm": "Tick the box to confirm signing out every device.",
 }
 DONE = {
     "password": "Password changed. Other devices were signed out.",  # nosec B105 - a message
@@ -138,3 +142,18 @@ def revoke_key(request: Request, post: PostedDep, item_id: ItemId) -> Response:
     me = post.listener
     state(request).auth.revoke_own_key(me.principal, item_id, me.ip)
     return go(request, SETTINGS + "?done=key")
+
+
+@router.post(SETTINGS + "/sign-out-everywhere", include_in_schema=False)
+def sign_out_everywhere(request: Request, post: PostedDep) -> Response:
+    me = post.listener
+    if post.get("confirm") != "yes":
+        return _settings_page(request, me, error=ERRORS["confirm"], status=400)
+    state(request).auth.sign_out_everywhere(me.user.id, actor=me.principal, client_ip=me.ip)
+    # This session ended too: back to the sign-in form, with a full reload.
+    if request.headers.get("hx-request"):
+        response = Response(status_code=200, headers={"HX-Redirect": HOME})
+    else:
+        response = Response(status_code=303, headers={"Location": HOME})
+    response.delete_cookie(SESSION_COOKIE, path=HOME, secure=True, httponly=True, samesite="strict")
+    return response

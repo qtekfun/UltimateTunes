@@ -176,6 +176,17 @@ ES: dict[str, str] = {
     # Confirmations (?done=)
     "User created.": "Usuario creado.",
     "User updated.": "Usuario actualizado.",
+    "Every device of the user was signed out.": (
+        "Se cerró la sesión del usuario en todos los dispositivos."
+    ),
+    "Confirm": "Confirmar",
+    "Sign out every device": "Cerrar sesión en todos los dispositivos",
+    "Revokes every API key and ends every session of this user": (
+        "Revoca todas las claves API y cierra todas las sesiones de este usuario"
+    ),
+    "Tick the box to confirm signing out every device": (
+        "Marca la casilla para confirmar el cierre de sesión en todos los dispositivos"
+    ),
     "Key revoked.": "Clave revocada.",
     "Download queued again.": "Descarga puesta de nuevo en cola.",
     "Cancel requested.": "Cancelación pedida.",
