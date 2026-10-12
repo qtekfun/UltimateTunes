@@ -31,6 +31,15 @@ Music library, user accounts, API keys, admin panel, the host running the contai
 | Public exposure | Reverse proxy with TLS + HSTS + request limits; ZAP baseline scan | T22 |
 | Future multi-replica deployment (k8s) | Shared state only through interfaces (Redis later), NetworkPolicies, PodSecurity restricted | Phase 5 |
 
+## Notes for T22 (collected in Wave 1 reviews)
+- **Admin allowlist trusts the TCP peer address.** Behind a reverse proxy, `tailscale serve` on the host, Tailscale Funnel or Docker's userland proxy, every client looks local or private. Public exposure needs a trusted-proxy rule (forwarded client IP from known proxies only) or a separate admin listener. The same applies to the client IP that password checks and the lockout use.
+- **Admin logout is stateless**: it clears the signed cookie, but a copied cookie stays valid until it expires (default 8 h); a password change, disabling the user or a role change ends it at once. Options: a server-side revocation list or a shorter TTL. Without `UT_ADMIN_SESSION_SECRET` each process uses a random key.
+- **Internal worker API on a separate listener** (or equivalent isolation) before any public exposure; in v1 it shares port 8044, reachable only over the internal Docker network.
+- **`/readyz` detail**: decide what a public probe may reveal (database, schema, storage state); keep details internal.
+- **Signing secrets** (if GitHub Actions return): keep the `UT_*` secrets in an environment limited to release tags, and check the APK signer certificate digest against a pinned value before publishing.
+- **The api trusts the worker's SHA-256**: register compares the reported hash with the file at the path but does not hash the staging file itself, so a compromised worker could make it adopt an unowned file. Consider hashing on the api side.
+- **Search cache and limits**: cap the size of the catalog cache (entries per kind, bytes) and add a per-user limit on external searches, so one user cannot fill `/data` or spend the shared 2 req/s catalog budget.
+
 ## Checklist before opening to the Internet (T22)
 - [ ] All controls above implemented and tested.
 - [ ] `/admin` reachable only from LAN/Tailscale (or explicitly opted in).
