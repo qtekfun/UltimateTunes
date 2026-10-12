@@ -288,7 +288,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken by the coordinator in Wave 1 (2026-10-12)
 - **GitHub Actions are disabled**: the author wants no spending and everything lives on the homelab. The workflows stay in the repo.
-- A merge needs `tools/ci-local.sh` green on the PR branch merged with master (it includes the Conventional Commit PR-title check, same rule as `pr-title.yml`), plus the independent review without blocking findings.
+- (Superseded by the update below.) A merge needs `tools/ci-local.sh` green on the PR branch merged with master (it includes the Conventional Commit PR-title check, same rule as `pr-title.yml`), plus the independent review without blocking findings.
 - No publishing to GHCR or GitHub Releases and no release tags until the author decides otherwise; releases are built locally (RELEASING.md).
 - Open option: self-hosted GitHub Actions runners on the homelab.
 - *Update 2026-10-12:* the repo is now **public** (gitleaks over every commit of every branch was clean first), so GitHub-hosted minutes are free: CI, PR title and Dependabot verification are on again and a merge needs GitHub CI green plus the independent review. `tools/ci-local.sh` stays as the local gate. Release and Nightly stay disabled; publishing stays paused.
