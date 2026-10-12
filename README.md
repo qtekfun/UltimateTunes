@@ -39,7 +39,7 @@ UltimateTunes is meant for one household on hardware you control, reached over y
 2. Next to a copy of [`server/compose.yaml`](server/compose.yaml), write a `.env` with `UT_VERSION=local`, `UT_MUSIC_PATH=` your music folder and `UT_BIND=127.0.0.1:8044`, and two random secrets, `secrets/worker_token` and `secrets/admin_session_secret` (`openssl rand -hex 32` each). The file's header explains every setting.
 3. `docker compose up -d` (migrations run first), then create the first admin once: `docker compose run --rm api bootstrap-admin <name>`.
 4. Reach it over HTTPS from your devices, for example with `tailscale serve --bg 8044` (for the admin panel behind it, set `UT_TRUSTED_PROXIES` as [deploy/README.md](deploy/README.md) explains). Keep it off the open Internet unless you follow the exposure checklist there.
-5. In the admin panel (`/admin`), create an API key for each device (it can show it as a QR code), build the app (`cd android && ./gradlew assembleDebug`, or a signed release, see [RELEASING.md](RELEASING.md)) and connect it with the server address and the key.
+5. In the admin panel (`/admin`), create an API key for each device (it can show it as a QR code), build the app (`cd android && ./gradlew assembleDebug`, or a signed release, see [RELEASING.md](RELEASING.md)) and connect it: point the phone's camera at the key's QR code and open the link it offers (the app shows the server and asks before connecting), or type the server address and the key on the Connect screen.
 
 More on running it:
 - [docs/architecture.md](docs/architecture.md): how the containers, networks and every connection fit together.

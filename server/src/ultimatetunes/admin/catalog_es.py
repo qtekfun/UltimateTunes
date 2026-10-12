@@ -110,6 +110,13 @@ ES: dict[str, str] = {
     "Server address the app will use": "Dirección del servidor que usará la app",
     "Create key": "Crear clave",
     "QR code to connect the app": "Código QR para conectar la app",
+    "Android app: open the phone's camera and point it at this code. The camera offers to open"
+    " UltimateTunes, which shows the server and asks before connecting. Other apps: type the"
+    " server address and the key.": (
+        "App de Android: abre la cámara del móvil y apúntala a este código. La cámara te ofrece"
+        " abrir UltimateTunes, que muestra el servidor y pregunta antes de conectar. Otras apps:"
+        " escribe la dirección del servidor y la clave."
+    ),
     # Downloads
     "Song": "Canción",
     "Progress": "Progreso",
