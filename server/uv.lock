@@ -1318,6 +1318,7 @@ source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "itsdangerous" },
     { name = "jinja2" },
     { name = "mutagen" },
@@ -1332,7 +1333,6 @@ dependencies = [
 dev = [
     { name = "anyio" },
     { name = "bandit" },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "openapi-spec-validator" },
     { name = "pip-audit" },
@@ -1348,6 +1348,7 @@ dev = [
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "mutagen", specifier = ">=1.47" },
@@ -1362,7 +1363,6 @@ requires-dist = [
 dev = [
     { name = "anyio", specifier = ">=4.8" },
     { name = "bandit", specifier = ">=1.8" },
-    { name = "httpx", specifier = ">=0.28" },
     { name = "mypy", specifier = ">=1.15" },
     { name = "openapi-spec-validator", specifier = ">=0.7" },
     { name = "pip-audit", specifier = ">=2.8" },
