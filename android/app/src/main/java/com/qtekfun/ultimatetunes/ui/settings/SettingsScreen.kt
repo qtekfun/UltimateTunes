@@ -71,7 +71,8 @@ data class SettingsActions(
     val setOfflineOnly: (Boolean) -> Unit = {},
     val setDownloadOnWifiOnly: (Boolean) -> Unit = {},
     val disconnect: () -> Unit = {},
-    val messageShown: () -> Unit = {}
+    val messageShown: () -> Unit = {},
+    val exportFolderPicked: (String?) -> Unit = {}
 )
 
 @Composable
@@ -92,7 +93,8 @@ fun SettingsRoute(
             setOfflineOnly = viewModel::setOfflineOnly,
             setDownloadOnWifiOnly = viewModel::setDownloadOnWifiOnly,
             disconnect = viewModel::disconnect,
-            messageShown = viewModel::dismissMessage
+            messageShown = viewModel::dismissMessage,
+            exportFolderPicked = viewModel::onExportFolderPicked
         )
     )
 }
@@ -124,6 +126,7 @@ fun SettingsScreen(
             server(state.server, actions, onDisconnect = { disconnecting = true })
             keys(state.keys, actions, onRevoke = { revoking = it.value })
             item { PlaybackSection(state.playback, actions) }
+            item { ExportSection(state.exportFolder, actions.exportFolderPicked) }
             item { AboutSection() }
         }
     }

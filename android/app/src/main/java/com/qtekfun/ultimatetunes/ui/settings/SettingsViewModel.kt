@@ -12,6 +12,8 @@ import com.qtekfun.ultimatetunes.core.api.getOrNull
 import com.qtekfun.ultimatetunes.core.api.model.ApiKey
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.Role
+import com.qtekfun.ultimatetunes.playback.OfflineControls
+import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -58,20 +60,26 @@ data class SettingsUiState(
     val server: LoadState<ServerDetails> = LoadState.Loading,
     val keys: LoadState<List<KeyRow>> = LoadState.Loading,
     val playback: PlaybackSettings = PlaybackSettings(),
+    /** The folder exports go to (RF-14), a tree URI; null until one is picked. */
+    val exportFolder: String? = null,
     /** A revoke that failed, shown once. */
     val message: LoadError? = null
 )
 
 /**
  * Settings (RF-11): the server and account, the user's API keys per device (`/ut/v1/keys`, with
- * revoke), the playback cache size and offline choices ([PlaybackSettingsStore]), and Disconnect.
+ * revoke), the playback cache size and offline choices ([PlaybackSettingsStore], which the player
+ * follows), the export folder (RF-14), and Disconnect.
  */
+@Suppress("TooManyFunctions") // One function per setting.
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val api: TunesApi,
     private val configSource: ServerConfigSource,
     private val gate: ConnectionGate,
-    private val store: PlaybackSettingsStore
+    private val store: PlaybackSettingsStore,
+    private val offline: OfflineControls,
+    private val exports: Exports
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
@@ -82,6 +90,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             store.settings.collect { settings ->
                 mutableState.update { it.copy(playback = settings) }
+            }
+        }
+        viewModelScope.launch {
+            exports.folder.collect { folder ->
+                mutableState.update { it.copy(exportFolder = folder) }
             }
         }
         load()
@@ -149,8 +162,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { store.setOfflineOnly(value) }
     }
 
+    /** Also reschedules the offline sync, whose network constraint depends on it. */
     fun setDownloadOnWifiOnly(value: Boolean) {
-        viewModelScope.launch { store.setDownloadOnWifiOnly(value) }
+        viewModelScope.launch {
+            store.setDownloadOnWifiOnly(value)
+            offline.syncSoon()
+        }
+    }
+
+    /** A folder picked with the system picker for exports; null when the picker was cancelled. */
+    fun onExportFolderPicked(uri: String?) {
+        if (uri == null) return
+        viewModelScope.launch { exports.setFolder(uri) }
     }
 
     /** Forgets the server and key on this device: back to the Connect screen. */

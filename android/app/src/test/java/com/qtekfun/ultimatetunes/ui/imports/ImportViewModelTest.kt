@@ -3,7 +3,9 @@
 
 package com.qtekfun.ultimatetunes.ui.imports
 
+import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.ErrorKind
+import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesError
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
@@ -17,10 +19,12 @@ import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
+import com.qtekfun.ultimatetunes.ui.jsonResponse
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.problem
 import java.io.IOException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -44,24 +48,34 @@ class ImportViewModelTest {
         server = FakeTunesServer().start()
     }
 
+    private val created = mutableListOf<ImportViewModel>()
+
     @AfterEach
     fun tearDown() {
+        // A view model still polling must not resume on Main after the test dispatcher is reset
+        // ("Dispatchers.Main is used concurrently"): stop them all first.
+        created.forEach { it.viewModelScope.cancel() }
         server.close()
     }
 
-    /** A view model whose history has loaded (one request). */
-    private suspend fun viewModel(): ImportViewModel =
-        ImportViewModel(connectedApi(server)).also { vm ->
-            vm.state.awaitFirst { it.history !is LoadState.Loading }
-            server.takeRequest()
-        }
+    private fun newViewModel(): ImportViewModel = ImportViewModel(
+        connectedApi(server),
+        InMemoryServerConfigSource(server.serverConfig())
+    ).also { created += it }
+
+    /** A view model whose history and capabilities have loaded (two requests, in this order). */
+    private suspend fun viewModel(): ImportViewModel = newViewModel().also { vm ->
+        vm.state.awaitFirst { it.history !is LoadState.Loading }
+        assertEquals("/ut/v1/imports", server.takeRequest().url.encodedPath)
+        assertEquals("/ut/v1/server", server.takeRequest().url.encodedPath)
+    }
 
     private fun csv(text: String, name: String = "mix.csv") =
         PickedFile(name, text.encodeToByteArray())
 
     @Test
     fun `the history lists earlier imports`() = runTest {
-        val state = ImportViewModel(connectedApi(server)).state.awaitFirst {
+        val state = newViewModel().state.awaitFirst {
             it.history is LoadState.Ready
         }
 
@@ -134,7 +148,7 @@ class ImportViewModelTest {
         viewModel.importUrl()
 
         assertEquals(ImportError.SPOTIFY_URL, viewModel.state.value.error)
-        assertEquals(1, server.requestCount)
+        assertEquals(2, server.requestCount)
         viewModel.onUrlChange("https://music.youtube.com/playlist?list=x")
         assertNull(viewModel.state.value.error)
     }
@@ -189,13 +203,13 @@ class ImportViewModelTest {
         assertNull(viewModel.state.value.file)
         viewModel.onFilePicked(null)
         assertEquals(ImportError.INVALID_FILE, viewModel.state.value.error)
-        assertEquals(1, server.requestCount)
+        assertEquals(2, server.requestCount)
     }
 
     @Test
     fun `a file the server cannot read is explained`() = runTest {
         server.dispatcher.override("ut/v1/imports") { problem(400, "invalid_parameter") }
-        val viewModel = ImportViewModel(connectedApi(server))
+        val viewModel = newViewModel()
         viewModel.onFilePicked(csv("nothing useful"))
 
         viewModel.importFile()
@@ -221,7 +235,7 @@ class ImportViewModelTest {
     @Test
     fun `a failed history can be retried`() = runTest {
         server.dispatcher.override("ut/v1/imports") { dropConnection() }
-        val viewModel = ImportViewModel(connectedApi(server))
+        val viewModel = newViewModel()
         val failed = viewModel.state.awaitFirst { it.history is LoadState.Failed }
         assertEquals(LoadState.Failed(LoadError.NETWORK), failed.history)
 
@@ -231,6 +245,59 @@ class ImportViewModelTest {
             viewModel.state.awaitFirst {
                 it.history is LoadState.Ready
             }.history is LoadState.Ready
+        )
+    }
+
+    @Test
+    fun `kinds of import the server turned off are not offered`() = runTest {
+        server.dispatcher.override("ut/v1/server") {
+            jsonResponse(
+                """{"name":"UltimateTunes","version":"0.1.0","apiVersion":"1",
+                "openSubsonic":{"apiVersion":"1.16.1","extensions":[]},
+                "capabilities":{"externalSearch":true,"radio":true,"lyrics":true,
+                "youtubeMusicImport":false,"fileImport":true,
+                "streamingWhileDownloading":true}}"""
+            )
+        }
+        val state = viewModel().state.awaitFirst { !it.urlImport }
+
+        assertFalse(state.urlImport)
+        assertTrue(state.fileImport)
+        assertTrue(state.anyImport)
+    }
+
+    @Test
+    fun `both kinds stay offered when the server cannot say`() = runTest {
+        server.dispatcher.override("ut/v1/server") { dropConnection() }
+        val state = viewModel().state.value
+
+        assertTrue(state.urlImport)
+        assertTrue(state.fileImport)
+    }
+
+    @Test
+    fun `a progress check the server refuses is a generic server error`() = runTest {
+        val viewModel = viewModel()
+        server.dispatcher.override("ut/v1/imports/${importId.value}") {
+            problem(400, "invalid_parameter")
+        }
+
+        viewModel.open(importId)
+
+        assertEquals(ImportError.SERVER, viewModel.state.awaitFirst { it.error != null }.error)
+    }
+
+    @Test
+    fun `progress check errors never blame the link`() {
+        assertEquals(
+            ImportError.UNAUTHORIZED,
+            ImportViewModel.pollErrorOf(TunesResult.NotConfigured)
+        )
+        assertEquals(
+            ImportError.SERVER,
+            ImportViewModel.pollErrorOf(
+                TunesResult.ApiError(TunesError(ErrorKind.UNSUPPORTED_URL), 400)
+            )
         )
     }
 

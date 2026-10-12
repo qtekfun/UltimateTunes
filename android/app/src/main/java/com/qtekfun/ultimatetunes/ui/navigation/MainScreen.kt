@@ -19,14 +19,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -48,8 +56,21 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
+import com.qtekfun.ultimatetunes.ui.actions.ActionEventEffect
+import com.qtekfun.ultimatetunes.ui.actions.CollectionActions
+import com.qtekfun.ultimatetunes.ui.actions.ExportFolderPicker
+import com.qtekfun.ultimatetunes.ui.actions.ExportReportDialog
+import com.qtekfun.ultimatetunes.ui.actions.LibraryActionsViewModel
+import com.qtekfun.ultimatetunes.ui.actions.LocalCollectionActions
+import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
+import com.qtekfun.ultimatetunes.ui.actions.PlaylistPickerSheet
+import com.qtekfun.ultimatetunes.ui.actions.TrackMenuActions
+import com.qtekfun.ultimatetunes.ui.actions.TrackMenuSheet
 import com.qtekfun.ultimatetunes.ui.album.AlbumRoute
 import com.qtekfun.ultimatetunes.ui.artist.ArtistRoute
+import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.imports.ImportRoute
 import com.qtekfun.ultimatetunes.ui.library.AlbumsRoute
 import com.qtekfun.ultimatetunes.ui.library.ArtistsRoute
@@ -71,6 +92,7 @@ import com.qtekfun.ultimatetunes.ui.radio.RadioRoute
 import com.qtekfun.ultimatetunes.ui.radio.StationRoute
 import com.qtekfun.ultimatetunes.ui.search.SearchRoute
 import com.qtekfun.ultimatetunes.ui.settings.SettingsRoute
+import com.qtekfun.ultimatetunes.ui.theme.Dimens
 
 /** Key of the artwork shared between the mini and the full player. */
 private const val SHARED_ARTWORK_KEY = "player.artwork"
@@ -83,56 +105,107 @@ private const val SHARED_ARTWORK_KEY = "player.artwork"
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainScreen(
+    askNotifications: Boolean = false,
+    onNotificationsAnswered: () -> Unit = {},
     playerViewModel: PlayerViewModel = hiltViewModel(),
-    lyricsViewModel: LyricsViewModel = hiltViewModel()
+    lyricsViewModel: LyricsViewModel = hiltViewModel(),
+    actionsViewModel: LibraryActionsViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
     val player by playerViewModel.state.collectAsStateWithLifecycle()
     val lyrics = lyricsHooks(lyricsViewModel)
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val hasTrack = player.current != null
     val actions = remember(playerViewModel) { PlayerActions.of(playerViewModel) }
+    val snackbar = remember { SnackbarHostState() }
+    var menuTrack by remember { mutableStateOf<TrackTile?>(null) }
     BackHandler(enabled = expanded) { expanded = false }
+    MessageEffect(player.message, snackbar, playerViewModel::dismissMessage)
+    NotificationPermission(askNotifications, onNotificationsAnswered)
 
-    SharedTransitionLayout {
-        Box(Modifier.fillMaxSize()) {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                contentWindowInsets = WindowInsets(0),
-                bottomBar = {
-                    Column {
-                        MiniPlayerBar(
-                            visible = hasTrack && !expanded,
-                            player = player,
-                            actions = actions,
-                            onOpen = { expanded = true }
-                        )
-                        TabBar(navController)
-                    }
-                }
-            ) { padding ->
-                TabsNavHost(
-                    navController = navController,
-                    contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
-                    onPlay = playerViewModel::play
-                )
-            }
-            AnimatedVisibility(
-                visible = hasTrack && expanded,
-                enter = slideInVertically { it / 2 } + fadeIn(),
-                exit = slideOutVertically { it / 2 } + fadeOut()
-            ) {
-                FullPlayer(
-                    state = player,
-                    actions = actions,
-                    onCollapse = { expanded = false },
-                    lyrics = lyrics,
-                    artworkModifier = Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
-                        animatedVisibilityScope = this
+    ProvideLibraryActions(actionsViewModel, onOpenMenu = { menuTrack = it }) {
+        SharedTransitionLayout {
+            MainLayout(
+                navController = navController,
+                player = player,
+                actions = actions,
+                lyrics = lyrics,
+                expanded = expanded,
+                onExpandedChange = { expanded = it },
+                snackbar = snackbar,
+                banner = { ExportBanner(actionsViewModel) },
+                onPlay = playerViewModel::play
+            )
+        }
+    }
+    LibraryActionsHost(
+        viewModel = actionsViewModel,
+        snackbar = snackbar,
+        menuTrack = menuTrack,
+        onMenuDismiss = { menuTrack = null },
+        menuActions = trackMenuActions(
+            player = playerViewModel,
+            actions = actionsViewModel,
+            navController = navController,
+            collapse = { expanded = false }
+        )
+    )
+}
+
+/** The tabs with the mini player and the bar, and the full player over them when [expanded]. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Suppress("LongParameterList") // The pieces of the main screen, passed down once.
+@Composable
+private fun SharedTransitionScope.MainLayout(
+    navController: NavHostController,
+    player: PlayerUiState,
+    actions: PlayerActions,
+    lyrics: LyricsHooks,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    snackbar: SnackbarHostState,
+    banner: @Composable () -> Unit,
+    onPlay: (List<TrackTile>, Int) -> Unit
+) {
+    val hasTrack = player.current != null
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets(0),
+            snackbarHost = { SnackbarHost(snackbar) },
+            bottomBar = {
+                Column {
+                    banner()
+                    MiniPlayerBar(
+                        visible = hasTrack && !expanded,
+                        player = player,
+                        actions = actions,
+                        onOpen = { onExpandedChange(true) }
                     )
-                )
+                    TabBar(navController)
+                }
             }
+        ) { padding ->
+            TabsNavHost(
+                navController = navController,
+                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
+                onPlay = onPlay
+            )
+        }
+        AnimatedVisibility(
+            visible = hasTrack && expanded,
+            enter = slideInVertically { it / 2 } + fadeIn(),
+            exit = slideOutVertically { it / 2 } + fadeOut()
+        ) {
+            FullPlayer(
+                state = player,
+                actions = actions,
+                onCollapse = { onExpandedChange(false) },
+                lyrics = lyrics,
+                artworkModifier = Modifier.sharedElement(
+                    sharedContentState = rememberSharedContentState(SHARED_ARTWORK_KEY),
+                    animatedVisibilityScope = this
+                )
+            )
         }
     }
 }

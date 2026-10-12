@@ -3,6 +3,9 @@
 
 package com.qtekfun.ultimatetunes.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -154,6 +157,42 @@ private fun SwitchRow(
         }
         Switch(checked = checked, onCheckedChange = null)
     }
+}
+
+/** Test tag of the export folder button. */
+const val SETTINGS_EXPORT_FOLDER_TAG = "settings.exportFolder"
+
+/** The export folder (RF-14): its name, and a button opening the system folder picker. */
+@Composable
+internal fun ExportSection(folder: String?, onPicked: (String?) -> Unit) {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
+        onPicked(it?.toString())
+    }
+    Column {
+        SectionHeader(stringResource(R.string.settings_export))
+        Text(
+            text = stringResource(R.string.settings_export_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.ScreenMargin)
+        )
+        Detail(
+            stringResource(R.string.settings_export_folder),
+            folder?.let(::folderName) ?: stringResource(R.string.settings_export_folder_none)
+        )
+        TextButton(
+            onClick = { launcher.launch(folder?.let(Uri::parse)) },
+            modifier = Modifier
+                .padding(horizontal = Dimens.SpaceS)
+                .testTag(SETTINGS_EXPORT_FOLDER_TAG)
+        ) { Text(stringResource(R.string.settings_export_folder_change)) }
+    }
+}
+
+/** "Music/Exports" for a tree URI like `content://…/tree/primary%3AMusic%2FExports`. */
+internal fun folderName(uri: String): String {
+    val document = Uri.parse(uri).lastPathSegment ?: return uri
+    return document.substringAfter(':', document).ifEmpty { document }
 }
 
 @Composable

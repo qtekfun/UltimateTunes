@@ -10,6 +10,8 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -23,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** An album with its songs, ready to show. */
@@ -43,17 +46,21 @@ data class AlbumContent(
 data class AlbumUiState(
     val content: LoadState<AlbumContent> = LoadState.Loading,
     /** A favourite change that failed; shown once, then [AlbumViewModel.dismissMessage]. */
-    val message: LoadError? = null
+    val message: LoadError? = null,
+    /** Kept on the phone, in sync with the server (RF-12). */
+    val isOffline: Boolean = false
 )
 
 /**
  * An album (`getAlbum`), from the library or from YouTube Music (`ytalbum:` ids, whose songs are
- * "not in library yet"). Opened from Listen Now, Search, an artist or the Library.
+ * "not in library yet"). Opened from Listen Now, Search, an artist or the Library. It can be kept
+ * offline (RF-12): its songs download and stay in sync.
  */
 @HiltViewModel
 class AlbumViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val api: TunesApi
+    private val api: TunesApi,
+    private val offline: OfflineControls
 ) : ViewModel() {
     private val id = AlbumId(checkNotNull(savedStateHandle.get<String>(ARG_ID)))
 
@@ -63,12 +70,18 @@ class AlbumViewModel @Inject constructor(
     private var loading: Job? = null
 
     init {
+        viewModelScope.launch {
+            offline.selection.collect { selection ->
+                val kept = selection.keepsCollection(CollectionKind.ALBUM, id.value)
+                mutableState.update { it.copy(isOffline = kept) }
+            }
+        }
         load()
     }
 
     fun load() {
         if (loading?.isActive == true) return
-        mutableState.value = AlbumUiState(content = LoadState.Loading)
+        mutableState.update { it.copy(content = LoadState.Loading, message = null) }
         loading = viewModelScope.launch {
             val content = loadStateOf(api.album(id)) { album ->
                 val artist = album.displayArtist ?: album.artist.orEmpty()
@@ -82,7 +95,20 @@ class AlbumViewModel @Inject constructor(
                     isFavourite = album.starred != null
                 )
             }
-            mutableState.value = AlbumUiState(content = content)
+            mutableState.update { it.copy(content = content) }
+        }
+    }
+
+    /** Keeps the album on the phone, or stops keeping it. */
+    fun toggleOffline() {
+        val album = (mutableState.value.content as? LoadState.Ready)?.value ?: return
+        val kept = mutableState.value.isOffline
+        viewModelScope.launch {
+            if (kept) {
+                offline.dropCollection(CollectionKind.ALBUM, id.value)
+            } else {
+                offline.keepCollection(CollectionKind.ALBUM, id.value, album.album.title)
+            }
         }
     }
 

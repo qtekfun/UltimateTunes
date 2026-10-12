@@ -31,4 +31,10 @@ class SettingsPlayerSource @Inject constructor(store: PlaybackSettingsStore) :
 interface PlaybackModule {
     @Binds
     fun playerSettings(source: SettingsPlayerSource): PlayerSettingsSource
+
+    @Binds
+    fun playerController(connection: PlaybackConnection): PlayerController
+
+    @Binds
+    fun offlineControls(controls: ManagerOfflineControls): OfflineControls
 }

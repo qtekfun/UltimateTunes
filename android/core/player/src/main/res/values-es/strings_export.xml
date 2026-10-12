@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<resources>
+    <string name="export_channel">Exportación</string>
+    <string name="export_channel_description">Progreso de las canciones copiadas a una carpeta del teléfono</string>
+    <string name="export_running">Exportando canciones</string>
+    <string name="export_progress">%1$d de %2$d</string>
+    <string name="export_done">Exportación terminada</string>
+    <plurals name="export_done_summary">
+        <item quantity="one">%1$d canción copiada, %2$d omitidas</item>
+        <item quantity="many">%1$d canciones copiadas, %2$d omitidas</item>
+        <item quantity="other">%1$d canciones copiadas, %2$d omitidas</item>
+    </plurals>
+</resources>

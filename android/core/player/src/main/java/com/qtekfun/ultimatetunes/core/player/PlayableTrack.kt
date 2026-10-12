@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.core.player
 
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import kotlinx.serialization.Serializable
@@ -21,6 +22,8 @@ data class PlayableTrack(
     val artist: String,
     val album: String? = null,
     val albumId: AlbumId? = null,
+    /** Where "Go to Artist" leads; null when unknown. */
+    val artistId: ArtistId? = null,
     val durationMs: Long? = null,
     val artworkUrl: String? = null,
     val trackNumber: Int? = null
@@ -41,6 +44,7 @@ data class PlayableTrack(
             artist = song.displayArtist ?: song.artist.orEmpty(),
             album = song.album,
             albumId = song.albumId,
+            artistId = song.artistId,
             durationMs = song.duration?.let { it * MS_PER_SECOND },
             artworkUrl = song.coverArt?.let { api.coverArtUrl(it, ARTWORK_PX)?.toString() },
             trackNumber = song.track

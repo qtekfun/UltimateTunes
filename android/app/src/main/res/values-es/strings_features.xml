@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<resources>
+    <!-- Reproductor -->
+    <string name="player_start_radio">Iniciar una radio a partir de esta canción</string>
+    <string name="player_first_play_progress">Trayendo esta canción de YouTube Music… %1$d %%</string>
+    <string name="player_first_play_failed">No se pudo descargar esta canción.</string>
+    <string name="player_issue_network">No hay conexión con el servidor.</string>
+    <string name="player_issue_not_available">Esta canción no está disponible ahora.</string>
+    <string name="player_issue_unplayable">No se puede reproducir esta canción.</string>
+
+    <!-- Menú de canción (pulsación larga) -->
+    <string name="menu_actions_for">Más opciones de %1$s</string>
+    <string name="menu_play_next">Reproducir a continuación</string>
+    <string name="menu_play_last">Reproducir al final</string>
+    <string name="menu_add_to_playlist">Añadir a una lista…</string>
+    <string name="menu_download">Descargar</string>
+    <string name="menu_remove_download">Eliminar descarga</string>
+    <string name="menu_export">Exportar al teléfono</string>
+    <string name="menu_go_to_album">Ir al álbum</string>
+    <string name="menu_go_to_artist">Ir al artista</string>
+    <string name="menu_start_station">Crear emisora</string>
+
+    <!-- Añadir a una lista -->
+    <string name="picker_title">Añadir a una lista</string>
+    <string name="picker_new">Nueva lista…</string>
+    <string name="picker_empty">Aún no tienes listas.</string>
+
+    <!-- Resultados -->
+    <plurals name="event_added_to_playlist">
+        <item quantity="one">%1$d canción añadida a «%2$s»</item>
+        <item quantity="many">%1$d canciones añadidas a «%2$s»</item>
+        <item quantity="other">%1$d canciones añadidas a «%2$s»</item>
+    </plurals>
+    <string name="event_downloading">Descargando para escuchar sin conexión</string>
+    <string name="event_download_removed">Descarga eliminada</string>
+    <plurals name="event_export_started">
+        <item quantity="one">Exportando %1$d canción…</item>
+        <item quantity="many">Exportando %1$d canciones…</item>
+        <item quantity="other">Exportando %1$d canciones…</item>
+    </plurals>
+
+    <!-- Álbumes y listas sin conexión -->
+    <string name="collection_keep_offline">Mantener sin conexión</string>
+    <string name="collection_stop_offline">Dejar de mantener sin conexión</string>
+    <string name="collection_offline">Sin conexión: las canciones nuevas se descargan solas</string>
+
+    <!-- Exportar al teléfono -->
+    <string name="export_report_title">Exportación terminada</string>
+    <plurals name="export_report_copied">
+        <item quantity="one">%1$d canción copiada a tu carpeta.</item>
+        <item quantity="many">%1$d canciones copiadas a tu carpeta.</item>
+        <item quantity="other">%1$d canciones copiadas a tu carpeta.</item>
+    </plurals>
+    <string name="export_report_skipped">Omitidas:</string>
+    <string name="export_skipped_item">%1$s (%2$s)</string>
+    <string name="export_skip_not_in_library">aún no está en la biblioteca</string>
+    <string name="export_skip_not_on_phone">no está entera en el teléfono</string>
+    <string name="export_skip_unknown_format">formato desconocido</string>
+    <string name="export_skip_write_failed">no se pudo escribir</string>
+    <string name="export_running_banner">Exportando %1$d de %2$d…</string>
+    <string name="downloads_export_all">Exportar todo</string>
+    <string name="ok">Aceptar</string>
+
+    <!-- Ajustes -->
+    <string name="settings_export">Exportar al teléfono</string>
+    <string name="settings_export_help">Las canciones exportadas se copian, en su formato original y con sus etiquetas, a una carpeta que elijas: Artista/Álbum/Canción.</string>
+    <string name="settings_export_folder">Carpeta</string>
+    <string name="settings_export_folder_none">Aún no elegida</string>
+    <string name="settings_export_folder_change">Elegir carpeta</string>
+
+    <!-- Importar -->
+    <string name="import_all_disabled">Tu servidor tiene desactivada la importación de listas.</string>
+
+    <!-- Notificaciones (Android 13+) -->
+    <string name="notifications_title">¿Permitir notificaciones?</string>
+    <string name="notifications_rationale">UltimateTunes usa las notificaciones solo para lo que está sonando y para el progreso de las descargas y de las exportaciones a este teléfono.</string>
+    <string name="notifications_allow">Permitir</string>
+    <string name="notifications_not_now">Ahora no</string>
+</resources>
