@@ -20,20 +20,29 @@ Secrets come from env vars or Docker secrets, never from the database.
 - `UT_NOTIFY_TOKEN` (or the Docker secret `ut_notify_token`): an ntfy access token, sent as
   `Authorization: Bearer` to the notification target. Or `UT_NOTIFY_USERNAME` +
   `UT_NOTIFY_PASSWORD` (Docker secrets `ut_notify_username`, `ut_notify_password`) for HTTP
-  Basic. One or the other, never both. They live only in the environment: the server has no
-  encryption library to keep them in its database, so the panel shows whether they are set
-  and never takes them.
+  Basic. One or the other, never both. With either, `UT_NOTIFY_HOST` (a host name, optional
+  `:port`, default 443) is required: the credentials go only to a target URL on exactly that
+  host and port, so changing the URL in the panel never sends them anywhere else. They live
+  only in the environment: the server has no encryption library to keep them in its
+  database, so the panel shows whether they are set and never takes them.
 """
 
 from typing import Self
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
 from ultimatetunes.core import netaddr
 from ultimatetunes.core.netaddr import IpNetwork
-from ultimatetunes.settings import AreaSettings, settings_config
+from ultimatetunes.settings import AreaSettings
 
-__all__ = ["DEFAULT_ALLOWED_NETWORKS", "AdminSettings", "IpNetwork", "parse_networks"]
+__all__ = [
+    "DEFAULT_ALLOWED_NETWORKS",
+    "AdminSettings",
+    "IpNetwork",
+    "host_and_port",
+    "parse_networks",
+]
 
 # Loopback, RFC 1918, link-local and IPv6 ULA (LAN), and Tailscale (100.64.0.0/10 and its ULA).
 DEFAULT_ALLOWED_NETWORKS = (
@@ -51,10 +60,24 @@ def parse_networks(text: str) -> tuple[IpNetwork, ...]:
     return networks
 
 
-class AdminSettings(AreaSettings):
-    # A refused value is never echoed in the error (it may be a password or a token).
-    model_config = settings_config() | {"hide_input_in_errors": True}
+def host_and_port(text: str) -> tuple[str, int]:
+    """`host[:port]` (as in an https URL) as a lower-case host without a trailing dot and a
+    port (443 when absent). Raises ValueError for anything else (a path, a user, a scheme)."""
+    cleaned = text.strip()
+    if not cleaned or not cleaned.isprintable() or any(c in cleaned for c in "/?#@\\ "):
+        raise ValueError("UT_NOTIFY_HOST must be a host name with an optional :port")
+    parts = urlsplit(f"https://{cleaned}")
+    try:
+        port = parts.port or 443
+    except ValueError as exc:
+        raise ValueError("UT_NOTIFY_HOST has an invalid port") from exc
+    host = (parts.hostname or "").rstrip(".")
+    if not host:
+        raise ValueError("UT_NOTIFY_HOST must be a host name with an optional :port")
+    return host, port
 
+
+class AdminSettings(AreaSettings):
     admin_session_secret: SecretStr | None = None
     admin_session_ttl_s: int = Field(default=8 * 3600, ge=60, le=7 * 24 * 3600)
     admin_allowed_networks: str = DEFAULT_ALLOWED_NETWORKS
@@ -63,6 +86,7 @@ class AdminSettings(AreaSettings):
     notify_token: SecretStr | None = None
     notify_username: SecretStr | None = None
     notify_password: SecretStr | None = None
+    notify_host: str | None = None
 
     @field_validator("admin_session_secret")
     @classmethod
@@ -83,6 +107,14 @@ class AdminSettings(AreaSettings):
             raise ValueError("notification credentials must be printable and not too long")
         return value
 
+    @field_validator("notify_host")
+    @classmethod
+    def _valid_host(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        host_and_port(value)
+        return value.strip()
+
     @model_validator(mode="after")
     def _one_kind_of_credentials(self) -> Self:
         user, password = self.notify_username, self.notify_password
@@ -96,6 +128,10 @@ class AdminSettings(AreaSettings):
             c.isspace() or not c.isascii() for c in self.notify_token.get_secret_value()
         ):
             raise ValueError("UT_NOTIFY_TOKEN must be ASCII without spaces")
+        if (self.notify_token is not None or user is not None) and self.notify_host is None:
+            raise ValueError(
+                "UT_NOTIFY_HOST is required with notification credentials: they go only there"
+            )
         return self
 
     @field_validator("admin_allowed_networks")

@@ -812,10 +812,19 @@ def _notifications_page(
     request: Request, admin: Admin, *, error: str | None = None, status: int = 200
 ) -> Response:
     target = notify.load_target(state(request).services.db)
+    sender = state(request).sender
     return page(
         request,
         "notifications.html",
-        {"target": target, "kinds": notify.KINDS, "auth_kind": state(request).sender.auth_kind},
+        {
+            "target": target,
+            "kinds": notify.KINDS,
+            "auth_kind": sender.auth_kind,
+            "auth_host": sender.credentials_host,
+            "auth_mismatch": target is not None
+            and sender.auth_kind is not None
+            and not sender.credentials_apply(target),
+        },
         admin=admin,
         error=error,
         status=status,
@@ -883,7 +892,9 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
                 detail={
                     "kind": target.kind,
                     "host": target.host,
-                    "auth": st.sender.auth_kind or "none",
+                    "auth": (st.sender.auth_kind or "none")
+                    if st.sender.credentials_apply(target)
+                    else "none",
                     "outcome": outcome,
                 },
             )

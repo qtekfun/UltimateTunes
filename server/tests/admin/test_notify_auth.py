@@ -21,10 +21,11 @@ from pydantic import SecretStr, ValidationError
 from tests.admin.conftest import SECRET, RecordingTransport, public_dns
 from ultimatetunes.admin import web
 from ultimatetunes.admin.notify import Credentials, Message, Outcome, Sender, Target
-from ultimatetunes.admin.settings import AdminSettings
+from ultimatetunes.admin.settings import AdminSettings, host_and_port
 from ultimatetunes.core.services import Services
 
-NTFY = "https://ntfy.example.com/ut-alerts"
+HOST = "ntfy.example.com"
+NTFY = f"https://{HOST}/ut-alerts"
 MESSAGE = Message("t", "b")
 
 
@@ -44,11 +45,20 @@ def _deliver(sender: Sender, target: Target) -> Outcome:
 def _settings(**values: str) -> AdminSettings:
     return AdminSettings(
         admin_session_secret=SecretStr(SECRET),
+        notify_host=HOST,
         **{k: SecretStr(v) for k, v in values.items()},  # type: ignore[arg-type]
     )
 
 
 # ---------------------------------------------------------------------- settings
+
+
+@pytest.fixture(autouse=True)
+def _environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No credentials from the machine running the tests; the bound host is set."""
+    for name in ("TOKEN", "USERNAME", "PASSWORD"):
+        monkeypatch.delenv(f"UT_NOTIFY_{name}", raising=False)
+    monkeypatch.setenv("UT_NOTIFY_HOST", HOST)
 
 
 def test_no_credentials_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,7 +136,7 @@ def test_invalid_credentials_are_refused_without_echoing_them(
 def test_bearer_token_goes_to_ntfy_and_webhook() -> None:
     token = ntfy_token()
     transport = RecordingTransport()
-    sender = Sender(transport, public_dns, Credentials.bearer(token))
+    sender = Sender(transport, public_dns, Credentials.bearer(token, HOST))
     assert sender.auth_kind == "token"
     assert _deliver(sender, Target("ntfy", NTFY)) == "sent"
     assert _deliver(sender, Target("webhook", NTFY)) == "sent"
@@ -139,7 +149,7 @@ def test_bearer_token_goes_to_ntfy_and_webhook() -> None:
 def test_basic_credentials() -> None:
     secret = password()
     transport = RecordingTransport()
-    sender = Sender(transport, public_dns, Credentials.basic("alerts", secret))
+    sender = Sender(transport, public_dns, Credentials.basic("alerts", secret, HOST))
     assert sender.auth_kind == "basic"
     assert _deliver(sender, Target("ntfy", NTFY)) == "sent"
     header = transport.requests[-1].headers["authorization"]
@@ -167,7 +177,7 @@ class Redirecting(httpx.AsyncBaseTransport):
 
 def test_credentials_never_follow_a_redirect() -> None:
     transport = Redirecting()
-    sender = Sender(transport, public_dns, Credentials.bearer(ntfy_token()))
+    sender = Sender(transport, public_dns, Credentials.bearer(ntfy_token(), HOST))
     assert _deliver(sender, Target("ntfy", NTFY)) == "failed"
     assert [r.url.host for r in transport.requests] == ["ntfy.example.com"]
 
@@ -178,7 +188,7 @@ def test_no_header_when_the_send_is_refused_before_connecting() -> None:
     async def loopback(host: str) -> list[str]:
         return ["127.0.0.1"]
 
-    sender = Sender(transport, loopback, Credentials.bearer(ntfy_token()))
+    sender = Sender(transport, loopback, Credentials.bearer(ntfy_token(), HOST))
     assert _deliver(sender, Target("ntfy", NTFY)) == "failed"
     assert transport.requests == []
 
@@ -189,7 +199,7 @@ def test_rejected_credentials_are_reported_and_never_logged(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     token = ntfy_token()
-    with_token = Sender(RecordingTransport(status), public_dns, Credentials.bearer(token))
+    with_token = Sender(RecordingTransport(status), public_dns, Credentials.bearer(token, HOST))
     assert _deliver(with_token, Target("ntfy", NTFY)) == "rejected"
     assert "credentials rejected" in caplog.text
     without = Sender(RecordingTransport(status), public_dns)
@@ -226,12 +236,12 @@ def test_page_says_whether_credentials_are_set_but_never_shows_them(
     assert "Credentials: not set" in page
     assert "UT_NOTIFY_TOKEN" in page
     token, secret = ntfy_token(), password()
-    _use_sender(client, Sender(transport, public_dns, Credentials.bearer(token)))
+    _use_sender(client, Sender(transport, public_dns, Credentials.bearer(token, HOST)))
     page = client.get("/admin/notifications").text
     assert "Access token: set ✓" in page
     assert token not in page
     assert "Bearer" not in page
-    _use_sender(client, Sender(transport, public_dns, Credentials.basic("alerts", secret)))
+    _use_sender(client, Sender(transport, public_dns, Credentials.basic("alerts", secret, HOST)))
     page = client.get("/admin/notifications", headers={"accept-language": "es"}).text
     assert "Usuario y contraseña: configurados ✓" in page
     assert secret not in page
@@ -244,7 +254,7 @@ def test_test_button_reports_rejected_credentials(
     client: TestClient, admin_csrf: str, transport: RecordingTransport
 ) -> None:
     token = ntfy_token()
-    _use_sender(client, Sender(transport, public_dns, Credentials.bearer(token)))
+    _use_sender(client, Sender(transport, public_dns, Credentials.bearer(token, HOST)))
     client.post("/admin/notifications", data={"csrf": admin_csrf, "kind": "ntfy", "url": NTFY})
     sent = client.post("/admin/notifications/test", data={"csrf": admin_csrf})
     assert sent.headers["location"].endswith("done=notify_sent")
@@ -267,3 +277,114 @@ def test_test_button_reports_rejected_credentials(
 
 def test_test_button_needs_admin_and_csrf(client: TestClient, admin_csrf: str) -> None:
     assert client.post("/admin/notifications/test", data={"csrf": "nope"}).status_code == 403
+
+
+# ---------------------------------------------------------------------- the bound host
+
+
+def test_credentials_need_the_bound_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = ntfy_token()
+    monkeypatch.delenv("UT_NOTIFY_HOST")
+    monkeypatch.setenv("UT_NOTIFY_TOKEN", token)
+    with pytest.raises(ValidationError) as caught:
+        AdminSettings()
+    assert "UT_NOTIFY_HOST is required" in str(caught.value)
+    assert token not in str(caught.value)
+    # A host alone (no credentials) is harmless; blank means unset.
+    monkeypatch.delenv("UT_NOTIFY_TOKEN")
+    monkeypatch.setenv("UT_NOTIFY_HOST", " ")
+    assert AdminSettings().notify_host is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("ntfy.example.com", ("ntfy.example.com", 443)),
+        (" NTFY.Example.com.:8443 ", ("ntfy.example.com", 8443)),
+        ("[fd00::1]:8443", ("fd00::1", 8443)),
+        ("192.168.1.30", ("192.168.1.30", 443)),
+    ],
+)
+def test_host_and_port(text: str, expected: tuple[str, int]) -> None:
+    assert host_and_port(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "https://ntfy.example.com",
+        "ntfy.example.com/x",
+        "u@ntfy.example.com",
+        ":443",
+        "ntfy.example.com:99999",
+        "ntfy.example.com:abc",
+        "a b",
+        "ntfy\x01",
+    ],
+)
+def test_bad_hosts_are_refused(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="UT_NOTIFY_HOST"):
+        host_and_port(text)
+    if text.strip():
+        monkeypatch.setenv("UT_NOTIFY_HOST", text)
+        with pytest.raises(ValidationError):
+            AdminSettings()
+
+
+def test_where_and_applies_to() -> None:
+    plain = Credentials.bearer(ntfy_token(), HOST)
+    assert plain.where == HOST
+    assert plain.applies_to(f"https://{HOST}/t")
+    assert plain.applies_to("https://NTFY.example.com.:443/t")
+    assert not plain.applies_to(f"https://{HOST}:8443/t")
+    assert not plain.applies_to(f"https://{HOST}:99999/t")
+    assert not plain.applies_to(f"http://{HOST}/t")
+    assert not plain.applies_to("https://ntfy.example.com.evil.example/t")
+    assert not plain.applies_to(f"https://evil.example/{HOST}")
+    ported = Credentials.basic("alerts", password(), "[fd00::1]:8443")
+    assert ported.where == "[fd00::1]:8443"
+    assert ported.applies_to("https://[fd00::1]:8443/t")
+    assert not ported.applies_to("https://[fd00::1]/t")
+
+
+@pytest.mark.parametrize("kind", ["ntfy", "webhook"])
+@pytest.mark.parametrize(
+    "url", ["https://other.example.org/ut-alerts", f"https://{HOST}:8443/ut-alerts"]
+)
+def test_another_host_gets_no_credentials(
+    kind: str, url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An admin who points the URL elsewhere never sends the credentials there."""
+    token = ntfy_token()
+    transport = RecordingTransport()
+    sender = Sender(transport, public_dns, Credentials.bearer(token, HOST))
+    target = Target(kind, url)  # type: ignore[arg-type]
+    assert not sender.credentials_apply(target)
+    assert _deliver(sender, target) == "sent"
+    assert "authorization" not in transport.requests[-1].headers
+    assert "without credentials" in caplog.text
+    assert token not in caplog.text
+    assert _deliver(sender, Target(kind, NTFY)) == "sent"  # type: ignore[arg-type]
+    assert transport.requests[-1].headers["authorization"] == f"Bearer {token}"
+
+
+def test_page_warns_when_the_url_is_not_on_the_bound_host(
+    client: TestClient, admin_csrf: str, transport: RecordingTransport
+) -> None:
+    token = ntfy_token()
+    _use_sender(client, Sender(transport, public_dns, Credentials.bearer(token, HOST)))
+    client.post("/admin/notifications", data={"csrf": admin_csrf, "kind": "ntfy", "url": NTFY})
+    page = client.get("/admin/notifications").text
+    assert f"sent only to {HOST}" in page
+    assert "without credentials" not in page
+    other = "https://other.example.org/ut-alerts"
+    client.post("/admin/notifications", data={"csrf": admin_csrf, "kind": "ntfy", "url": other})
+    page = client.get("/admin/notifications").text
+    assert "is not on UT_NOTIFY_HOST" in page
+    assert token not in page
+    client.post("/admin/notifications/test", data={"csrf": admin_csrf})
+    assert "authorization" not in transport.requests[-1].headers
+    audit = client.get("/admin/audit").text
+    assert "other.example.org" in audit
+    assert token not in audit
