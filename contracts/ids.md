@@ -88,3 +88,13 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 ## API key format
 
 `utk_` + 43 characters of unpadded base64url (32 random bytes = 256 bits), e.g. `utk_EXAMPLEexampleEXAMPLEexampleEXAMPLEexampleE` (examples always use this obviously fake value). Only the SHA-256 hex digest is stored (`api_keys.key_hash`), plus the first 12 characters (`utk_` + 8) as the display `prefix`. A slow hash is unnecessary for a 256-bit random secret, and SHA-256 keeps every authenticated request cheap. The `utk_` prefix lets gitleaks and the log redactor spot leaked keys.
+
+## App connect QR code
+
+The admin panel shows, once, when an API key is created, a QR code for the Android app. Its payload is exactly:
+
+```
+ultimatetunes://connect?url=<percent-encoded server base URL>&key=<the API key>
+```
+
+`url` is the HTTPS base URL the app should use (no trailing slash); `key` matches the API key format above. The app parses only this scheme and host, validates both parameters as it does for manual entry, and never logs the payload.
