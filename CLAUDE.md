@@ -50,7 +50,7 @@ tools/       Repo scripts (store texts, worktrees, version code)
 - **Forbidden**: Firebase, Google Play Services, Crashlytics, Sentry or any crash/analytics SDK, telemetry of any kind, proprietary SDKs, non-free dependencies (server and app).
 - Before adding **any** dependency: check its license (GPL-3.0-or-later compatible) and **ask the user**. Approved lists are in SPEC §6.
 - The Android app talks **only to the user's server**. It never contacts YouTube, MusicBrainz, LRCLIB or anything else directly.
-- The server contacts only: YouTube Music (ytmusicapi, yt-dlp), MusicBrainz, Cover Art Archive, LRCLIB, the Spotify API when the user configured it, and the notification URL the admin set. Nothing else.
+- The server contacts only: YouTube Music (ytmusicapi, yt-dlp), MusicBrainz, Cover Art Archive, LRCLIB, and the notification URL the admin set. Nothing else. (Spotify: no host in v1, imports come from uploaded files; SPEC §11, T03d.)
 
 ## Security rules — non-negotiable
 - API keys: 256-bit random, shown once, stored only as a hash; revocable per device. Passwords: Argon2id. Token auth (`t`/`s`) is refused with error 42.
@@ -109,5 +109,5 @@ Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the wo
 - Do not implement anything in SPEC "Out of scope".
 - Do not bump dependency versions by hand (Dependabot does) and do not hand-edit `uv.lock` or `android/gradle/verification-metadata.xml` (regenerate them).
 - Do not disable or relax ruff, mypy, bandit, pip-audit, detekt, ktlint, Lint, Kover, coverage thresholds, dependency verification, gitleaks, Trivy or workflows to make CI pass.
-- Do not download real music in tests or CI (except the nightly canary, one fixed Creative Commons track).
+- Do not download real music in tests or CI (except the canary, one fixed Creative Commons track, scheduled on the server and manual on GitHub).
 - Do not use real data in screenshots: they come from a test with invented artists and covers.

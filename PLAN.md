@@ -70,7 +70,7 @@ Rules: one task per branch `feat/tNN-<slug>`, its gates green before the PR (`ma
   - *Verification:* unit tests of cache/prefetch; instrumented test against the test stack: play, cache hit on replay with network off.
 - [ ] **T18 [G] Android features wired**: radio queue, synced lyrics with seek, favourites, playlists, play queue sync, import screen, settings. *Verification:* UI tests on the fake server; manual run on the author's phone noted in the PR.
 - [ ] **T19 [J] Contract tests and canary**: schemathesis against the real app for every contract, XML and JSON; OpenSubsonic compatibility checks with one third-party client (manual matrix in `docs/compat.md`); canary (one fixed Creative Commons track) scheduled on the server with alert, GitHub job manual only (T03c). Depends T05, T06.
-  - *Verification:* CI job green; canary run green on demand.
+  - *Verification:* CI job green; the server canary runs green against the test stack config (a run on GitHub is best effort: runner IPs get the bot wall).
 - [ ] **Checkpoint 2** — report.
 
 ## Wave 3 — Integration and hardening (coordinator, sequential)
