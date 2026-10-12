@@ -1,0 +1,27 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% block title %}{{ _("Add to a playlist") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Add to a playlist") }}</h1>
+<p class="add-song"><img class="thumb" src="{{ cover(song.cover) }}" alt="" width="44" height="44"> <span><strong>{{ song.title }}</strong><br><span class="muted">{{ song.artist }}</span></span></p>
+{% if playlists %}
+<ul class="choices">
+{% for p in playlists %}
+  <li>
+    <form method="post" action="/web/playlists/{{ p.id|path_id }}/add">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="song" value="{{ song.id }}">
+      <button type="submit">{{ p.name }} <span class="muted">{{ _("%(count)s songs", count=p.songCount) }}</span></button>
+    </form>
+  </li>
+{% endfor %}
+</ul>
+{% endif %}
+<form class="inline-form" method="post" action="/web/playlists">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="song" value="{{ song.id }}">
+  <input name="name" required maxlength="200" placeholder="{{ _("New playlist name") }}" aria-label="{{ _("New playlist name") }}">
+  <button class="primary" type="submit">{{ _("New playlist") }}</button>
+</form>
+{% endblock %}

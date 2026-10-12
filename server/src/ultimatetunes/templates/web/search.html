@@ -1,0 +1,20 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid, artist_list, song_list with context %}
+{% block title %}{{ _("Search") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Search") }}</h1>
+<form class="search" method="get" action="/web/search" role="search">
+  <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="{{ _("Artists, albums, songs") }}" aria-label="{{ _("Search") }}" autofocus>
+  <button class="primary" type="submit">{{ _("Search") }}</button>
+</form>
+{% if q %}
+{% if songs %}<section><h2>{{ _("Songs") }}</h2>{{ song_list(songs) }}</section>{% endif %}
+{% if albums %}<section><h2>{{ _("Albums") }}</h2>{{ album_grid(albums) }}</section>{% endif %}
+{% if artists %}<section><h2>{{ _("Artists") }}</h2>{{ artist_list(artists) }}</section>{% endif %}
+{% if not (songs or albums or artists) %}<p class="empty">{{ _("No results for “%(query)s”.", query=q) }}</p>{% endif %}
+{% else %}
+<p class="empty">{{ _("Search your library and YouTube Music. Songs that are not in your library yet are fetched the first time you play them.") }}</p>
+{% endif %}
+{% endblock %}

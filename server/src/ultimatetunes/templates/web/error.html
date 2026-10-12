@@ -1,0 +1,9 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% if me %}{% extends layout %}{% else %}{% extends "_bare.html" %}{% endif %}
+{% block title %}{{ _("Something went wrong") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Something went wrong") }}</h1>
+<p class="error" role="alert">{{ message }}</p>
+<p><a href="/">{{ _("Back to Listen Now") }}</a></p>
+{% endblock %}

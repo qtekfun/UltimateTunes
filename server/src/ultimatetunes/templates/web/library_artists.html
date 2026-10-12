@@ -1,0 +1,17 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import artist_list with context %}
+{% block title %}{{ _("Artists") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Library") }}</h1>
+{% include "_library_tabs.html" %}
+{% for group in groups %}
+<section>
+  <h2 class="letter">{{ group.name }}</h2>
+  {{ artist_list(group.artists) }}
+</section>
+{% else %}
+<p class="empty">{{ _("No artists yet.") }}</p>
+{% endfor %}
+{% endblock %}

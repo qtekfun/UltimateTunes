@@ -1,0 +1,78 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# Lists shared by the pages. Import "with context" (they translate). #}
+
+{% macro star(kind, item_id, on) %}
+{% with kind=kind, item_id=item_id, on=on %}{% include "_star.html" %}{% endwith %}
+{% endmacro %}
+
+{% macro album_grid(albums) %}
+<ul class="grid">
+{% for a in albums %}
+  <li>
+    <a class="tile" href="/web/album/{{ a.id|path_id }}">
+      <img class="art" src="{{ cover(a.cover) }}" alt="" loading="lazy" width="300" height="300">
+      <span class="tile-title">{{ a.name }}</span>
+      <span class="muted">{{ a.artist }}{% if a.year %} · {{ a.year }}{% endif %}</span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro artist_list(artists) %}
+<ul class="artists">
+{% for a in artists %}
+  <li>
+    <a href="/web/artist/{{ a.id|path_id }}">
+      <img class="avatar" src="{{ cover(a.cover) }}" alt="" loading="lazy" width="48" height="48">
+      <span>{{ a.name }}</span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro song_list(songs, show_album=True, editable=None) %}
+<ol class="songs" data-songlist>
+{% for s in songs %}
+  <li class="song{% if s.external %} external{% endif %}" data-song='{{ s|tojson }}'>
+    <button class="song-play" type="button" data-act="play">
+      <img class="thumb" src="{{ cover(s.cover) }}" alt="" loading="lazy" width="44" height="44">
+      <span class="song-text">
+        <span class="song-title">{{ s.title }}</span>
+        <span class="muted">{{ s.artist }}{% if show_album and s.album %} · {{ s.album }}{% endif %}</span>
+      </span>
+    </button>
+    {% if s.external %}<span class="badge" title="{{ _("Not in your library yet: the first play fetches it") }}">{{ _("New") }}</span>{% endif %}
+    <span class="dur muted">{{ s.duration|duration }}</span>
+    {{ star("song", s.id, s.starred) }}
+    <details class="menu">
+      <summary aria-label="{{ _("More") }}" title="{{ _("More") }}">···</summary>
+      <div class="menu-items">
+        <button type="button" data-act="next">{{ _("Play next") }}</button>
+        <button type="button" data-act="later">{{ _("Play later") }}</button>
+        <button type="button" data-act="radio">{{ _("Start radio") }}</button>
+        <a href="/web/add/{{ s.id|path_id }}">{{ _("Add to a playlist") }}</a>
+        {% if s.albumId %}<a href="/web/album/{{ s.albumId|path_id }}">{{ _("Go to album") }}</a>{% endif %}
+        {% if s.artistId %}<a href="/web/artist/{{ s.artistId|path_id }}">{{ _("Go to artist") }}</a>{% endif %}
+        {% if editable %}
+        <form method="post" action="/web/playlists/{{ editable|path_id }}/remove">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="index" value="{{ loop.index0 }}">
+          <button type="submit">{{ _("Remove from this playlist") }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </details>
+  </li>
+{% endfor %}
+</ol>
+{% endmacro %}
+
+{% macro play_buttons() %}
+<div class="actions">
+  <button class="primary" type="button" data-act="play-all">{{ _("Play") }}</button>
+  <button class="secondary" type="button" data-act="shuffle-all">{{ _("Shuffle") }}</button>
+</div>
+{% endmacro %}

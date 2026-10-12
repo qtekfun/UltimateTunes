@@ -25,7 +25,7 @@ In order, for every request under `/admin`:
    the `X-CSRF-Token` header that HTMX sends) and must not be cross-site (`Sec-Fetch-Site`).
    The login form uses its own signed cookie with a token (double submit).
 
-Responses under `/admin` and `/` carry a strict CSP (scripts and styles only from this server,
+Responses under `/admin` carry a strict CSP (scripts and styles only from this server,
 nothing external), `no-store`, `nosniff`, no framing and no referrer.
 """
 
@@ -86,7 +86,7 @@ def client_allowed(host: str | None, networks: tuple[IpNetwork, ...]) -> bool:
 
 
 class AdminGate:
-    """Allowlist and body cap for `/admin`, security headers for `/admin` and `/`.
+    """Allowlist, body cap and security headers for `/admin`.
 
     A plain ASGI middleware: every other path passes through untouched (no wrapping of the
     streaming responses of `/rest`)."""
@@ -106,20 +106,18 @@ class AdminGate:
             await self._app(scope, receive, send)
             return
         path: str = scope["path"]
-        admin = is_admin_path(path)
-        if not admin and path != "/":
+        if not is_admin_path(path):
             await self._app(scope, receive, send)
             return
-        if admin:
-            request = Request(scope)
-            refusal: Response | None = None
-            if not from_trusted_network(scope, self._networks, self._denied):
-                refusal = PlainTextResponse("Forbidden", status_code=403)
-            elif _too_big(request):
-                refusal = PlainTextResponse("Payload too large", status_code=413)
-            if refusal is not None:
-                await _headers(refusal)(scope, receive, send)
-                return
+        request = Request(scope)
+        refusal: Response | None = None
+        if not from_trusted_network(scope, self._networks, self._denied):
+            refusal = PlainTextResponse("Forbidden", status_code=403)
+        elif _too_big(request):
+            refusal = PlainTextResponse("Payload too large", status_code=413)
+        if refusal is not None:
+            await _headers(refusal)(scope, receive, send)
+            return
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":

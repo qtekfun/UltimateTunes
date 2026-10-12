@@ -1,0 +1,28 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% block title %}{{ _("Playlists") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Library") }}</h1>
+{% include "_library_tabs.html" %}
+<form class="inline-form" method="post" action="/web/playlists">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input name="name" required maxlength="200" placeholder="{{ _("New playlist name") }}" aria-label="{{ _("New playlist name") }}">
+  <button class="primary" type="submit">{{ _("New playlist") }}</button>
+</form>
+{% if playlists %}
+<ul class="grid">
+{% for p in playlists %}
+  <li>
+    <a class="tile" href="/web/playlist/{{ p.id|path_id }}">
+      <img class="art" src="{{ cover(p.cover) }}" alt="" loading="lazy" width="300" height="300">
+      <span class="tile-title">{{ p.name }}</span>
+      <span class="muted">{% if p.readonly %}{{ p.owner }} · {% endif %}{{ _("%(count)s songs", count=p.songCount) }}</span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="empty">{{ _("No playlists yet.") }}</p>
+{% endif %}
+{% endblock %}

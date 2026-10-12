@@ -1,0 +1,21 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid, star with context %}
+{% block title %}{{ artist.name }}{% endblock %}
+{% block content %}
+<header class="hero">
+  <img class="avatar hero-art round" src="{{ cover(artist.cover) }}" alt="" width="200" height="200">
+  <div>
+    <h1>{{ artist.name }}</h1>
+    <div class="hero-actions">
+      <button class="primary" type="button" data-act="artist-radio" data-id="{{ artist.id }}">{{ _("Start radio") }}</button>
+      {% if not artist.external %}{{ star("artist", artist.id, artist.starred) }}{% endif %}
+    </div>
+  </div>
+</header>
+<section>
+  <h2>{{ _("Albums") }}</h2>
+  {% if albums %}{{ album_grid(albums) }}{% else %}<p class="empty">{{ _("No albums.") }}</p>{% endif %}
+</section>
+{% endblock %}

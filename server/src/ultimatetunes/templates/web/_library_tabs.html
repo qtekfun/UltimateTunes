@@ -1,0 +1,7 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+<nav class="tabs" aria-label="{{ _("Library") }}">
+{% for href, label in library_tabs %}
+  <a href="{{ href }}"{% if path == href %} aria-current="page"{% endif %}>{{ _(label) }}</a>
+{% endfor %}
+</nav>

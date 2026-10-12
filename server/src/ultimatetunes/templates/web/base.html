@@ -1,0 +1,41 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# The shell: navigation, #content (swapped by HTMX) and the player bar, which never is. #}
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+{# No history snapshots in localStorage, no eval, no inline scripts; a history miss asks the server (never a full reload, which would stop the music). #}
+<meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":false,"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<meta name="ut-csrf" content="{{ csrf }}">
+<title>{% block title %}{% endblock %} · UltimateTunes</title>
+<link rel="icon" href="/web/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/web/static/web.css?v={{ version }}">
+<script src="/web/static/htmx.min.js?v={{ version }}" defer></script>
+<script src="/web/static/player.js?v={{ version }}" defer></script>
+</head>
+<body hx-headers='{{ {"X-CSRF-Token": csrf}|tojson }}'>
+<div class="shell" hx-boost="true" hx-target="#content" hx-swap="innerHTML show:window:top">
+  <nav class="sidebar" aria-label="{{ _("Sections") }}">
+    <a class="brand" href="/">UltimateTunes</a>
+    <a class="tab" href="/" data-nav>{% include "_icon_listen.html" %}<span>{{ _("Listen Now") }}</span></a>
+    <a class="tab" href="/web/library" data-nav>{% include "_icon_library.html" %}<span>{{ _("Library") }}</span></a>
+    <a class="tab" href="/web/search" data-nav>{% include "_icon_search.html" %}<span>{{ _("Search") }}</span></a>
+    <div class="account">
+      <span class="muted">{{ me.user.username }}</span>
+      <form method="post" action="/web/logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link" type="submit">{{ _("Sign out") }}</button>
+      </form>
+    </div>
+  </nav>
+  <main id="content" hx-history-elt>
+{% block content %}{% endblock %}
+  </main>
+</div>
+{% include "_player.html" %}
+</body>
+</html>

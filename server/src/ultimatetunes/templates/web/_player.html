@@ -1,0 +1,48 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# The player bar and its panels (player.js). Outside #content: navigation never replaces it. #}
+<section id="player" class="player" aria-label="{{ _("Player") }}"
+  data-t-fetching="{{ _("Fetching from YouTube Music…") }}"
+  data-t-queued="{{ _("Waiting for a download slot…") }}"
+  data-t-failed="{{ _("This song could not be fetched.") }}"
+  data-t-unplayable="{{ _("This song cannot be played right now.") }}"
+  data-t-radio="{{ _("Starting radio…") }}"
+  data-t-nolyrics="{{ _("No lyrics for this song.") }}"
+  data-t-empty="{{ _("The queue is empty.") }}"
+  data-t-remove="{{ _("Remove") }}"
+  data-t-idle="{{ _("Not playing") }}">
+  <audio id="audio" preload="auto"></audio>
+  <div class="now">
+    <img id="p-cover" class="thumb" src="/web/static/blank.svg" alt="" width="48" height="48">
+    <div class="now-text">
+      <div id="p-title" class="song-title">{{ _("Not playing") }}</div>
+      <div id="p-artist" class="muted"></div>
+      <div id="p-status" class="status" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="transport">
+    <div class="buttons">
+      <button type="button" class="icon-button" data-act="prev" aria-label="{{ _("Previous") }}" title="{{ _("Previous") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button type="button" class="icon-button big" id="p-toggle" data-act="toggle" aria-label="{{ _("Play or pause") }}" title="{{ _("Play or pause") }}"><svg class="icon i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg><svg class="icon i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+      <button type="button" class="icon-button" data-act="next-track" aria-label="{{ _("Next") }}" title="{{ _("Next") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    </div>
+    <div class="seek">
+      <span id="p-time" class="muted">0:00</span>
+      <input id="p-seek" type="range" min="0" max="0" step="1" value="0" aria-label="{{ _("Position") }}">
+      <span id="p-dur" class="muted">0:00</span>
+    </div>
+  </div>
+  <div class="extra">
+    <button type="button" class="icon-button" data-act="lyrics" aria-label="{{ _("Lyrics") }}" title="{{ _("Lyrics") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H8l-4 4zm3 4v2h10V8zm0 4v2h7v-2z"/></svg></button>
+    <button type="button" class="icon-button" data-act="queue" aria-label="{{ _("Up next") }}" title="{{ _("Up next") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v2H3zm0 5h13v2H3zm0 5h9v2H3zm15-5 5 3.5-5 3.5z"/></svg></button>
+    <input id="p-volume" class="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="{{ _("Volume") }}">
+  </div>
+</section>
+<aside id="lyrics-panel" class="panel" aria-label="{{ _("Lyrics") }}" hidden>
+  <header><h2>{{ _("Lyrics") }}</h2><button type="button" class="link" data-act="lyrics">{{ _("Close") }}</button></header>
+  <ol id="lyrics-lines" class="lyrics"></ol>
+</aside>
+<aside id="queue-panel" class="panel" aria-label="{{ _("Up next") }}" hidden>
+  <header><h2>{{ _("Up next") }}</h2><button type="button" class="link" data-act="clear-queue">{{ _("Clear") }}</button><button type="button" class="link" data-act="queue">{{ _("Close") }}</button></header>
+  <ol id="queue-list" class="queue"></ol>
+</aside>

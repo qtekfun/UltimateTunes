@@ -1,0 +1,22 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import album_grid with context %}
+{% block title %}{{ _("Listen Now") }}{% endblock %}
+{% block content %}
+<h1 class="large">{{ _("Listen Now") }}</h1>
+{% if recent %}
+<section>
+  <h2>{{ _("Recently played") }}</h2>
+  {{ album_grid(recent) }}
+</section>
+{% endif %}
+<section>
+  <h2>{{ _("Recently added") }}</h2>
+  {% if newest %}
+  {{ album_grid(newest) }}
+  {% else %}
+  <p class="empty">{{ _("Your library is empty. Search for music to start.") }} <a href="/web/search">{{ _("Search") }}</a></p>
+  {% endif %}
+</section>
+{% endblock %}
