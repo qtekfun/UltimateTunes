@@ -21,6 +21,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ultimatetunes.core.authn import Principal
+from ultimatetunes.core.caller import set_caller
 from ultimatetunes.core.services import Services
 from ultimatetunes.subsonic.router import Handler, HandlerResult, SubsonicRequest
 from ultimatetunes.subsonic.routes import ROUTERS
@@ -43,6 +44,8 @@ class Backend:
     async def call(
         self, request: Request, principal: Principal, name: str, params: Params
     ) -> HandlerResult:
+        # Catalog lookups of this call are charged to the user, as on `/rest` (core/caller.py).
+        set_caller(principal.user_id)
         values = {k: [v] if isinstance(v, str) else list(v) for k, v in params.items()}
         ctx = SubsonicRequest(request, values, "json", self._services, principal)
         handler = self._handlers[name]

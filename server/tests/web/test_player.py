@@ -350,3 +350,24 @@ def test_spanish_pages_and_errors(client: TestClient, ana: str) -> None:
 )
 def test_duration_filter(seconds: object, text: str) -> None:
     assert routes.duration(seconds) == text
+
+
+def test_catalog_lookups_are_charged_to_the_signed_in_user(
+    client: TestClient, ana: str, services: Services, people: People
+) -> None:
+    from ultimatetunes.core.caller import current_bucket  # noqa: PLC0415
+    from ultimatetunes.search.catalog import CatalogTrack  # noqa: PLC0415
+
+    seen: list[str | None] = []
+    catalog = services.catalog
+    original = catalog.search_songs
+
+    async def spy(query: str, limit: int) -> list[CatalogTrack]:
+        seen.append(current_bucket())
+        result: list[CatalogTrack] = await original(query, limit)
+        return result
+
+    catalog.search_songs = spy  # type: ignore[method-assign]
+    assert client.get("/web/search", params={"q": "harbor"}).status_code == 200
+    assert seen
+    assert set(seen) == {people.ana.user.id}
