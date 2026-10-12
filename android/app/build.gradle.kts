@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import com.qtekfun.ultimatetunes.buildlogic.CRITICAL_COVERAGE_VARIANT
 import com.qtekfun.ultimatetunes.buildlogic.versionCodeOf
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import kotlinx.kover.gradle.plugin.dsl.KoverReportFilter
@@ -72,11 +73,14 @@ val coveredPackages = listOf("com.qtekfun.ultimatetunes.core")
 val coveredClasses = listOf("*ViewModel")
 
 /**
- * The 100 % areas of CLAUDE.md (client cache policy, queue prefetch planner,
- * streaming-while-downloading state machine...), as packages. PLAN T01 fills it in; each
- * package listed here must then reach 100 % of lines and branches.
+ * The client-side 100 % areas of CLAUDE.md, as packages: the cache policy and the queue prefetch
+ * planner (PLAN T17). Each must reach 100 % of lines and branches (`koverVerifyCritical`, part of
+ * `check`). A package with no classes yet passes, so the gate is in place before the code.
  */
-val criticalPackages = emptyList<String>()
+val criticalPackages = listOf(
+    "com.qtekfun.ultimatetunes.core.player.cache",
+    "com.qtekfun.ultimatetunes.core.player.prefetch"
+)
 
 /**
  * Generated code and pure Compose UI, excluded from coverage. Applied to each report variant:
@@ -110,14 +114,6 @@ fun KoverReportFilter.generatedAndUiCode() {
 }
 
 kover {
-    if (criticalPackages.isNotEmpty()) {
-        currentProject {
-            createVariant("critical") {
-                add("debug")
-            }
-        }
-    }
-
     reports {
         total {
             filters {
@@ -134,31 +130,24 @@ kover {
             }
         }
 
-        if (criticalPackages.isNotEmpty()) {
-            variant("critical") {
-                filters {
-                    excludes { generatedAndUiCode() }
-                    includes { packages(criticalPackages) }
-                }
-                verify {
-                    rule("100 % areas") {
-                        minBound(100, CoverageUnit.LINE)
-                        minBound(100, CoverageUnit.BRANCH)
-                    }
+        // Created in every module by build-logic (configureQuality).
+        variant(CRITICAL_COVERAGE_VARIANT) {
+            filters {
+                excludes { generatedAndUiCode() }
+                includes { packages(criticalPackages) }
+            }
+            verify {
+                rule("100 % areas") {
+                    minBound(100, CoverageUnit.LINE)
+                    minBound(100, CoverageUnit.BRANCH)
                 }
             }
         }
     }
 }
 
-if (criticalPackages.isNotEmpty()) {
-    tasks.named("koverVerify") {
-        dependsOn("koverVerifyCritical")
-    }
-}
-
 tasks.named("check") {
-    dependsOn("koverVerify")
+    dependsOn("koverVerify", "koverVerifyCritical")
 }
 
 dependencies {
