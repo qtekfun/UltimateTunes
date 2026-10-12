@@ -26,14 +26,15 @@ import org.junit.jupiter.api.extension.ExtendWith
 class ConnectViewModelTest {
     private lateinit var server: FakeTunesServer
     private lateinit var source: InMemoryServerConfigSource
+    private lateinit var gate: ConnectionGate
     private lateinit var viewModel: ConnectViewModel
 
     @BeforeEach
     fun setUp() {
         server = FakeTunesServer().start()
         source = InMemoryServerConfigSource()
-        viewModel =
-            ConnectViewModel(apiWith(source), ConnectionGate(source), CleartextPolicy { true })
+        gate = ConnectionGate(source)
+        viewModel = ConnectViewModel(apiWith(source), gate, CleartextPolicy { true })
     }
 
     @AfterEach
@@ -65,6 +66,32 @@ class ConnectViewModelTest {
         val config = source.config.value
         assertEquals(server.baseUrl, config?.root)
         assertEquals(FakeTunesServer.API_KEY, config?.apiKey?.value)
+    }
+
+    @Test
+    fun `connecting clears what was typed, and going back to Connect starts over`() = runTest {
+        enter()
+
+        val connected = connectAndWait()
+
+        assertEquals("", connected.serverUrl)
+        assertEquals("", connected.apiKey)
+        assertEquals("UltimateTunes", connected.connectedTo)
+
+        gate.disconnect()
+
+        assertEquals(ConnectUiState(), viewModel.state.value)
+    }
+
+    @Test
+    fun `a failed check keeps what was typed and is not a reconnect`() = runTest {
+        enter(key = "utk_" + "B".repeat(43))
+
+        val state = connectAndWait()
+
+        assertEquals(server.baseUrl.toString(), state.serverUrl)
+        assertEquals("utk_" + "B".repeat(43), state.apiKey)
+        assertEquals(ConnectError.KEY_REFUSED, state.error)
     }
 
     @Test
