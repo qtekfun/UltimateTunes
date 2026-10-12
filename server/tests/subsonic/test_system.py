@@ -81,8 +81,8 @@ def test_server_info(lib: Harness) -> None:
     }
     assert body["capabilities"]["externalSearch"] is True
     assert body["capabilities"]["radio"] is True
-    # Streaming while downloading is only announced once PLAN T16 installs it.
-    assert body["capabilities"]["streamingWhileDownloading"] is False
+    # PLAN T16 installs streaming while downloading.
+    assert body["capabilities"]["streamingWhileDownloading"] is True
 
 
 def test_server_info_announces_installed_streaming(lib: Harness) -> None:

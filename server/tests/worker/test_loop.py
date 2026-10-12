@@ -433,7 +433,8 @@ async def test_a_killed_worker_leaves_a_job_that_is_retried(stack: Stack) -> Non
     job = stack.job(job_id)
     assert (job.state, job.attempts, job.error_code) == ("ready", 2, None)
     assert job.final_path == f"{job_id}/2/{VIDEO}.opus"
-    assert stack.services.staging.exists(f"{job_id}/1/{VIDEO}.opus.part")
+    # The api cleaned the staging directories once the job completed (PLAN T16).
+    assert not stack.services.staging.exists(f"{job_id}/1/{VIDEO}.opus.part")
     assert stack.track_status() == "ready"
 
 
