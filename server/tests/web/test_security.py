@@ -178,12 +178,16 @@ def test_a_disabled_user_cannot_sign_in_and_loses_the_session(
 
 
 def test_lockout_from_outside_never_locks_logins_from_the_lan(
-    app_factory: object, people: People
+    app_factory: object, people: People, clock: FakeClock
 ) -> None:
-    """The same split counters as `POST /ut/v1/keys` (`AuthService.verify_password`)."""
+    """The same split counters as `POST /ut/v1/keys` (`AuthService.verify_password`): from
+    outside a growing delay, never a long lockout (audit M1)."""
     with make_client(app_factory) as outside:
-        for _ in range(3):
+        for wait in (1, 2, 4):
             assert try_login(outside, "ana", secrets.token_urlsafe(12)) == 401
+            assert try_login(outside, "ana", people.ana.password) == 429
+            clock.advance(wait)
+        assert try_login(outside, "ana", secrets.token_urlsafe(12)) == 401
         assert try_login(outside, "ana", people.ana.password) == 429
         app = outside.app
         with TestClient(
@@ -353,3 +357,19 @@ def test_every_web_route_is_covered_by_the_lists_above(client: TestClient) -> No
 def _shape(path: str) -> str:
     parts = path.strip("/").split("/")
     return "/".join("{}" if (p.startswith("{") or "-" in p or ":" in p) else p for p in parts)
+
+
+def test_a_stranger_only_slows_down_the_web_sign_in_of_a_family_member(
+    app_factory: object, people: People, clock: FakeClock
+) -> None:
+    """Audit M1 (final): many wrong passwords from the Internet never lock a username for long;
+    once the current delay (at most `auth_outside_backoff_max_s`) is over, the right password
+    signs in from outside too, and that success resets the delay."""
+    with make_client(app_factory) as stranger, make_client(app_factory) as family:
+        for _ in range(8):
+            assert try_login(stranger, "ana", secrets.token_urlsafe(12)) == 401
+            clock.advance(400)
+        assert try_login(family, "ana", people.ana.password) == 303
+        assert try_login(stranger, "ana", secrets.token_urlsafe(12)) == 401
+        clock.advance(1)
+        assert try_login(make_client(app_factory), "ana", people.ana.password) == 303

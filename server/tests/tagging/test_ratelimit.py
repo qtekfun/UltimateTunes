@@ -90,3 +90,28 @@ async def test_wait_for_token_sleeps_until_allowed() -> None:
     for _ in range(3):
         await wait_for_token(limiter, "musicbrainz:global", ONE_PER_S, sleep)
     assert slept == [1, 1]
+
+
+def test_backoff_doubles_up_to_the_cap_and_success_resets_it() -> None:
+    clock = FakeClock()
+    limiter = MemoryRateLimiter(clock)
+    assert limiter.failures("k") == 0
+    delays = []
+    for _ in range(6):
+        delays.append(limiter.record_failure_backoff("k", base_s=1, max_s=10).retry_after_s)
+        assert not limiter.locked("k").allowed
+        clock.advance(delays[-1])
+        assert limiter.locked("k").allowed
+    assert delays == [1, 2, 4, 8, 10, 10]
+    assert limiter.failures("k") == 6
+    limiter.record_success("k")
+    assert limiter.failures("k") == 0
+    assert limiter.record_failure_backoff("k", base_s=1, max_s=10) == Decision(False, 1)
+
+
+@pytest.mark.parametrize(("base", "cap"), [(0.0, 1.0), (1.0, 0.0)])
+def test_backoff_parameters_must_be_positive(base: float, cap: float) -> None:
+    limiter = MemoryRateLimiter(FakeClock())
+    with pytest.raises(ValueError, match="positive"):
+        limiter.record_failure_backoff("k", base_s=base, max_s=cap)
+    assert limiter.failures("k") == 0
