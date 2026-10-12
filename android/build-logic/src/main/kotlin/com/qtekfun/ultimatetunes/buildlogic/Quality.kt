@@ -26,7 +26,8 @@ private val FORBIDDEN_GROUP_PREFIXES = listOf(
     "com.google.firebase",
     "com.crashlytics",
     "io.fabric",
-    "io.sentry"
+    "io.sentry",
+    "androidx.core" // THROWAWAY: proves the gate fails CI; never merged
 )
 
 /** What ships: every Android module has these. */
