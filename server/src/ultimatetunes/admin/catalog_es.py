@@ -73,11 +73,6 @@ ES: dict[str, str] = {
         "¿Revocar la clave de %(device)s? Ese dispositivo deja de funcionar hasta que tenga una"
         " clave nueva."
     ),
-    "In the app's Connect screen, type the server address and this key. The app cannot scan"
-    " the QR code yet; it is here for a later version.": (
-        "En la pantalla Conectar de la app, escribe la dirección del servidor y esta clave. La"
-        " app aún no puede escanear el código QR; está aquí para una versión futura."
-    ),
     "e.g. Pixel phone": "p. ej. móvil Pixel",
     "Must be https, as the app reaches it (for example the tailscale serve address). Set"
     " UT_ADMIN_PUBLIC_URL to prefill it.": (
