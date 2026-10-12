@@ -50,14 +50,14 @@ tools/       Repo scripts (store texts, worktrees, version code)
 - **Forbidden**: Firebase, Google Play Services, Crashlytics, Sentry or any crash/analytics SDK, telemetry of any kind, proprietary SDKs, non-free dependencies (server and app).
 - Before adding **any** dependency: check its license (GPL-3.0-or-later compatible) and **ask the user**. Approved lists are in SPEC §6.
 - The Android app talks **only to the user's server**. It never contacts YouTube, MusicBrainz, LRCLIB or anything else directly.
-- The server contacts only: YouTube Music (ytmusicapi, yt-dlp), MusicBrainz, Cover Art Archive, LRCLIB, the Spotify API when the user configured it, and the notification URL the admin set. Nothing else.
+- The server contacts only: YouTube Music (ytmusicapi, yt-dlp), MusicBrainz, Cover Art Archive, LRCLIB, and the notification URL the admin set. Nothing else. (Spotify: no host in v1, imports come from uploaded files; SPEC §11, T03d.)
 
 ## Security rules — non-negotiable
 - API keys: 256-bit random, shown once, stored only as a hash; revocable per device. Passwords: Argon2id. Token auth (`t`/`s`) is refused with error 42.
 - Never log secrets, API keys, passwords, cookies, full request URLs with `apiKey`/`p` parameters, or YouTube cookies. Redact in the logging filter, with a test.
 - Every subprocess (yt-dlp, ffmpeg) is called with an **argument list**, never `shell=True`, never with unvalidated input; video ids match `^[A-Za-z0-9_-]{11}$`.
 - Every filesystem path built from metadata goes through the path sanitizer (100 % coverage) and must stay inside `/music` or `/staging`.
-- Import URLs: allowlist of hosts (YouTube, YouTube Music, Spotify). No server-side request to arbitrary URLs (SSRF).
+- Import URLs: allowlist of hosts (YouTube, YouTube Music); Spotify URLs are rejected in v1 (Spotify playlists come as uploaded files). No server-side request to arbitrary URLs (SSRF).
 - Admin endpoints: admin role, session cookie `HttpOnly`/`Secure`/`SameSite=Strict`, CSRF token, network allowlist (LAN/Tailscale by default). Every admin endpoint has a test that a non-admin gets 403.
 - Containers run as non-root with a read-only root filesystem; secrets only from env vars or Docker secrets.
 - Nothing is exposed to the Internet until PLAN T22 is done. Proof of concept: Tailscale only (`tailscale serve` gives HTTPS).
@@ -109,5 +109,5 @@ Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the wo
 - Do not implement anything in SPEC "Out of scope".
 - Do not bump dependency versions by hand (Dependabot does) and do not hand-edit `uv.lock` or `android/gradle/verification-metadata.xml` (regenerate them).
 - Do not disable or relax ruff, mypy, bandit, pip-audit, detekt, ktlint, Lint, Kover, coverage thresholds, dependency verification, gitleaks, Trivy or workflows to make CI pass.
-- Do not download real music in tests or CI (except the nightly canary, one fixed Creative Commons track).
+- Do not download real music in tests or CI (except the canary, one fixed Creative Commons track, scheduled on the server and manual on GitHub).
 - Do not use real data in screenshots: they come from a test with invented artists and covers.
