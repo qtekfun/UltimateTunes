@@ -57,6 +57,8 @@ services:
       # 503; idle keep-alive connections close after UT_KEEPALIVE_TIMEOUT_S.
       UT_LIMIT_CONCURRENCY: ${UT_LIMIT_CONCURRENCY:-128}
       UT_KEEPALIVE_TIMEOUT_S: ${UT_KEEPALIVE_TIMEOUT_S:-5}
+      # The only host notification credentials go to (required with them; empty: none).
+      UT_NOTIFY_HOST: ${UT_NOTIFY_HOST:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,7 +88,8 @@ services:
       # - source: bootstrap_admin_password
       #   target: ut_bootstrap_admin_password
       # Optional: an ntfy access token for a notification server that requires login
-      # (deploy/README.md, "Notifications with ntfy"). Uncomment with the secret below.
+      # (deploy/README.md, "Notifications with ntfy"). Uncomment with the secret below, and set
+      # UT_NOTIFY_HOST in .env to the ntfy host name (required: the token goes only there).
       # - source: notify_token
       #   target: ut_notify_token
     networks: [default, internal]

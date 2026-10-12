@@ -62,9 +62,13 @@ The panel (`/admin/notifications`) sends failed downloads, failed canary runs an
    ```
 2. Put the token in `./secrets/notify_token` (one line, mode 0600) and uncomment the `notify_token` secret in `server/compose.yaml`, both under the api's `secrets:` and at the end of the file. An env var (`UT_NOTIFY_TOKEN`) also works and wins over the secret, but shows in `docker inspect`.
    Without tokens, `UT_NOTIFY_USERNAME` + `UT_NOTIFY_PASSWORD` (Docker secrets `ut_notify_username`, `ut_notify_password`) send HTTP Basic instead. Set the token or the user and password, not both: the api refuses to start otherwise.
-3. Restart the api, set the target in the panel to `https://ntfy.example.com/ut-alerts` (kind `ntfy`) and press "Send a test notification". "ntfy rejected the credentials" means a 401 or 403: a wrong token, or a user without write access to the topic.
+3. Bind the credentials to your ntfy host in `.env` (required with any credentials; the api refuses to start without it):
+   ```sh
+   UT_NOTIFY_HOST=ntfy.example.com        # or ntfy.example.com:8443 for another port
+   ```
+4. Restart the api, set the target in the panel to `https://ntfy.example.com/ut-alerts` (kind `ntfy`) and press "Send a test notification". "ntfy rejected the credentials" means a 401 or 403: a wrong token, or a user without write access to the topic.
 
-The credentials go as one `Authorization` header (Bearer for the token, Basic for the user) on the request to that URL only; redirects are never followed, and they never appear in the logs, the audit log, `/readyz` or error pages. A webhook target gets the same header.
+The credentials go as one `Authorization` header (Bearer for the token, Basic for the user), and only when the target URL's host and port are exactly `UT_NOTIFY_HOST`: if the URL in the panel points anywhere else, notifications go there without credentials, the api logs a warning and the panel says so. Redirects are never followed, and the credentials never appear in the logs, the audit log, `/readyz` or error pages. A webhook target on that host gets the same header.
 
 ## Traefik + Authelia
 
