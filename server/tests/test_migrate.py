@@ -84,3 +84,11 @@ def test_contract_migrations_apply_on_sqlite(conn: sqlite3.Connection) -> None:
     applied = migrate.migrate(conn, CONTRACT_MIGRATIONS)
     assert migrate.pending(conn, CONTRACT_MIGRATIONS) == []
     assert len(applied) == len(migrate.discover(CONTRACT_MIGRATIONS))
+
+
+def test_split_statements_keeps_semicolons_inside_a_line() -> None:
+    sql = "CREATE TABLE a (sep TEXT NOT NULL DEFAULT ';');\nCREATE TABLE b (x INTEGER);  \n"
+    assert migrate.split_statements(sql) == [
+        "CREATE TABLE a (sep TEXT NOT NULL DEFAULT ';')",
+        "CREATE TABLE b (x INTEGER)",
+    ]

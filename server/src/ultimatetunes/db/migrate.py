@@ -94,10 +94,16 @@ def migrate(conn: sqlite3.Connection, directory: Path) -> list[Migration]:
     return applied
 
 
-def split_statements(sql: str) -> list[str]:
-    """Splits a migration into statements on `;` at line ends; `--` comments are dropped.
+_STATEMENT_END = re.compile(r";[ \t]*$", re.MULTILINE)
 
-    Portable migrations do not use triggers or procedures, so no statement holds a `;` inside.
+
+def split_statements(sql: str) -> list[str]:
+    """Splits a migration into statements on a `;` that ends a line; whole-line `--` comments
+    are dropped.
+
+    Rules for migration authors (contracts/db/README.md): end every statement with `;` at the
+    end of a line, never end a line inside a statement with `;`, and keep comments on their own
+    lines. A `;` inside a line (e.g. `DEFAULT ';'`) is left alone.
     """
-    lines = [line for line in sql.splitlines() if not line.strip().startswith("--")]
-    return [s.strip() for s in "\n".join(lines).split(";") if s.strip()]
+    lines = [line for line in sql.splitlines() if not line.lstrip().startswith("--")]
+    return [s.strip() for s in _STATEMENT_END.split("\n".join(lines)) if s.strip()]
