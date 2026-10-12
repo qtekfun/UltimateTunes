@@ -10,10 +10,15 @@ Async and typed: implementations return these frozen records, never raw ytmusica
 """
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from ultimatetunes.errors import FeatureNotImplemented, NotFound, UpstreamUnavailable
 from ultimatetunes.settings import Settings
+
+if TYPE_CHECKING:
+    from ultimatetunes.core.cache import TtlCache
+    from ultimatetunes.core.inflight import InFlight
+    from ultimatetunes.core.ratelimit import RateLimiter
 
 VideoType = Literal["ATV", "OMV", "UGC"]
 
@@ -126,7 +131,7 @@ class MusicCatalog(Protocol):
 
 
 class UnavailableCatalog:
-    """Placeholder until T06 wires ytmusicapi: every call is `FeatureNotImplemented`."""
+    """A catalog that is switched off: every call is `FeatureNotImplemented` (tests)."""
 
     async def search_songs(self, query: str, limit: int) -> list[CatalogTrack]:
         raise FeatureNotImplemented()
@@ -153,10 +158,42 @@ class UnavailableCatalog:
         raise FeatureNotImplemented()
 
 
-def build_catalog(settings: Settings) -> MusicCatalog:
-    """The catalog the api uses: the fake with `UT_FAKE_YOUTUBE=true` (test stack)."""
-    if settings.fake_youtube:
-        from ultimatetunes.search.fake import FakeMusicCatalog  # noqa: PLC0415
+def build_catalog(
+    settings: Settings,
+    *,
+    cache: "TtlCache | None" = None,
+    limiter: "RateLimiter | None" = None,
+    inflight: "InFlight | None" = None,
+) -> MusicCatalog:
+    """The catalog the api uses: ytmusicapi behind `GuardedCatalog` (cache, rate limit, retry,
+    circuit breaker), or the fake with `UT_FAKE_YOUTUBE=true` (test stack).
 
+    Pass the api's shared cache, rate limiter and in-flight registry. Without them it opens its
+    own on the same database file (nothing is opened before the first call).
+    """
+    # Imported here: they import this module's records.
+    from ultimatetunes.core.cache import SqliteTtlCache  # noqa: PLC0415
+    from ultimatetunes.core.clock import SystemClock  # noqa: PLC0415
+    from ultimatetunes.core.inflight import MemoryInFlight  # noqa: PLC0415
+    from ultimatetunes.core.ratelimit import SqliteRateLimiter  # noqa: PLC0415
+    from ultimatetunes.db.database import Database  # noqa: PLC0415
+    from ultimatetunes.search.fake import FakeMusicCatalog  # noqa: PLC0415
+    from ultimatetunes.search.guard import GuardedCatalog  # noqa: PLC0415
+    from ultimatetunes.search.settings import SearchSettings  # noqa: PLC0415
+    from ultimatetunes.search.ytmusic import YTMusicCatalog  # noqa: PLC0415
+
+    if settings.fake_youtube:
         return FakeMusicCatalog()
-    return UnavailableCatalog()
+    if cache is None or limiter is None:
+        db = Database.sqlite(settings.database_file, readers=2)
+        clock = SystemClock()
+        cache = cache or SqliteTtlCache(db, clock)
+        limiter = limiter or SqliteRateLimiter(db, clock)
+    search_settings = SearchSettings()
+    return GuardedCatalog(
+        YTMusicCatalog.build(search_settings),
+        cache=cache,
+        limiter=limiter,
+        inflight=inflight or MemoryInFlight(),
+        settings=search_settings,
+    )
