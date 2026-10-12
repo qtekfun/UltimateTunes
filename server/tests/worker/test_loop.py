@@ -590,6 +590,13 @@ async def test_build_worker_picks_the_downloader(settings: Settings) -> None:
         )
         assert isinstance(fake.downloader, FakeDownloader)
         assert (fake.runtime, fake.worker_id) == (None, "w9")
+        paced = build_worker(
+            settings.model_copy(update={"fake_youtube": True}),
+            WorkerSettings(fake_download_chunks=3, fake_download_delay_s=1.5),
+            client,
+        )
+        assert isinstance(paced.downloader, FakeDownloader)
+        assert (paced.downloader._chunks, paced.downloader._delay_s) == (3, 1.5)
         real = build_worker(
             settings.model_copy(update={"fake_youtube": False}), WorkerSettings(), client
         )
