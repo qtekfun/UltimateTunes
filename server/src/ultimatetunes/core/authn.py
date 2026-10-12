@@ -7,11 +7,18 @@ rate limit and lockout). Routers never parse credentials themselves: the OpenSub
 calls `authenticate_subsonic` for every non-public endpoint, and the `/ut/v1` routers depend
 on `authenticate_api_key`. Each raises a `TunesError` (`AuthenticationRequired`,
 `InvalidApiKey`, `RateLimited`, ...) on failure.
+
+`current_principal` is the FastAPI dependency that resolves the caller of an authenticated
+`/ut/v1` route. It lives here (not in `ut/`) so area routes can depend on it, and reuse FastAPI's
+per-request cache, without importing the router assembly.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
+
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
 
 Role = Literal["admin", "user"]
 
@@ -41,3 +48,16 @@ class Authenticator(Protocol):
     ) -> Principal:
         """`/ut/v1`: `X-Api-Key` header or `apiKey` query parameter."""
         ...
+
+
+async def current_principal(request: Request) -> Principal:
+    """The caller of an authenticated `/ut/v1` route (cached per request by FastAPI)."""
+    # Read from app state directly: `core.services` imports this module.
+    authenticator: Authenticator = request.app.state.services.authenticator
+    principal: Principal = await run_in_threadpool(
+        authenticator.authenticate_api_key,
+        request.headers.get("x-api-key"),
+        request.query_params.get("apiKey"),
+        request.client.host if request.client else None,
+    )
+    return principal

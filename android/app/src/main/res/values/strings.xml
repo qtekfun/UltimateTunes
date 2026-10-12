@@ -6,4 +6,77 @@
 <resources>
     <string name="app_name">UltimateTunes</string>
     <string name="app_tagline">Your music, from your own server</string>
+
+    <!-- Tabs -->
+    <string name="tab_listen_now">Listen Now</string>
+    <string name="tab_radio">Radio</string>
+    <string name="tab_library">Library</string>
+    <string name="tab_search">Search</string>
+
+    <!-- Connect -->
+    <string name="connect_title">Connect to your server</string>
+    <string name="connect_server_url">Server address</string>
+    <string name="connect_server_url_hint">music.example.net</string>
+    <string name="connect_api_key">API key</string>
+    <string name="connect_api_key_hint">utk_…</string>
+    <string name="connect_show_key">Show key</string>
+    <string name="connect_hide_key">Hide key</string>
+    <string name="connect_button">Connect</string>
+    <string name="connect_checking">Checking…</string>
+    <string name="connect_scan_qr">Scan QR code</string>
+    <string name="connect_qr_unavailable">Scanning the QR code of the admin panel arrives in a later version. Copy the key from the panel for now.</string>
+    <string name="connect_help">Create a key for this device in your server\'s admin panel. It is shown only once.</string>
+    <string name="connect_error_invalid_url">That doesn\'t look like a server address.</string>
+    <string name="connect_error_insecure_url">Use an https:// address: this app only talks to servers over HTTPS.</string>
+    <string name="connect_error_invalid_key">An UltimateTunes key starts with utk_ and has 47 characters.</string>
+    <string name="connect_error_unreachable">Nothing answered at that address. Check it and your connection.</string>
+    <string name="connect_error_not_a_server">Something answered, but it isn\'t an UltimateTunes server.</string>
+    <string name="connect_error_key_refused">The server refused this key. It may have been revoked.</string>
+    <string name="connect_error_server">The server had a problem. Try again in a moment.</string>
+
+    <!-- Listen Now -->
+    <string name="listen_now_stations">Your Stations</string>
+    <string name="listen_now_recently_played">Recently Played</string>
+    <string name="listen_now_top_songs">Top Songs</string>
+    <string name="listen_now_recently_added">Recently Added</string>
+    <string name="listen_now_empty">Nothing here yet. Play something and it will show up here.</string>
+
+    <!-- Radio -->
+    <string name="radio_from_songs">Stations from Your Top Songs</string>
+    <string name="radio_empty">No stations yet. Play a few songs and stations will appear here.</string>
+    <string name="station_label">Station</string>
+    <string name="station_play">Play</string>
+    <string name="station_up_next">Up Next</string>
+    <string name="station_description">%1$s, station</string>
+
+    <!-- Library and Search (filled by PLAN T13) -->
+    <string name="library_placeholder">Your artists, albums, playlists and downloads will appear here.</string>
+    <string name="search_placeholder">Search your library and YouTube Music.</string>
+
+    <!-- Common -->
+    <string name="loading">Loading</string>
+    <string name="connect_again">Connect Again</string>
+    <string name="retry">Try Again</string>
+    <string name="back">Back</string>
+    <string name="error_network">Can\'t reach your server. Check your connection.</string>
+    <string name="error_unauthorized">Your server refused this device\'s key. Connect again.</string>
+    <string name="error_not_configured">No server is connected.</string>
+    <string name="error_server">The server had a problem. Try again later.</string>
+    <string name="not_in_library">Not in library yet</string>
+    <string name="track_description">%1$s by %2$s</string>
+    <string name="album_description">%1$s by %2$s, album</string>
+
+    <!-- Player -->
+    <string name="player_open">Open player</string>
+    <string name="player_close">Close player</string>
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_next">Next</string>
+    <string name="player_previous">Previous</string>
+    <string name="player_queue">Playing Next</string>
+    <string name="player_show_queue">Show queue</string>
+    <string name="player_queue_empty">Nothing else in the queue.</string>
+    <string name="player_position">Position in song</string>
+    <string name="player_position_state">%1$s of %2$s</string>
+    <string name="player_remaining">-%1$s</string>
 </resources>
