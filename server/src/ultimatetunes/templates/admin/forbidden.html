@@ -1,0 +1,11 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Not allowed") }}{% endblock %}
+{% block content %}
+<div class="card login">
+  <h1>{{ _("Not allowed") }}</h1>
+  <p>{{ message }}</p>
+  <p><a href="/admin/login">{{ _("Sign in") }}</a></p>
+</div>
+{% endblock %}

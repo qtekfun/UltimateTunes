@@ -1,0 +1,26 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Audit log") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Audit log") }}</h1>
+<div class="card table-wrap">
+<table>
+  <thead><tr><th>{{ _("When") }}</th><th>{{ _("Who") }}</th><th>{{ _("From") }}</th><th>{{ _("Action") }}</th><th>{{ _("Target") }}</th><th>{{ _("Detail") }}</th></tr></thead>
+  <tbody>
+  {% for entry, detail in entries %}
+  <tr>
+    <td class="muted">{{ entry.occurred_at }}</td>
+    <td>{{ names.get(entry.actor_user_id, "-") if entry.actor_user_id else "-" }}</td>
+    <td class="muted">{{ entry.actor_ip or "-" }}</td>
+    <td><code>{{ entry.action }}</code></td>
+    <td>{{ entry.target_type or "" }} <code class="muted">{{ entry.target_id or "" }}</code></td>
+    <td>{{ detail }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">{{ _("Nothing here.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Notifications") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Notifications") }}</h1>
+<div class="card">
+  <p>{{ _("Failed downloads and failed canary runs can be sent to an ntfy topic or a webhook. The server contacts only this address.") }}</p>
+  <form class="stack" method="post" action="/admin/notifications">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Kind") }}
+      <select name="kind">
+        <option value="none"{% if not target %} selected{% endif %}>{{ _("Off") }}</option>
+        {% for kind in kinds %}<option value="{{ kind }}"{% if target and target.kind == kind %} selected{% endif %}>{{ _(kind) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ _("URL (https only)") }}<input name="url" type="url" maxlength="2048" value="{{ target.url if target else '' }}" placeholder="https://ntfy.sh/your-topic" autocomplete="off"></label>
+    <button type="submit">{{ _("Save") }}</button>
+  </form>
+</div>
+{% if target %}
+<div class="card">
+  <form class="inline" method="post" action="/admin/notifications/test">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="secondary" type="submit">{{ _("Send a test notification") }}</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

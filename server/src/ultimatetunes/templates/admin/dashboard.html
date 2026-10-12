@@ -1,0 +1,27 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Overview") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Overview") }}</h1>
+<div class="grid">
+  <div class="card stat"><div class="muted">{{ _("Users") }}</div><div class="value">{{ users }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Tracks") }}</div><div class="value">{{ stats.tracks }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Albums") }}</div><div class="value">{{ stats.albums }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Need review") }}</div><div class="value">{{ stats.needs_review }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Queued") }}</div><div class="value">{{ jobs.queued }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Downloading") }}</div><div class="value">{{ jobs.downloading + jobs.tagging }}</div></div>
+  <div class="card stat"><div class="muted">{{ _("Failed") }}</div><div class="value">{{ jobs.failed }}</div></div>
+</div>
+<div class="card">
+  <h2>{{ _("YouTube Music") }}</h2>
+  {% include "_breaker.html" %}
+  <p>{{ _("Last canary run") }}:
+  {% if canary %}
+    <span class="{{ 'ok' if canary.ok else 'bad' }}">{{ _("OK") if canary.ok else _("Failed") }}</span> <span class="muted">{{ canary.ran_at }}</span>
+  {% else %}<span class="muted">{{ _("none yet") }}</span>{% endif %}
+  </p>
+  <p>{{ _("Workers seen") }}: {{ workers | length }}</p>
+</div>
+<p class="muted">UltimateTunes {{ version }}</p>
+{% endblock %}
