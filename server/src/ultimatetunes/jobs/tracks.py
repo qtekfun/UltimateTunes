@@ -143,9 +143,7 @@ def request_in(  # noqa: PLR0913 - the resolved request and who asks
             video: str | None = track.video_id
         elif isinstance(target, TrackRef):
             ref = target
-            stored = conn.execute(
-                "SELECT yt_video_id FROM tracks WHERE id = ?", (ref.id,)
-            ).scalar()
+            stored = conn.execute("SELECT yt_video_id FROM tracks WHERE id = ?", (ref.id,)).scalar()
             video = None if stored is None else str(stored)
         else:
             raise NotFound("Song not found")

@@ -16,6 +16,9 @@ from ultimatetunes.app import create_app
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.db import Database
+from ultimatetunes.errors import NotFound
+from ultimatetunes.ids.virtual import VirtualId
+from ultimatetunes.jobs import tracks
 from ultimatetunes.jobs.queue import PRIORITY_KEEP, PRIORITY_PREFETCH, ProgressReport
 from ultimatetunes.settings import Settings
 
@@ -214,3 +217,10 @@ def test_bad_requests(api: Api) -> None:
     assert big.status_code == 400
     assert api.client.post(f"/ut/v1/tracks/{SONG}/request").status_code == 401
     assert api.sql("SELECT COUNT(*) FROM jobs") == 0
+
+
+def test_a_virtual_id_needs_its_catalog_record(api: Api) -> None:
+    with pytest.raises(NotFound):
+        tracks.request_in(
+            api.services, SONG, VirtualId("song", VIDEO), None, reason="keep", user_id=ANA.user_id
+        )
