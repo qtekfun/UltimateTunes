@@ -45,21 +45,35 @@ object PlayerModule {
     fun databaseProvider(@ApplicationContext context: Context): DatabaseProvider =
         StandaloneDatabaseProvider(context)
 
+    /**
+     * Media3 allows one `SimpleCache` per folder and process, whatever the dependency graph, so
+     * the caches live once per process (a test that builds a second graph shares them).
+     */
     @Provides
     @Singleton
-    fun mediaCaches(@ApplicationContext context: Context, database: DatabaseProvider): MediaCaches {
-        // Settings resize it as soon as the player starts (PlayerSettings.cacheSizeMb).
-        val evictor = AdjustableLruEvictor(CachePolicy.maxBytes(CachePolicy.DEFAULT_CACHE_MB))
-        return MediaCaches(
-            play = SimpleCache(File(context.noBackupFilesDir, "media-cache"), evictor, database),
-            evictor = evictor,
-            downloads = SimpleCache(
-                File(context.noBackupFilesDir, "offline"),
-                NoOpCacheEvictor(),
-                database
-            )
-        )
-    }
+    fun mediaCaches(@ApplicationContext context: Context, database: DatabaseProvider): MediaCaches =
+        synchronized(this) {
+            processCaches ?: run {
+                // Settings resize it as soon as the player starts (PlayerSettings.cacheSizeMb).
+                val evictor =
+                    AdjustableLruEvictor(CachePolicy.maxBytes(CachePolicy.DEFAULT_CACHE_MB))
+                MediaCaches(
+                    play = SimpleCache(
+                        File(context.noBackupFilesDir, "media-cache"),
+                        evictor,
+                        database
+                    ),
+                    evictor = evictor,
+                    downloads = SimpleCache(
+                        File(context.noBackupFilesDir, "offline"),
+                        NoOpCacheEvictor(),
+                        database
+                    )
+                ).also { processCaches = it }
+            }
+        }
+
+    private var processCaches: MediaCaches? = null
 
     @Provides
     @Singleton

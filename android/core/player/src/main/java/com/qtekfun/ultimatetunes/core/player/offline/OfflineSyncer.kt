@@ -16,8 +16,11 @@ import kotlinx.coroutines.flow.first
 
 /** The offline downloads as the syncer sees them (Media3's download manager in the app). */
 interface DownloadQueue {
-    /** Songs downloaded, downloading or queued (failed ones are not included: they are retried). */
+    /** Every download, in any state (queued, downloading, done or failed). */
     suspend fun knownIds(): Set<SongId>
+
+    /** The downloads that failed (retried when still wanted, removable like any other). */
+    suspend fun failedIds(): Set<SongId>
 
     /** Downloads [track] (a library song). */
     suspend fun add(track: PlayableTrack)
@@ -60,15 +63,23 @@ class OfflineSyncer(
             ).also { after = it }
         }
 
-        val plan = OfflineSyncPlanner.plan(after, queue.knownIds())
+        val plan = OfflineSyncPlanner.plan(after, queue.knownIds(), queue.failedIds())
         plan.remove.forEach { queue.remove(it) }
         plan.add.forEach { queue.add(it) }
         return plan
     }
 
-    /** Removes the downloads the stored selection no longer wants, without asking the server. */
-    suspend fun prune(): Set<SongId> {
-        val plan = OfflineSyncPlanner.plan(store.selection.first(), queue.knownIds())
+    /**
+     * Removes the downloads the stored selection no longer wants, without asking the server;
+     * [dropped] are the songs the user just let go (freed even while some kept album or playlist
+     * was never read).
+     */
+    suspend fun prune(dropped: Set<SongId> = emptySet()): Set<SongId> {
+        val plan = OfflineSyncPlanner.plan(
+            store.selection.first(),
+            queue.knownIds(),
+            dropped = dropped
+        )
         plan.remove.forEach { queue.remove(it) }
         return plan.remove
     }

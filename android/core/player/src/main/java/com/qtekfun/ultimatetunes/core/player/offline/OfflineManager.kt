@@ -31,44 +31,34 @@ class OfflineManager @Inject constructor(
     val items: StateFlow<List<OfflineItem>> get() = downloads.items
 
     suspend fun keepTrack(track: PlayableTrack) = change { selection ->
-        if (selection.keepsTrack(track.id)) {
-            selection
+        val tracks = if (selection.keepsTrack(track.id)) {
+            selection.tracks
         } else {
-            selection.copy(
-                tracks =
-                    selection.tracks + track
-            )
+            selection.tracks +
+                track
         }
+        selection.copy(tracks = tracks)
     }
 
-    suspend fun dropTrack(id: SongId) = change {
-        it.copy(
-            tracks = it.tracks.filterNot { t ->
-                t.id ==
-                    id
-            }
-        )
+    suspend fun dropTrack(id: SongId) = change(dropped = { setOf(id) }) { selection ->
+        selection.copy(tracks = selection.tracks.filterNot { it.id == id })
     }
 
     suspend fun keepCollection(kind: CollectionKind, id: String, name: String) =
         change { selection ->
-            if (selection.keepsCollection(kind, id)) {
-                selection
-            } else {
-                selection.copy(
-                    collections =
-                        selection.collections + OfflineCollection(kind, id, name)
-                )
-            }
+            val kept = selection.keepsCollection(kind, id)
+            val added = if (kept) emptyList() else listOf(OfflineCollection(kind, id, name))
+            selection.copy(collections = selection.collections + added)
         }
 
-    suspend fun dropCollection(kind: CollectionKind, id: String) = change { selection ->
-        selection.copy(
-            collections = selection.collections.filterNot {
-                it.kind == kind &&
-                    it.id == id
-            }
-        )
+    suspend fun dropCollection(kind: CollectionKind, id: String) = change(
+        dropped = { selection ->
+            selection.collections.filter { it.matches(kind, id) }
+                .flatMap { it.members.orEmpty() }
+                .mapTo(HashSet()) { it.id }
+        }
+    ) { selection ->
+        selection.copy(collections = selection.collections.filterNot { it.matches(kind, id) })
     }
 
     /** Syncs as soon as the network allows (and periodically), e.g. after a settings change. */
@@ -80,10 +70,20 @@ class OfflineManager @Inject constructor(
         }
     }
 
-    private suspend fun change(transform: (OfflineSelection) -> OfflineSelection) {
-        store.update(transform)
+    private suspend fun change(
+        dropped: (OfflineSelection) -> Set<SongId> = { emptySet() },
+        transform: (OfflineSelection) -> OfflineSelection
+    ) {
+        var freed = emptySet<SongId>()
+        store.update { before ->
+            freed = dropped(before)
+            transform(before)
+        }
         // Dropped songs are freed at once, without waiting for the network.
-        syncer.prune()
+        syncer.prune(freed)
         syncSoon()
     }
+
+    private fun OfflineCollection.matches(kind: CollectionKind, id: String) =
+        this.kind == kind && this.id == id
 }

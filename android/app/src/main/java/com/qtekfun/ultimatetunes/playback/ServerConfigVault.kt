@@ -47,6 +47,15 @@ class KeystoreSecretBox(private val alias: String) : SecretBox {
         }
     } catch (ignored: GeneralSecurityException) {
         null
+    } catch (ignored: IOException) {
+        // KeyStore.load can fail with an IOException.
+        null
+    } catch (
+        @Suppress("TooGenericExceptionCaught") ignored: RuntimeException
+    ) {
+        // Keystore implementations also throw ProviderException, IllegalStateException and
+        // others: whatever it is, the saved key cannot be read, so the app is "not connected".
+        null
     }
 
     private fun keyStore() = KeyStore.getInstance(KEYSTORE).apply { load(null) }
@@ -90,7 +99,15 @@ class ServerConfigVault(private val file: File, private val box: SecretBox) {
         } catch (ignored: IOException) {
             null
         }
-        return sealed?.let(box::open)?.let { decode(it.decodeToString()) }
+        val plain = try {
+            sealed?.let(box::open)
+        } catch (
+            @Suppress("TooGenericExceptionCaught") ignored: RuntimeException
+        ) {
+            // A box that fails instead of answering null (e.g. ProviderException): not connected.
+            null
+        }
+        return plain?.let { decode(it.decodeToString()) }
     }
 
     /** Saves [config], or forgets it when null. */

@@ -37,6 +37,8 @@ class OfflineManagerTest {
     private val queue = object : DownloadQueue {
         override suspend fun knownIds(): Set<SongId> = downloaded.toSet()
 
+        override suspend fun failedIds(): Set<SongId> = emptySet()
+
         override suspend fun add(track: PlayableTrack) = Unit
 
         override suspend fun remove(id: SongId) {
@@ -89,5 +91,41 @@ class OfflineManagerTest {
         assertTrue(store.state.value.isEmpty)
         assertTrue(songA in removed)
         verify { scheduler.cancel() }
+    }
+
+    @Test
+    fun `a dropped song is freed even while a kept playlist was never read`() = runTest {
+        downloaded += songA
+        store.state.value = OfflineSelection(
+            tracks = listOf(PlayableTrack(songA, "A", "Artist")),
+            collections = listOf(OfflineCollection(CollectionKind.PLAYLIST, "pl", "List"))
+        )
+
+        manager.dropTrack(songA)
+
+        assertEquals(listOf(songA), removed)
+        // songB is not known to be unwanted (the playlist may have it): kept.
+        assertTrue(songB in downloaded)
+    }
+
+    @Test
+    fun `dropping a read album frees its songs while another list is unread`() = runTest {
+        downloaded += songA
+        store.state.value = OfflineSelection(
+            collections = listOf(
+                OfflineCollection(
+                    CollectionKind.ALBUM,
+                    "al",
+                    "Album",
+                    listOf(PlayableTrack(songA, "A", "Artist"))
+                ),
+                OfflineCollection(CollectionKind.PLAYLIST, "pl", "List")
+            )
+        )
+
+        manager.dropCollection(CollectionKind.ALBUM, "al")
+
+        assertEquals(listOf(songA), removed)
+        assertEquals(1, store.state.value.collections.size)
     }
 }

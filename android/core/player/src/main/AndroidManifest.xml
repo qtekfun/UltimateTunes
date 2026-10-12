@@ -21,8 +21,9 @@
     <application>
         <!--
           Exported without a permission on purpose: the system UI, Bluetooth and headsets control
-          playback through it (the MediaSessionService contract). Untrusted apps cannot change the
-          queue (PlayerAssembly.sessionCallback).
+          playback through it (the MediaSessionService contract). Apps the system does not trust
+          (trusted: system, MEDIA_CONTENT_CONTROL holders and enabled notification listeners)
+          cannot change the queue (PlayerAssembly.sessionCallback).
         -->
         <service
             android:name="com.qtekfun.ultimatetunes.core.player.session.PlaybackService"

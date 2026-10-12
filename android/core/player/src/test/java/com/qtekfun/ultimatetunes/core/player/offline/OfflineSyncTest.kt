@@ -91,6 +91,35 @@ class OfflineSyncPlannerTest {
     }
 
     @Test
+    fun `failed downloads are retried when wanted and removed when not`() {
+        val selection = OfflineSelection(tracks = listOf(track(lib(1))))
+        val plan = OfflineSyncPlanner.plan(
+            selection,
+            downloaded = setOf(lib(1), lib(2)),
+            failed = setOf(lib(1), lib(2))
+        )
+        assertEquals(listOf(lib(1)), plan.add.map { it.id })
+        assertEquals(setOf(lib(2)), plan.remove)
+    }
+
+    @Test
+    fun `with an unread collection only dropped songs nobody wants are freed`() {
+        val selection = OfflineSelection(
+            tracks = listOf(track(lib(1))),
+            collections = listOf(OfflineCollection(CollectionKind.PLAYLIST, "pl", "P")),
+            aliases = mapOf(yt('A') to lib(3))
+        )
+        val plan = OfflineSyncPlanner.plan(
+            selection,
+            downloaded = setOf(lib(1), lib(2), lib(3), lib(4)),
+            dropped = setOf(lib(1), lib(2), yt('A'), lib(5))
+        )
+        assertFalse(plan.complete)
+        // lib(1) is still kept on its own, lib(4) was not dropped, lib(5) is not downloaded.
+        assertEquals(setOf(lib(2), lib(3)), plan.remove)
+    }
+
+    @Test
     fun `selection helpers`() {
         val selection = OfflineSelection(
             tracks = listOf(track(lib(1))),
@@ -120,7 +149,11 @@ class OfflineSyncerTest {
         val added = mutableListOf<PlayableTrack>()
         val removed = mutableListOf<SongId>()
 
+        val failed = mutableSetOf<SongId>()
+
         override suspend fun knownIds(): Set<SongId> = ids.toSet()
+
+        override suspend fun failedIds(): Set<SongId> = failed.toSet()
 
         override suspend fun add(track: PlayableTrack) {
             added += track
@@ -238,6 +271,14 @@ class OfflineSyncerTest {
 
         assertTrue(store.state.value.collections.isEmpty())
         assertTrue(queue.added.isEmpty())
+    }
+
+    @Test
+    fun `a failed download that is still wanted is downloaded again`() = runTest {
+        val store = MemoryStore(OfflineSelection(tracks = listOf(track(lib(1)))))
+        val queue = MemoryQueue(mutableSetOf(lib(1))).apply { failed += lib(1) }
+        OfflineSyncer(api, store, queue).sync()
+        assertEquals(listOf(lib(1)), queue.added.map { it.id })
     }
 
     @Test

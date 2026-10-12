@@ -210,4 +210,24 @@ class PrefetcherTest {
             planner.plan(QueueSnapshot(LIB_A, listOf(YT_D))) { false }
         )
     }
+
+    @Test
+    fun `a timeline change that keeps the next song does not restart its preload`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val gate = CompletableDeferred<Unit>()
+        target.preloadGate = gate
+        val prefetcher = Prefetcher(planner, target, scope)
+        prefetcher.onQueueChanged(QueueSnapshot(LIB_A, listOf(LIB_B)))
+        scope.runCurrent()
+
+        // Same upcoming song (e.g. a song added at the end of the queue): the preload goes on.
+        assertTrue(prefetcher.onQueueChanged(QueueSnapshot(LIB_A, listOf(LIB_B))).isEmpty())
+        gate.complete(Unit)
+        scope.runCurrent()
+
+        assertEquals(listOf("preload $LIB_B 100"), target.calls)
+        // Done, and not planned again.
+        assertTrue(prefetcher.onQueueChanged(QueueSnapshot(LIB_A, listOf(LIB_B))).isEmpty())
+        assertTrue(planner.plan(QueueSnapshot(LIB_A, listOf(LIB_B))) { false }.isEmpty())
+    }
 }
