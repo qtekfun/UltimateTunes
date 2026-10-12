@@ -90,13 +90,16 @@ Per user: stars, playlists, play history (scrobble), play queue saved across dev
 `/admin`, admin role only: users (create, disable, role), API keys (list, last use, revoke), download queue (state, retry, cancel), library (space used/free, `needs_review`, delete track/album), yt-dlp (version, last canary result, update now), audit log, notifications (optional ntfy topic or webhook on failed download/canary). Jinja + vendored HTMX, en/es.
 
 ### RF-11 Android client
-Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info). Details in §5.
+Connect (server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info), export to the phone (RF-14). Details in §5.
 
 ### RF-12 Client cache and offline
-Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. Offline: only cached and downloaded content is browsable; search needs the server.
+Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next track in the queue is requested on the server (so it is ready) and its first bytes preloaded. Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). Offline: only cached and downloaded content is browsable; search needs the server.
 
 ### RF-13 Notifications from the server
-Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows playback notification only (MediaSession).
+Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows no server-pushed notifications: only playback (MediaSession), download/sync and export progress notifications (POST_NOTIFICATIONS on Android 13+ is the one permission this adds).
+
+### RF-14 Export to the phone
+The user can **export** tracks, albums or playlists that are fully available on the phone as **library tracks** (offline downloads, or library tracks completely in the cache; bytes cached under a `yt:` id from a first play are not exported because they predate tagging) to a folder they pick on the phone, through the system folder picker (Storage Access Framework; no broad storage permission). Files keep their original format and tags (never transcoded), named `Artist/Album/NN - Title.ext` (sanitized), with a progress notification; tracks not fully available are listed and skipped. Export is a copy for the user's own use; the app never shares files elsewhere.
 
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
@@ -105,7 +108,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Full player: big artwork, **colours from the artwork** (Palette) and a blurred artwork background, scrubber, queue sheet.
 - Lyrics full-screen, active line highlighted, auto-scroll, tap a line to seek (when the track is in the library).
 - Light and dark themes; English and Spanish; large fonts and TalkBack.
-- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, go to album/artist).
+- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, export, go to album/artist).
 
 ## 6. Non-functional requirements
 - First sound of an **external** track: target ≤ 5 s on the home connection (measured in T03 and T21). Library track: ≤ 1 s.
@@ -185,6 +188,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 
 ### Taken before Wave 1 (2026-10-12)
 - **Dependencies added in one coordinator PR** so parallel streams never edit shared build files. Server: argon2-cffi (MIT), ytmusicapi (MIT; pulls `requests`, Apache-2.0), mutagen (GPL-2.0-or-later), jinja2, itsdangerous (BSD-3-Clause), python-multipart (Apache-2.0); dev respx (BSD-3-Clause). yt-dlp is not a Python dependency (zipapp subprocess, T03c). Android: Coil 3 (compose, network-okhttp), palette, DataStore preferences, Media3 (exoplayer, session, datasource-okhttp; `:core:player` depends on `:core:api` so one OkHttp version ships). Also **navigation-compose** and **hilt-navigation-compose** (Apache-2.0), approved by the author on 2026-10-12. DataStore bundles protobuf, so licensee also allows BSD-3-Clause.
+- **Offline playlists in sync and export to the phone** (author, 2026-10-12): RF-12 extended (playlists/albums marked offline stay in sync) and new RF-14 (export of fully available tracks to a user-picked folder via SAF, original format and tags). Implemented in T17 (download/sync engine) and T18 (UI and export).
 
 ### Taken in T04 (users, keys and auth, 2026-10-12)
 - **Passwords**: Argon2id with 19 MiB memory, t = 2, p = 1 (the OWASP minimum, chosen for the RAM budget). Passwords are at least 12 characters. Usernames are lower-cased and match `[a-z0-9][a-z0-9._-]{0,63}`.
