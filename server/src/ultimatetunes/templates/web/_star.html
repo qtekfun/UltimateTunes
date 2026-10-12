@@ -1,0 +1,4 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{# A star toggle; POST /web/star answers this fragment again with the new state. #}
+<button class="star{% if on %} on{% endif %}" type="button" hx-post="/web/star" hx-target="this" hx-swap="outerHTML" hx-vals='{{ {"kind": kind, "id": item_id, "on": "0" if on else "1"}|tojson }}' aria-pressed="{{ "true" if on else "false" }}" title="{{ _("Remove from favourites") if on else _("Add to favourites") }}" aria-label="{{ _("Remove from favourites") if on else _("Add to favourites") }}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.3C1 8.4 3 5 6.4 5c2 0 3.3 1 5.6 3.2C14.3 6 15.6 5 17.6 5 21 5 23 8.4 21.6 11.7 19.5 16.4 12 21 12 21z"/></svg></button>

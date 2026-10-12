@@ -1,0 +1,26 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import station_grid, empty with context %}
+{% block title %}{{ _("Radio") }}{% endblock %}
+{% block content %}
+<h1 class="large" tabindex="-1">{{ _("Radio") }}</h1>
+<section aria-labelledby="h-stations">
+  <h2 id="h-stations">{{ _("Your stations") }}</h2>
+  {% if stations %}
+  {{ station_grid(stations) }}
+  {% else %}
+  {{ empty(_("Add songs to your favourites and a station for each one appears here. You can also start a radio from any song's menu (···).")) }}
+  {% endif %}
+</section>
+{% if artists %}
+<section aria-labelledby="h-artist-radio">
+  <h2 id="h-artist-radio">{{ _("Artist radio") }}</h2>
+  <ul class="artists">
+  {% for a in artists %}
+    <li><button type="button" class="artist-radio" data-act="artist-radio" data-id="{{ a.id }}"><img class="avatar" src="{{ cover(a.cover) }}" alt="" loading="lazy" width="48" height="48"><span>{{ a.name }}</span></button></li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

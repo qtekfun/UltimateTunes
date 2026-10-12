@@ -94,7 +94,7 @@ def test_outside_the_allowlist_everything_under_admin_is_403(
         "/admin/login", data={"csrf": "x", "username": "alice", "password": ADMIN_PASSWORD}
     )
     assert r.status_code == 403
-    # The public page stays reachable and says nothing.
+    # The home page (the web player's sign-in form) stays reachable.
     assert outsider.get("/").status_code == 200
 
 
@@ -128,7 +128,7 @@ def test_other_paths_are_untouched(client: TestClient) -> None:
 
 
 def test_security_headers_on_pages(client: TestClient, admin_csrf: str) -> None:
-    for path in ("/admin", "/admin/login", "/"):
+    for path in ("/admin", "/admin/login"):
         r = client.get(path)
         assert r.headers["content-security-policy"] == CSP
         assert r.headers["cache-control"] == "no-store"

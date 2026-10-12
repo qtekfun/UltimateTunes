@@ -3,9 +3,10 @@
 """FastAPI application factory.
 
 Mounts the probes, the OpenSubsonic API (`/rest`), the own API (`/ut/v1`), the internal worker
-API (`/internal/v1`) and the admin panel (`/admin`). `TunesError`s raised by `/ut/v1` and
-`/internal/v1` handlers become RFC 9457 problems here (OpenSubsonic renders its own envelope in
-`subsonic/router.py`); request validation errors become `invalid_parameter`.
+API (`/internal/v1`), the admin panel (`/admin`) and the web player (`/web`). `TunesError`s
+raised by `/ut/v1` and `/internal/v1` handlers become RFC 9457 problems here (OpenSubsonic
+renders its own envelope in `subsonic/router.py`, the web player its pages in `web/routes.py`);
+request validation errors become `invalid_parameter`.
 
 The app holds every route; `listeners.py` serves it on two ports and keeps `/internal/v1` off
 the client port (T22). The outermost middleware (`core/forwarded.py`) settles the client
@@ -48,6 +49,7 @@ from ultimatetunes.streaming import web as streaming_web
 from ultimatetunes.subsonic.router import build_rest_router
 from ultimatetunes.subsonic.routes import ROUTERS
 from ultimatetunes.ut import build_ut_router
+from ultimatetunes.web import web as web_player
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class AreaHook(Protocol):
     def install(self, app: FastAPI, services: Services) -> None: ...
 
 
-# Owners: auth T04, library T05, jobs T08, streaming T16, admin T15, canary T19.
+# Owners: auth T04, library T05, jobs T08, streaming T16, admin T15, canary T19, web player.
 AREAS: tuple[AreaHook, ...] = (
     auth_web,
     library_web,
@@ -64,6 +66,7 @@ AREAS: tuple[AreaHook, ...] = (
     streaming_web,
     admin_web,
     canary_web,
+    web_player,
 )
 
 

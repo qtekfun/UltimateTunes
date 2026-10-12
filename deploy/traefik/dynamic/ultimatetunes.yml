@@ -4,7 +4,8 @@
 # EXAMPLE ONLY: Traefik v3 dynamic configuration (file provider) for UltimateTunes behind
 # Traefik + Authelia. Replace music.example.org, the LAN range and the Authelia address.
 # Routed: /admin (Authelia two_factor + LAN/Tailscale only), /rest and /ut/v1 (API keys, no
-# Authelia), the landing page /. Everything else, including /internal and /readyz, matches no
+# Authelia), and the web player at / and /web (its own session cookie; Authelia optional,
+# deploy/README.md). Everything else, including /internal and /readyz, matches no
 # router and gets Traefik's 404.
 
 http:
@@ -36,16 +37,17 @@ http:
     # streams would be held back until complete).
     ut-api-write:
       entryPoints: [websecure]
-      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`)) && !Method(`GET`) && !Method(`HEAD`)"
+      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`)) && !Method(`GET`) && !Method(`HEAD`)"
       priority: 200
       middlewares: [ut-headers, ut-inflight, ut-ratelimit, ut-body-limit]
       service: ut-api
 
     # OpenSubsonic and the app's own API: API keys, NO Authelia (forwardAuth would answer
-    # clients with a login redirect and break every OpenSubsonic client and the app).
+    # clients with a login redirect and break every OpenSubsonic client and the app). The web
+    # player (/web) is a client too; to put it behind Authelia, see deploy/README.md.
     ut-api:
       entryPoints: [websecure]
-      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/`))"
+      rule: "Host(`music.example.org`) && (PathPrefix(`/rest/`) || PathPrefix(`/ut/v1/`) || Path(`/web`) || PathPrefix(`/web/`) || Path(`/`))"
       priority: 100
       middlewares: [ut-headers, ut-inflight, ut-ratelimit]
       service: ut-api

@@ -1,0 +1,52 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends layout %}
+{% from "_macros.html" import empty with context %}
+{% block title %}{{ _("Import a playlist") }}{% endblock %}
+{% block content %}
+<h1 class="large" tabindex="-1">{{ _("Import a playlist") }}</h1>
+<div class="cards">
+  <section class="card" aria-labelledby="h-url">
+    <h2 id="h-url">{{ _("From YouTube Music or YouTube") }}</h2>
+    <form method="post" hx-push-url="false" action="/web/imports/url" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>{{ _("Playlist link") }}<input type="url" name="url" required maxlength="2048" placeholder="music.youtube.com/playlist?list=…"></label>
+      <label>{{ _("Name (optional)") }}<input name="name" maxlength="200"></label>
+      <button class="primary" type="submit">{{ _("Import") }}</button>
+    </form>
+  </section>
+  <section class="card" aria-labelledby="h-file">
+    <h2 id="h-file">{{ _("From a file") }}</h2>
+    <p class="muted hint">{{ _("A CSV with title and artist columns, an Exportify CSV, or Spotify's JSON export. Up to 1 MiB.") }}</p>
+    <form method="post" hx-push-url="false" action="/web/imports/file" enctype="multipart/form-data" hx-encoding="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>{{ _("File") }}<input type="file" name="file" required accept=".csv,.json,text/csv,application/json"></label>
+      <label>{{ _("Format") }}
+        <select name="format">
+          {% for f in formats %}<option value="{{ f }}">{{ {"csv": _("CSV (title, artist)"), "exportify_csv": _("Exportify CSV"), "spotify_json": _("Spotify JSON")}.get(f, f) }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>{{ _("Name (optional)") }}<input name="name" maxlength="200"></label>
+      <button class="primary" type="submit">{{ _("Import") }}</button>
+    </form>
+  </section>
+</div>
+<section id="import-list" aria-labelledby="h-imports"{% if active %} hx-get="/web/imports" hx-trigger="every 3s" hx-select="#import-list" hx-target="#import-list" hx-swap="outerHTML" hx-push-url="false" hx-indicator="none"{% endif %}>
+  <h2 id="h-imports">{{ _("Your imports") }}</h2>
+  {% if imports %}
+  <ul class="imports">
+  {% for i in imports %}
+    <li>
+      <a href="/web/imports/{{ i.id|path_id }}">
+        <span class="tile-title">{{ i.name or i.sourceUrl or _("Imported playlist") }}</span>
+        <span class="muted">{{ _(state_labels.get(i.state, i.state)) }} · {{ _("%(matched)s of %(total)s found", matched=i.matched, total=i.total) }}</span>
+        <progress max="1" value="{{ i.progress }}" aria-label="{{ _("Progress") }}"></progress>
+      </a>
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}
+  {{ empty(_("No imports yet.")) }}
+  {% endif %}
+</section>
+{% endblock %}
