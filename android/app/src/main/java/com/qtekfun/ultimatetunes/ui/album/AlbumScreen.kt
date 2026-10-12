@@ -22,8 +22,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,9 +52,11 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
+import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.model.formatDuration
+import com.qtekfun.ultimatetunes.ui.model.totalMinutes
 import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
@@ -65,8 +65,6 @@ import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 /** Test tags of the album screen. */
 const val ALBUM_LIST_TAG = "album.list"
 const val ALBUM_MENU_TAG = "album.menu"
-
-private const val SECONDS_PER_MINUTE = 60
 
 @Composable
 fun AlbumRoute(
@@ -99,13 +97,13 @@ fun AlbumScreen(
     onToggleOffline: () -> Unit = {}
 ) {
     val content = (state.content as? LoadState.Ready)?.value
-    val snackbar = remember { SnackbarHostState() }
-    MessageEffect(state.message, snackbar, onMessageShown)
+    val snackbar = rememberScreenSnackbar()
+    MessageEffect(state.message, snackbar.state, onMessageShown)
     LargeTitleScaffold(
         title = content?.album?.title.orEmpty(),
         onBack = navigator.back,
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = snackbar.host,
         actions = {
             if (content != null && content.canFavourite) {
                 FavouriteButton(content.isFavourite, onToggleFavourite)
@@ -186,8 +184,8 @@ private fun AlbumHeader(album: AlbumContent, navigator: Navigator, isOffline: Bo
             placeholderKey = album.album.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .widthIn(max = 300.dp)
                 .fillMaxWidth(fraction = 0.72f)
+                .widthIn(max = 300.dp)
                 .aspectRatio(1f)
         )
         val artistId = album.artistId
@@ -302,7 +300,7 @@ fun AlbumTrackRow(track: TrackTile, number: Int, onClick: () -> Unit) {
 @Composable
 private fun AlbumFooter(album: AlbumContent) {
     val songs = pluralStringResource(R.plurals.song_count, album.tracks.size, album.tracks.size)
-    val minutes = album.durationSec / SECONDS_PER_MINUTE
+    val minutes = totalMinutes(album.durationSec)
     Text(
         text = songs + ", " + pluralStringResource(R.plurals.minute_count, minutes, minutes),
         style = MaterialTheme.typography.bodySmall,

@@ -4,5 +4,11 @@
   SPDX-License-Identifier: GPL-3.0-or-later
 -->
 <resources>
-    <style name="Theme.UltimateTunes" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      The window behind Compose and the launch (splash) screen: the same background as the app's
+      light theme, so nothing flashes before the first frame. values-night has the dark one.
+    -->
+    <style name="Theme.UltimateTunes" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
 </resources>

@@ -33,13 +33,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.playback.PlaybackIssue
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
+import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 
 /** Test tag of the mini player. */
 const val MINI_PLAYER_TAG = "player.mini"
+const val MINI_PLAYER_SUBTITLE_TAG = "player.mini.subtitle"
 
 /** Horizontal drag that skips (SPEC §5: swipe the mini player to skip). */
 private val SwipeThreshold = 56.dp
@@ -80,25 +83,13 @@ fun MiniPlayer(
                 shape = Dimens.SmallArtworkShape,
                 modifier = Modifier.size(Dimens.MiniArtwork)
             )
-            Column(
+            MiniPlayerTitles(
+                track = track,
+                issue = state.issue,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = Dimens.SpaceM)
-            ) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            )
             PlayPauseButton(isPlaying = state.isPlaying, onClick = actions.togglePlay)
             IconButton(onClick = actions.next, enabled = state.hasNext) {
                 Icon(
@@ -107,6 +98,32 @@ fun MiniPlayer(
                 )
             }
         }
+    }
+}
+
+/** Title and artist; a song that cannot play says why instead of its artist. */
+@Composable
+private fun MiniPlayerTitles(track: TrackTile, issue: PlaybackIssue?, modifier: Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        // A song that cannot play says why here too, not only in the full player.
+        Text(
+            text = if (issue != null) stringResource(issue.messageRes()) else track.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (issue != null) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag(MINI_PLAYER_SUBTITLE_TAG)
+        )
     }
 }
 

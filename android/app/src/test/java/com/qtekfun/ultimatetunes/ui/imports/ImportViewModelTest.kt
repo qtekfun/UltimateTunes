@@ -3,7 +3,6 @@
 
 package com.qtekfun.ultimatetunes.ui.imports
 
-import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesError
@@ -17,6 +16,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.jsonResponse
@@ -24,7 +24,6 @@ import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.problem
 import java.io.IOException
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -54,7 +53,7 @@ class ImportViewModelTest {
     fun tearDown() {
         // A view model still polling must not resume on Main after the test dispatcher is reset
         // ("Dispatchers.Main is used concurrently"): stop them all first.
-        created.forEach { it.viewModelScope.cancel() }
+        created.forEach { it.closeForTest() }
         server.close()
     }
 

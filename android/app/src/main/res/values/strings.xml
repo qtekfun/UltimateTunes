@@ -56,7 +56,7 @@
     <string name="library_favourites">Favourites</string>
     <string name="library_downloads">Downloads</string>
     <string name="library_empty">Nothing in your library yet. Search for music and play it to keep it here.</string>
-    <string name="favourites_empty">No favourites yet. Tap the heart on an album to add it.</string>
+    <string name="favourites_empty">No favourites yet. Tap the heart on an album, or add a song from its menu.</string>
     <string name="downloads_empty">No downloads yet. Songs you download for offline listening will appear here.</string>
     <string name="favourite_add">Add to Favourites</string>
     <string name="favourite_remove">Remove from Favourites</string>

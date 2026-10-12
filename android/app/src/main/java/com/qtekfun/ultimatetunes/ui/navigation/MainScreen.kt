@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -33,12 +34,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -46,6 +51,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -71,6 +77,7 @@ import com.qtekfun.ultimatetunes.ui.actions.TrackMenuActions
 import com.qtekfun.ultimatetunes.ui.actions.TrackMenuSheet
 import com.qtekfun.ultimatetunes.ui.album.AlbumRoute
 import com.qtekfun.ultimatetunes.ui.artist.ArtistRoute
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAppSnackbar
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.imports.ImportRoute
 import com.qtekfun.ultimatetunes.ui.library.AlbumsRoute
@@ -98,6 +105,12 @@ import com.qtekfun.ultimatetunes.ui.theme.Dimens
 /** How long the full player takes to slide up or down. */
 private const val PLAYER_SLIDE_MS = 320
 
+/** Over the full player, messages sit below its close button. */
+private val FULL_PLAYER_SNACKBAR_TOP = 48.dp
+
+/** Test tag of the app-wide snackbar host. */
+const val APP_SNACKBAR_TAG = "app.snackbar"
+
 /**
  * The app once connected: the four tabs with their bar, the mini player above it, and the full
  * player over everything, sliding up from the bottom like a sheet (SPEC §5).
@@ -122,17 +135,19 @@ fun MainScreen(
     NotificationPermission(askNotifications, onNotificationsAnswered)
 
     ProvideLibraryActions(actionsViewModel, onOpenMenu = { menuTrack = it }) {
-        MainLayout(
-            navController = navController,
-            player = player,
-            actions = actions,
-            lyrics = lyrics,
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-            snackbar = snackbar,
-            banner = { ExportBanner(actionsViewModel) },
-            onPlay = playerViewModel::play
-        )
+        CompositionLocalProvider(LocalAppSnackbar provides snackbar) {
+            MainLayout(
+                navController = navController,
+                player = player,
+                actions = actions,
+                lyrics = lyrics,
+                expanded = expanded,
+                onExpandedChange = { expanded = it },
+                snackbar = snackbar,
+                banner = { ExportBanner(actionsViewModel) },
+                onPlay = playerViewModel::play
+            )
+        }
     }
     LibraryActionsHost(
         viewModel = actionsViewModel,
@@ -167,15 +182,15 @@ private fun MainLayout(
     onPlay: (List<TrackTile>, Int) -> Unit
 ) {
     val hasTrack = player.current != null
+    var bottomBarHeight by remember { mutableIntStateOf(0) }
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             // Under the open full player, TalkBack must not reach the hidden tabs and mini player.
             modifier = if (hasTrack && expanded) Modifier.clearAndSetSemantics {} else Modifier,
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0),
-            snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                Column {
+                Column(Modifier.onSizeChanged { bottomBarHeight = it.height }) {
                     banner()
                     MiniPlayerBar(
                         visible = hasTrack,
@@ -206,6 +221,25 @@ private fun MainLayout(
                 lyrics = lyrics
             )
         }
+        // Over everything, so a message after an action in the full player shows too: there at
+        // the top, over the artwork and clear of the controls; otherwise above the mini player and
+        // the tab bar.
+        val overPlayer = hasTrack && expanded
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier
+                .align(if (overPlayer) Alignment.TopCenter else Alignment.BottomCenter)
+                .then(
+                    if (overPlayer) {
+                        Modifier.statusBarsPadding().padding(top = FULL_PLAYER_SNACKBAR_TOP)
+                    } else {
+                        Modifier.padding(
+                            bottom = with(LocalDensity.current) { bottomBarHeight.toDp() }
+                        )
+                    }
+                )
+                .testTag(APP_SNACKBAR_TAG)
+        )
     }
 }
 
@@ -243,12 +277,17 @@ private fun TabBar(navController: NavHostController) {
             NavigationBarItem(
                 selected = selected,
                 onClick = {
-                    navController.navigate(tab.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
+                    if (selected) {
+                        // Tapping the open tab again goes back to its first screen.
+                        navController.popBackStack(tab.home, inclusive = false)
+                    } else {
+                        navController.navigate(tab.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
                 },
                 icon = { Icon(painterResource(tab.icon), contentDescription = null) },

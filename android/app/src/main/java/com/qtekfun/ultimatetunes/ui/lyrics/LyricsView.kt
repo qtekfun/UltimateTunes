@@ -38,6 +38,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.ui.designsystem.fadingEdges
 import com.qtekfun.ultimatetunes.ui.designsystem.messageRes
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
@@ -139,7 +140,7 @@ private fun Lines(
     val seekLabel = stringResource(R.string.lyrics_seek)
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().fadingEdges(Dimens.SpaceXL),
         contentPadding = PaddingValues(vertical = Dimens.SpaceXL)
     ) {
         itemsIndexed(lyrics.lines) { index, line ->

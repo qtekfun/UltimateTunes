@@ -56,7 +56,7 @@
     <string name="library_favourites">Favoritos</string>
     <string name="library_downloads">Descargas</string>
     <string name="library_empty">Tu biblioteca aún está vacía. Busca música y escúchala para guardarla aquí.</string>
-    <string name="favourites_empty">Aún no tienes favoritos. Toca el corazón de un álbum para añadirlo.</string>
+    <string name="favourites_empty">Aún no tienes favoritos. Toca el corazón de un álbum o añade una canción desde su menú.</string>
     <string name="downloads_empty">Aún no hay descargas. Aquí aparecerán las canciones que descargues para escuchar sin conexión.</string>
     <string name="favourite_add">Añadir a Favoritos</string>
     <string name="favourite_remove">Quitar de Favoritos</string>

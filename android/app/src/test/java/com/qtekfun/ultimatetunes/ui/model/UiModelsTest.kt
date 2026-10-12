@@ -35,6 +35,17 @@ class UiModelsTest {
     }
 
     @Test
+    fun `totals read as the nearest whole minute, at least one`() {
+        assertEquals(0, totalMinutes(0))
+        assertEquals(0, totalMinutes(-5))
+        assertEquals(1, totalMinutes(12))
+        assertEquals(1, totalMinutes(89))
+        assertEquals(2, totalMinutes(90))
+        assertEquals(3, totalMinutes(178))
+        assertEquals(43, totalMinutes(43 * 60 + 29))
+    }
+
+    @Test
     fun `player colours come from the artwork, darkened, or fall back`() {
         assertEquals(DefaultPlayerColors, playerColorsFrom(null, null))
         val red = playerColorsFrom(0xFFFF0000.toInt(), null)
