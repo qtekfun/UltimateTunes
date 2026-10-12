@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Every contract operation is routed: until its task lands it answers "not implemented"."""
+"""Every contract operation is routed.
+
+Until its task lands an operation answers "not implemented" (error 0 / HTTP 501); once a stream
+implements it, it may answer anything valid for its contract, but never "unknown endpoint" and
+never a framework 404/405. Streams therefore never edit this shared file.
+"""
 
 import re
 from collections.abc import Iterator
@@ -65,27 +70,32 @@ def test_opensubsonic_stubs(client: TestClient, method: str, path: str, fmt: str
             r = client.get(url, params={"f": fmt, "apiKey": "utk_x"})
         else:
             r = client.post(url, data={"f": fmt, "apiKey": "utk_x"})
-        assert r.status_code == 501
-        if fmt == "json":
-            assert r.json()["subsonic-response"]["error"]["code"] == 0
-        else:
-            assert '<error code="0"' in r.text
+        assert r.status_code not in (404, 405) or "subsonic-response" in r.text
+        assert "Unknown endpoint" not in r.text
+        if r.status_code == 501:
+            if fmt == "json":
+                assert r.json()["subsonic-response"]["error"]["code"] == 0
+            else:
+                assert '<error code="0"' in r.text
 
 
 @pytest.mark.parametrize("name", ["stream", "download", "getCoverArt"])
 def test_binary_stubs_answer_head(client: TestClient, name: str) -> None:
     r = client.head(f"/rest/{name}", params={"apiKey": "utk_x", "id": "yt:Qx7Lm2pZ0aB"})
-    assert r.status_code == 501
+    assert r.status_code != 405
     assert r.content == b""
 
 
 @pytest.mark.parametrize(("method", "path"), operations("ut-v1.yaml"))
 def test_ut_v1_stubs(client: TestClient, method: str, path: str) -> None:
     r = client.request(method, path, headers={"X-Api-Key": "utk_x"})
-    assert r.status_code == 501
-    assert r.headers["content-type"] == "application/problem+json"
-    assert r.json()["code"] == "not_implemented"
-    assert r.json()["instance"] == path
+    assert r.status_code != 405
+    if r.status_code == 404:  # an implemented route may say "not_found" for the fake id
+        assert r.json()["code"] == "not_found"
+    if r.status_code == 501:
+        assert r.headers["content-type"] == "application/problem+json"
+        assert r.json()["code"] == "not_implemented"
+        assert r.json()["instance"] == path
 
 
 @pytest.mark.parametrize(("method", "path"), operations("internal-worker.yaml"))
@@ -94,8 +104,11 @@ def test_internal_stubs_need_the_worker_token(client: TestClient, method: str, p
     wrong = client.request(method, path, headers={"Authorization": f"Bearer {TOKEN}x"})
     assert wrong.status_code == 401
     r = client.request(method, path, headers={"Authorization": f"Bearer {TOKEN}"})
-    assert r.status_code == 501
-    assert r.json()["code"] == "not_implemented"
+    assert r.status_code not in (401, 405)
+    if r.status_code == 404:
+        assert r.json()["code"] == "not_found"
+    if r.status_code == 501:
+        assert r.json()["code"] == "not_implemented"
 
 
 def test_internal_api_is_closed_without_a_configured_token(settings: Settings) -> None:
