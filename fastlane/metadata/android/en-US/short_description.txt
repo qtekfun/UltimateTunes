@@ -1,1 +1,1 @@
-Your own music server, with an Apple Music-style player that caches every song
+Player for your own music server: search any song, play it, keep it

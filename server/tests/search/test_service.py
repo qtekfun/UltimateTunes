@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,8 @@ from tests.search.conftest import (
     TIDEWATER,
     USER,
 )
+from ultimatetunes.core.clock import FakeClock
+from ultimatetunes.core.ratelimit import Limit, SqliteRateLimiter
 from ultimatetunes.db import Database
 from ultimatetunes.search.catalog import (
     CatalogAlbumRef,
@@ -249,3 +252,42 @@ async def test_duplicate_catalog_results_show_once(library: Database) -> None:
 
     _, _, songs = ids(await search(library, "bloom", Twice()))
     assert songs == ["yt:Hm3Vx8Nq2Lp", "yt:Tz9Kd4Wb7Rc[pending]", "yt:Pa6Ye1Uo3Gs"]
+
+
+async def test_each_user_has_a_bucket_of_external_searches(
+    library: Database, caplog: pytest.LogCaptureFixture
+) -> None:
+    """T22: past the per-user limit, search answers from the library only (no error), and the
+    other users keep their own budget."""
+    clock = FakeClock()
+    limiter = SqliteRateLimiter(library, clock)
+    settings = SearchSettings(search_user_rate_per_s=0.1, search_user_burst=2)
+    service = SearchService(library, FakeMusicCatalog(), settings, limiter)
+
+    async def songs(user: str | None) -> list[str]:
+        found = await service.search(user, "lanterns", artists=ALL, albums=ALL, songs=ALL)
+        return ids(found)[2]
+
+    with_external = await songs(USER)
+    assert any(s.startswith("yt:") for s in with_external)
+    assert await songs(USER) == with_external
+    with caplog.at_level(logging.INFO):
+        assert await songs(USER) == [LIGHTHOUSE, LOW_TIDE, TIDEWATER]
+    assert "external search limit" in caplog.text
+    assert await songs("another-user") == with_external
+    # No user: one shared bucket, never a bypass.
+    assert await songs(None) == with_external
+    assert await songs(None) == with_external
+    assert await songs(None) == [LIGHTHOUSE, LOW_TIDE, TIDEWATER]
+    clock.advance(10)
+    assert await songs(USER) == with_external
+    # The empty query never reaches YouTube Music and costs nothing.
+    clock.advance(10)
+    await service.search(USER, "", artists=ALL, albums=ALL, songs=ALL)
+    assert limiter.hit(f"search:user:{USER}", Limit(0.1, 2)).allowed
+
+
+def test_the_service_of_the_app_uses_the_shared_rate_limiter(library: Database) -> None:
+    services = SimpleNamespace(db=library, catalog=FakeMusicCatalog(), rate_limiter=object())
+    service = SearchService.of(services)  # type: ignore[arg-type]
+    assert service._limiter is services.rate_limiter

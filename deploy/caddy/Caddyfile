@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# EXAMPLE ONLY (PLAN T22): Caddy on the host in front of the api published on 127.0.0.1:8044
+# (server/compose.yaml). Nothing here is deployed by the project. Read deploy/README.md first:
+# exposing the server to the Internet is the admin's decision and has its own checklist
+# (SECURITY.md).
+#
+# Replace music.example.org with your name; Caddy gets and renews the certificate itself
+# (ports 80 and 443 must reach it). Then set in the server's .env:
+#   UT_TRUSTED_PROXIES=<the Docker bridge gateway the api sees, see deploy/README.md>
+
+{
+	# Caddy is the edge: it believes no X-Forwarded-For from its own clients and sends the
+	# peer it saw (the default without `trusted_proxies`).
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+		max_header_size 16KB
+	}
+}
+
+music.example.org {
+	# HTTPS only: Caddy redirects HTTP to HTTPS by itself. HSTS for a year; add `preload` only
+	# once you are sure every subdomain serves HTTPS.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# The admin panel stays LAN/Tailscale-only (SPEC section 7). The api checks it too
+	# (UT_ADMIN_ALLOWED_NETWORKS), this refuses it one step earlier. Remove only if you opted in.
+	@admin_from_outside {
+		path /admin /admin/*
+		not remote_ip private_ranges 100.64.0.0/10 fd7a:115c:a1e0::/48
+	}
+	respond @admin_from_outside 403
+
+	# The internal worker API is not even on this port; never route it.
+	respond /internal/* 404
+
+	# Request limits. The largest legitimate body is a playlist import file (1 MiB).
+	request_body {
+		max_size 2MB
+	}
+
+	# Per-IP request rate limits need the third-party caddy-ratelimit module; the api already
+	# limits authentication per IP and key with lockout, and external searches per user.
+
+	reverse_proxy 127.0.0.1:8044 {
+		# Streams of long tracks: no response timeout, but give up on a dead upstream fast.
+		transport http {
+			dial_timeout 5s
+		}
+	}
+
+	log {
+		output stdout
+		# Never log the query string: OpenSubsonic clients may send `apiKey` there.
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete apiKey
+					delete p
+					delete t
+					delete s
+				}
+				request>headers>X-Api-Key delete
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+			}
+		}
+	}
+}

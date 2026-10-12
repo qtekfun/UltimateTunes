@@ -383,7 +383,9 @@ def build_worker(settings: Settings, worker: WorkerSettings, client: httpx.Async
     if settings.fake_youtube:
         from ultimatetunes.worker.fake import FakeDownloader  # noqa: PLC0415
 
-        downloader = FakeDownloader(staging)
+        downloader = FakeDownloader(
+            staging, chunks=worker.fake_download_chunks, delay_s=worker.fake_download_delay_s
+        )
     else:
         from ultimatetunes.worker.ytdlp import YtDlpDownloader  # noqa: PLC0415
         from ultimatetunes.worker.ytdlp_runtime import YtDlpRuntime  # noqa: PLC0415

@@ -23,8 +23,8 @@ YTDLP_KEY_FINGERPRINT = YTDLP_SIGNER.replace(" ", "")
 
 
 class WorkerSettings(AreaSettings):
-    # The api's internal worker API (internal Docker network, single listener in v1).
-    api_url: str = "http://api:8044"
+    # The api's internal worker API: its own listener on the internal Docker network (T22).
+    api_url: str = "http://api:8045"
     # Stable id of this worker process; the hostname and pid when unset.
     worker_id: str | None = None
     # Lease asked for at claim; heartbeats come every third of it (contract).
@@ -41,6 +41,10 @@ class WorkerSettings(AreaSettings):
     # the maximum while blocks continue (spike T03c).
     blocked_pause_s: float = Field(default=1800.0, ge=0)
     blocked_pause_max_s: float = Field(default=14400.0, ge=0)
+    # Pace of the fake downloader (`UT_FAKE_YOUTUBE`, test stack only): the end-to-end suite
+    # (PLAN T20) slows it down so a stream is seen growing and a worker can be killed mid-download.
+    fake_download_chunks: int = Field(default=8, ge=1, le=1000)
+    fake_download_delay_s: float = Field(default=0.05, ge=0, le=60)
 
     # yt-dlp (spike T03c).
     ytdlp_dir: Path = Path("/opt/ytdlp")

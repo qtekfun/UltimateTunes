@@ -7,6 +7,12 @@ API (`/internal/v1`) and the admin panel (`/admin`). `TunesError`s raised by `/u
 `/internal/v1` handlers become RFC 9457 problems here (OpenSubsonic renders its own envelope in
 `subsonic/router.py`); request validation errors become `invalid_parameter`.
 
+The app holds every route; `listeners.py` serves it on two ports and keeps `/internal/v1` off
+the client port (T22). The outermost middleware (`core/forwarded.py`) settles the client
+address from `UT_TRUSTED_PROXIES`; the next ones cap request bodies and add `nosniff`
+(`core/bodylimit.py`). The lifespan runs the housekeeping of the cache and the rate limiter
+(`core/housekeeping.py`).
+
 Areas extend the app without editing this file: each module in `AREAS` exposes
 `install(app, services)`, called once, in order, after the shared routers are mounted. That is
 where an area adds its own routes, middleware or app state (the admin panel mounts `/admin` and
@@ -28,6 +34,9 @@ from ultimatetunes import __version__, health
 from ultimatetunes.admin import web as admin_web
 from ultimatetunes.auth import web as auth_web
 from ultimatetunes.canary import web as canary_web
+from ultimatetunes.core.bodylimit import BodyLimit, NoSniff
+from ultimatetunes.core.forwarded import ClientAddress
+from ultimatetunes.core.housekeeping import Housekeeping, with_housekeeping
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.errors import InternalError, InvalidParameter, TunesError
 from ultimatetunes.internal_api import build_internal_router
@@ -84,6 +93,20 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.include_router(build_internal_router())
     for area in AREAS:
         area.install(app, svc)
+    app.add_middleware(NoSniff)
+    app.add_middleware(BodyLimit, max_bytes=settings.max_body_bytes)
+    # Outermost (added last): every layer below sees the real client address (T22).
+    app.add_middleware(ClientAddress, proxies=settings.proxy_networks)
+    if settings.housekeeping_interval_s > 0:
+        housekeeping = Housekeeping(
+            svc.cache,
+            svc.rate_limiter,
+            max_entries=settings.cache_max_entries,
+            max_bytes=settings.cache_max_bytes,
+        )
+        app.router.lifespan_context = with_housekeeping(
+            app.router.lifespan_context, housekeeping, settings.housekeeping_interval_s
+        )
     app.add_exception_handler(TunesError, _tunes_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(Exception, _unexpected_error)

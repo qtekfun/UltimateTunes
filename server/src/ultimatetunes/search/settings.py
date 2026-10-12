@@ -27,3 +27,7 @@ class SearchSettings(AreaSettings):
     # Circuit breaker after a 429/403/gated answer: open this long, doubling up to the cap.
     ytm_breaker_base_s: float = Field(default=300.0, gt=0)
     ytm_breaker_max_s: float = Field(default=3600.0, gt=0)
+    # Per-user bucket of external searches (T22): past it, search answers from the library
+    # only until tokens refill, so one user cannot spend the shared YouTube Music budget.
+    search_user_rate_per_s: float = Field(default=0.2, gt=0)
+    search_user_burst: float = Field(default=20.0, ge=1)

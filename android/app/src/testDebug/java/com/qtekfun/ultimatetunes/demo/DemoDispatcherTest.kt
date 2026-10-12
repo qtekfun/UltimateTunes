@@ -195,7 +195,15 @@ class DemoDispatcherTest {
         }
         val stream = checkNotNull(api.streamUrl(album.song.first().id))
         client.newCall(Request.Builder().url(stream).build()).execute().use {
-            assertEquals("RIFF", it.body.bytes().copyOfRange(0, 4).decodeToString())
+            val song = album.song.first()
+            val flac = it.body.bytes()
+            assertEquals("fLaC", flac.copyOfRange(0, 4).decodeToString())
+            assertEquals(song.size, flac.size.toLong())
+            // As long as the song says: STREAMINFO's sample rate (20 bits) and total samples.
+            val info = java.nio.ByteBuffer.wrap(flac, 18, 8).long
+            val rate = (info ushr 44).toInt()
+            val samples = info and 0xF_FFFF_FFFFL
+            assertEquals(song.duration, (samples / rate).toInt())
         }
     }
 

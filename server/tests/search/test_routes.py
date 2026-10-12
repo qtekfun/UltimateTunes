@@ -23,9 +23,11 @@ from tests.search.conftest import (
 from ultimatetunes.app import create_app
 from ultimatetunes.core.authn import Principal
 from ultimatetunes.core.clock import FakeClock
+from ultimatetunes.core.ratelimit import Limit
 from ultimatetunes.core.services import build_services
 from ultimatetunes.db import migrate
 from ultimatetunes.search.fake import FakeMusicCatalog
+from ultimatetunes.search.service import search_settings
 from ultimatetunes.settings import Settings
 
 OPENAPI = Path(__file__).resolve().parents[3] / "contracts" / "openapi"
@@ -260,3 +262,21 @@ def test_ut_v1_search_validation(client: TestClient, params: dict[str, object]) 
     r = client.get("/ut/v1/search", params=params)
     assert r.status_code == 400
     assert r.json()["code"] == "invalid_parameter"
+
+
+def test_ut_v1_search_spends_the_callers_bucket(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T22: the app's own route charges the caller's bucket of external searches."""
+    monkeypatch.setenv("UT_SEARCH_USER_BURST", "1")
+    monkeypatch.setenv("UT_SEARCH_USER_RATE_PER_S", "0.001")
+    search_settings.cache_clear()
+    try:
+        first = client.get("/ut/v1/search", params={"q": "bloom"}).json()
+        assert any(a["isExternal"] for a in first["albums"])
+        second = client.get("/ut/v1/search", params={"q": "bloom"}).json()
+        assert not any(a["isExternal"] for a in second["albums"])
+        services = client.app.state.services  # type: ignore[attr-defined]
+        assert not services.rate_limiter.hit(f"search:user:{USER}", Limit(0.001, 1)).allowed
+    finally:
+        search_settings.cache_clear()
