@@ -49,14 +49,139 @@
     <string name="station_up_next">Up Next</string>
     <string name="station_description">%1$s, station</string>
 
-    <!-- Library and Search (filled by PLAN T13) -->
-    <string name="library_placeholder">Your artists, albums, playlists and downloads will appear here.</string>
-    <string name="search_placeholder">Search your library and YouTube Music.</string>
+    <!-- Library -->
+    <string name="library_playlists">Playlists</string>
+    <string name="library_artists">Artists</string>
+    <string name="library_albums">Albums</string>
+    <string name="library_favourites">Favourites</string>
+    <string name="library_downloads">Downloads</string>
+    <string name="library_empty">Nothing in your library yet. Search for music and play it to keep it here.</string>
+    <string name="favourites_empty">No favourites yet. Tap the heart on an album to add it.</string>
+    <string name="downloads_empty">No downloads yet. Songs you download for offline listening will appear here.</string>
+    <string name="favourite_add">Add to Favourites</string>
+    <string name="favourite_remove">Remove from Favourites</string>
+    <string name="album_external">On YouTube Music, not in your library yet. Playing a song keeps it.</string>
+    <string name="artist_albums">Albums</string>
+    <string name="artist_no_albums">No albums by this artist yet.</string>
+    <string name="artist_external">On YouTube Music, not in your library yet.</string>
+    <string name="go_to_album">Go to Album</string>
+    <string name="play">Play</string>
+    <string name="shuffle">Shuffle</string>
+    <plurals name="song_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="minute_count">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+
+    <!-- Playlists -->
+    <string name="playlist_new">New Playlist</string>
+    <string name="playlist_name">Playlist name</string>
+    <string name="playlist_create">Create</string>
+    <string name="playlist_rename">Rename</string>
+    <string name="playlist_delete">Delete</string>
+    <string name="playlist_delete_title">Delete playlist?</string>
+    <string name="playlist_delete_message">“%1$s” will be deleted on your server and on all your devices. The songs stay in your library.</string>
+    <string name="playlist_empty">This playlist is empty.</string>
+    <string name="playlists_empty">No playlists yet. Create one or import one.</string>
+    <string name="playlist_remove_song">Remove %1$s from playlist</string>
+    <string name="more_options">More options</string>
+
+    <!-- Search -->
+    <string name="search_field">Artists, albums, songs</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_hint">Search your library and YouTube Music.</string>
+    <string name="search_no_results">No results.</string>
+    <string name="search_artists">Artists</string>
+    <string name="search_albums">Albums</string>
+    <string name="search_songs">Songs</string>
+
+    <!-- Lyrics -->
+    <string name="lyrics_none">No lyrics for this song.</string>
+    <string name="lyrics_seek">Play from this line</string>
+    <string name="player_show_lyrics">Show lyrics</string>
+    <string name="player_hide_lyrics">Hide lyrics</string>
+
+    <!-- Import -->
+    <string name="import_title">Import Playlist</string>
+    <string name="import_intro">Bring a playlist into your library. Every song is matched on YouTube Music and kept on your server.</string>
+    <string name="import_name">Playlist name (optional)</string>
+    <string name="import_from_link">From a YouTube Music link</string>
+    <string name="import_link">Playlist link</string>
+    <string name="import_link_hint">https://music.youtube.com/playlist?list=…</string>
+    <string name="import_button">Import</string>
+    <string name="import_from_file">From a file</string>
+    <string name="import_file_help">For Spotify playlists, export them first: a CSV from Exportify, a playlist file of Spotify\'s “Download your data”, or your own CSV with title and artist columns. Up to 1 MB.</string>
+    <string name="import_choose_file">Choose File</string>
+    <string name="import_file_button">Import File</string>
+    <string name="import_format_csv">CSV (title, artist)</string>
+    <string name="import_format_exportify">Exportify CSV</string>
+    <string name="import_format_spotify_json">Spotify data export (JSON)</string>
+    <string name="import_source_ytmusic">YouTube Music</string>
+    <string name="import_report">Match Report</string>
+    <string name="import_untitled">Imported playlist</string>
+    <string name="import_counts">Matched: %1$d/%2$d · Not found: %3$d</string>
+    <string name="import_open_playlist">Open Playlist</string>
+    <string name="import_matched_as">Matched: %1$s by %2$s</string>
+    <string name="import_recent">Recent Imports</string>
+    <string name="import_none">No imports yet.</string>
+    <string name="import_state_queued">Waiting to start…</string>
+    <string name="import_state_reading">Reading the playlist…</string>
+    <string name="import_state_matching">Matching songs…</string>
+    <string name="import_state_done">Done</string>
+    <string name="import_state_failed">Failed</string>
+    <string name="import_item_pending">Pending</string>
+    <string name="import_item_matched">Matched</string>
+    <string name="import_item_not_found">Not found</string>
+    <string name="import_item_failed">Failed</string>
+    <string name="import_error_spotify_url">Spotify links can\'t be imported. Export the playlist as a file (Exportify or Spotify\'s data download) and choose it below.</string>
+    <string name="import_error_unsupported_url">That isn\'t a YouTube Music or YouTube playlist link.</string>
+    <string name="import_error_too_large">That file is too large: up to 1 MB and 5000 songs.</string>
+    <string name="import_error_invalid_file">That file couldn\'t be read in the chosen format.</string>
+    <string name="import_error_disabled">Your server has this kind of import turned off.</string>
+    <string name="import_error_rate_limited">Too many imports at once. Try again in a moment.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_server">Server</string>
+    <string name="settings_address">Address</string>
+    <string name="settings_server_name">Server</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_account_admin">%1$s (admin)</string>
+    <string name="settings_disconnect">Disconnect</string>
+    <string name="settings_disconnect_title">Disconnect this device?</string>
+    <string name="settings_disconnect_message">You\'ll need an API key to connect again. Your key stays valid until you revoke it.</string>
+    <string name="settings_keys">Devices and Keys</string>
+    <string name="settings_key_this_device">This device</string>
+    <string name="settings_key_created">created %1$s</string>
+    <string name="settings_key_last_used">last used %1$s</string>
+    <string name="settings_key_never_used">never used</string>
+    <string name="settings_key_revoked">revoked</string>
+    <string name="settings_revoke">Revoke</string>
+    <string name="settings_revoke_title">Revoke this key?</string>
+    <string name="settings_revoke_message">“%1$s” will stop working at once and will have to connect with a new key.</string>
+    <string name="settings_playback">Playback and Offline</string>
+    <string name="settings_cache_size">Cache size</string>
+    <string name="settings_cache_help">Every song you play is kept on this device up to this size; the oldest go first. Downloads don\'t count.</string>
+    <string name="size_mb">%1$d MB</string>
+    <string name="size_gb">%1$d GB</string>
+    <string name="settings_offline_only">Offline mode</string>
+    <string name="settings_offline_only_help">Show only music cached or downloaded on this device.</string>
+    <string name="settings_wifi_only">Download over Wi-Fi only</string>
+    <string name="settings_wifi_only_help">Offline downloads wait for a Wi-Fi connection.</string>
+    <string name="settings_quality_info">Songs play in their original format (Opus or AAC), never re-encoded.</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_license">Free software under the GNU GPL, version 3 or later. No ads, no tracking: it talks only to your server.</string>
 
     <!-- Common -->
     <string name="loading">Loading</string>
     <string name="connect_again">Connect Again</string>
     <string name="retry">Try Again</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
     <string name="back">Back</string>
     <string name="error_network">Can\'t reach your server. Check your connection.</string>
     <string name="error_unauthorized">Your server refused this device\'s key. Connect again.</string>

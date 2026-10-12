@@ -3,14 +3,24 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
+import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
+import com.qtekfun.ultimatetunes.core.api.ServerConfig
+import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
+@ExtendWith(MainDispatcherExtension::class)
 class PlayerViewModelTest {
     private fun track(n: Int, duration: Int? = 200) = TrackTile(
         id = SongId("song-$n"),
@@ -23,8 +33,33 @@ class PlayerViewModelTest {
     )
 
     private val queue = listOf(track(0), track(1), track(2))
-    private val viewModel = PlayerViewModel()
+    private val config =
+        ServerConfig(
+            "https://music.example.net/".toHttpUrl(),
+            ApiKeySecret(FakeTunesServer.API_KEY)
+        )
+    private val configSource = InMemoryServerConfigSource(config)
+    private val gate = ConnectionGate(configSource)
+    private lateinit var viewModel: PlayerViewModel
     private val state get() = viewModel.state.value
+
+    @BeforeEach
+    fun setUp() {
+        viewModel = PlayerViewModel(gate)
+    }
+
+    @Test
+    fun `going back to Connect drops the queue, and a new connection starts empty`() {
+        viewModel.play(queue, startIndex = 2)
+
+        gate.disconnect()
+        assertNull(state.current)
+        assertEquals(emptyList<TrackTile>(), state.queue)
+
+        configSource.set(config)
+        viewModel.play(queue)
+        assertEquals(track(0), state.current)
+    }
 
     @Test
     fun `nothing plays at first`() {
