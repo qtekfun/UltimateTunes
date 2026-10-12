@@ -42,17 +42,16 @@ class ExportWorker(context: Context, params: WorkerParameters) :
     private val notifications = NotificationManagerCompat.from(applicationContext)
 
     override suspend fun doWork(): Result {
-        val path = inputData.getString(KEY_REQUEST) ?: return Result.failure()
         val manager = EntryPointAccessors
             .fromApplication(applicationContext, Dependencies::class.java)
             .exports()
         createChannel()
         showProgress(0, 0)
-        val report = withContext(Dispatchers.IO) {
-            manager.run(File(path), ::showProgress)
-        } ?: return Result.failure()
-        notify(SUMMARY_ID, summary(report))
-        return Result.success()
+        val report = inputData.getString(KEY_REQUEST)?.let { path ->
+            withContext(Dispatchers.IO) { manager.run(File(path), ::showProgress) }
+        }
+        report?.let { notify(SUMMARY_ID, summary(it)) }
+        return if (report == null) Result.failure() else Result.success()
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo = foregroundInfo(progress(0, 0))
@@ -71,7 +70,7 @@ class ExportWorker(context: Context, params: WorkerParameters) :
     private fun showProgress(done: Int, total: Int) {
         try {
             setForegroundAsync(foregroundInfo(progress(done, total)))
-        } catch (refused: IllegalStateException) {
+        } catch (ignored: IllegalStateException) {
             // Runs without the notification.
         }
     }

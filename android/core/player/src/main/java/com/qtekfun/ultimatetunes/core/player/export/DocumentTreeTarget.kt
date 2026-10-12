@@ -77,13 +77,15 @@ class DocumentTreeTarget(private val resolver: ContentResolver, private val tree
         try {
             block()
         } catch (denied: SecurityException) {
-            throw IOException(denied)
+            failed(denied)
         } catch (invalid: IllegalArgumentException) {
-            throw IOException(invalid)
+            failed(invalid)
         } catch (invalid: IllegalStateException) {
-            throw IOException(invalid)
+            failed(invalid)
         }
     }
+
+    private fun failed(cause: RuntimeException): Nothing = throw IOException(cause)
 
     private companion object {
         const val OCTET_STREAM = "application/octet-stream"

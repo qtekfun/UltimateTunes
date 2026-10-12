@@ -7,6 +7,7 @@ package com.qtekfun.ultimatetunes.core.player.export
 
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceInputStream
 import androidx.media3.datasource.DataSpec
@@ -25,16 +26,19 @@ import java.io.InputStream
  */
 class CacheExportSource(private val caches: MediaCaches) : ExportSource {
     override fun open(id: SongId): InputStream? {
-        if (id.isExternal) return null
         val key = CachePolicy.cacheKey(id)
-        val cache = listOf(caches.downloads, caches.play).firstOrNull { isComplete(it, key) }
-            ?: return null
+        val cache = if (id.isExternal) {
+            null
+        } else {
+            listOf(caches.downloads, caches.play).firstOrNull { isComplete(it, key) }
+        }
         // No upstream: anything not cached fails with an IOException.
-        val source = CacheDataSource(cache, null)
-        val spec = DataSpec.Builder().setUri(Uri.parse("$SCHEME:${Uri.encode(key)}"))
-            .setKey(key)
-            .build()
-        return DataSourceInputStream(source, spec)
+        return cache?.let {
+            val spec = DataSpec.Builder().setUri("$SCHEME:${Uri.encode(key)}".toUri())
+                .setKey(key)
+                .build()
+            DataSourceInputStream(CacheDataSource(it, null), spec)
+        }
     }
 
     private fun isComplete(cache: Cache, key: String): Boolean {

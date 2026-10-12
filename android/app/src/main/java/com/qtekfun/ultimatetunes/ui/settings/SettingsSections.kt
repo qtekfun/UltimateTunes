@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
@@ -181,7 +182,7 @@ internal fun ExportSection(folder: String?, onPicked: (String?) -> Unit) {
             folder?.let(::folderName) ?: stringResource(R.string.settings_export_folder_none)
         )
         TextButton(
-            onClick = { launcher.launch(folder?.let(Uri::parse)) },
+            onClick = { launcher.launch(folder?.toUri()) },
             modifier = Modifier
                 .padding(horizontal = Dimens.SpaceS)
                 .testTag(SETTINGS_EXPORT_FOLDER_TAG)
@@ -191,7 +192,7 @@ internal fun ExportSection(folder: String?, onPicked: (String?) -> Unit) {
 
 /** "Music/Exports" for a tree URI like `content://…/tree/primary%3AMusic%2FExports`. */
 internal fun folderName(uri: String): String {
-    val document = Uri.parse(uri).lastPathSegment ?: return uri
+    val document = uri.toUri().lastPathSegment ?: return uri
     return document.substringAfter(':', document).ifEmpty { document }
 }
 

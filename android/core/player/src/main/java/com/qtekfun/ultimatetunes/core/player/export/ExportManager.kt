@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.core.player.export
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -91,19 +92,10 @@ class ExportManager @Inject constructor(
         requestFile: File,
         onProgress: (done: Int, total: Int) -> Unit
     ): ExportReport? {
-        // Only requests this class wrote, in its own folder.
-        if (requestFile.parentFile?.canonicalPath != folder.canonicalPath) return null
-        val request = try {
-            JSON.decodeFromString<ExportRequest>(requestFile.readText())
-        } catch (ignored: IOException) {
-            return null
-        } catch (ignored: SerializationException) {
-            requestFile.delete()
-            return null
-        }
+        val request = read(requestFile) ?: return null
         val exporter = Exporter(
             CacheExportSource(caches),
-            DocumentTreeTarget(context.contentResolver, Uri.parse(request.tree))
+            DocumentTreeTarget(context.contentResolver, request.tree.toUri())
         )
         val report = exporter.export(
             tracks = request.tracks,
@@ -115,6 +107,19 @@ class ExportManager @Inject constructor(
         requestFile.delete()
         mutableStatus.value = ExportStatus.Finished(report)
         return report
+    }
+
+    /** The request in [file], only if this class wrote it (its own folder) and it is readable. */
+    private fun read(file: File): ExportRequest? {
+        if (file.parentFile?.canonicalPath != folder.canonicalPath) return null
+        return try {
+            JSON.decodeFromString<ExportRequest>(file.readText())
+        } catch (ignored: IOException) {
+            null
+        } catch (ignored: SerializationException) {
+            file.delete()
+            null
+        }
     }
 
     private companion object {

@@ -82,14 +82,19 @@ object PlayerModule {
         caches: MediaCaches
     ): MediaDataSources = MediaDataSources(client, caches)
 
+    /** DataStore allows one instance per file and process: like the caches, once per process. */
     @Provides
     @Singleton
     fun offlineSelection(@ApplicationContext context: Context): OfflineSelectionStore =
-        DataStoreOfflineSelection(
-            PreferenceDataStoreFactory.create {
-                context.preferencesDataStoreFile("offline_selection")
-            }
-        )
+        synchronized(this) {
+            processSelection ?: DataStoreOfflineSelection(
+                PreferenceDataStoreFactory.create {
+                    context.preferencesDataStoreFile("offline_selection")
+                }
+            ).also { processSelection = it }
+        }
+
+    private var processSelection: OfflineSelectionStore? = null
 
     @Provides
     fun offlineSyncer(

@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.ui.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.export.ExportManager
@@ -50,7 +51,7 @@ class SafExports @Inject constructor(
         val resolver = context.contentResolver
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         try {
-            resolver.takePersistableUriPermission(Uri.parse(uri), flags)
+            resolver.takePersistableUriPermission(uri.toUri(), flags)
         } catch (ignored: SecurityException) {
             // Not a grant this app can keep: nothing changes.
             return
@@ -63,7 +64,7 @@ class SafExports @Inject constructor(
     }
 
     override fun start(folder: String, tracks: List<PlayableTrack>, aliases: Map<SongId, SongId>) =
-        manager.start(Uri.parse(folder), tracks, aliases)
+        manager.start(folder.toUri(), tracks, aliases)
 
     override fun dismiss() = manager.dismiss()
 

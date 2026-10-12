@@ -34,7 +34,12 @@ interface PlaybackModule {
 
     @Binds
     fun playerController(connection: PlaybackConnection): PlayerController
+}
 
+/** The offline downloads the screens change (UI tests replace it with one in memory). */
+@Module
+@InstallIn(SingletonComponent::class)
+interface OfflineControlsModule {
     @Binds
     fun offlineControls(controls: ManagerOfflineControls): OfflineControls
 }

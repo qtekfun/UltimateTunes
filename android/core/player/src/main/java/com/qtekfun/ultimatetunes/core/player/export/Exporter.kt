@@ -83,26 +83,36 @@ class Exporter(private val source: ExportSource, private val target: ExportTarge
 
     private fun exportOne(track: PlayableTrack, aliases: Map<SongId, SongId>): SkipReason? {
         val id = if (track.id.isExternal) aliases[track.id] else track.id
-        if (id == null) return SkipReason.NOT_IN_LIBRARY
-        val stream = source.open(id) ?: return SkipReason.NOT_ON_PHONE
-        return try {
-            BufferedInputStream(stream).use { input ->
-                input.mark(AudioFormats.HEADER_BYTES)
-                val header = input.readNBytesCompat(AudioFormats.HEADER_BYTES)
-                input.reset()
-                val extension =
-                    AudioFormats.extensionOf(header) ?: return SkipReason.UNKNOWN_FORMAT
-                try {
-                    target.write(ExportNaming.pathOf(track, extension), input)
-                } catch (ignored: IOException) {
-                    return SkipReason.WRITE_FAILED
-                }
-                null
-            }
-        } catch (ignored: IOException) {
-            // The cached file could not be read after all.
-            SkipReason.NOT_ON_PHONE
+        val stream = id?.let(source::open)
+        return when {
+            id == null -> SkipReason.NOT_IN_LIBRARY
+            stream == null -> SkipReason.NOT_ON_PHONE
+            else -> copy(track, stream)
         }
+    }
+
+    private fun copy(track: PlayableTrack, stream: InputStream): SkipReason? = try {
+        BufferedInputStream(stream).use { input ->
+            input.mark(AudioFormats.HEADER_BYTES)
+            val header = input.readNBytesCompat(AudioFormats.HEADER_BYTES)
+            input.reset()
+            val extension = AudioFormats.extensionOf(header)
+            if (extension == null) {
+                SkipReason.UNKNOWN_FORMAT
+            } else {
+                write(ExportNaming.pathOf(track, extension), input)
+            }
+        }
+    } catch (ignored: IOException) {
+        // The cached file could not be read after all.
+        SkipReason.NOT_ON_PHONE
+    }
+
+    private fun write(path: List<String>, input: InputStream): SkipReason? = try {
+        target.write(path, input)
+        null
+    } catch (ignored: IOException) {
+        SkipReason.WRITE_FAILED
     }
 
     /** Up to [count] bytes (fewer only at the end of the stream); minSdk 26 has no readNBytes. */

@@ -29,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -211,28 +210,24 @@ fun ExportFolderPicker(needsFolder: Boolean, onPicked: (String?) -> Unit) {
 /** Shows the result of the last action once, in [host]. */
 @Composable
 fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () -> Unit) {
-    val context = LocalContext.current
-    val message = event?.let {
-        when (it) {
-            is ActionEvent.AddedToPlaylist -> context.resources.getQuantityString(
-                R.plurals.event_added_to_playlist,
-                it.count,
-                it.count,
-                it.playlist
-            )
+    val message = when (event) {
+        null -> null
 
-            ActionEvent.Downloading -> context.getString(R.string.event_downloading)
+        is ActionEvent.AddedToPlaylist -> pluralStringResource(
+            R.plurals.event_added_to_playlist,
+            event.count,
+            event.count,
+            event.playlist
+        )
 
-            ActionEvent.DownloadRemoved -> context.getString(R.string.event_download_removed)
+        ActionEvent.Downloading -> stringResource(R.string.event_downloading)
 
-            is ActionEvent.ExportStarted -> context.resources.getQuantityString(
-                R.plurals.event_export_started,
-                it.count,
-                it.count
-            )
+        ActionEvent.DownloadRemoved -> stringResource(R.string.event_download_removed)
 
-            is ActionEvent.Failed -> context.getString(it.error.messageRes())
-        }
+        is ActionEvent.ExportStarted ->
+            pluralStringResource(R.plurals.event_export_started, event.count, event.count)
+
+        is ActionEvent.Failed -> stringResource(event.error.messageRes())
     }
     LaunchedEffect(event) {
         if (message != null) {

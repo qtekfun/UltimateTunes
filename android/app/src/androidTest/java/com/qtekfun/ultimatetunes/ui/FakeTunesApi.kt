@@ -208,7 +208,9 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         val i = playlists.indexOfFirst { it.id == id }
         if (i >= 0) {
             val p = playlists[i]
-            val entries = p.entry.filterIndexed { index, _ -> index !in songIndexesToRemove }
+            val entries = p.entry.filterIndexed { index, _ -> index !in songIndexesToRemove } +
+                songIdsToAdd.mapNotNull { added -> ALL_TRACKS.firstOrNull { it.id == added } }
+                    .map { it.toSong() }
             playlists[i] = p.copy(name = name ?: p.name, entry = entries, songCount = entries.size)
         }
     }
@@ -220,19 +222,26 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         songIds: List<SongId>,
         albumIds: List<AlbumId>,
         artistIds: List<ArtistId>
-    ): TunesResult<Unit> = configured { starredAlbums += albumIds }
+    ): TunesResult<Unit> = configured {
+        starredAlbums += albumIds
+        starredSongs += songIds
+    }
 
     override suspend fun unstar(
         songIds: List<SongId>,
         albumIds: List<AlbumId>,
         artistIds: List<ArtistId>
-    ): TunesResult<Unit> = configured { starredAlbums -= albumIds.toSet() }
+    ): TunesResult<Unit> = configured {
+        starredAlbums -= albumIds.toSet()
+        starredSongs -= songIds.toSet()
+    }
 
     override suspend fun starred(): TunesResult<Starred> = configured {
         Starred(
             album = listOf(HARBOUR, SALT, ORBIT, DUSK).filter { it.id in starredAlbums }
                 .map { it.toAlbum() },
-            song = listOf(KEEPER.toSong())
+            song = listOf(KEEPER.toSong()) +
+                ALL_TRACKS.filter { it.id in starredSongs && it != KEEPER }.map { it.toSong() }
         )
     }
 
@@ -290,6 +299,14 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         )
     )
     private val starredAlbums = mutableSetOf<AlbumId>()
+    private val starredSongs = mutableSetOf<SongId>()
+
+    /** What songs playlists got through `updatePlaylist` (UI tests read it). */
+    fun playlistSongs(name: String): List<String> =
+        playlists.firstOrNull { it.name == name }?.entry.orEmpty().map { it.title }
+
+    /** Songs starred through the app. */
+    val starredSongIds: Set<SongId> get() = starredSongs
     private val revokedKeys = mutableSetOf<ApiKeyId>()
     private val imports = mutableListOf<Import>()
 
@@ -426,6 +443,8 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
                 DUSK,
                 external = true
             )
+
+        private val ALL_TRACKS get() = listOf(KEEPER, TIDEWATER, BRASAS, COPPER, MOONS)
 
         private fun AlbumItem.toAlbum() = Album(
             id = id,
