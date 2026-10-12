@@ -1,0 +1,8 @@
+UltimateTunes is the player for your own UltimateTunes server: search for any song, listen at once, and keep it in your own library.
+
+• Apple Music-style interface: Listen Now, Radio, Library and Search.
+• Every song you play is cached on the phone to save mobile data; download albums and playlists for offline listening.
+• Synced lyrics, radio from any song, playlist import, and ReplayGain for even volume.
+• Talks only to your server, with a key you can revoke per device. No ads, no tracking, free software (GPL-3.0-or-later).
+
+Requires an UltimateTunes server (Docker).

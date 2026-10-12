@@ -1,0 +1,8 @@
+UltimateTunes es el reproductor de tu propio servidor UltimateTunes: busca cualquier canción, escúchala al momento y quédatela en tu biblioteca.
+
+• Interfaz al estilo de Apple Music: Escuchar ahora, Radio, Biblioteca y Buscar.
+• Cada canción que reproduces queda en caché en el móvil para ahorrar datos; descarga álbumes y listas para escuchar sin conexión.
+• Letras sincronizadas, radio a partir de cualquier canción, importación de listas y ReplayGain para un volumen uniforme.
+• Solo habla con tu servidor, con una clave revocable por dispositivo. Sin anuncios ni rastreo, software libre (GPL-3.0-or-later).
+
+Necesita un servidor UltimateTunes (Docker).
