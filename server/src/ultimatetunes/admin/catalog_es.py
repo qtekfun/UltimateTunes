@@ -148,6 +148,31 @@ ES: dict[str, str] = {
     ),
     "URL (https only)": "URL (solo https)",
     "Send a test notification": "Enviar una notificación de prueba",
+    "Credentials": "Credenciales",
+    "Access token: set ✓": "Token de acceso: configurado ✓",
+    "User and password: set ✓": "Usuario y contraseña: configurados ✓",
+    "Credentials: not set": "Credenciales: sin configurar",
+    "For an ntfy server that requires login, set UT_NOTIFY_TOKEN (an ntfy access token), or "
+    "UT_NOTIFY_USERNAME and UT_NOTIFY_PASSWORD, together with UT_NOTIFY_HOST (the ntfy host "
+    "name), as Docker secrets or environment variables, and restart the api. They go only to "
+    "that host, over https, for ntfy and webhook targets.": (
+        "Para un servidor ntfy que pide inicio de sesión, define UT_NOTIFY_TOKEN (un token de"
+        " acceso de ntfy), o UT_NOTIFY_USERNAME y UT_NOTIFY_PASSWORD, junto con UT_NOTIFY_HOST"
+        " (el nombre del servidor ntfy), como secretos de Docker o variables de entorno, y"
+        " reinicia la api. Solo se envían a ese servidor, por https, para destinos ntfy y"
+        " webhook."
+    ),
+    "They are sent only to %(host)s (UT_NOTIFY_HOST).": (
+        "Solo se envían a %(host)s (UT_NOTIFY_HOST)."
+    ),
+    "The URL above is not on UT_NOTIFY_HOST: notifications go there without credentials.": (
+        "La URL de arriba no está en UT_NOTIFY_HOST: las notificaciones van sin credenciales."
+    ),
+    "They cannot be entered here: this server has no encryption library to keep them safe in "
+    "its database.": (
+        "No se pueden introducir aquí: este servidor no tiene una biblioteca de cifrado para"
+        " guardarlas de forma segura en su base de datos."
+    ),
     # Confirmations (?done=)
     "User created.": "Usuario creado.",
     "User updated.": "Usuario actualizado.",
@@ -167,6 +192,14 @@ ES: dict[str, str] = {
     "Test notification sent.": "Notificación de prueba enviada.",
     "The test notification could not be delivered.": (
         "No se pudo entregar la notificación de prueba."
+    ),
+    "ntfy rejected the credentials (HTTP 401 or 403). Check the access token, or the user and"
+    " password, and that this user may write to the topic.": (
+        "ntfy rechazó las credenciales (HTTP 401 o 403). Revisa el token de acceso, o el usuario"
+        " y la contraseña, y que ese usuario pueda escribir en el tema."
+    ),
+    "The webhook rejected the credentials (HTTP 401 or 403).": (
+        "El webhook rechazó las credenciales (HTTP 401 o 403)."
     ),
     # Errors
     "Wrong username or password.": "Usuario o contraseña incorrectos.",
@@ -206,6 +239,7 @@ ES: dict[str, str] = {
     "The URL must start with https://": "La URL debe empezar por https://",
     "The URL must not contain a user or password": "La URL no puede llevar usuario ni contraseña",
     "The URL must not contain spaces": "La URL no puede llevar espacios",
+    "The URL has an invalid port": "La URL tiene un puerto no válido",
     "Unknown notification kind": "Tipo de notificación desconocido",
     # Errors of T04's AuthService shown in the panel
     "That username is taken": "Ese nombre de usuario ya existe",
