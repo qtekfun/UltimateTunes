@@ -1,0 +1,1 @@
+Versión candidata a la 1.0. Novedades: Recomendado para ti y Listas de éxitos en Escuchar ahora, creadas a partir de lo que escuchas y de las listas de YouTube Music, sin salir de tu servidor. Además, descargas más fiables e inicio de sesión en dos pasos opcional para la web y el panel de administración.
