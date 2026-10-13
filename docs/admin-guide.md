@@ -87,6 +87,15 @@ The table shows, for every account:
 - **Wrong passwords**: from your LAN/Tailscale, 5 wrong passwords lock that username there for 15 min (`UT_AUTH_LOCKOUT_S`). From the Internet a username is never locked: each wrong password makes the next attempt wait longer (1 s, 2 s, 4 s … at most 5 min), and a correct one resets it, so a stranger can keep someone's sign-in from the Internet waiting, but their app keeps working and they can always sign in from home (or put the web player behind Authelia). An address that fails 10 times is locked for 15 min. Repeated `auth.lockout` entries in the audit log show who is being targeted.
 - **Disable**: the account can no longer sign in and **all its API keys stop working** at once, without being revoked (asks for confirmation). **Enable** brings them back. You cannot disable yourself. Use this for someone who should lose access for a while; revoke keys when a device is lost.
 
+## Two-factor authentication
+
+Open **Two-factor** to protect your sign-ins with a code from an authenticator app (TOTP), on top of your password. It covers the three password logins (this panel, the web player and creating a device key with `POST /ut/v1/keys`); **API keys the app already uses are not affected**, so your phone keeps working.
+
+- **Set up**: press **Set up**, scan the QR code (or type the secret) into Aegis, FreeOTP, Google Authenticator or similar, then enter one code to confirm. The server then shows **ten recovery codes once** — save them; each works a single time if you lose your phone. After this, signing in asks for a 6-digit code (a recovery code works in its place).
+- **New recovery codes** / **Turn off**: both ask for your current password first.
+- **Require it for everyone**: set `UT_AUTH_REQUIRE_2FA` to `admins` or `all` (docs/configuration.md). Covered users are sent to the setup page after signing in and cannot turn it off.
+- Full details, the stored-secret caveat and how recovery works: `docs/2fa.md`.
+
 ## API keys
 
 Every device (phone, tablet, another OpenSubsonic app) gets its own key, so one can be revoked without touching the others. A key is 256 random bits, shown **once** and stored only as a hash.

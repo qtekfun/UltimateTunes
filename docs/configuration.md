@@ -76,6 +76,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_AUTH_ARGON2_WAIT_S` | `2` | api | How long a password check waits for a free slot before answering "try again". |
 | `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN` | `100` | api | Failures per minute from outside the admin networks before unknown keys, and the outside password checks of usernames that failed recently, are locked. Usernames with no recent outside failure, valid keys and the admin networks are never held back by it. |
 | `UT_AUTH_GLOBAL_LOCKOUT_S` | `60` | api | Length of that global lock. |
+| `UT_AUTH_REQUIRE_2FA` | `off` | api | Who must use the optional TOTP second factor on the password logins: `off` (nobody is forced; a user may still enable it for themselves), `admins` (every admin) or `all` (everyone). A covered user who has not enrolled is sent to the setup page after signing in and cannot turn the factor off. API keys (the app) are never a second factor (docs/2fa.md). |
+| `UT_AUTH_2FA_WINDOW` | `1` | api | How many 30 s time steps on each side of the current one a TOTP code is accepted, to tolerate clock drift (RFC 6238). `0` accepts only the current step. |
 
 ## Downloads and their limits
 

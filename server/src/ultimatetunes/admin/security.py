@@ -49,10 +49,14 @@ from ultimatetunes.core.security_log import security_event
 
 SESSION_COOKIE = "ut_admin_session"
 LOGIN_COOKIE = "ut_admin_login"
+PENDING_2FA_COOKIE = "ut_admin_2fa"
 COOKIE_PATH = "/admin"
 CSRF_FIELD = "csrf"
 CSRF_HEADER = "x-csrf-token"
 LOGIN_TTL_S = 15 * 60
+# The second-factor step after a correct password: short-lived, so a half-finished sign-in
+# does not linger.
+PENDING_2FA_TTL_S = 5 * 60
 # Forms of the panel are small; anything bigger is refused before parsing.
 MAX_BODY_BYTES = 64 * 1024
 
@@ -198,8 +202,21 @@ class SessionData:
     fingerprint: str
 
 
+@dataclass(frozen=True)
+class PendingTwoFactor:
+    """A password step that passed, waiting for the second factor. The cookie binds it to the
+    user's current password fingerprint (so a password change ends it) and carries its own
+    double-submit token for the second-step form."""
+
+    user_id: str
+    csrf: str
+    expires_at: int
+    fingerprint: str
+
+
 class SessionCodec:
-    """Signs and checks the session and login cookies. Time from the injected clock."""
+    """Signs and checks the session, login and pending-2FA cookies. Time from the injected
+    clock."""
 
     def __init__(self, secret: str, clock: Clock, ttl_s: int) -> None:
         self._secret = secret.encode()
@@ -207,6 +224,7 @@ class SessionCodec:
         self.ttl_s = ttl_s
         self._session = URLSafeSerializer(secret, salt="ultimatetunes.admin.session")
         self._login = URLSafeSerializer(secret, salt="ultimatetunes.admin.login")
+        self._pending = URLSafeSerializer(secret, salt="ultimatetunes.admin.pending2fa")
 
     def _now(self) -> int:
         return int(self._clock.now().timestamp())
@@ -239,6 +257,31 @@ class SessionCodec:
         if not _is_session_payload(value):
             return None
         data = SessionData(str(value[0]), str(value[1]), int(value[2]), str(value[3]))
+        return data if data.expires_at > self._now() else None
+
+    def new_pending_2fa(
+        self, user_id: str, password_hash: str, epoch: int = 0
+    ) -> tuple[str, PendingTwoFactor]:
+        """(cookie value, data) for the second-factor step after a correct password."""
+        data = PendingTwoFactor(
+            user_id,
+            secrets.token_urlsafe(32),
+            self._now() + PENDING_2FA_TTL_S,
+            self.fingerprint(password_hash, epoch),
+        )
+        token = self._pending.dumps([data.user_id, data.csrf, data.expires_at, data.fingerprint])
+        return token, data
+
+    def read_pending_2fa(self, token: str | None) -> PendingTwoFactor | None:
+        if not token:
+            return None
+        try:
+            value = self._pending.loads(token)
+        except BadSignature:
+            return None
+        if not _is_session_payload(value):
+            return None
+        data = PendingTwoFactor(str(value[0]), str(value[1]), int(value[2]), str(value[3]))
         return data if data.expires_at > self._now() else None
 
     def new_login_token(self) -> tuple[str, str]:

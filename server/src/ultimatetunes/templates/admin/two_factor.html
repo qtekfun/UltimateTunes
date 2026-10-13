@@ -1,0 +1,73 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Two-factor authentication") }}{% endblock %}
+{% block content %}
+<h1>{{ _("Two-factor authentication") }}</h1>
+
+{% if recovery %}
+<section class="card" aria-labelledby="h-recovery">
+  <h2 id="h-recovery">{{ _("Your recovery codes") }}</h2>
+  <p class="muted">{{ _("Save these now: each one works once if you lose your authenticator. They are shown only this once.") }}</p>
+  <ul class="codes">
+    {% for code in recovery %}<li><code>{{ code }}</code></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if status.enabled %}
+<section class="card" aria-labelledby="h-on">
+  <h2 id="h-on">{{ _("Status") }}</h2>
+  <p class="notice">{{ _("Two-factor authentication is on for your account.") }}</p>
+  <p class="muted">{{ _("Recovery codes left: %(count)s.", count=status.recovery_remaining) }}</p>
+</section>
+<section class="card" aria-labelledby="h-new-codes">
+  <h2 id="h-new-codes">{{ _("Generate new recovery codes") }}</h2>
+  <p class="muted">{{ _("This replaces every remaining recovery code with a new set.") }}</p>
+  <form method="post" action="/admin/2fa/recovery" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Current password") }}<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="secondary" type="submit">{{ _("Generate new recovery codes") }}</button>
+  </form>
+</section>
+{% if status.required %}
+<section class="card">
+  <p class="muted">{{ _("The server requires two-factor authentication for this account, so it cannot be turned off.") }}</p>
+</section>
+{% else %}
+<section class="card" aria-labelledby="h-off">
+  <h2 id="h-off">{{ _("Turn off") }}</h2>
+  <form method="post" action="/admin/2fa/disable" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Current password") }}<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="secondary danger" type="submit">{{ _("Turn off two-factor authentication") }}</button>
+  </form>
+</section>
+{% endif %}
+
+{% elif qr %}
+<section class="card" aria-labelledby="h-scan">
+  <h2 id="h-scan">{{ _("Scan this code") }}</h2>
+  {% if status.required %}<p class="notice">{{ _("The server requires two-factor authentication for this account.") }}</p>{% endif %}
+  <p class="muted">{{ _("Scan it with an authenticator app such as Aegis, FreeOTP or Google Authenticator, or type the secret by hand.") }}</p>
+  {{ qr }}
+  <p>{{ _("Secret") }}: <code>{{ secret }}</code></p>
+  <form method="post" action="/admin/2fa/confirm" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Enter the code from the app to confirm") }}<input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+    <button class="primary" type="submit">{{ _("Confirm and turn on") }}</button>
+  </form>
+</section>
+
+{% else %}
+<section class="card" aria-labelledby="h-setup">
+  <h2 id="h-setup">{{ _("Add a second factor") }}</h2>
+  {% if status.required %}<p class="notice">{{ _("The server requires two-factor authentication for this account.") }}</p>{% endif %}
+  <p class="muted">{{ _("Protect your account with a code from an authenticator app, on top of your password. API keys used by apps are not affected.") }}</p>
+  <form method="post" action="/admin/2fa/enroll">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="primary" type="submit">{{ _("Set up two-factor authentication") }}</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

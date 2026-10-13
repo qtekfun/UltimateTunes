@@ -78,6 +78,7 @@ from ultimatetunes.auth.repository import (
 )
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.auth.throttle import Argon2Slots, client_key, shared_slots
+from ultimatetunes.auth.twofactor import TwoFactorService
 from ultimatetunes.core.authn import Principal, Role
 from ultimatetunes.core.clock import Clock, format_ts, parse_ts
 from ultimatetunes.core.ratelimit import Limit, RateLimiter, backoff_delay
@@ -206,6 +207,16 @@ class AuthService:
         self._settings = settings or AuthSettings()
         self._passwords = passwords or Passwords()
         self._slots = slots or shared_slots()
+        self._two_factor: TwoFactorService | None = None
+
+    @property
+    def two_factor(self) -> TwoFactorService:
+        """The optional TOTP second factor, sharing this service's db, clock and limiter."""
+        if self._two_factor is None:
+            self._two_factor = TwoFactorService(
+                self._db, self._clock, self._limiter, self._settings, self._passwords
+            )
+        return self._two_factor
 
     @classmethod
     def from_services(
@@ -672,10 +683,18 @@ class AuthService:
         presented_key: str | None = None,
         *,
         trusted: bool = False,
+        totp_code: str | None = None,
     ) -> CreatedKey:
         """`POST /ut/v1/keys`: username and password, no key needed. A key sent along must be
         valid and belong to the same user (`conflicting_auth` otherwise). `trusted`: as in
-        `verify_password`."""
+        `verify_password`.
+
+        When the user has the optional TOTP second factor enabled (`auth/twofactor.py`), a
+        valid `totp_code` (a TOTP code or a recovery code) is also required, so a stolen
+        password alone cannot enroll a new device. `totp_code` is optional in the request and
+        is only consulted for enrolled users, so the frozen `ut-v1` contract and clients that
+        do not send it are unaffected (docs/2fa.md: the additive contract change is proposed,
+        not applied here)."""
         check_key_name(name)
         presenter = (
             None
@@ -686,6 +705,11 @@ class AuthService:
         if presenter is not None and presenter.user_id != user.id:
             _failure("conflicting_auth", client_ip, user=user.username, credential=CREDENTIAL_KEY)
             raise ConflictingAuth()
+        if self.two_factor.is_enabled(user.id) and not self.two_factor.verify_second_factor(
+            user.id, totp_code or "", client_ip
+        ):
+            _failure("second_factor", client_ip, user=user.username, credential=CREDENTIAL_ACCOUNT)
+            raise AuthenticationFailed()
         actor = Principal(user.id, user.username, _role(user.role))
         return self.create_key(user.id, name, actor=actor, client_ip=client_ip)
 
