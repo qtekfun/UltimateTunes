@@ -325,6 +325,56 @@ data class ListenNow(
     val favouriteRadios: List<RadioStation> = emptyList()
 )
 
+/**
+ * `GET /ut/v1/recommendations` (RF-11): new songs to discover, seeded from the caller's plays and
+ * favourites, plus [shelves] from external sources the admin switched on. Empty when the caller has
+ * no history and no external source is on.
+ */
+@Serializable
+data class Recommendations(
+    val recommendedForYou: List<TrackItem> = emptyList(),
+    val becauseYouPlayed: List<RecommendationShelf> = emptyList(),
+    val shelves: List<SourceShelf> = emptyList()
+) {
+    /** No songs to show in any shelf (empty history, nothing switched on). */
+    val isEmpty: Boolean
+        get() = recommendedForYou.isEmpty() &&
+            becauseYouPlayed.all { it.items.isEmpty() } &&
+            shelves.all { it.items.isEmpty() }
+}
+
+/** One "Because you played …" shelf: the [seed] song and the new songs its radio found. */
+@Serializable
+data class RecommendationShelf(val seed: TrackItem, val items: List<TrackItem> = emptyList())
+
+/**
+ * A shelf from an external recommendation source the admin switched on (e.g. ListenBrainz). [title]
+ * is ready to show (e.g. "Popular on ListenBrainz · The Paper Lanterns"); [source] identifies the
+ * origin (e.g. `listenbrainz`).
+ */
+@Serializable
+data class SourceShelf(
+    val source: String,
+    val title: String,
+    val items: List<TrackItem> = emptyList()
+)
+
+/** `GET /ut/v1/charts` (RF-11): a country's top chart songs, mapped local-first. */
+@Serializable
+data class Charts(val country: String, val items: List<TrackItem> = emptyList())
+
+/** `GET /ut/v1/moods` (RF-11): the "Moods & genres" categories. */
+@Serializable
+data class Moods(val categories: List<MoodCategory> = emptyList())
+
+/** One "Moods & genres" category; pass [id] to `GET /ut/v1/moods/{moodId}` for its songs. */
+@Serializable
+data class MoodCategory(val id: String, val title: String)
+
+/** `GET /ut/v1/moods/{moodId}` (RF-11): the songs of one mood or genre category. */
+@Serializable
+data class MoodTracks(val id: String, val items: List<TrackItem> = emptyList())
+
 /** RFC 9457 problem details of `/ut/v1` errors. Clients switch on [code] only. */
 @Serializable
 internal data class Problem(

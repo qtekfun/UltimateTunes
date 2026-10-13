@@ -11,6 +11,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ApiKeyList
 import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
+import com.qtekfun.ultimatetunes.core.api.model.Charts
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.CreatedKey
 import com.qtekfun.ultimatetunes.core.api.model.Import
@@ -19,10 +20,13 @@ import com.qtekfun.ultimatetunes.core.api.model.ImportId
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.Me
+import com.qtekfun.ultimatetunes.core.api.model.MoodTracks
+import com.qtekfun.ultimatetunes.core.api.model.Moods
 import com.qtekfun.ultimatetunes.core.api.model.PlayQueue
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.Radio
+import com.qtekfun.ultimatetunes.core.api.model.Recommendations
 import com.qtekfun.ultimatetunes.core.api.model.RequestReason
 import com.qtekfun.ultimatetunes.core.api.model.SearchResult
 import com.qtekfun.ultimatetunes.core.api.model.ServerInfo
@@ -91,6 +95,25 @@ interface TunesApi {
 
     /** `GET /ut/v1/listen-now`: the Listen Now shelves. */
     suspend fun listenNow(): TunesResult<ListenNow>
+
+    /**
+     * `GET /ut/v1/recommendations`: discovery shelves seeded from the caller's plays and
+     * favourites (and external sources the admin switched on). [limit] items per shelf. Empty when
+     * the caller has no history and nothing external is on.
+     */
+    suspend fun recommendations(limit: Int? = null): TunesResult<Recommendations>
+
+    /**
+     * `GET /ut/v1/charts`: a country's top chart songs. [country] is an ISO 3166-1 alpha-2 code
+     * (`ZZ` = global); when null the server's configured default is used.
+     */
+    suspend fun charts(country: String? = null, limit: Int? = null): TunesResult<Charts>
+
+    /** `GET /ut/v1/moods`: the "Moods & genres" categories. */
+    suspend fun moods(): TunesResult<Moods>
+
+    /** `GET /ut/v1/moods/{moodId}`: the songs of one mood or genre category ([id] from [moods]). */
+    suspend fun moodTracks(id: String, limit: Int? = null): TunesResult<MoodTracks>
 
     /** `GET /ut/v1/imports`: this user's imports, newest first, without items. */
     suspend fun imports(limit: Int? = null, offset: Int? = null): TunesResult<List<Import>>
