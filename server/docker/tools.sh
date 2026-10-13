@@ -11,7 +11,7 @@
 #   /out/bin/deno
 #   /out/share/yt-dlp-keyring.gpg     binary keyring for gpgv (the worker's updater uses it, T08)
 #   /out/ytdlp-seed/{yt-dlp,SHA2-256SUMS,SHA2-256SUMS.sig,VERSION}
-#   /out/ytdlp-plugins/bgutil-ytdlp-pot-provider.zip   yt-dlp plugin zip (`--plugin-dirs`, D13)
+#   /out/ytdlp-plugins/bgutil-http.zip   the plugin, HTTP provider only (`--plugin-dirs`, D13)
 set -eu
 
 here=$(dirname "$0")
@@ -60,11 +60,12 @@ install -m 0755 "$work/yt-dlp" /out/ytdlp-seed/yt-dlp
 install -m 0644 "$work/SHA2-256SUMS" "$work/SHA2-256SUMS.sig" /out/ytdlp-seed/
 printf '%s\n' "$YTDLP_SEED_VERSION" >/out/ytdlp-seed/VERSION
 
-# --- bgutil PO token plugin: pinned SHA-256, then its own version must be the pinned one -----
+# --- bgutil PO token plugin: pinned SHA-256, the reviewed entry list and version, then pruned
+# to the HTTP provider (the script provider is never installed) -----------------------------
 bgutil=bgutil-ytdlp-pot-provider.zip
 fetch "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_VERSION:?}/$bgutil" \
     "$work/$bgutil" "${BGUTIL_PLUGIN_SHA256:?}"
-python -I "$here/check_plugin.py" "$work/$bgutil" "$BGUTIL_VERSION"
-install -m 0444 "$work/$bgutil" "/out/ytdlp-plugins/$bgutil"
+python -I "$here/check_plugin.py" "$work/$bgutil" "$BGUTIL_VERSION" "$work/bgutil-http.zip"
+install -m 0444 "$work/bgutil-http.zip" /out/ytdlp-plugins/bgutil-http.zip
 
 rm -rf "$work"
