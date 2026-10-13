@@ -85,7 +85,6 @@ ES: dict[str, str] = {
     "Your library is empty. Search for music to start.": (
         "Tu biblioteca está vacía. Busca música para empezar."
     ),
-    "Admin panel": "Panel de administración",
     "UltimateTunes server is running.": "El servidor de UltimateTunes está funcionando.",
     "Version %(version)s": "Versión %(version)s",
     # Settings, imports, the player and the now-playing view.
