@@ -968,12 +968,11 @@ paths:
       tags:
       - discovery
       summary: Recommended songs from your plays and favourites
-      description: >
-        RF-06. New songs to discover, seeded from the caller's most-played and favourite songs
-        into the YouTube Music watch playlist (like `/ut/v1/radio`), plus, when the admin
-        switched them on, shelves from external sources (ListenBrainz). Mapped local-first.
-        Charged to the caller's bucket. Empty when the caller has no plays or favourites and no
-        external source is on. An external source that fails is left out; the rest still return.
+      description: 'RF-06. New songs to discover, seeded from the caller''s most-played and favourite
+        songs into the YouTube Music watch playlist (like `/ut/v1/radio`), plus, when the admin switched
+        them on, shelves from external sources (ListenBrainz). Mapped local-first. Charged to the
+        caller''s bucket. Empty when the caller has no plays or favourites and no external source is on.
+        An external source that fails is left out; the rest still return.'
       parameters:
       - name: limit
         in: query
@@ -1009,10 +1008,9 @@ paths:
       tags:
       - discovery
       summary: YouTube Music country charts
-      description: >
-        RF-06. The country's top chart songs from YouTube Music's own public charts (no new
-        host), mapped local-first like radio. `country` defaults to the server's
-        `UT_CHARTS_COUNTRY`. Charged to the caller's bucket.
+      description: 'RF-06. The country''s top chart songs from YouTube Music''s own public charts (no
+        new host), mapped local-first like radio. `country` defaults to the server''s `UT_CHARTS_COUNTRY`.
+        Charged to the caller''s bucket.'
       parameters:
       - name: country
         in: query
