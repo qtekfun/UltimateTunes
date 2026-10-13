@@ -15,11 +15,21 @@ import android.net.Uri
 const val YOUTUBE_LOGIN_URL =
     "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F"
 
-/** Hosts (and all their subdomains) the user may be navigated to: the sign-in itself. */
-private val PAGE_DOMAINS = listOf("google.com", "youtube.com")
+/** Pages the user may be navigated to: exactly these Google hosts (no other google.com host). */
+private val PAGE_HOSTS = setOf(
+    "accounts.google.com",
+    "myaccount.google.com",
+    "consent.google.com",
+    "www.google.com",
+    "google.com"
+)
 
-/** Extra hosts the sign-in pages load scripts, styles, fonts and images from. */
+/** YouTube hosts (all subdomains: www, m, accounts, consent) are pages too. */
+private const val YOUTUBE = "youtube.com"
+
+/** Domains (and subdomains) sign-in pages load sub-resources from; never navigable pages. */
 private val RESOURCE_DOMAINS = listOf(
+    "google.com",
     "gstatic.com",
     "googleapis.com",
     "googleusercontent.com",
@@ -32,14 +42,14 @@ private fun isWithin(host: String, domain: String): Boolean =
     host == domain || host.endsWith(".$domain")
 
 /** Whether [host] is a YouTube host (where the signed-in session is read). */
-fun isYoutubeHost(host: String?): Boolean =
-    host != null && isWithin(host.lowercase(), "youtube.com")
+fun isYoutubeHost(host: String?): Boolean = host != null && isWithin(host.lowercase(), YOUTUBE)
 
 /** Whether the top-level page may navigate to [url]: https on a Google or YouTube host only. */
 fun isAllowedPage(url: Uri?): Boolean = isAllowedPage(url?.scheme, url?.host)
 
 internal fun isAllowedPage(scheme: String?, host: String?): Boolean =
-    scheme == "https" && host != null && PAGE_DOMAINS.any { isWithin(host.lowercase(), it) }
+    scheme == "https" && host != null &&
+        host.lowercase().let { it in PAGE_HOSTS || isWithin(it, YOUTUBE) }
 
 /** Whether a sub-resource (script, image...) may be fetched from [url]. */
 fun isAllowedResource(url: Uri?): Boolean = isAllowedResource(url?.scheme, url?.host)

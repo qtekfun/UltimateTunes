@@ -174,6 +174,45 @@ class YoutubeAccountViewModelTest {
     }
 
     @Test
+    fun `destroying the screen mid login wipes the jar`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        val before = session.clears
+        session.youtube = signedIn
+
+        viewModel.onCleared()
+
+        assertEquals(before + 1, session.clears)
+        assertEquals(null, session.youtube)
+    }
+
+    @Test
+    fun `clearing an idle screen touches nothing, a released WebView always wipes`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.onCleared()
+        assertEquals(0, session.clears)
+
+        viewModel.webViewReleased()
+        assertEquals(1, session.clears)
+    }
+
+    @Test
+    fun `an anonymous jar is not even serialized`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        session.youtube = "YSC=y"
+
+        viewModel.onPageFinished("www.youtube.com")
+
+        assertEquals(YoutubePhase.SIGNING_IN, viewModel.state.value.phase)
+    }
+
+    @Test
     fun `a server without a cookie key refuses to start`() = runTest {
         server.dispatcher.override("ut/v1/youtube-cookies/status") {
             jsonResponse("""{"configured":false,"available":false}""")

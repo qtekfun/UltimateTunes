@@ -148,8 +148,18 @@ class YoutubeAccountViewModel @Inject constructor(
     /** The Netscape text of the jar when it holds a signed-in session, else null. */
     private fun signedInCookies(): String? {
         val sources = session.cookieSources()
+        if (!NetscapeCookies.hasSession(sources.first().cookieHeader)) return null
         return NetscapeCookies.serialize(sources, clock.instant())
-            .takeIf { NetscapeCookies.hasSession(sources.first().cookieHeader) }
+    }
+
+    /** The WebView went away (rotation, back, destroyed): its jar must not outlive it. */
+    fun webViewReleased() {
+        session.clear()
+    }
+
+    /** The screen is gone for good: a half-done login must not stay on the phone. */
+    public override fun onCleared() {
+        if (mutableState.value.phase == YoutubePhase.SIGNING_IN) session.clear()
     }
 
     private suspend fun upload(body: String) {

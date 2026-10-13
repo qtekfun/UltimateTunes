@@ -28,7 +28,7 @@ object NetscapeCookies {
 
     const val HEADER = "# Netscape HTTP Cookie File"
 
-    /** The server refuses larger bodies; output stops before that (browsers cap far below). */
+    /** The server refuses bodies over this many UTF-8 bytes; output stops before that (browsers cap far below). */
     const val MAX_BYTES = 262_144 // 256 KiB
 
     /** The expiry given to every cookie, since `CookieManager` does not tell the real one. */
@@ -82,6 +82,7 @@ object NetscapeCookies {
         val seen = HashSet<String>()
         val out = StringBuilder(HEADER).append('\n')
         var count = 0
+        var bytes = out.length
         for (source in sources) {
             for ((name, value) in parseHeader(source.cookieHeader)) {
                 val hostOnly = name.startsWith(HOST_PREFIX)
@@ -96,7 +97,9 @@ object NetscapeCookies {
                     name,
                     value
                 ).joinToString("\t")
-                if (out.length + line.length + 1 > MAX_BYTES) return finish(out, count)
+                val lineBytes = line.toByteArray(Charsets.UTF_8).size + 1
+                if (bytes + lineBytes > MAX_BYTES) return finish(out, count)
+                bytes += lineBytes
                 out.append(line).append('\n')
                 count++
             }
