@@ -1,0 +1,1 @@
+Versión candidata a la 1.0. Novedad: inicia sesión en YouTube desde Ajustes para que tu servidor siga descargando cuando YouTube lo bloquea. Usa una cuenta secundaria; la sesión va solo a tu propio servidor y se borra del teléfono.
