@@ -142,7 +142,7 @@ def _youtube_cookies(request: Request, kind: str) -> str | None:
         return None
     try:
         return store.current()
-    except (FeatureDisabled, InvalidToken):
+    except (FeatureDisabled, InvalidToken, ValueError):  # ValueError: corrupt row, UnicodeError
         log.warning("YouTube cookies could not be decrypted; the job runs without them")
         return None
 

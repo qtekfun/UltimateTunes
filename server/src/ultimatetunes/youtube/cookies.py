@@ -39,7 +39,9 @@ def validate_netscape(text: str) -> tuple[int, bool]:
     `InvalidParameter`. Every non-blank line is either a comment or a seven-field tab-separated
     cookie line; the magic header must be present and at least one cookie line must exist. The
     content (cookie values) never reaches the error message."""
-    lines = text.splitlines()
+    # Split only on \n after normalising \r\n, as yt-dlp's cookiejar reads the file; splitlines()
+    # would also break on \x0b, \x0c, \x85 and U+2028, which a validator must not accept.
+    lines = text.replace("\r\n", "\n").split("\n")
     if not any(line.strip() in NETSCAPE_MAGICS for line in lines):
         raise InvalidParameter("Not a Netscape cookies.txt (missing its header line)")
     count = 0
@@ -151,5 +153,8 @@ class YouTubeCookieStore:
             raw = _SettingsRepo(conn).get()
         if raw is None:
             return None
-        parsed = json.loads(raw)
+        try:
+            parsed = json.loads(raw)
+        except ValueError:  # a corrupt row: treated as no cookies, never an error
+            return None
         return parsed if isinstance(parsed, dict) else None

@@ -288,3 +288,35 @@ def test_claim_omits_cookies_when_the_key_changed(
     _store_cookies(services, monkeypatch)
     monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
     assert "youtubeCookies" not in claim(client)["job"]
+
+
+def test_claim_survives_a_corrupt_cookies_row(
+    client: TestClient, services: Services, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    from ultimatetunes.youtube.cookies import SETTING_KEY  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    with services.db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (SETTING_KEY, "{not json", "2026-10-13T00:00:00.000Z"),
+        )
+    assert "youtubeCookies" not in claim(client)["job"]
+
+
+def test_claim_survives_an_undecodable_sealed_blob(
+    client: TestClient, services: Services, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    from ultimatetunes.youtube.cookies import SETTING_KEY  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    with services.db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (SETTING_KEY, '{"sealed": "caf\u00e9"}', "2026-10-13T00:00:00.000Z"),
+        )
+    assert "youtubeCookies" not in claim(client)["job"]

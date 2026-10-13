@@ -118,3 +118,27 @@ def test_a_wrong_key_cannot_read_an_existing_blob(
 def test_the_key_must_be_a_valid_fernet_key(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Fernet key"):
         YouTubeSettings(ytdlp_cookies_key=SecretStr("not-a-fernet-key"))
+
+
+def test_validation_splits_only_on_newlines() -> None:
+    # \x0b and \x85 are not line breaks for yt-dlp's cookiejar, so they must not split a line.
+    broken = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tv\x0bx\x85w\n"
+    assert validate_netscape(broken) == (1, True)
+    split_by_splitlines = (
+        "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tv\x85x\ty\n"
+    )
+    with pytest.raises(InvalidParameter):
+        validate_netscape(split_by_splitlines)
+    crlf = "# Netscape HTTP Cookie File\r\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tv\r\n"
+    assert validate_netscape(crlf) == (1, True)
+
+
+def test_a_corrupt_row_means_no_cookies(settings: object, db: Database, clock: FakeClock) -> None:
+    store = _store(db, clock, key=_key())
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (SETTING_KEY, "{not json", "2026-10-13T00:00:00.000Z"),
+        )
+    assert store.status().configured is False
+    assert store.current() is None
