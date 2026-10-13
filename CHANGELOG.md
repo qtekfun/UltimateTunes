@@ -9,6 +9,13 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-10-13
+
+Release candidate of 1.0: the web player and the admin panel now carry the app's icon. The app is unchanged since 1.0.0-rc.1.
+
+### Changed
+- Web player and admin panel: the logo, favicon and empty-state note are the app's launcher icon (same gradient and note), shown next to the name in the sidebar, the phone top bar and both sign-in pages.
+
 ## [1.0.0-rc.3] - 2026-10-13
 
 Release candidate of 1.0 with better MusicBrainz matching. The app is unchanged since 1.0.0-rc.1.
