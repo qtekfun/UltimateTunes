@@ -143,10 +143,22 @@ services:
       # Optional PO token provider (D13): empty, yt-dlp loads no plugin (as before). With the
       # `pot` profile on, set it to http://bgutil:4416 in .env (the provider's name on `pot`).
       UT_YTDLP_POT_PROVIDER_URL: ${UT_YTDLP_POT_PROVIDER_URL:-}
+      # Optional fallback YouTube cookies file (docs/admin-guide.md, "Signing in with a YouTube
+      # account"). The admin panel's encrypted store is the primary path; this points yt-dlp at
+      # a cookies.txt secret for ops who prefer a file. Uncomment with the secret below. Unset:
+      # no cookies from a file (as before). yt-dlp rewrites it, so the worker copies it per
+      # download and never touches the read-only secret directly.
+      # UT_YTDLP_COOKIES_FILE: /run/secrets/ut_ytdlp_cookies
     secrets:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
+      # Optional: a YouTube cookies.txt exported from a THROWAWAY account (admin-guide.md).
+      # Uncomment this, the top-level secret, and UT_YTDLP_COOKIES_FILE above. Mounted
+      # read-only; the worker copies it to a private 0600 temp per download and never rewrites
+      # the secret in place. The content is an account credential: keep the file mode 600.
+      # - source: ytdlp_cookies
+      #   target: ut_ytdlp_cookies
     # `internal` reaches the api; `egress` is its own way out (yt-dlp to www.youtube.com,
     # MusicBrainz, Cover Art Archive, GitHub), so the worker shares no other network with the api.
     # `pot` reaches the optional PO token provider (nothing else is on it without the profile).
@@ -206,6 +218,10 @@ secrets:
   #   file: ./secrets/bootstrap_admin_password
   # notify_token:
   #   file: ./secrets/notify_token
+  # Optional fallback YouTube cookies (admin-guide.md, "Signing in with a YouTube account");
+  # the admin panel's encrypted store is the primary path. One cookies.txt, mode 600.
+  # ytdlp_cookies:
+  #   file: ./secrets/ytdlp_cookies
 
 networks:
   internal:

@@ -4,6 +4,9 @@
 against a stand-in zipapp (`fixtures/fake_ytdlp.py`). Nothing reaches the network."""
 
 import itertools
+import logging
+import shutil
+import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,7 @@ from ultimatetunes.worker.ytdlp import (
     YtDlpDownloader,
     build_args,
     classify,
+    copy_cookies,
     iter_lines,
     minimal_env,
     parse_progress,
@@ -386,3 +390,197 @@ async def test_an_announced_size_over_the_limit_is_stopped(staging: LocalStaging
 async def test_the_default_limits_let_ordinary_songs_through(staging: LocalStagingStore) -> None:
     result = await downloader(staging).download("HugeFile001", JOB_DIR, Recorder())
     assert result.size_bytes == 4100 * 8
+
+
+# ---------------------------------------------------------------- YouTube cookies
+
+# A tiny, invented Netscape/Mozilla cookies.txt. The value is a sentinel the leak test looks
+# for; no real cookie is ever used (public repo, no real network).
+COOKIE_VALUE = "s3cr3t-sid-value-NOLEAK"
+
+
+def netscape_cookies(directory: Path, value: str = COOKIE_VALUE) -> Path:
+    path = directory / "ut_ytdlp_cookies"
+    path.write_text(
+        f"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\t{value}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def cookie_downloader(
+    staging: LocalStagingStore,
+    source: Path,
+    roots: tuple[Path, ...],
+    *,
+    runner: Any = ytdlp._open,
+) -> YtDlpDownloader:
+    settings = WorkerSettings(ytdlp_cookies_file=source)
+    return YtDlpDownloader(
+        staging, settings, Zipapp(FAKE_ZIPAPP), runner=runner, cookies_roots=roots
+    )
+
+
+def test_without_cookies_there_is_no_cookies_flag(tmp_path: Path) -> None:
+    args = build_args(
+        python="python3",
+        zipapp=Path("/z"),
+        deno=Path("/d"),
+        clients="default",
+        out_dir=tmp_path,
+        video_id="OkWebm00001",
+        limits=DownloadLimits(),
+    )
+    assert "--cookies" not in args
+
+
+def test_a_set_cookies_file_becomes_the_cookies_flag(tmp_path: Path) -> None:
+    args = build_args(
+        python="python3",
+        zipapp=Path("/z"),
+        deno=Path("/d"),
+        clients="default",
+        out_dir=tmp_path,
+        video_id="OkWebm00001",
+        limits=DownloadLimits(),
+        cookies_file=tmp_path / "copy.txt",
+    )
+    assert dict(itertools.pairwise(args))["--cookies"] == str(tmp_path / "copy.txt")
+    assert args.index("--cookies") < args.index("--")
+
+
+def test_cookies_source_accepts_a_file_inside_an_allowed_root(tmp_path: Path) -> None:
+    source = netscape_cookies(tmp_path)
+    assert ytdlp.cookies_source(source, (tmp_path,)) == source.resolve()
+
+
+def test_cookies_source_refuses_a_path_outside_the_allowed_roots(tmp_path: Path) -> None:
+    outside = netscape_cookies(tmp_path)
+    allowed = tmp_path / "secrets"
+    allowed.mkdir()
+    with pytest.raises(DownloadError) as caught:
+        ytdlp.cookies_source(outside, (allowed,))
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.INTERNAL_ERROR, False)
+    assert COOKIE_VALUE not in caught.value.message
+
+
+def test_cookies_source_refuses_a_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(DownloadError, match="missing"):
+        ytdlp.cookies_source(tmp_path / "ut_ytdlp_cookies", (tmp_path,))
+
+
+def test_copy_cookies_makes_a_private_copy_with_the_same_content(tmp_path: Path) -> None:
+    source = netscape_cookies(tmp_path)
+    copy = copy_cookies(source)
+    try:
+        assert copy != source
+        assert copy.read_bytes() == source.read_bytes()
+        assert copy.stat().st_mode & 0o777 == 0o600
+    finally:
+        copy.unlink(missing_ok=True)
+
+
+def test_copy_cookies_leaves_no_half_written_copy_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = netscape_cookies(tmp_path)
+    made: list[Path] = []
+    real = tempfile.mkstemp
+
+    def tracking_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        fd, name = real(*args, **kwargs)
+        made.append(Path(name))
+        return fd, name
+
+    # ytdlp.py and the test share these stdlib module objects, so patching them here reaches it.
+    monkeypatch.setattr(tempfile, "mkstemp", tracking_mkstemp)
+    monkeypatch.setattr(shutil, "copyfileobj", _boom)
+    with pytest.raises(RuntimeError):
+        copy_cookies(source)
+    assert made
+    assert not made[0].exists()
+
+
+def _boom(*_args: Any, **_kwargs: Any) -> None:
+    raise RuntimeError("copy failed")
+
+
+async def test_a_download_copies_the_cookies_passes_the_flag_and_cleans_up(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    source = netscape_cookies(tmp_path)
+    seen: list[Path] = []
+    snapshot: list[tuple[bytes, int]] = []
+
+    def record(copy: Path) -> None:
+        # Read the copy while the process still runs (a sync helper: no pathlib in the coroutine).
+        seen.append(copy)
+        snapshot.append((copy.read_bytes(), copy.stat().st_mode & 0o777))
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        record(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    dl = cookie_downloader(staging, source, (tmp_path,), runner=runner)
+    await dl.download("OkWebm00001", JOB_DIR, Recorder())
+    assert len(seen) == 1
+    assert seen[0] != source
+    assert snapshot[0] == (source.read_bytes(), 0o600)
+    assert not seen[0].exists()  # removed after the run
+
+
+async def test_the_cookies_copy_is_removed_even_when_the_download_fails(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    source = netscape_cookies(tmp_path)
+    seen: list[Path] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    dl = cookie_downloader(staging, source, (tmp_path,), runner=runner)
+    with pytest.raises(DownloadError):
+        await dl.download("GoneVideo01", JOB_DIR, Recorder())
+    assert seen
+    assert not seen[0].exists()
+
+
+async def test_a_bad_cookies_path_never_starts_a_process(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    started: list[list[str]] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        started.append(args)
+        return await ytdlp._open(args, env)
+
+    outside = netscape_cookies(tmp_path)
+    allowed = tmp_path / "secrets"
+    allowed.mkdir()
+    dl = cookie_downloader(staging, outside, (allowed,), runner=runner)
+    with pytest.raises(DownloadError) as caught:
+        await dl.download("OkWebm00001", JOB_DIR, Recorder())
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.INTERNAL_ERROR, False)
+    assert started == []
+
+
+async def test_no_cookie_value_or_copy_path_reaches_the_logs(
+    staging: LocalStagingStore, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    source = netscape_cookies(tmp_path)
+    paths: list[Path] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        paths.append(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    with caplog.at_level(logging.DEBUG, logger="ultimatetunes.worker.ytdlp"):
+        dl = cookie_downloader(staging, source, (tmp_path,), runner=runner)
+        await dl.download("OkWebm00001", JOB_DIR, Recorder())
+        with pytest.raises(DownloadError) as caught:
+            await dl.download("DiesMidway1", JOB_DIR, Recorder())
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert COOKIE_VALUE not in logged
+    assert COOKIE_VALUE not in caught.value.message
+    assert all(str(path) not in logged for path in paths)

@@ -24,12 +24,22 @@
   directory is the image's pinned bgutil plugin (`--no-plugin-dirs --plugin-dirs <dir>`) and
   its HTTP provider gets the validated base URL. Unset, no plugin is loaded at all. PO tokens
   never reach a log (`redact`).
+- Optional YouTube cookies (approved 2026-10-13): with `UT_YTDLP_COOKIES_FILE` set, yt-dlp
+  authenticates a (throwaway) account to survive the "not a bot" wall. The configured path must
+  live inside `/run/secrets` (the Docker secret mount), never built from metadata. yt-dlp
+  rewrites the cookies file in place, so the read-only secret is never passed directly: it is
+  copied to a private 0600 temp in the worker's tmpfs per attempt (`copy_cookies`), passed as
+  `--cookies <copy>`, and deleted after the run, on success or failure. The cookie values live
+  only in that file (never in the argument list), so they never reach a log.
 """
 
 import json
 import logging
+import os
 import re
+import shutil
 import sys
+import tempfile
 from collections import deque
 from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -87,6 +97,10 @@ _URL = re.compile(r"https?://\S+")
 _PO_TOKEN = re.compile(r"(?i)(po[ _-]?token|\bpot)([\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-+/=%.]{8,}")
 # The bgutil plugin's HTTP provider (`youtubepot-bgutilhttp:base_url=...`).
 POT_PROVIDER_ARGS = "youtubepot-bgutilhttp"
+# The only directory a cookies file may live in: the Docker secret mount. It is never built
+# from metadata and must never sit inside `/music` or `/staging`, so it can never be a file a
+# download wrote. Tests inject their own roots through `YtDlpDownloader`.
+ALLOWED_COOKIE_ROOTS: tuple[Path, ...] = (Path("/run/secrets"),)
 
 
 class ZipappSource(Protocol):
@@ -112,10 +126,12 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
     limits: DownloadLimits,
     pot_provider_url: str | None = None,
     plugin_dir: Path | None = None,
+    cookies_file: Path | None = None,
 ) -> list[str]:
     """The yt-dlp command line (spike T03c). `video_id` must already be checked. With
     `pot_provider_url` (D13), `plugin_dir` is the only plugin directory and the bgutil HTTP
-    provider gets that base URL; without it no plugin is loaded."""
+    provider gets that base URL; without it no plugin is loaded. With `cookies_file`, yt-dlp
+    gets `--cookies <path>` (a private copy, never the read-only secret; `copy_cookies`)."""
     # Validated integers only (pydantic checked them; `int` again so no text gets through).
     max_duration = int(limits.max_track_duration_s)
     max_bytes = int(limits.max_download_bytes)
@@ -133,6 +149,7 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
             raise ValueError("the PO token provider needs a canonical URL and a plugin directory")
         plugins += ["--plugin-dirs", str(plugin_dir)]
         pot = ["--extractor-args", f"{POT_PROVIDER_ARGS}:base_url={pot_provider_url}"]
+    cookies = ["--cookies", str(cookies_file)] if cookies_file is not None else []
     return [
         python,
         "-I",
@@ -141,6 +158,7 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
         "--ignore-config",
         "--no-quiet",
         *plugins,
+        *cookies,
         "--no-cache-dir",
         "--no-playlist",
         "--no-mtime",
@@ -197,6 +215,49 @@ def minimal_env(tmp: Path) -> dict[str, str]:
         "DENO_NO_UPDATE_CHECK": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+
+
+def cookies_source(configured: Path, allowed_roots: tuple[Path, ...]) -> Path:
+    """The real cookies file to copy from, or a non-retryable error. The configured path must
+    be absolute and sit inside one of `allowed_roots` (the Docker secret mount), both as given
+    and after resolving symlinks, so it can never be redirected outside it, and it must be a
+    regular file. The path is config, never user input, so a bad one is a misconfiguration."""
+    roots = tuple(root.resolve() for root in allowed_roots)
+    resolved = configured.resolve()
+
+    def inside(path: Path) -> bool:
+        return any(path == root or root in path.parents for root in roots)
+
+    if not configured.is_absolute() or not inside(configured) or not inside(resolved):
+        raise DownloadError(
+            WorkerErrorCode.INTERNAL_ERROR,
+            "the cookies file must be inside the allowed directory",
+            retryable=False,
+        )
+    if not resolved.is_file():
+        raise DownloadError(
+            WorkerErrorCode.INTERNAL_ERROR,
+            "the configured cookies file is missing",
+            retryable=False,
+        )
+    return resolved
+
+
+def copy_cookies(source: Path) -> Path:
+    """A fresh 0600 copy of the cookies file in the worker's tmpfs (`/tmp`). yt-dlp refreshes
+    the cookies file in place, so it must never get the read-only secret; it gets this private
+    copy, which the caller deletes after the run. The content is a credential and is never
+    logged. A failure cleans the half-written copy up before propagating."""
+    fd, name = tempfile.mkstemp(prefix="ut-cookies-", suffix=".txt")
+    copy = Path(name)
+    try:
+        copy.chmod(0o600)  # mkstemp already does this; make the intent explicit.
+        with os.fdopen(fd, "wb") as dest, source.open("rb") as src:
+            shutil.copyfileobj(src, dest)
+    except BaseException:
+        copy.unlink(missing_ok=True)
+        raise
+    return copy
 
 
 # ---------------------------------------------------------------- classification
@@ -420,6 +481,7 @@ class YtDlpDownloader:
         python: str = sys.executable,
         runner: Runner = _open,
         limits: DownloadLimits | None = None,
+        cookies_roots: tuple[Path, ...] = ALLOWED_COOKIE_ROOTS,
     ) -> None:
         self._staging = staging
         self._settings = settings
@@ -427,6 +489,7 @@ class YtDlpDownloader:
         self._runtime = runtime
         self._python = python
         self._runner = runner
+        self._cookies_roots = cookies_roots
 
     def ladder(self) -> list[str]:
         """Player clients to try, in order (settings; duplicates and empties dropped)."""
@@ -472,37 +535,52 @@ class YtDlpDownloader:
             raise DownloadError(
                 WorkerErrorCode.INTERNAL_ERROR, "the yt-dlp plugin directory is missing"
             )
-        args = build_args(
-            python=self._python,
-            zipapp=zipapp,
-            deno=self._settings.deno_path,
-            clients=clients,
-            out_dir=run.out_dir,
-            video_id=video_id,
-            limits=self._limits,
-            pot_provider_url=pot_url,
-            plugin_dir=plugin_dir,
-        )
-        process = await self._runner(args, minimal_env(run.out_dir))
+        # yt-dlp rewrites the cookies file in place, so it never gets the read-only secret: a
+        # private 0600 copy per attempt, deleted below whatever happens.
+        cookies_copy = self._prepare_cookies()
         try:
-            with anyio.fail_after(self._settings.ytdlp_timeout_s):
-                async with anyio.create_task_group() as tg:
-                    for stream in (process.stdout, process.stderr):
-                        if stream is not None:
-                            tg.start_soon(self._consume_safely, stream, run, tg.cancel_scope)
-                if run.failure is not None:
-                    raise run.failure
-                returncode = await process.wait()
-        except TimeoutError as exc:
-            raise DownloadError(WorkerErrorCode.NETWORK_ERROR, "yt-dlp timed out") from exc
+            args = build_args(
+                python=self._python,
+                zipapp=zipapp,
+                deno=self._settings.deno_path,
+                clients=clients,
+                out_dir=run.out_dir,
+                video_id=video_id,
+                limits=self._limits,
+                pot_provider_url=pot_url,
+                plugin_dir=plugin_dir,
+                cookies_file=cookies_copy,
+            )
+            process = await self._runner(args, minimal_env(run.out_dir))
+            try:
+                with anyio.fail_after(self._settings.ytdlp_timeout_s):
+                    async with anyio.create_task_group() as tg:
+                        for stream in (process.stdout, process.stderr):
+                            if stream is not None:
+                                tg.start_soon(self._consume_safely, stream, run, tg.cancel_scope)
+                    if run.failure is not None:
+                        raise run.failure
+                    returncode = await process.wait()
+            except TimeoutError as exc:
+                raise DownloadError(WorkerErrorCode.NETWORK_ERROR, "yt-dlp timed out") from exc
+            finally:
+                if process.returncode is None:
+                    with anyio.CancelScope(shield=True):
+                        process.kill()
+                        await process.wait()
+            if returncode != 0:
+                raise classify(list(run.errors), returncode)
+            return await self._finish(run)
         finally:
-            if process.returncode is None:
-                with anyio.CancelScope(shield=True):
-                    process.kill()
-                    await process.wait()
-        if returncode != 0:
-            raise classify(list(run.errors), returncode)
-        return await self._finish(run)
+            if cookies_copy is not None:
+                cookies_copy.unlink(missing_ok=True)
+
+    def _prepare_cookies(self) -> Path | None:
+        """The per-attempt cookies copy to pass to yt-dlp, or None when no cookies are set."""
+        configured = self._settings.ytdlp_cookies_file
+        if configured is None:
+            return None
+        return copy_cookies(cookies_source(configured, self._cookies_roots))
 
     async def _consume_safely(
         self, stream: AsyncIterable[bytes], run: _Run, scope: anyio.CancelScope

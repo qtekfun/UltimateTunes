@@ -148,6 +148,14 @@ class WorkerSettings(AreaSettings):
     ytdlp_pot_provider_url: str | None = None
     # Where the image keeps the pinned bgutil plugin zip (read-only, Dockerfile).
     ytdlp_plugin_dir: Path = Path("/opt/ytdlp-plugins")
+    # Optional YouTube cookies (approved 2026-10-13, superseding SPEC §11's "no cookies in v1"):
+    # the path of a Netscape/Mozilla `cookies.txt` exported from a **throwaway** account,
+    # normally the read-only Docker secret `ut_ytdlp_cookies` at `/run/secrets/ut_ytdlp_cookies`.
+    # Unset or empty: no cookies, exactly as before. The file content is an account credential:
+    # the worker never hands this read-only file to yt-dlp (yt-dlp rewrites the cookies file in
+    # place), but copies it to a private 0600 temp per download and deletes it afterwards, and
+    # the path must sit inside an allowed directory (`/run/secrets`); see `worker/ytdlp.py`.
+    ytdlp_cookies_file: Path | None = None
 
     @field_validator("ytdlp_pot_provider_url")
     @classmethod
@@ -155,3 +163,11 @@ class WorkerSettings(AreaSettings):
         if value is None or not value.strip():
             return None
         return internal_base_url(value)
+
+    @field_validator("ytdlp_cookies_file", mode="before")
+    @classmethod
+    def _no_empty_cookies(cls, value: object) -> object:
+        # An unset or blank value means "no cookies"; `Path("")` would otherwise become `.`.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return value
