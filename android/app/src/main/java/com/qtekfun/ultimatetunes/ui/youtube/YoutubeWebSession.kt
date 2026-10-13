@@ -39,6 +39,7 @@ class CookieManagerSession @Inject constructor() : YoutubeWebSession {
         // youtube.com first: its cookies win when a name repeats.
         val SOURCES = listOf(
             "www.youtube.com" to ".youtube.com",
+            "music.youtube.com" to ".youtube.com",
             "accounts.google.com" to ".google.com",
             "www.google.com" to ".google.com"
         )
