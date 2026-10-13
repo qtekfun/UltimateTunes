@@ -12,11 +12,13 @@ its lockout) and never issues a session: a surface checks the password first, th
 the user has a second factor, calls `verify_second_factor` before issuing the session or the
 device key.
 
-Secrets at rest (SECURITY.md): the TOTP shared secret is stored in the database because it must
-be reversible to compute codes, and the dependency set has no AEAD library to seal it. Protect
-`/data`: a stolen database exposes the secrets. Recovery codes are stored only as Argon2id
-hashes and spent once. The shared secret and the recovery codes never reach a log line, an
-audit entry or an error; every outcome is an `auth.2fa` security event with no secret.
+Secrets at rest (SECURITY.md, docs/2fa.md): the TOTP shared secret must be reversible to
+compute codes, so it cannot be a hash; it is **encrypted at rest** with Fernet
+(`auth/secretbox.py`) under `UT_TOTP_ENCRYPTION_KEY`, so the database alone does not expose it.
+Protect that key as well as the database. Without the key, enrollment and verification fail
+closed. Recovery codes are stored only as Argon2id hashes and spent once. The shared secret,
+the key and the recovery codes never reach a log line, an audit entry or an error; every
+outcome is an `auth.2fa` security event with no secret.
 
 Brute force: the second step has its own lockout bucket (`auth:2fa:<user id>`), so guessing a
 six-digit code locks the user's second step after `UT_AUTH_MAX_FAILURES_PER_USER` tries for
