@@ -76,6 +76,9 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_AUTH_ARGON2_WAIT_S` | `2` | api | How long a password check waits for a free slot before answering "try again". |
 | `UT_AUTH_MAX_FAILURES_GLOBAL_PER_MIN` | `100` | api | Failures per minute from outside the admin networks before unknown keys, and the outside password checks of usernames that failed recently, are locked. Usernames with no recent outside failure, valid keys and the admin networks are never held back by it. |
 | `UT_AUTH_GLOBAL_LOCKOUT_S` | `60` | api | Length of that global lock. |
+| `UT_AUTH_REQUIRE_2FA` | `off` | api | Who must use the optional TOTP second factor on the password logins: `off` (nobody is forced; a user may still enable it for themselves), `admins` (every admin) or `all` (everyone). A covered user who has not enrolled is sent to the setup page after signing in and cannot turn the factor off. API keys (the app) are never a second factor (docs/2fa.md). |
+| `UT_AUTH_2FA_WINDOW` | `1` | api | How many 30 s time steps on each side of the current one a TOTP code is accepted, to tolerate clock drift (RFC 6238). `0` accepts only the current step. |
+| `UT_TOTP_ENCRYPTION_KEY` | (unset) | api | Key that encrypts the TOTP 2FA secret at rest (a urlsafe-base64 32-byte Fernet key; generate with `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`). From an env var or the Docker secret `ut_totp_encryption_key`. **Required to enable or verify 2FA**: without it, enrollment and the second step fail closed (they never fall back to plaintext). Keep it as safe as the database; losing it makes enrolled TOTP secrets unreadable (users fall back to recovery codes). See docs/2fa.md. |
 
 ## Downloads and their limits
 
@@ -177,8 +180,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_YTDLP_UPDATE_INTERVAL_H` | `24` | worker | Hours between update checks. |
 | `UT_YTDLP_UPDATE_TIMEOUT_S` | `300` | worker | Bound of one whole update (download, signature check, smoke test). |
 | `UT_YTDLP_UPDATE_ON_ERROR_MIN_INTERVAL_S` | `3600` | worker | An extractor error triggers an update check at most this often. |
-| `UT_YTDLP_PLAYER_CLIENTS` | `default` | worker | yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`). |
-| `UT_YTDLP_FALLBACK_CLIENTS` | `web_embedded` | worker | Clients tried once more when the first ones fail; empty turns the fallback off. |
+| `UT_YTDLP_PLAYER_CLIENTS` | `web_safari,tv` | worker | yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`). The default is tuned for the bundled bgutil GVS PO token provider (`UT_YTDLP_POT_PROVIDER_URL`): `web_safari` downloads direct https formats with a GVS PO token and `tv` needs none, avoiding the SABR-only formats of yt-dlp's own `default` set that 403 part-way and cut tracks short. Empty keeps this default. See [admin-guide.md](admin-guide.md), "songs cut off or skip". |
+| `UT_YTDLP_FALLBACK_CLIENTS` | `default` | worker | Clients tried once more when the first ones offer no usable format or their media is refused (e.g. a 403); empty turns the fallback off. `default` is yt-dlp's own client set, the safety net when the primary clients find nothing (e.g. no PO token provider). |
 | `UT_YTDLP_TIMEOUT_S` | `600` | worker | Bound of one yt-dlp download. |
 | `UT_DENO_PATH` | `/usr/local/bin/deno` | worker | The JavaScript runtime yt-dlp needs. |
 | `UT_GPGV_PATH` | `/usr/bin/gpgv` | worker | gpgv binary that verifies yt-dlp updates. |

@@ -257,6 +257,12 @@ _RULES: tuple[tuple[tuple[str, ...], WorkerErrorCode], ...] = (
     (_EXTRACTOR, WorkerErrorCode.EXTRACTOR_ERROR),
     (_NETWORK, WorkerErrorCode.NETWORK_ERROR),
 )
+# Failures that make `download` try the next client of the ladder (before any byte was served):
+# a client that offers no usable format (extractor) or whose media URL is refused, e.g. a
+# `403 Forbidden` on a SABR-only client (network).
+_LADDER_RETRY: frozenset[WorkerErrorCode] = frozenset(
+    {WorkerErrorCode.EXTRACTOR_ERROR, WorkerErrorCode.NETWORK_ERROR}
+)
 
 
 def classify(errors: list[str], returncode: int) -> DownloadError:
@@ -444,7 +450,12 @@ class YtDlpDownloader:
             try:
                 return await self._attempt(video_id, clients, run)
             except DownloadError as error:
-                if run.reported or error.code != WorkerErrorCode.EXTRACTOR_ERROR:
+                # Try the next client on an extraction failure (no downloadable format) or a
+                # network failure such as a 403 on the media URL (a SABR-only client fails this
+                # way), but only before any byte was served: once a listener is reading the
+                # file, a different client would download other bytes under it, so the job fails
+                # and a fresh attempt starts from scratch instead.
+                if run.reported or error.code not in _LADDER_RETRY:
                     raise
                 log.warning(
                     "yt-dlp: clients %s failed (%s), trying %s",
@@ -588,6 +599,15 @@ class YtDlpDownloader:
             size = self._staging.size(final)
         except OSError as exc:
             raise DownloadError(WorkerErrorCode.STORAGE_ERROR, "downloaded file missing") from exc
+        # Abort on a size mismatch (SPEC section 11): if the worker announced the exact size, a
+        # final file of any other size is a truncated or corrupt download and must never be
+        # handed to the archiver as complete. Retry it (another client or attempt); the stream
+        # of this attempt is cut by the api (a failed job ends open streams).
+        if run.expected_size is not None and size != run.expected_size:
+            raise DownloadError(
+                WorkerErrorCode.NETWORK_ERROR,
+                f"the download ended at {size} bytes, not the announced {run.expected_size}",
+            )
         format_id = run.format_id or result.format_id or "unknown"
         await run.on_progress(
             DownloadProgress(

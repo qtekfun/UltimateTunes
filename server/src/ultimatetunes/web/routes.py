@@ -37,6 +37,7 @@ from ultimatetunes.admin.routes import form_data
 from ultimatetunes.admin.security import (
     CSRF_FIELD,
     LOGIN_TTL_S,
+    PENDING_2FA_TTL_S,
     SessionData,
     csrf_failure,
     csrf_ok,
@@ -69,6 +70,7 @@ from ultimatetunes.web.security import (
     HOME,
     LANG_COOKIE,
     LOGIN_COOKIE,
+    PENDING_2FA_COOKIE,
     PREFIX,
     SESSION_COOKIE,
     WebSessionCodec,
@@ -108,6 +110,9 @@ MESSAGES = {
     "csrf": "The form expired or came from another site. Reload and retry.",
     "credentials": "Wrong username or password.",
     "attempts": "Too many attempts. Wait and try again.",
+    "code": "That code is wrong.",
+    "expired": "Your sign-in expired. Start again.",
+    "enroll": "Set up two-factor authentication to continue.",
 }
 
 
@@ -174,6 +179,21 @@ class CsrfRejected(Exception):  # noqa: N818
     """A state change without the session's CSRF token, or a cross-site one."""
 
 
+class EnrollmentRequired(Exception):  # noqa: N818 - a control-flow signal, not an error
+    """A policy-covered user who has not set up 2FA yet: sent to Settings to enroll, refused
+    everything else until enrolled (`UT_AUTH_REQUIRE_2FA`)."""
+
+
+def _enroll_exempt(path: str) -> bool:
+    """Paths a must-enroll user may still reach: Settings (which hosts the 2FA setup), the 2FA
+    actions and signing out."""
+    return (
+        path == PREFIX + "/settings"
+        or path.startswith(PREFIX + "/settings/2fa")
+        or path == (PREFIX + "/logout")
+    )
+
+
 @dataclass(frozen=True)
 class Listener:
     user: User
@@ -236,6 +256,11 @@ def current_listener(request: Request) -> Listener:
     decision = st.services.rate_limiter.hit(f"web:user:{user.id}", limit)
     if not decision.allowed:
         raise RateLimited(decision.retry_after_s)
+    role: Role = "admin" if user.role == "admin" else "user"
+    if st.auth.two_factor.status(user.id, role).must_enroll and not _enroll_exempt(
+        request.url.path
+    ):
+        raise EnrollmentRequired
     return Listener(user, session, client_ip(request))
 
 
@@ -303,6 +328,21 @@ def _signed_out(request: Request) -> Response:
     )
 
 
+def _enrollment_required(request: Request) -> Response:
+    """A must-enroll user: pages go to Settings (which hosts the 2FA setup); the player's calls
+    and media get 403 JSON, with an HX redirect so the shell navigates there."""
+    settings_path = PREFIX + "/settings"
+    if _is_page(request) and request.method == "GET":
+        if request.headers.get("hx-request"):
+            return Response(status_code=200, headers={"HX-Redirect": settings_path})
+        return RedirectResponse(settings_path, status_code=303)
+    headers = {"HX-Redirect": settings_path} if request.headers.get("hx-request") else {}
+    message = translator(lang_of(request))(MESSAGES["enroll"])
+    return JSONResponse(
+        {"error": "forbidden", "message": message}, status_code=403, headers=headers
+    )
+
+
 def _csrf_refused(request: Request) -> Response:
     """Pages and forms get the error page (HTMX swaps it into `#content`); the player's calls
     and the star buttons get JSON, which `player.js` shows in its status line."""
@@ -334,6 +374,8 @@ class WebRoute(APIRoute):
                 return await original(request)
             except SignInRequired:
                 return _signed_out(request)
+            except EnrollmentRequired:
+                return _enrollment_required(request)
             except CsrfRejected:
                 return _csrf_refused(request)
             except TunesError as error:
@@ -459,14 +501,82 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
         return login_page(request, error=MESSAGES["attempts"], status=429)
     except (AuthenticationFailed, AccountDisabled, Forbidden, InvalidParameter):
         return login_page(request, error=MESSAGES["credentials"], status=401)
+    if st.auth.two_factor.is_enabled(user.id):
+        # The password was right; hold the session until the second factor (`/web/login/2fa`).
+        with st.services.db.read() as conn:
+            epoch = session_epoch(AdminRepository(conn), user.id)
+        cookie, pending = st.codec.new_pending_2fa(user.id, user.password_hash, epoch)
+        response = _login_2fa_page(request, pending.csrf)
+        set_cookie(response, PENDING_2FA_COOKIE, cookie, PENDING_2FA_TTL_S)
+        clear_cookie(response, LOGIN_COOKIE)
+        return response
+    return _complete_login(request, user)
+
+
+def _role_of(user: User) -> Role:
+    return "admin" if user.role == "admin" else "user"
+
+
+def _login_2fa_page(
+    request: Request, csrf: str, *, error: str | None = None, status: int = 200
+) -> Response:
+    return page(
+        request,
+        "login_2fa.html",
+        {"two_factor_csrf": csrf},
+        listener=None,
+        status=status,
+        error=error,
+    )
+
+
+def _complete_login(request: Request, user: User) -> Response:
+    """Issues the web session once every factor has passed, and audits the sign-in. A user the
+    require-policy covers but who has not enrolled is sent to Settings to enroll."""
+    st = state(request)
+    ip = client_ip(request)
     with st.services.db.transaction() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
         audit(conn, st.services.clock, actor_id=user.id, ip=ip, action="web.login")
     cookie, _session = st.codec.new_session(user.id, user.password_hash, epoch)
-    response = RedirectResponse(HOME, status_code=303)
+    target = (
+        PREFIX + "/settings"
+        if st.auth.two_factor.status(user.id, _role_of(user)).must_enroll
+        else HOME
+    )
+    response = RedirectResponse(target, status_code=303)
     set_cookie(response, SESSION_COOKIE, cookie, st.codec.ttl_s)
     clear_cookie(response, LOGIN_COOKIE)
+    clear_cookie(response, PENDING_2FA_COOKIE)
     return response
+
+
+@router.post(PREFIX + "/login/2fa", include_in_schema=False)
+def login_second_factor(
+    request: Request, form: Annotated[FormData, Depends(form_data)]
+) -> Response:
+    """The second step after a correct password: a TOTP code or a recovery code. The pending
+    cookie proves the password step passed (bound to the user's password fingerprint)."""
+    st = state(request)
+    pending = st.codec.read_pending_2fa(request.cookies.get(PENDING_2FA_COOKIE))
+    token = form.get(CSRF_FIELD)
+    submitted = token if isinstance(token, str) else None
+    if pending is None or not csrf_ok(request, pending.csrf, submitted):
+        csrf_failure(request, csrf_reason(request))
+        return login_page(request, error=MESSAGES["expired"], status=403)
+    try:
+        user = st.auth.get_user(pending.user_id)
+    except NotFound:
+        return login_page(request, error=MESSAGES["expired"], status=403)
+    with st.services.db.read() as conn:
+        epoch = session_epoch(AdminRepository(conn), user.id)
+    if user.is_disabled or st.codec.fingerprint(user.password_hash, epoch) != pending.fingerprint:
+        return login_page(request, error=MESSAGES["expired"], status=403)
+    code = form.get("code")
+    code_value = code if isinstance(code, str) else ""
+    if not st.auth.two_factor.verify_second_factor(user.id, code_value, client_ip(request)):
+        return _login_2fa_page(request, pending.csrf, error=MESSAGES["code"], status=401)
+    return _complete_login(request, user)
 
 
 @router.post(PREFIX + "/logout", include_in_schema=False)

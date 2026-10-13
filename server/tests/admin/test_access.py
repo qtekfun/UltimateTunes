@@ -14,8 +14,14 @@ from fastapi.testclient import TestClient
 from tests.admin.conftest import People, session_for
 from ultimatetunes.admin import routes
 
-# Reachable without a session (inside the allowlist): the login form and the two static files.
-PUBLIC = {("GET", "/admin/login"), ("POST", "/admin/login"), ("GET", "/admin/static/{name}")}
+# Reachable without a session (inside the allowlist): the login form, its second-factor step
+# and the two static files.
+PUBLIC = {
+    ("GET", "/admin/login"),
+    ("POST", "/admin/login"),
+    ("POST", "/admin/login/2fa"),
+    ("GET", "/admin/static/{name}"),
+}
 SAMPLE = {
     "user_id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
     "key_id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
