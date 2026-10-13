@@ -143,7 +143,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Android: API key stored encrypted with the Android Keystore; cleartext traffic forbidden in release (debug allows the emulator host only); no secrets in logs.
 
 ## 8. Quality and CI
-(GitHub Actions CI is on again since the repo went public; Release and Nightly stay disabled and publishing is paused. The same gates run locally with `tools/ci-local.sh`, and releases are local; see §11, coordinator decisions in Wave 1.)
+(GitHub Actions CI is on again since the repo went public; Since 1.0.0-rc.2 the Release workflow is enabled and tags publish; Nightly stays disabled. The same gates run locally with `tools/ci-local.sh`; see §11.)
 - CI on every PR: server (ruff, mypy, pytest with coverage, bandit, pip-audit), contracts (OpenAPI validation, migrations apply, schemathesis against the app), Android (`./gradlew check assembleDebug`), Docker (build, Trivy scan, `compose.test.yaml` smoke), gitleaks, store texts, PR title.
 - Nightly: pip-audit, Android instrumented tests on an emulator against the test compose stack. The canary (real ytmusicapi search, radio, album and playlist read + yt-dlp download of one fixed Creative Commons track) runs **scheduled on the server** (api for ytmusicapi, worker for the download; reported in the admin panel); on GitHub it is manual only, because runner IPs get YouTube's bot wall (T03c).
 - Release on tag: signed APK + multi-arch (amd64, arm64) image on GHCR, GitHub Release with notes, APK SHA-256. Updates on the phone through Obtainium.
@@ -312,6 +312,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - No publishing to GHCR or GitHub Releases and no release tags until the author decides otherwise; releases are built locally (RELEASING.md).
 - Open option: self-hosted GitHub Actions runners on the homelab.
 - *Update 2026-10-12:* the repo is now **public** (gitleaks over every commit of every branch was clean first), so GitHub-hosted minutes are free: CI, PR title and Dependabot verification are on again and a merge needs GitHub CI green plus the independent review. `tools/ci-local.sh` stays as the local gate. Release and Nightly stay disabled; publishing stays paused.
+- *Update 2026-10-13 (1.0.0-rc.2):* at the author's request the **Release** workflow is enabled and the first release candidate is published: signed APK as a GitHub pre-release and the server image on GHCR (public repo, no cost). Tags are pushed by the author, or by Claude when the author asks. Nightly stays disabled.
 
 ### Taken in Wave 2 — T16 streaming while downloading (#44, 2026-10-12)
 - A **retryable** failure (job back to `queued`) keeps open streams waiting for the retry: the same format and size continue, others are cut. Only a final failure (`failed`/`cancelled`) cuts them at once; the client's read timeout decides how long to wait.
