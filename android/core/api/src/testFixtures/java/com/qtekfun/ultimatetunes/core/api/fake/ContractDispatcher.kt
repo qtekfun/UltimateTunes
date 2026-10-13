@@ -209,6 +209,14 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
 
                 "GET listen-now" -> ok(ut("getListenNow.200"))
 
+                "GET recommendations" -> ok(ut("getRecommendations.200"))
+
+                "GET charts" -> ok(ut("getCharts.200"))
+
+                "GET moods" -> ok(ut("getMoods.200"))
+
+                "GET moods/*" -> ok(ut("getMoodTracks.200"))
+
                 "GET imports" -> ok(ut("listImports.200"))
 
                 "POST imports" -> createImport()

@@ -118,6 +118,60 @@ fun ShelfAlbumCard(album: AlbumTile, onClick: (() -> Unit)? = null) {
     AlbumCard(album = album, onClick = onClick, modifier = Modifier.width(Dimens.ShelfTile))
 }
 
+/**
+ * A song as a fixed-width card for a [Shelf] (recommendations, charts): square rounded artwork,
+ * title and artist below, the cloud marking one not in the library yet. TalkBack reads it as one
+ * item, the note included.
+ */
+@Composable
+fun ShelfTrackCard(track: TrackTile, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val description = stringResource(R.string.track_description, track.title, track.artist)
+    val external = stringResource(R.string.not_in_library)
+    Column(
+        modifier = modifier
+            .width(Dimens.ShelfTile)
+            .clip(Dimens.ArtworkShape)
+            .clickable(onClick = onClick)
+            .clearAndSetSemantics {
+                contentDescription =
+                    if (track.isExternal) "$description, $external" else description
+            }
+    ) {
+        Artwork(
+            url = track.coverUrl,
+            placeholderKey = track.id.value,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+        )
+        Spacer(Modifier.padding(top = Dimens.SpaceS))
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (track.isExternal) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_cloud),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(14.dp)
+                        .padding(end = Dimens.SpaceXS)
+                )
+            }
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 /** A radio station: wide artwork with the title over a dark gradient, like a poster. */
 @Composable
 fun StationCard(station: StationTile, onClick: () -> Unit, modifier: Modifier = Modifier) {

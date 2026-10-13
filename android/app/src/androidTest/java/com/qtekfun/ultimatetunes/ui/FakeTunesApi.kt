@@ -23,6 +23,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ArtistIndex
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
 import com.qtekfun.ultimatetunes.core.api.model.ArtistItem
 import com.qtekfun.ultimatetunes.core.api.model.Capabilities
+import com.qtekfun.ultimatetunes.core.api.model.Charts
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.CreatedKey
 import com.qtekfun.ultimatetunes.core.api.model.Import
@@ -36,18 +37,24 @@ import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.LyricLine
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.Me
+import com.qtekfun.ultimatetunes.core.api.model.MoodCategory
+import com.qtekfun.ultimatetunes.core.api.model.MoodTracks
+import com.qtekfun.ultimatetunes.core.api.model.Moods
 import com.qtekfun.ultimatetunes.core.api.model.OpenSubsonicInfo
 import com.qtekfun.ultimatetunes.core.api.model.PlayQueue
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.Radio
 import com.qtekfun.ultimatetunes.core.api.model.RadioStation
+import com.qtekfun.ultimatetunes.core.api.model.RecommendationShelf
+import com.qtekfun.ultimatetunes.core.api.model.Recommendations
 import com.qtekfun.ultimatetunes.core.api.model.RequestReason
 import com.qtekfun.ultimatetunes.core.api.model.Role
 import com.qtekfun.ultimatetunes.core.api.model.SearchResult
 import com.qtekfun.ultimatetunes.core.api.model.ServerInfo
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.api.model.SourceShelf
 import com.qtekfun.ultimatetunes.core.api.model.Starred
 import com.qtekfun.ultimatetunes.core.api.model.TrackItem
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
@@ -108,6 +115,34 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         val all = listOf(KEEPER, TIDEWATER, COPPER, BRASAS)
         val first = all.firstOrNull { it.id == seed } ?: KEEPER
         Radio(first, all - first)
+    }
+
+    override suspend fun recommendations(limit: Int?): TunesResult<Recommendations> = configured {
+        Recommendations(
+            recommendedForYou = listOf(COPPER, MOONS),
+            becauseYouPlayed = listOf(
+                RecommendationShelf(seed = KEEPER, items = listOf(COPPER, MOONS))
+            ),
+            shelves = listOf(
+                SourceShelf(
+                    source = "listenbrainz",
+                    title = LISTENBRAINZ_SHELF,
+                    items = listOf(MOONS)
+                )
+            )
+        )
+    }
+
+    override suspend fun charts(country: String?, limit: Int?): TunesResult<Charts> = configured {
+        Charts(country = country ?: "ZZ", items = listOf(KEEPER, TIDEWATER, COPPER))
+    }
+
+    override suspend fun moods(): TunesResult<Moods> = configured {
+        Moods(listOf(MoodCategory("moods_chill", "Chill"), MoodCategory("moods_focus", "Focus")))
+    }
+
+    override suspend fun moodTracks(id: String, limit: Int?): TunesResult<MoodTracks> = configured {
+        MoodTracks(id = id, items = listOf(KEEPER, TIDEWATER))
     }
 
     override suspend fun search(
@@ -383,6 +418,7 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         const val API_KEY = "utk_EXAMPLEexampleEXAMPLEexampleEXAMPLEexampleE"
         const val SERVER_URL = "https://music.example.net/"
         const val KEEPER_RADIO = "Lighthouse Keeper Radio"
+        const val LISTENBRAINZ_SHELF = "Popular on ListenBrainz · The Paper Lanterns"
         const val SUNDAY = "Sunday Morning"
         const val TABLET_KEY = "Old tablet"
         const val IMPORTED_NAME = "Road Trip"

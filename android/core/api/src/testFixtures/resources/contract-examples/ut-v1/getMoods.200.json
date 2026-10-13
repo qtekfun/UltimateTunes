@@ -1,0 +1,20 @@
+{
+    "categories": [
+        {
+            "id": "moods_chill",
+            "title": "Chill"
+        },
+        {
+            "id": "moods_focus",
+            "title": "Focus"
+        },
+        {
+            "id": "moods_commute",
+            "title": "Commute"
+        },
+        {
+            "id": "genres_decades_2020s",
+            "title": "2020s"
+        }
+    ]
+}
