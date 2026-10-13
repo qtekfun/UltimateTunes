@@ -138,17 +138,13 @@ def test_confirm_when_already_enabled_is_refused(
         tf.confirm_enrollment(user.user_id, "123456")
 
 
-def test_regenerate_refused_while_only_pending(
-    tf: TwoFactorService, user: Account
-) -> None:
+def test_regenerate_refused_while_only_pending(tf: TwoFactorService, user: Account) -> None:
     tf.begin_enrollment(user.user_id, user.username)
     with pytest.raises(Conflict):
         tf.regenerate_recovery_codes(user.user_id)
 
 
-def test_verify_fails_closed_while_only_pending(
-    tf: TwoFactorService, user: Account
-) -> None:
+def test_verify_fails_closed_while_only_pending(tf: TwoFactorService, user: Account) -> None:
     tf.begin_enrollment(user.user_id, user.username)
     assert not tf.verify_second_factor(user.user_id, "123456", IP)
 
