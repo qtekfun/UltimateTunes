@@ -187,6 +187,24 @@ A PO token helps but guarantees nothing: if downloads still fail with a token, t
 
 yt-dlp updates itself, but the plugin and the provider are pinned to one version in the image. If the canary starts failing while the provider is on, and works with it off, the plugin probably needs a newer release: update the server image when one is out (until then, turn the provider off).
 
+### Songs cut off or skip
+
+A freshly fetched song (one not in your library yet) plays for a little while and then stops, and the app skips to the next track. The worker log shows the download ending with `network_error` and often `HTTP Error 403: Forbidden` on the media data: YouTube served a format the worker could not download to the end, so the partial file stopped growing and the stream was cut. A truncated download is never kept or served as a whole song, so retrying is safe.
+
+What to do:
+
+1. **Change the player clients.** Different YouTube "player clients" are offered different formats; some give formats that 403 part-way. The worker default is `web_safari,tv`, which avoids them, and it falls back to yt-dlp's own `default` set. If fresh tracks still cut off, set `UT_YTDLP_PLAYER_CLIENTS` in the `.env` next to `server/compose.yaml` and `docker compose up -d` to try another set, for example:
+   ```
+   UT_YTDLP_PLAYER_CLIENTS=default
+   ```
+   A comma list is tried in one run (`UT_YTDLP_PLAYER_CLIENTS=web_safari,tv,default`); the fallback `UT_YTDLP_FALLBACK_CLIENTS` is tried only if the first set finds nothing.
+2. **Turn on the PO token provider** (above, ["Sign in to confirm you're not a bot"](#sign-in-to-confirm-youre-not-a-bot)): with it, `web_safari` downloads direct formats that do not 403, which is why it is in the default. Downloads that 403 even with a token mean the address itself is blocked (wait it out).
+3. **Re-fetch the songs that were cut.** Those downloads ended as `failed` and will not retry by themselves. From the host, requeue them all (in the `api` container, the one with the database; the worker has none):
+   ```
+   docker compose exec api ultimatetunes refetch-failed
+   ```
+   Add `--truncated` to also re-fetch any archived song whose file on disk is shorter than it should be (a half song from an earlier version of this bug), and `--dry-run` to only count what would be requeued without changing anything. It only requeues; it replaces a broken file, never deleting a good one.
+
 ## Audit log
 
 Every sign-in to the panel, every account and key change, and every action taken in the panel (retries, cancels, deletes, reviews, worker commands, notification settings), newest first, 50 per page. Each entry has the time (UTC), who did it, from which address, the action, its target and a short detail. Passwords, keys and notification URLs are never recorded.

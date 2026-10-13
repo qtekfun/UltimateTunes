@@ -23,6 +23,14 @@ from ultimatetunes.settings import AreaSettings
 
 # yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`).
 CLIENTS_PATTERN = r"^[a-z0-9_]+(,[a-z0-9_]+)*$"
+# Default player clients (D15, 2026-10-13). Tuned for the bundled bgutil GVS PO token provider
+# (D13): `web_safari` downloads direct https formats with a GVS PO token, `tv` needs no PO token
+# at all, so a run without the provider still has a client to fall back to. yt-dlp's own
+# `default` (`visionos,web`) tends to be served SABR-only formats that 403 part-way, which is
+# what cut fresh `yt:` tracks short; the fallback keeps `default` as a safety net. Operators can
+# override with `UT_YTDLP_PLAYER_CLIENTS` (forwarded by compose).
+DEFAULT_PLAYER_CLIENTS = "web_safari,tv"
+DEFAULT_FALLBACK_CLIENTS = "default"
 # Fingerprint of the yt-dlp release signing key (spike T03c; the Dockerfile pins the same
 # one), written in gpg's groups of four and compared without spaces.
 YTDLP_SIGNER = "AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581"
@@ -138,8 +146,10 @@ class WorkerSettings(AreaSettings):
     ytdlp_update_timeout_s: float = Field(default=300.0, gt=0)
     # An extractor error triggers an update at most this often.
     ytdlp_update_on_error_min_interval_s: float = Field(default=3600.0, ge=0)
-    ytdlp_player_clients: str = Field(default="default", pattern=CLIENTS_PATTERN)
-    ytdlp_fallback_clients: str = Field(default="web_embedded", pattern=r"^$|" + CLIENTS_PATTERN)
+    ytdlp_player_clients: str = DEFAULT_PLAYER_CLIENTS
+    ytdlp_fallback_clients: str = Field(
+        default=DEFAULT_FALLBACK_CLIENTS, pattern=r"^$|" + CLIENTS_PATTERN
+    )
     ytdlp_timeout_s: float = Field(default=600.0, gt=0)
     deno_path: Path = Path("/usr/local/bin/deno")
     gpgv_path: Path = Path("/usr/bin/gpgv")
@@ -148,6 +158,18 @@ class WorkerSettings(AreaSettings):
     ytdlp_pot_provider_url: str | None = None
     # Where the image keeps the pinned bgutil plugin zip (read-only, Dockerfile).
     ytdlp_plugin_dir: Path = Path("/opt/ytdlp-plugins")
+
+    @field_validator("ytdlp_player_clients")
+    @classmethod
+    def _player_clients(cls, value: str) -> str:
+        """Empty (compose forwards `${UT_YTDLP_PLAYER_CLIENTS:-}` unset) falls back to the
+        default; anything set must be the usual comma list."""
+        text = value.strip()
+        if not text:
+            return DEFAULT_PLAYER_CLIENTS
+        if not re.fullmatch(CLIENTS_PATTERN, text):
+            raise ValueError("player clients must be a comma-separated list of [a-z0-9_] names")
+        return text
 
     @field_validator("ytdlp_pot_provider_url")
     @classmethod

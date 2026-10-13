@@ -177,8 +177,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_YTDLP_UPDATE_INTERVAL_H` | `24` | worker | Hours between update checks. |
 | `UT_YTDLP_UPDATE_TIMEOUT_S` | `300` | worker | Bound of one whole update (download, signature check, smoke test). |
 | `UT_YTDLP_UPDATE_ON_ERROR_MIN_INTERVAL_S` | `3600` | worker | An extractor error triggers an update check at most this often. |
-| `UT_YTDLP_PLAYER_CLIENTS` | `default` | worker | yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`). |
-| `UT_YTDLP_FALLBACK_CLIENTS` | `web_embedded` | worker | Clients tried once more when the first ones fail; empty turns the fallback off. |
+| `UT_YTDLP_PLAYER_CLIENTS` | `web_safari,tv` | worker | yt-dlp player clients, comma separated (`--extractor-args youtube:player_client=...`). The default is tuned for the bundled bgutil GVS PO token provider (`UT_YTDLP_POT_PROVIDER_URL`): `web_safari` downloads direct https formats with a GVS PO token and `tv` needs none, avoiding the SABR-only formats of yt-dlp's own `default` set that 403 part-way and cut tracks short. Empty keeps this default. See [admin-guide.md](admin-guide.md), "songs cut off or skip". |
+| `UT_YTDLP_FALLBACK_CLIENTS` | `default` | worker | Clients tried once more when the first ones offer no usable format or their media is refused (e.g. a 403); empty turns the fallback off. `default` is yt-dlp's own client set, the safety net when the primary clients find nothing (e.g. no PO token provider). |
 | `UT_YTDLP_TIMEOUT_S` | `600` | worker | Bound of one yt-dlp download. |
 | `UT_DENO_PATH` | `/usr/local/bin/deno` | worker | The JavaScript runtime yt-dlp needs. |
 | `UT_GPGV_PATH` | `/usr/bin/gpgv` | worker | gpgv binary that verifies yt-dlp updates. |
