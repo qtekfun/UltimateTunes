@@ -217,6 +217,10 @@
     <string name="youtube_warning_continue">Continuar</string>
     <string name="youtube_login_title">Iniciar sesión en YouTube</string>
     <string name="youtube_login_close">Cancelar inicio de sesión</string>
+    <string name="youtube_login_continue">Ya inicié sesión — continuar</string>
+    <string name="youtube_login_no_session">Todavía no se encontró una sesión de YouTube iniciada. Termina de iniciar sesión (abre YouTube una vez si hace falta) y pulsa Continuar de nuevo.</string>
+    <string name="youtube_login_load_failed">No se pudo cargar la página de inicio de sesión, o se bloqueó una página del proceso. Revisa la conexión y cancela para intentarlo de nuevo.</string>
+    <string name="youtube_login_waiting">Esperando tu sesión de YouTube… Pulsa Continuar cuando hayas iniciado sesión.</string>
     <string name="youtube_uploading">Enviando la sesión a tu servidor…</string>
     <string name="youtube_done">Sesión iniciada. Tu servidor ya puede usar esta sesión de YouTube.</string>
     <string name="youtube_failure_title">Cuenta de YouTube</string>
