@@ -64,5 +64,5 @@ The author asked to keep going overnight, release when appropriate, decide doubt
 - The reservation is atomic within one api process (SQLite single writer). Several api replicas (phase 5, PostgreSQL/Redis) will need a row lock or compare-and-set in `reserve_backoff`.
 
 ## D12. First production candidate is 1.0.0-rc.1
-- Everything planned for 1.0 is merged, but nothing has run in production yet and the signed APK can only come from the Release workflow. A release candidate lets the author install and deploy it, run the SECURITY.md author checklist (TLS, backup restore, limits through the real proxy, public client IPs in the audit log) and then cut 1.0.0 from the same code.
+- Everything planned for 1.0 is merged, but nothing has run in production yet and the signing passwords are not on the coordinator's machine, so the signed APK comes from the Release workflow (or from a local build by the author with the four `UT_*` variables). A release candidate lets the author install and deploy it, run the SECURITY.md author checklist (TLS, backup restore, limits through the real proxy, public client IPs in the audit log) and then cut 1.0.0 from the same code.
 - versionCode 1000001; the final 1.0.0 will be 1000099.
