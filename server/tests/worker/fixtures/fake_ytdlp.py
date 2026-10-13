@@ -72,7 +72,7 @@ def skipped_on_limits(args: list[str], video: str, duration: float, size: int | 
     return False
 
 
-def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
+def main(args: list[str]) -> None:  # noqa: PLR0912, PLR0915 - one branch per scenario
     if args == ["--version"]:
         out("2026.08.19")
         return
@@ -89,8 +89,15 @@ def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
         raise SystemExit(2)
     if video == "HangForever":
         time.sleep(60)
-    if video.startswith("Ladder") and clients == "default":
-        fail(f"{video}: Requested format is not available")
+    # Ladder scenarios key off explicit client names the test chooses, so they do not depend on
+    # the real default. `clienta` is the first rung, `clientb` the fallback. All of these fail
+    # before any byte is written (run.reported is False), so the ladder may take the next rung.
+    if video.startswith("Ladder") and clients == "clienta":
+        fail(f"{video}: Requested format is not available")  # extractor_error
+    if video.startswith("Block403"):  # 11-char id "Block403All": 403 on every client
+        fail(f"{video}: HTTP Error 403: Forbidden")  # network_error, every client
+    if video.startswith("Forbid403") and clients == "clienta":
+        fail(f"{video}: HTTP Error 403: Forbidden")  # network_error on the first rung only
     duration = 4000.0 if video == "TooLongVid1" else 2.5
     audio = AUDIO * 8 if video in ("HugeFile001", "GrowsHuge01") else AUDIO
     if skipped_on_limits(args, video, duration, len(audio) if video == "HugeFile001" else None):
@@ -107,6 +114,26 @@ def main(args: list[str]) -> None:  # noqa: PLR0912 - one branch per scenario
     if video == "EscapeDir01":
         part = out_dir.parent / "elsewhere.part"
     total = None if video in ("NoSizeKnown", "GrowsHuge01") else len(audio)
+    if video == "ShortFile01":
+        # Announce the full size but leave the file half-written, then "finish" anyway: the
+        # downloader must reject the size mismatch, not archive a truncated file.
+        half = audio[: len(audio) // 2]
+        with part.open("wb") as file:
+            file.write(half)
+        emit_progress("downloading", len(half), total, part=part, final=final, fmt=fmt, ext=ext)
+        part.rename(final)
+        emit_progress("finished", len(audio), total, part=final, final=final, fmt=fmt, ext=ext)
+        short_result = {
+            "id": video,
+            "format_id": fmt,
+            "ext": ext,
+            "acodec": "opus",
+            "filesize": total,
+            "duration": duration,
+            "filepath": str(final),
+        }
+        out("UTF " + json.dumps(short_result))
+        return
     step = len(audio) // 4
     with part.open("wb") as file:
         for done in range(step, len(audio) + 1, step):
