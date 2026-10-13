@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from tests.auth.conftest import ADMIN_PASSWORD, IP, USER_PASSWORD, fast_passwords
 from ultimatetunes.app import create_app
-from ultimatetunes.auth import web
+from ultimatetunes.auth import totp, web
 from ultimatetunes.auth.routes import CreateKeyRequest
 from ultimatetunes.auth.service import HELP_URL, AuthService
 from ultimatetunes.auth.settings import AuthSettings
@@ -339,3 +339,56 @@ def test_bootstrap_from_env_needs_both_variables(service: AuthService) -> None:
     only_password = AuthSettings(bootstrap_admin_password=SecretStr("a long secret here"))
     assert not web.bootstrap_from_env(service, only_password)
     assert service.list_users() == []
+
+
+def _enable_2fa(auth: AuthService, clock: FakeClock, username: str) -> str:
+    """Turns TOTP on for `username` and returns the shared secret."""
+    user = next(u for u in auth.list_users() if u.username == username)
+    enrollment = auth.two_factor.begin_enrollment(user.id, user.username)
+    code = totp.code_at(enrollment.secret, int(clock.now().timestamp()))
+    auth.two_factor.confirm_enrollment(user.id, code)
+    clock.advance(totp.PERIOD_S)
+    return enrollment.secret
+
+
+def test_keys_without_2fa_still_only_need_a_password(client: TestClient, auth: AuthService) -> None:
+    # The existing app path is unchanged for accounts with no second factor.
+    assert new_key(client, "bob", USER_PASSWORD)
+
+
+def test_keys_require_the_totp_code_when_2fa_is_enabled(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    secret = _enable_2fa(auth, clock, "bob")
+    # The password alone no longer creates a key for a 2FA account.
+    without = client.post(
+        "/ut/v1/keys", json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel"}
+    )
+    assert without.status_code == 401
+    # A valid code lets it through.
+    code = totp.code_at(secret, int(clock.now().timestamp()))
+    with_code = client.post(
+        "/ut/v1/keys",
+        json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": code},
+    )
+    assert with_code.status_code == 201, with_code.text
+
+
+def test_keys_reject_a_wrong_totp_code(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    _enable_2fa(auth, clock, "bob")
+    r = client.post(
+        "/ut/v1/keys",
+        json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": "000000"},
+    )
+    assert r.status_code == 401
+
+
+def test_keys_ignore_totp_for_accounts_without_2fa(client: TestClient, auth: AuthService) -> None:
+    # An ignored, meaningless code does not block a normal single-factor account.
+    r = client.post(
+        "/ut/v1/keys",
+        json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": "whatever"},
+    )
+    assert r.status_code == 201, r.text

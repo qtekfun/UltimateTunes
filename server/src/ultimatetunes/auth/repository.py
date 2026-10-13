@@ -243,6 +243,107 @@ def audit_detail(values: dict[str, object] | None) -> str | None:
     return None if not values else json.dumps(values, ensure_ascii=False, sort_keys=True)
 
 
+@dataclass(frozen=True)
+class UserTotp:
+    """A user's TOTP enrollment (table `user_totp`). `secret` is sensitive: never logged."""
+
+    user_id: str
+    secret: str = field(repr=False)
+    enabled: bool
+    last_step: int | None
+    created_at: str
+    updated_at: str
+    confirmed_at: str | None
+
+
+@dataclass(frozen=True)
+class RecoveryCode:
+    """One recovery code of a user (table `totp_recovery_codes`). `code_hash` is an Argon2
+    hash; the clear code is shown once at enrollment and never stored."""
+
+    id: str
+    user_id: str
+    code_hash: str = field(repr=False)
+    created_at: str
+    used_at: str | None
+
+
+class UserTotpRepository(Repository):
+    def get(self, user_id: str) -> UserTotp | None:
+        return self.one(
+            UserTotp,
+            "SELECT user_id, secret, enabled, last_step, created_at, updated_at, confirmed_at"
+            " FROM user_totp WHERE user_id = ?",
+            (user_id,),
+        )
+
+    def upsert_secret(self, user_id: str, secret: str, now: str) -> None:
+        """Stores a fresh, not-yet-enabled secret for `user_id`, replacing any pending one."""
+        if not self.run(
+            "UPDATE user_totp SET secret = ?, enabled = 0, last_step = NULL, updated_at = ?,"
+            " confirmed_at = NULL WHERE user_id = ?",
+            (secret, now, user_id),
+        ):
+            self.run(
+                "INSERT INTO user_totp (user_id, secret, enabled, last_step, created_at,"
+                " updated_at, confirmed_at) VALUES (?, ?, 0, NULL, ?, ?, NULL)",
+                (user_id, secret, now, now),
+            )
+
+    def enable(self, user_id: str, last_step: int, now: str) -> int:
+        """Marks the enrollment confirmed and records the step already spent (no replay)."""
+        return self.run(
+            "UPDATE user_totp SET enabled = 1, last_step = ?, updated_at = ?, confirmed_at = ?"
+            " WHERE user_id = ?",
+            (last_step, now, now, user_id),
+        )
+
+    def record_step(self, user_id: str, last_step: int) -> None:
+        """Advances the last matched step so that code can never be replayed."""
+        self.run("UPDATE user_totp SET last_step = ? WHERE user_id = ?", (last_step, user_id))
+
+    def delete(self, user_id: str) -> int:
+        return self.run("DELETE FROM user_totp WHERE user_id = ?", (user_id,))
+
+
+class RecoveryCodeRepository(Repository):
+    def unused_of(self, user_id: str) -> list[RecoveryCode]:
+        return self.all(
+            RecoveryCode,
+            "SELECT id, user_id, code_hash, created_at, used_at FROM totp_recovery_codes"
+            " WHERE user_id = ? AND used_at IS NULL ORDER BY id",
+            (user_id,),
+        )
+
+    def count_unused(self, user_id: str) -> int:
+        return int(
+            str(
+                self.conn.execute(
+                    "SELECT COUNT(*) FROM totp_recovery_codes"
+                    " WHERE user_id = ? AND used_at IS NULL",
+                    (user_id,),
+                ).scalar()
+            )
+        )
+
+    def insert(self, code: RecoveryCode) -> None:
+        self.run(
+            "INSERT INTO totp_recovery_codes (id, user_id, code_hash, created_at, used_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (code.id, code.user_id, code.code_hash, code.created_at, code.used_at),
+        )
+
+    def mark_used(self, code_id: str, now: str) -> int:
+        """Spends a recovery code once; a second use changes nothing."""
+        return self.run(
+            "UPDATE totp_recovery_codes SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (now, code_id),
+        )
+
+    def delete_all(self, user_id: str) -> int:
+        return self.run("DELETE FROM totp_recovery_codes WHERE user_id = ?", (user_id,))
+
+
 class SessionEpochRepository(Repository):
     """The per-user session epochs of the admin panel and the web player (rows of `settings`,
     `admin.session_epoch.<user id>` and `web.session_epoch.<user id>`). Each is part of every
