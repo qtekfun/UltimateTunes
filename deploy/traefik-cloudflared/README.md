@@ -106,12 +106,12 @@ From the repository root, on the host:
    docker build -f server/Dockerfile -t ghcr.io/qtekfun/ultimatetunes-server:$UT_VERSION .
    ```
 2. **Settings**: `cp deploy/traefik-cloudflared/.env.example deploy/traefik-cloudflared/.env`, then set every value (at least `UT_VERSION`, `UT_MUSIC_PATH`, `UT_PUBLIC_HOST`, the Traefik network, subnet and pinned addresses, your LAN ranges).
-3. **Secrets**, fresh, owner-only, never committed:
+3. **Secrets**, fresh, in an owner-only folder, never committed:
    ```sh
    mkdir -p server/secrets && chmod 700 server/secrets
    openssl rand -hex 32 > server/secrets/worker_token
    openssl rand -hex 32 > server/secrets/admin_session_secret
-   chmod 600 server/secrets/*
+   chmod 644 server/secrets/*   # the folder keeps others out; the containers (uid 10001) must read them
    ```
 4. **Start, then create the first admin** with the bootstrap command, which reads the password from the first line of standard input (or asks on the terminal without `-T` and the redirect), then delete the file:
    ```sh

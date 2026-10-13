@@ -58,13 +58,13 @@ sudo chown 10001:10001 /srv/ultimatetunes/music
 
 ## 3. Secrets
 
-Two fresh random values, readable only by you, never committed:
+Two fresh random values, never committed. The folder is yours only (`700`); the files must stay readable (`644`): Compose mounts file secrets with the host file's owner and mode, and the containers run as uid 10001, so a `600` file owned by you is unreadable to them and the stack does not start.
 
 ```sh
 mkdir -p secrets && chmod 700 secrets
 openssl rand -hex 32 > secrets/worker_token
 openssl rand -hex 32 > secrets/admin_session_secret
-chmod 600 secrets/*
+chmod 644 secrets/*
 ```
 
 ## 4. `.env`
@@ -91,7 +91,7 @@ YouTube sometimes answers downloads with "Sign in to confirm you're not a bot". 
 ```sh
 docker compose config --quiet && echo OK     # syntax and variables (prints no secrets)
 docker compose up -d
-docker compose ps                            # migrate "exited (0)", api and worker "healthy", pot-provider "healthy"
+docker compose ps -a                         # migrate "Exited (0)", api and worker "healthy", pot-provider "healthy" (up to a minute "starting")
 docker compose exec api ultimatetunes bootstrap-admin <your-name>
 ```
 
