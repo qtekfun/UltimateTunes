@@ -192,7 +192,39 @@
     <string name="settings_quality_info">Songs play in their original format (Opus or AAC), never re-encoded.</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>
-    <string name="settings_license">Free software under the GNU GPL, version 3 or later. No ads, no tracking: it talks only to your server.</string>
+    <string name="settings_license">Free software under the GNU GPL, version 3 or later. No ads, no tracking: it talks only to your server (and to Google, only while you sign in to YouTube).</string>
+
+    <!-- Settings: YouTube account -->
+    <string name="youtube_title">YouTube account</string>
+    <string name="youtube_help">Lets your server download music through a YouTube session when YouTube asks it to prove it is not a bot. The session is stored encrypted on your server, never on this phone.</string>
+    <string name="youtube_not_signed_in">Not signed in</string>
+    <string name="youtube_signed_in">Signed in</string>
+    <string name="youtube_signed_since">Since %1$s</string>
+    <plurals name="youtube_cookies">
+        <item quantity="one">%d cookie</item>
+        <item quantity="other">%d cookies</item>
+    </plurals>
+    <string name="youtube_sign_in">Sign in to YouTube</string>
+    <string name="youtube_sign_in_again">Sign in again</string>
+    <string name="youtube_sign_out">Sign out</string>
+    <string name="youtube_not_admin">Only a server admin can manage the YouTube account.</string>
+    <string name="youtube_unavailable">This server cannot store a YouTube session. The admin must set UT_YTDLP_COOKIES_KEY (see docs/admin-guide.md, Signing in with a YouTube account).</string>
+    <string name="youtube_warning_title">Use a throwaway account</string>
+    <string name="youtube_warning_message">Sign in with a throwaway Google account, never your main one: YouTube may suspend accounts used for automated downloads.\n\nGoogle\'s sign-in page opens inside the app. Afterwards its cookies are sent only to your own server, encrypted there, and removed from this phone.</string>
+    <string name="youtube_warning_continue">Continue</string>
+    <string name="youtube_login_title">Sign in to YouTube</string>
+    <string name="youtube_login_close">Cancel sign-in</string>
+    <string name="youtube_uploading">Sending the session to your server…</string>
+    <string name="youtube_done">Signed in. Your server can now use this YouTube session.</string>
+    <string name="youtube_failure_title">YouTube account</string>
+    <string name="youtube_failure_not_admin">Only a server admin can manage the YouTube account.</string>
+    <string name="youtube_failure_feature_disabled">Your server cannot store a YouTube session. The admin must set UT_YTDLP_COOKIES_KEY (see docs/admin-guide.md, Signing in with a YouTube account).</string>
+    <string name="youtube_failure_rejected">The server did not accept the session. Sign in again.</string>
+    <string name="youtube_failure_too_large">The session is too large for the server.</string>
+    <string name="youtube_failure_rate_limited">Too many attempts. Try again in a moment.</string>
+    <string name="youtube_failure_network">Could not reach your server. Check the connection and try again.</string>
+    <string name="youtube_failure_unauthorized">Your server refused this device\'s key. Connect again.</string>
+    <string name="youtube_failure_server">The server answered with an error. Try again later.</string>
 
     <!-- Common -->
     <string name="loading">Loading</string>

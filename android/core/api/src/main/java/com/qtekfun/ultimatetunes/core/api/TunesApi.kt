@@ -34,6 +34,7 @@ import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.api.model.Starred
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
+import com.qtekfun.ultimatetunes.core.api.model.YoutubeCookiesStatus
 import java.time.Instant
 import okhttp3.HttpUrl
 
@@ -71,6 +72,26 @@ interface TunesApi {
 
     /** `DELETE /ut/v1/keys/{keyId}` (idempotent). */
     suspend fun revokeKey(id: ApiKeyId): TunesResult<Unit>
+
+    // ---- /ut/v1: the server's YouTube session (admin only) ----
+
+    /**
+     * `GET /ut/v1/youtube-cookies/status`: whether the server holds a YouTube session. Admin only:
+     * any other user gets an [ErrorKind.FORBIDDEN] [TunesResult.ApiError].
+     */
+    suspend fun youtubeCookiesStatus(): TunesResult<YoutubeCookiesStatus>
+
+    /**
+     * `PUT /ut/v1/youtube-cookies`: stores [netscapeText] (a Netscape `cookies.txt`, at most
+     * 256 KiB) as the server's YouTube session, sent as `text/plain` and encrypted at rest by the
+     * server. Admin only. Errors: `invalid_parameter` (not Netscape), [ErrorKind.FEATURE_DISABLED]
+     * (no `UT_YTDLP_COOKIES_KEY` on the server), [ErrorKind.PAYLOAD_TOO_LARGE]. The text is a
+     * secret: callers must not log or keep it.
+     */
+    suspend fun setYoutubeCookies(netscapeText: String): TunesResult<YoutubeCookiesStatus>
+
+    /** `DELETE /ut/v1/youtube-cookies`: forgets the server's YouTube session. Admin only. */
+    suspend fun clearYoutubeCookies(): TunesResult<YoutubeCookiesStatus>
 
     // ---- /ut/v1: tracks, discovery, imports ----
 

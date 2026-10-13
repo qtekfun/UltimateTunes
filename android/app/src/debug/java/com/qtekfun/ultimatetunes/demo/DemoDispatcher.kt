@@ -114,6 +114,10 @@ internal class DemoDispatcher(
             request.headers["X-Api-Key"] != apiKey ->
                 problem(401, "invalid_api_key", "The demo key is the only one accepted")
 
+            // The demo user is not an admin: the YouTube account is not theirs to manage.
+            path.firstOrNull() == "youtube-cookies" ->
+                problem(403, "forbidden", "The demo user is not an admin")
+
             else -> utAuthenticated(route, path, request)
         }
     }

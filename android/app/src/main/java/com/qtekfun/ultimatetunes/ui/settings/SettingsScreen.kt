@@ -52,6 +52,10 @@ import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
+import com.qtekfun.ultimatetunes.ui.youtube.YoutubeAccountSection
+import com.qtekfun.ultimatetunes.ui.youtube.YoutubeAccountUiState
+import com.qtekfun.ultimatetunes.ui.youtube.YoutubeAccountViewModel
+import com.qtekfun.ultimatetunes.ui.youtube.YoutubeActions
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -77,9 +81,11 @@ data class SettingsActions(
 fun SettingsRoute(
     contentPadding: PaddingValues,
     navigator: Navigator,
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    youtubeViewModel: YoutubeAccountViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val youtube by youtubeViewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(
         state = state,
         contentPadding = contentPadding,
@@ -93,6 +99,15 @@ fun SettingsRoute(
             disconnect = viewModel::disconnect,
             messageShown = viewModel::dismissMessage,
             exportFolderPicked = viewModel::onExportFolderPicked
+        ),
+        youtube = youtube,
+        youtubeActions = YoutubeActions(
+            retry = youtubeViewModel::load,
+            startSignIn = youtubeViewModel::startSignIn,
+            confirmWarning = youtubeViewModel::confirmWarning,
+            cancel = youtubeViewModel::cancel,
+            pageFinished = youtubeViewModel::onPageFinished,
+            remove = youtubeViewModel::remove
         )
     )
 }
@@ -103,7 +118,9 @@ fun SettingsScreen(
     state: SettingsUiState,
     contentPadding: PaddingValues,
     navigator: Navigator,
-    actions: SettingsActions
+    actions: SettingsActions,
+    youtube: YoutubeAccountUiState = YoutubeAccountUiState(),
+    youtubeActions: YoutubeActions = YoutubeActions()
 ) {
     var revoking by rememberSaveable { mutableStateOf<String?>(null) }
     var disconnecting by rememberSaveable { mutableStateOf(false) }
@@ -123,6 +140,7 @@ fun SettingsScreen(
         ) {
             server(state.server, actions, onDisconnect = { disconnecting = true })
             keys(state.keys, actions, onRevoke = { revoking = it.value })
+            item { YoutubeAccountSection(youtube, youtubeActions) }
             item { PlaybackSection(state.playback, actions) }
             item { ExportSection(state.exportFolder, actions.exportFolderPicked) }
             item { AboutSection() }
@@ -283,7 +301,7 @@ private fun keyDetails(key: KeyRow): String {
     return "${key.prefix}… · $created · $status"
 }
 
-private fun formatDate(instant: Instant): String =
+internal fun formatDate(instant: Instant): String =
     DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
         .withZone(ZoneId.systemDefault())
         .format(instant)

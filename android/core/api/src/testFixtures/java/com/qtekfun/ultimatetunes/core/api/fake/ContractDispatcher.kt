@@ -217,6 +217,12 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
 
                 "GET moods/*" -> ok(ut("getMoodTracks.200"))
 
+                "GET youtube-cookies/*" -> ok(ut("getYoutubeCookiesStatus.200"))
+
+                "PUT youtube-cookies" -> setYoutubeCookies()
+
+                "DELETE youtube-cookies" -> ok(ut("clearYoutubeCookies.200"))
+
                 "GET imports" -> ok(ut("listImports.200"))
 
                 "POST imports" -> createImport()
@@ -224,6 +230,26 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
                 "GET imports/*" -> ok(ut("getImport.200.$importExample"))
 
                 else -> null
+            }
+        }
+
+        /**
+         * The Netscape check of the real server, simplified: the header line and one seven-field
+         * line. An invalid body is `invalid_parameter`.
+         */
+        private fun setYoutubeCookies(): MockResponse {
+            val lines = request.body?.utf8().orEmpty().lines()
+            val valid = lines.firstOrNull()?.startsWith("# Netscape HTTP Cookie File") == true &&
+                lines.any { it.split('\t').size == COOKIE_FIELDS }
+            return if (valid) {
+                ok(ut("setYoutubeCookies.200"))
+            } else {
+                problem(
+                    400,
+                    "invalid_parameter",
+                    "Invalid parameter",
+                    "Not a Netscape cookies.txt"
+                )
             }
         }
 
@@ -391,6 +417,7 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
     private companion object {
         const val JSON = "application/json"
         const val HEX = 16
+        const val COOKIE_FIELDS = 7
         val JSON_HEADERS = headersOf("Content-Type", JSON)
         val PROBLEM_HEADERS = headersOf("Content-Type", "application/problem+json")
         val VIDEO_ID = Regex("^[A-Za-z0-9_-]{11}$")
