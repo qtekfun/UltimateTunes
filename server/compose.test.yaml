@@ -19,14 +19,14 @@ services:
     build: &build
       context: ..
       dockerfile: server/Dockerfile
-    image: ultimatetunes-server:test
+    image: ultimatetunes-server:${UT_TEST_IMAGE_TAG:-test}
     command: ["migrate"]
     volumes: [data:/data]
 
   api:
     <<: *hardening
     build: *build
-    image: ultimatetunes-server:test
+    image: ultimatetunes-server:${UT_TEST_IMAGE_TAG:-test}
     command: ["api"]
     # As in compose.yaml: the api never runs anything from /tmp.
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
@@ -53,7 +53,7 @@ services:
   worker:
     <<: *hardening
     build: *build
-    image: ultimatetunes-server:test
+    image: ultimatetunes-server:${UT_TEST_IMAGE_TAG:-test}
     command: ["worker"]
     # Idle it runs no tool; a job adds yt-dlp (~65 MB) and, on the fallback client, a short-lived
     # Deno process (~330 MB) (spike T03c).

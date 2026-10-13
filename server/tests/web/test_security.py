@@ -337,7 +337,7 @@ def test_turned_off_the_home_page_only_says_the_server_runs(
         r = client.get("/")
         assert r.status_code == 200
         assert "UltimateTunes server is running." in r.text
-        assert 'href="/admin"' in r.text
+        assert "/admin" not in r.text
         assert "<form" not in r.text
         assert r.headers["content-security-policy"] == CSP
 

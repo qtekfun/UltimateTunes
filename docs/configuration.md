@@ -200,6 +200,7 @@ These are not read by the server: Docker Compose substitutes them into the compo
 | `UT_VERSION` | `server/compose.yaml` | Image tag to run (required; `local` for an image you built). |
 | `UT_MUSIC_PATH` | `server/compose.yaml` | Your music folder on the host, mounted at `/music` (required). |
 | `UT_BIND` | `server/compose.yaml` | Host address and port the client listener is published on (default `127.0.0.1:8044`: local only; reach it through `tailscale serve` or a reverse proxy). |
+| `UT_TEST_IMAGE_TAG` | `server/compose.test.yaml` | Tag of the test image built from source (default `test`; `tools/ci-local.sh` uses `ci-local` so a running test stack keeps its image). |
 | `UT_INTERNAL_SUBNET` | `server/compose.yaml`, deploy examples | Subnet of the api-worker `internal` network (default `10.213.44.0/24`); change it if it overlaps yours. |
 | `UT_API_INTERNAL_ADDRESS` | `server/compose.yaml` | The api's fixed address on that network (default `10.213.44.250`). |
 | `UT_EGRESS_SUBNET` | `server/compose.yaml`, deploy examples | Subnet of the worker's `egress` network to the Internet (default `10.213.45.0/24`). |
