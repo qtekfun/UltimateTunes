@@ -183,9 +183,30 @@ Downloads fail with `rate_limited_upstream`, the worker log shows `Sign in to co
 
 What it changes: the provider talks to `www.youtube.com`, `www.google.com` and `jnn-pa.googleapis.com` (Google's BotGuard), only the worker can reach it, and the worker loads the matching yt-dlp plugin that is already in the image. Turn it off by removing both lines, then `docker compose --profile pot rm -sf pot-provider` and `docker compose up -d`; the worker then runs yt-dlp exactly as before.
 
-A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, or run the server from another connection; UltimateTunes does not use YouTube cookies or accounts. To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
+A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, run the server from another connection, or sign in with a throwaway YouTube account ([below](#signing-in-with-a-youtube-account-cookies)). To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
 
 yt-dlp updates itself, but the plugin and the provider are pinned to one version in the image. If the canary starts failing while the provider is on, and works with it off, the plugin probably needs a newer release: update the server image when one is out (until then, turn the provider off).
+
+### Signing in with a YouTube account (cookies)
+
+When a PO token is not enough, the worker can authenticate a YouTube account by using its cookies. This is the stronger remedy for IP-flagged servers, but it carries real risk and must be done carefully.
+
+> **Use a throwaway account, never your main one.** Downloading with an account can get it **suspended or banned**, temporarily or permanently. Create a separate Google account only for this, and keep the download volume modest.
+
+**Export the cookies safely** (so YouTube does not rotate them out from under you):
+
+1. Install a Netscape-format cookie exporter: "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt" (Firefox). Be careful what you install; those two are the ones the yt-dlp project points to.
+2. Open a **private / incognito** window and log in to YouTube with the **throwaway** account.
+3. In that same tab, go to `https://www.youtube.com/robots.txt`. It must be the only private/incognito tab open.
+4. Export the `youtube.com` cookies to a `cookies.txt` (Netscape/Mozilla format).
+5. **Close the private window** and do not reopen that session. Reusing it in the browser makes YouTube rotate the cookies, and the exported ones stop working.
+
+**Install the cookies.** The file content is an account credential: keep it to mode `600` and never commit it or paste it into a public issue.
+
+- **Admin panel (recommended, primary path):** the **YouTube account** page under `/admin` lets you paste or upload the `cookies.txt`. The server validates the Netscape format, stores it **encrypted**, shows only whether cookies are configured (never their values), and has a **Clear** button. The worker receives the session over the internal network and uses it for downloads. *(This page is being added with the encrypted store; until it ships, use the file method below.)*
+- **File (fallback, for file-based ops):** put the `cookies.txt` in `./secrets/ytdlp_cookies` (mode `600`), uncomment the `ytdlp_cookies` secret and `UT_YTDLP_COOKIES_FILE` in `server/compose.yaml`, and `docker compose up -d`. The file is mounted read-only; the worker copies it to a private temporary file for each download (yt-dlp rewrites the cookies file as it refreshes tokens) and deletes the copy afterwards, so the mounted secret is never changed.
+
+After installing cookies, press **Retry** on failed downloads or wait for the bot-wall pause to end, then **Run the canary now** to confirm. If downloads still fail, the server's IP itself is likely blocked (see the note above). To stop using cookies, clear them in the panel, or remove the file secret and restart.
 
 ## Audit log
 
