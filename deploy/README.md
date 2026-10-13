@@ -12,7 +12,7 @@ The container layout, networks and every connection in and out are described in 
 | File | What |
 |---|---|
 | `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
-| `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` LAN/Tailscale-only. |
+| `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` and `POST /ut/v1/keys` LAN/Tailscale-only. |
 | `traefik/` | The same with Traefik v3 + Authelia: static config (`traefik.yml`), routers and middlewares (`dynamic/ultimatetunes.yml`), Traefik's stack with a pinned `proxy` network (`compose.traefik.yaml`) and an overlay for `server/compose.yaml` with the labels variant (`compose.labels.yaml`). |
 | `traefik-cloudflared/` | Traefik v3 + Authelia reached through Cloudflare Tunnel (`cloudflared`): `.env.example` with every variable, an overlay with the routers as labels, Traefik and cloudflared pinned and trusted by address. Read its README for the Cloudflare caveats. |
 
