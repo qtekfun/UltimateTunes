@@ -42,12 +42,16 @@ from ultimatetunes.search.catalog import (
     CatalogThrottled,
     CatalogTrack,
     CatalogUnavailable,
+    MoodCategory,
 )
 from ultimatetunes.search.settings import SearchSettings
 
 YTM_HOST = "music.youtube.com"
 SearchKind = Literal["songs", "albums", "artists"]
 _PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{2,64}")
+_COUNTRY = re.compile(r"[A-Z]{2}")
+# The opaque category id `get_mood_categories` returns (base64url, sometimes padded).
+_MOOD_PARAMS = re.compile(r"[A-Za-z0-9_=-]{1,128}")
 _HTTP_FORBIDDEN = 403
 _HTTP_NOT_FOUND = 404
 _HTTP_TOO_MANY = 429
@@ -139,6 +143,15 @@ class YTMusicBackend:
 
     def playlist(self, playlist_id: str) -> object:
         return self.client().get_playlist(playlist_id, limit=None)
+
+    def charts(self, country: str) -> object:
+        return self.client().get_charts(country=country)
+
+    def mood_categories(self) -> object:
+        return self.client().get_mood_categories()
+
+    def mood_playlists(self, params: str) -> object:
+        return self.client().get_mood_playlists(params)
 
 
 def ytmusic_factory(settings: SearchSettings) -> Callable[[], YTMusic]:
@@ -239,3 +252,34 @@ class YTMusicCatalog:
             raise CatalogNotFound()
         b = self._backend
         return await self._run(lambda: parse.playlist(b.playlist(bare), bare), lookup=True)
+
+    async def _playlist_tracks(self, playlist_id: str | None) -> list[CatalogTrack]:
+        """The songs of a chart/mood playlist id, or nothing when there is no usable one."""
+        bare = (playlist_id or "").removeprefix("VL")
+        if not bare or _PLAYLIST_ID.fullmatch(bare) is None:
+            return []
+        b = self._backend
+        found = await self._run(lambda: parse.playlist(b.playlist(bare), bare), lookup=True)
+        return list(found.tracks)
+
+    async def charts(self, country: str) -> list[CatalogTrack]:
+        if _COUNTRY.fullmatch(country) is None:
+            raise CatalogNotFound()
+        b = self._backend
+        playlist_id = await self._run(
+            lambda: parse.top_chart_playlist(b.charts(country)), lookup=True
+        )
+        return await self._playlist_tracks(playlist_id)
+
+    async def moods(self) -> list[MoodCategory]:
+        b = self._backend
+        return await self._run(lambda: parse.mood_categories(b.mood_categories()), lookup=False)
+
+    async def mood_tracks(self, params: str) -> list[CatalogTrack]:
+        if _MOOD_PARAMS.fullmatch(params) is None:
+            raise CatalogNotFound()
+        b = self._backend
+        playlist_id = await self._run(
+            lambda: parse.first_mood_playlist(b.mood_playlists(params)), lookup=True
+        )
+        return await self._playlist_tracks(playlist_id)

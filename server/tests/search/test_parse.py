@@ -14,6 +14,7 @@ from ultimatetunes.search.catalog import (
     CatalogAlbumRef,
     CatalogArtistRef,
     CatalogParseError,
+    MoodCategory,
     Thumbnail,
 )
 
@@ -246,3 +247,61 @@ def test_thumbnail_keeps_the_largest_whatever_the_order() -> None:
 def test_artist_page_skips_albums_without_ids() -> None:
     data = {"name": "Band", "albums": {"results": [{"title": "No id"}]}}
     assert parse.artist(data, "UCband").albums == ()
+
+
+# ---------------------------------------------------------------------- charts & moods
+
+
+def test_top_chart_playlist_prefers_daily_then_weekly_then_videos() -> None:
+    assert (
+        parse.top_chart_playlist(
+            {
+                "videos": [{"title": "Top videos", "playlistId": "PLvideos000"}],
+                "artists": [{"title": "A", "browseId": "UCa"}],
+            }
+        )
+        == "PLvideos000"
+    )
+    # Premium sessions carry daily/weekly carousels, which win over "videos".
+    assert (
+        parse.top_chart_playlist(
+            {
+                "daily": [{"playlistId": "PLdaily0000"}],
+                "weekly": [{"playlistId": "PLweekly000"}],
+                "videos": [{"playlistId": "PLvideos000"}],
+            }
+        )
+        == "PLdaily0000"
+    )
+
+
+def test_top_chart_playlist_is_none_when_absent_or_wrong_shape() -> None:
+    assert parse.top_chart_playlist({"artists": [{"browseId": "UCa"}]}) is None
+    assert parse.top_chart_playlist({"videos": [{"title": "no id"}]}) is None
+    assert parse.top_chart_playlist("not a dict") is None
+    assert parse.top_chart_playlist({"videos": "not a list"}) is None
+
+
+def test_mood_categories_flattens_sections_in_order_and_dedupes() -> None:
+    data = {
+        "For you": [{"title": "1980s", "params": "ggFor1980s"}, {"title": "no params"}],
+        "Genres": [
+            {"title": "Pop", "params": "ggGenresPop"},
+            {"title": "Again", "params": "ggFor1980s"},
+        ],
+    }
+    assert parse.mood_categories(data) == [
+        MoodCategory("ggFor1980s", "1980s"),
+        MoodCategory("ggGenresPop", "Pop"),
+    ]
+
+
+def test_mood_categories_rejects_a_non_object() -> None:
+    with pytest.raises(CatalogParseError):
+        parse.mood_categories(["not", "a", "dict"])
+
+
+def test_first_mood_playlist() -> None:
+    assert parse.first_mood_playlist([{"playlistId": "VLPLa"}, {"playlistId": "VLPLb"}]) == "VLPLa"
+    assert parse.first_mood_playlist([{"title": "no id"}]) is None
+    assert parse.first_mood_playlist("not a list") is None

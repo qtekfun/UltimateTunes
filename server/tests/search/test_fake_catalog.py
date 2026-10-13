@@ -58,6 +58,19 @@ async def test_search_album_artist_track_radio_playlist() -> None:
     assert "search_songs" in catalog.calls
 
 
+async def test_charts_moods_and_mood_tracks() -> None:
+    catalog = FakeMusicCatalog()
+    charts = await catalog.charts("ES")
+    assert charts
+    assert all(t.video_id for t in charts)
+    moods = await catalog.moods()
+    assert [m.title for m in moods] == ["Chill", "Focus"]
+    chill = await catalog.mood_tracks(moods[0].params)
+    assert [t.video_id for t in chill] == ["Fk2Lp9QwXa1", "Rb8Tn3ZcYv0"]
+    assert await catalog.mood_tracks("ggUnknown0000000000000") == []
+    assert {"charts", "moods", "mood_tracks"} <= set(catalog.calls)
+
+
 async def test_unknown_ids_are_not_found() -> None:
     catalog = FakeMusicCatalog()
     for call in (
@@ -89,6 +102,9 @@ async def test_unavailable_catalog_refuses_everything() -> None:
         catalog.track("x"),
         catalog.radio("x", 1),
         catalog.playlist("x"),
+        catalog.charts("ZZ"),
+        catalog.moods(),
+        catalog.mood_tracks("x"),
     ):
         with pytest.raises(FeatureNotImplemented):
             await call

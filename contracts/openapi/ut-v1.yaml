@@ -68,6 +68,7 @@ paths:
                 capabilities:
                   externalSearch: true
                   radio: true
+                  charts: true
                   lyrics: true
                   youtubeMusicImport: true
                   fileImport: true
@@ -961,6 +962,164 @@ paths:
           $ref: '#/components/responses/Internal'
         '501':
           $ref: '#/components/responses/NotImplemented'
+  /ut/v1/recommendations:
+    get:
+      operationId: getRecommendations
+      tags:
+      - discovery
+      summary: Recommended songs from your plays and favourites
+      description: 'RF-06. New songs to discover, seeded from the caller''s most-played and favourite
+        songs into the YouTube Music watch playlist (like `/ut/v1/radio`), plus, when the admin switched
+        them on, shelves from external sources (ListenBrainz). Mapped local-first. Charged to the
+        caller''s bucket. Empty when the caller has no plays or favourites and no external source is on.
+        An external source that fails is left out; the rest still return.'
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        description: Max items per shelf (and in the aggregated list).
+      responses:
+        '200':
+          description: Recommendation shelves (each may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recommendations'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/charts:
+    get:
+      operationId: getCharts
+      tags:
+      - discovery
+      summary: YouTube Music country charts
+      description: 'RF-06. The country''s top chart songs from YouTube Music''s own public charts (no
+        new host), mapped local-first like radio. `country` defaults to the server''s `UT_CHARTS_COUNTRY`.
+        Charged to the caller''s bucket.'
+      parameters:
+      - name: country
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+        description: ISO 3166-1 alpha-2 country code (`ZZ` = global). Defaults to the server setting.
+        example: ZZ
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: The country's top chart songs (may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Charts'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/moods:
+    get:
+      operationId: getMoods
+      tags:
+      - discovery
+      summary: YouTube Music mood and genre categories
+      description: 'RF-06. The "Moods & genres" categories (Chill, Focus, decades, genres, ...). Pass a
+        category id to `/ut/v1/moods/{moodId}` for its songs.'
+      responses:
+        '200':
+          description: Mood and genre categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Moods'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/moods/{moodId}:
+    get:
+      operationId: getMoodTracks
+      tags:
+      - discovery
+      summary: Songs of a mood or genre category
+      description: 'RF-06. Songs of one "Moods & genres" category (its id from `/ut/v1/moods`), mapped
+        local-first. Charged to the caller''s bucket. Empty for an unknown category.'
+      parameters:
+      - name: moodId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description: The opaque category id from `/ut/v1/moods`.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: The category's songs (may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoodTracks'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -1307,6 +1466,7 @@ components:
           required:
           - externalSearch
           - radio
+          - charts
           - lyrics
           - youtubeMusicImport
           - fileImport
@@ -1316,6 +1476,10 @@ components:
               type: boolean
             radio:
               type: boolean
+            charts:
+              type: boolean
+              description: YouTube Music country charts (`/ut/v1/charts`) and moods (`/ut/v1/moods`)
+                are available. Needs `radio` on.
             lyrics:
               type: boolean
             youtubeMusicImport:
@@ -1522,6 +1686,111 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TrackItem'
+          description: Library items use library ids (local-first).
+    Recommendations:
+      type: object
+      required:
+      - recommendedForYou
+      - becauseYouPlayed
+      - shelves
+      properties:
+        recommendedForYou:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 50
+          description: Songs the most seed-radios agree on, best first.
+        becauseYouPlayed:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationShelf'
+          maxItems: 10
+          description: One shelf per seed (the seed song and the new songs of its radio).
+        shelves:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceShelf'
+          maxItems: 20
+          description: Shelves from external sources the admin switched on (empty by default).
+    RecommendationShelf:
+      type: object
+      required:
+      - seed
+      - items
+      properties:
+        seed:
+          $ref: '#/components/schemas/TrackItem'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 50
+    SourceShelf:
+      type: object
+      description: A shelf from an external recommendation source (e.g. ListenBrainz).
+      required:
+      - source
+      - title
+      - items
+      properties:
+        source:
+          type: string
+          description: The source that produced the shelf, e.g. `listenbrainz`.
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 50
+    Charts:
+      type: object
+      required:
+      - country
+      - items
+      properties:
+        country:
+          type: string
+          description: The country the chart is for (ISO 3166-1 alpha-2, `ZZ` = global).
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 100
+          description: Library items use library ids (local-first).
+    Moods:
+      type: object
+      required:
+      - categories
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/MoodCategory'
+    MoodCategory:
+      type: object
+      required:
+      - id
+      - title
+      properties:
+        id:
+          type: string
+          description: The opaque category id to pass to `/ut/v1/moods/{moodId}`.
+        title:
+          type: string
+    MoodTracks:
+      type: object
+      required:
+      - id
+      - items
+      properties:
+        id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackItem'
+          maxItems: 100
           description: Library items use library ids (local-first).
     SearchResult:
       type: object
