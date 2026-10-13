@@ -990,6 +990,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Recommendations'
+              example:
+                recommendedForYou:
+                - id: yt:Rb4Tn8wKx1c
+                  title: Copper Fields
+                  artist: Marisol Vega
+                  artistId: ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA
+                  album: Copper Fields
+                  albumId: ytalbum:MPREb_W2pZ7nQx4Ld
+                  durationSec: 198
+                  year: null
+                  coverArt: yt:Rb4Tn8wKx1c
+                  isExternal: true
+                  libraryState: null
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c003
+                  title: Brasas
+                  artist: Marisol Vega
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a002
+                  album: Salt & Ember
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  durationSec: 201
+                  year: 2025
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b002
+                  isExternal: false
+                  libraryState: ready
+                becauseYouPlayed:
+                - seed:
+                    id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                    title: Lighthouse Keeper
+                    artist: The Paper Lanterns
+                    artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                    album: Harbour Lights
+                    albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                    durationSec: 214
+                    year: 2023
+                    coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                    isExternal: false
+                    libraryState: ready
+                  items:
+                  - id: yt:Rb4Tn8wKx1c
+                    title: Copper Fields
+                    artist: Marisol Vega
+                    artistId: ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA
+                    album: Copper Fields
+                    albumId: ytalbum:MPREb_W2pZ7nQx4Ld
+                    durationSec: 198
+                    year: null
+                    coverArt: yt:Rb4Tn8wKx1c
+                    isExternal: true
+                    libraryState: null
+                shelves:
+                - source: listenbrainz
+                  title: Popular on ListenBrainz · The Paper Lanterns
+                  items:
+                  - id: yt:Qx7Lm2pZ0aB
+                    title: Paper Moons (Live)
+                    artist: The Paper Lanterns
+                    artistId: ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe
+                    album: Lanterns at Dusk
+                    albumId: ytalbum:MPREb_k3Vd9QmT2xL
+                    durationSec: 262
+                    year: null
+                    coverArt: yt:Qx7Lm2pZ0aB
+                    isExternal: true
+                    libraryState: pending
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1037,6 +1101,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Charts'
+              example:
+                country: ES
+                items:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001
+                  title: Lighthouse Keeper
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 214
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: yt:Rb4Tn8wKx1c
+                  title: Copper Fields
+                  artist: Marisol Vega
+                  artistId: ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA
+                  album: Copper Fields
+                  albumId: ytalbum:MPREb_W2pZ7nQx4Ld
+                  durationSec: 198
+                  year: null
+                  coverArt: yt:Rb4Tn8wKx1c
+                  isExternal: true
+                  libraryState: null
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1064,6 +1153,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Moods'
+              example:
+                categories:
+                - id: moods_chill
+                  title: Chill
+                - id: moods_focus
+                  title: Focus
+                - id: moods_commute
+                  title: Commute
+                - id: genres_decades_2020s
+                  title: '2020s'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1108,6 +1207,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MoodTracks'
+              example:
+                id: moods_chill
+                items:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002
+                  title: Tidewater
+                  artist: The Paper Lanterns
+                  artistId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001
+                  album: Harbour Lights
+                  albumId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  durationSec: 187
+                  year: 2023
+                  coverArt: al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
+                  isExternal: false
+                  libraryState: ready
+                - id: yt:Qx7Lm2pZ0aB
+                  title: Paper Moons (Live)
+                  artist: The Paper Lanterns
+                  artistId: ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe
+                  album: Lanterns at Dusk
+                  albumId: ytalbum:MPREb_k3Vd9QmT2xL
+                  durationSec: 262
+                  year: null
+                  coverArt: yt:Qx7Lm2pZ0aB
+                  isExternal: true
+                  libraryState: pending
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

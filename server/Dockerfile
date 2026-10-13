@@ -42,8 +42,8 @@ ARG YTDLP_SEED_VERSION=2026.08.19
 ARG YTDLP_SEED_SHA256=1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6
 # "Simon Sawicki (yt-dlp signing key)"; server/docker/yt-dlp-public.key must be exactly this key.
 ARG YTDLP_SIGNER_FPR="AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581"
-ARG BGUTIL_VERSION=2.0.0
-ARG BGUTIL_PLUGIN_SHA256=bce874dfa25896c2798e0f4f8147b7b22e785479eb1e459ab232bf2506c95016
+ARG BGUTIL_VERSION=2.0.2
+ARG BGUTIL_PLUGIN_SHA256=a26b980bf6d8e8400d8f21445daa4d8381bf6183d20f0be309391f86b31e27ef
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg gpgv \
     && rm -rf /var/lib/apt/lists/*

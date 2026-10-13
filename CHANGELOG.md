@@ -9,6 +9,27 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-10-13
+
+Release candidate of 1.0: recommendations, charts, optional two-factor sign-in, and more reliable downloads.
+
+### Added
+- Recommendations: `GET /ut/v1/recommendations` builds "Recommended for you" and "Because you played ..." shelves from your own plays and favourites, seeded into the existing YouTube Music radio (nothing about your listening leaves the server).
+- Charts and moods: country charts and mood playlists from YouTube Music (`/ut/v1/charts`, `/ut/v1/moods`), with a setting for the default country.
+- Optional ListenBrainz popular-recordings shelves (off by default; the server sends only a public artist MusicBrainz id to `api.listenbrainz.org`, never your history).
+- Android: "Recommended for you" and a Charts screen in Listen Now.
+- Optional TOTP two-factor sign-in for the admin panel, the web player and password key creation (API keys stay single-factor). The secret is encrypted at rest with `UT_TOTP_ENCRYPTION_KEY`; ten single-use recovery codes; `UT_AUTH_REQUIRE_2FA` can require it for admins or everyone. See docs/2fa.md.
+- `ultimatetunes refetch-failed [--truncated] [--dry-run]` re-queues failed downloads and replaces half-archived files.
+
+### Changed
+- Worker: yt-dlp now tries the next player client after a 403 as well as an extractor error, defaults to `web_safari,tv` (fallback `default`), and `UT_YTDLP_PLAYER_CLIENTS` is forwarded by the example compose file.
+- A download that ends shorter than announced is never archived or served as complete.
+- The optional PO token provider is bumped to bgutil 2.0.2, which fixes critical vulnerabilities in 2.0.0.
+
+### Security
+- `POST /ut/v1/keys` requires the second factor for accounts that enabled it, and refuses accounts the 2FA policy covers until they enroll.
+- New outbound host for the server: `api.listenbrainz.org`, only when ListenBrainz recommendations are switched on.
+
 ## [1.0.0-rc.5] - 2026-10-13
 
 Release candidate of 1.0 that makes the server's security activity analysable (for CrowdSec, a SIEM or a log search). The app is unchanged since 1.0.0-rc.1.

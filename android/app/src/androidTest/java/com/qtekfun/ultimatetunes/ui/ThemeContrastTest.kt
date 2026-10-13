@@ -82,10 +82,12 @@ class ThemeContrastTest {
         check(dark = true, text(R.string.tab_listen_now)) {
             ListenNowScreen(
                 state = LoadState.Loading,
+                recommendations = null,
                 contentPadding = PaddingValues(),
                 onRetry = {},
                 onPlay = { _, _ -> },
-                onOpenStation = {}
+                onOpenStation = {},
+                onOpenCharts = {}
             )
         }
     }

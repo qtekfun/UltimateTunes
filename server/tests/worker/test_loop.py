@@ -665,7 +665,7 @@ def test_worker_settings_come_from_ut_env_vars(monkeypatch: pytest.MonkeyPatch) 
     assert (configured.api_url, configured.worker_id) == ("http://api.internal:8044", "worker-1")
     assert configured.ytdlp_player_clients == "default,web_embedded"
     monkeypatch.setenv("UT_YTDLP_PLAYER_CLIENTS", "default; rm -rf")
-    with pytest.raises(ValueError, match="pattern"):
+    with pytest.raises(ValueError, match="comma-separated list"):
         WorkerSettings()
 
 

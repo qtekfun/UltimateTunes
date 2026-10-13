@@ -1,0 +1,1 @@
+Release candidate of 1.0. New: Recommended for you and Charts in Listen Now, built from what you play and from YouTube Music charts, with everything kept on your own server. Also more reliable downloads and optional two-factor sign-in for the web and admin panel.
