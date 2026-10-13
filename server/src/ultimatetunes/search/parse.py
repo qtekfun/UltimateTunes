@@ -29,6 +29,7 @@ from ultimatetunes.search.catalog import (
     CatalogParseError,
     CatalogPlaylist,
     CatalogTrack,
+    MoodCategory,
     Thumbnail,
     VideoType,
 )
@@ -277,6 +278,60 @@ def watch_playlist(value: object) -> list[CatalogTrack]:
     data = _object(value)
     found = (track(item) for item in _list(data.get("tracks")))
     return [t for t in found if t is not None]
+
+
+# Chart carousels appear under these keys, best first (premium adds daily/weekly).
+_CHART_PLAYLIST_KEYS = ("daily", "weekly", "videos")
+
+
+def _playlist_id(value: object) -> str | None:
+    data = _mapping(value)
+    return None if data is None else _text(data, "playlistId")
+
+
+def top_chart_playlist(value: object) -> str | None:
+    """`get_charts`: the playlist id of the country's top videos chart, or None.
+
+    Charts come back as playlist carousels, not songs; the songs are fetched from this
+    playlist. A region without a usable chart (or an unexpected shape) yields None, so the
+    caller degrades to an empty chart instead of failing."""
+    data = _mapping(value)
+    if data is None:
+        return None
+    for key in _CHART_PLAYLIST_KEYS:
+        for item in _items(data.get(key)):
+            found = _playlist_id(item)
+            if found is not None:
+                return found
+    return None
+
+
+def mood_categories(value: object) -> list[MoodCategory]:
+    """`get_mood_categories`: a dict of section title -> list of `{title, params}` flattened,
+    in order, keeping only categories that carry both a title and an opaque `params` id."""
+    data = _mapping(value)
+    if data is None:
+        raise CatalogParseError()
+    found: list[MoodCategory] = []
+    seen: set[str] = set()
+    for section in data.values():
+        for item in _items(section):
+            params = _text(item, "params")
+            title = _text(item, "title")
+            if params is None or title is None or params in seen:
+                continue
+            seen.add(params)
+            found.append(MoodCategory(params, title))
+    return found
+
+
+def first_mood_playlist(value: object) -> str | None:
+    """`get_mood_playlists`: the id of the first playlist of a mood category, or None."""
+    for item in _items(value):
+        found = _playlist_id(item)
+        if found is not None:
+            return found
+    return None
 
 
 def playlist(value: object, playlist_id: str) -> CatalogPlaylist:

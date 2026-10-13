@@ -118,6 +118,14 @@ class CatalogPlaylist:
     unavailable_count: int = 0
 
 
+@dataclass(frozen=True)
+class MoodCategory:
+    """A "Moods & genres" category of YouTube Music (`params` is the opaque id it gives)."""
+
+    params: str
+    title: str
+
+
 class MusicCatalog(Protocol):
     async def search_songs(self, query: str, limit: int) -> list[CatalogTrack]: ...
 
@@ -136,6 +144,18 @@ class MusicCatalog(Protocol):
         ...
 
     async def playlist(self, playlist_id: str) -> CatalogPlaylist: ...
+
+    async def charts(self, country: str) -> list[CatalogTrack]:
+        """Top chart songs for an ISO 3166-1 alpha-2 country (`ZZ` = global)."""
+        ...
+
+    async def moods(self) -> list[MoodCategory]:
+        """The "Moods & genres" categories (Chill, Focus, decades, genres, ...)."""
+        ...
+
+    async def mood_tracks(self, params: str) -> list[CatalogTrack]:
+        """Songs of one "Moods & genres" category (its `params` from `moods`)."""
+        ...
 
 
 class UnavailableCatalog:
@@ -163,6 +183,15 @@ class UnavailableCatalog:
         raise FeatureNotImplemented()
 
     async def playlist(self, playlist_id: str) -> CatalogPlaylist:
+        raise FeatureNotImplemented()
+
+    async def charts(self, country: str) -> list[CatalogTrack]:
+        raise FeatureNotImplemented()
+
+    async def moods(self) -> list[MoodCategory]:
+        raise FeatureNotImplemented()
+
+    async def mood_tracks(self, params: str) -> list[CatalogTrack]:
         raise FeatureNotImplemented()
 
 

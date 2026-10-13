@@ -21,6 +21,7 @@ from ultimatetunes.search.catalog import (
     CatalogArtistRef,
     CatalogPlaylist,
     CatalogTrack,
+    MoodCategory,
     Thumbnail,
     VideoType,
 )
@@ -92,6 +93,10 @@ def _artist(data: Obj) -> CatalogArtist:
     )
 
 
+def _mood(data: Obj) -> MoodCategory:
+    return MoodCategory(data["params"], data["title"])
+
+
 def _playlist(data: Obj) -> CatalogPlaylist:
     return CatalogPlaylist(
         data["playlist_id"],
@@ -122,3 +127,4 @@ decode_artist_refs = _many(_artist_ref)
 decode_album = _one(_album)
 decode_artist = _one(_artist)
 decode_playlist = _one(_playlist)
+decode_moods = _many(_mood)
