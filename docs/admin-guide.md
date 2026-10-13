@@ -87,6 +87,15 @@ The table shows, for every account:
 - **Wrong passwords**: from your LAN/Tailscale, 5 wrong passwords lock that username there for 15 min (`UT_AUTH_LOCKOUT_S`). From the Internet a username is never locked: each wrong password makes the next attempt wait longer (1 s, 2 s, 4 s … at most 5 min), and a correct one resets it, so a stranger can keep someone's sign-in from the Internet waiting, but their app keeps working and they can always sign in from home (or put the web player behind Authelia). An address that fails 10 times is locked for 15 min. Repeated `auth.lockout` entries in the audit log show who is being targeted.
 - **Disable**: the account can no longer sign in and **all its API keys stop working** at once, without being revoked (asks for confirmation). **Enable** brings them back. You cannot disable yourself. Use this for someone who should lose access for a while; revoke keys when a device is lost.
 
+## Two-factor authentication
+
+Open **Two-factor** to protect your sign-ins with a code from an authenticator app (TOTP), on top of your password. It covers the three password logins (this panel, the web player and creating a device key with `POST /ut/v1/keys`); **API keys the app already uses are not affected**, so your phone keeps working.
+
+- **Set up**: press **Set up**, scan the QR code (or type the secret) into Aegis, FreeOTP, Google Authenticator or similar, then enter one code to confirm. The server then shows **ten recovery codes once** — save them; each works a single time if you lose your phone. After this, signing in asks for a 6-digit code (a recovery code works in its place).
+- **New recovery codes** / **Turn off**: both ask for your current password first.
+- **Require it for everyone**: set `UT_AUTH_REQUIRE_2FA` to `admins` or `all` (docs/configuration.md). Covered users are sent to the setup page after signing in and cannot turn it off.
+- Full details, the stored-secret caveat and how recovery works: `docs/2fa.md`.
+
 ## API keys
 
 Every device (phone, tablet, another OpenSubsonic app) gets its own key, so one can be revoked without touching the others. A key is 256 random bits, shown **once** and stored only as a hash.
@@ -186,6 +195,24 @@ What it changes: the provider talks to `www.youtube.com`, `www.google.com` and `
 A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, or run the server from another connection; UltimateTunes does not use YouTube cookies or accounts. To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
 
 yt-dlp updates itself, but the plugin and the provider are pinned to one version in the image. If the canary starts failing while the provider is on, and works with it off, the plugin probably needs a newer release: update the server image when one is out (until then, turn the provider off).
+
+### Songs cut off or skip
+
+A freshly fetched song (one not in your library yet) plays for a little while and then stops, and the app skips to the next track. The worker log shows the download ending with `network_error` and often `HTTP Error 403: Forbidden` on the media data: YouTube served a format the worker could not download to the end, so the partial file stopped growing and the stream was cut. A truncated download is never kept or served as a whole song, so retrying is safe.
+
+What to do:
+
+1. **Change the player clients.** Different YouTube "player clients" are offered different formats; some give formats that 403 part-way. The worker default is `web_safari,tv`, which avoids them, and it falls back to yt-dlp's own `default` set. If fresh tracks still cut off, set `UT_YTDLP_PLAYER_CLIENTS` in the `.env` next to `server/compose.yaml` and `docker compose up -d` to try another set, for example:
+   ```
+   UT_YTDLP_PLAYER_CLIENTS=default
+   ```
+   A comma list is tried in one run (`UT_YTDLP_PLAYER_CLIENTS=web_safari,tv,default`); the fallback `UT_YTDLP_FALLBACK_CLIENTS` is tried only if the first set finds nothing.
+2. **Turn on the PO token provider** (above, ["Sign in to confirm you're not a bot"](#sign-in-to-confirm-youre-not-a-bot)): with it, `web_safari` downloads direct formats that do not 403, which is why it is in the default. Downloads that 403 even with a token mean the address itself is blocked (wait it out).
+3. **Re-fetch the songs that were cut.** Those downloads ended as `failed` and will not retry by themselves. From the host, requeue them all (in the `api` container, the one with the database; the worker has none):
+   ```
+   docker compose exec api ultimatetunes refetch-failed
+   ```
+   Add `--truncated` to also re-fetch any archived song whose file on disk is shorter than it should be (a half song from an earlier version of this bug), and `--dry-run` to only count what would be requeued without changing anything. It only requeues; it replaces a broken file, never deleting a good one.
 
 ## Audit log
 
