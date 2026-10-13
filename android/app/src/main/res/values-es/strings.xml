@@ -194,7 +194,40 @@
     <string name="settings_quality_info">Las canciones suenan en su formato original (Opus o AAC), sin recodificar.</string>
     <string name="settings_about">Acerca de</string>
     <string name="settings_version">Versión %1$s</string>
-    <string name="settings_license">Software libre bajo la GNU GPL, versión 3 o posterior. Sin anuncios ni rastreo: solo habla con tu servidor.</string>
+    <string name="settings_license">Software libre bajo la GNU GPL, versión 3 o posterior. Sin anuncios ni rastreo: solo habla con tu servidor (y con Google, únicamente mientras inicias sesión en YouTube).</string>
+
+    <!-- Ajustes: cuenta de YouTube -->
+    <string name="youtube_title">Cuenta de YouTube</string>
+    <string name="youtube_help">Permite que tu servidor descargue música con una sesión de YouTube cuando YouTube le pide demostrar que no es un bot. La sesión se guarda cifrada en tu servidor, nunca en este teléfono.</string>
+    <string name="youtube_not_signed_in">Sin iniciar sesión</string>
+    <string name="youtube_signed_in">Sesión iniciada</string>
+    <string name="youtube_signed_since">Desde %1$s</string>
+    <plurals name="youtube_cookies">
+        <item quantity="one">%d cookie</item>
+        <item quantity="many">%d cookies</item>
+        <item quantity="other">%d cookies</item>
+    </plurals>
+    <string name="youtube_sign_in">Iniciar sesión en YouTube</string>
+    <string name="youtube_sign_in_again">Iniciar sesión de nuevo</string>
+    <string name="youtube_sign_out">Cerrar sesión</string>
+    <string name="youtube_not_admin">Solo un administrador del servidor puede gestionar la cuenta de YouTube.</string>
+    <string name="youtube_unavailable">Este servidor no puede guardar una sesión de YouTube. El administrador debe definir UT_YTDLP_COOKIES_KEY (consulta docs/admin-guide.md, Signing in with a YouTube account).</string>
+    <string name="youtube_warning_title">Usa una cuenta desechable</string>
+    <string name="youtube_warning_message">Inicia sesión con una cuenta de Google desechable, nunca con la principal: YouTube puede suspender las cuentas usadas para descargas automáticas.\n\nLa página de inicio de sesión de Google se abre dentro de la app. Después, sus cookies se envían solo a tu propio servidor, que las guarda cifradas, y se borran de este teléfono.</string>
+    <string name="youtube_warning_continue">Continuar</string>
+    <string name="youtube_login_title">Iniciar sesión en YouTube</string>
+    <string name="youtube_login_close">Cancelar inicio de sesión</string>
+    <string name="youtube_uploading">Enviando la sesión a tu servidor…</string>
+    <string name="youtube_done">Sesión iniciada. Tu servidor ya puede usar esta sesión de YouTube.</string>
+    <string name="youtube_failure_title">Cuenta de YouTube</string>
+    <string name="youtube_failure_not_admin">Solo un administrador del servidor puede gestionar la cuenta de YouTube.</string>
+    <string name="youtube_failure_feature_disabled">Tu servidor no puede guardar una sesión de YouTube. El administrador debe definir UT_YTDLP_COOKIES_KEY (consulta docs/admin-guide.md, Signing in with a YouTube account).</string>
+    <string name="youtube_failure_rejected">El servidor no aceptó la sesión. Inicia sesión de nuevo.</string>
+    <string name="youtube_failure_too_large">La sesión es demasiado grande para el servidor.</string>
+    <string name="youtube_failure_rate_limited">Demasiados intentos. Inténtalo de nuevo en un momento.</string>
+    <string name="youtube_failure_network">No se pudo contactar con tu servidor. Revisa la conexión e inténtalo de nuevo.</string>
+    <string name="youtube_failure_unauthorized">Tu servidor rechazó la clave de este dispositivo. Vuelve a conectar.</string>
+    <string name="youtube_failure_server">El servidor respondió con un error. Inténtalo más tarde.</string>
 
     <!-- Comunes -->
     <string name="loading">Cargando</string>

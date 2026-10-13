@@ -386,3 +386,23 @@ internal data class Problem(
     val code: String,
     val retryAfter: Long? = null
 )
+
+/**
+ * `GET /ut/v1/youtube-cookies/status` and the answers of `PUT` and `DELETE`: the non-secret state
+ * of the server-wide YouTube session (D14). Never carries a cookie value.
+ *
+ * @property configured whether a YouTube session is stored.
+ * @property setAt when it was stored.
+ * @property cookieCount how many cookies the stored file holds.
+ * @property hasYoutubeDomain whether a youtube.com cookie is among them.
+ * @property available false when the server has no encryption key (`UT_YTDLP_COOKIES_KEY`): the
+ *   feature is off and `PUT` answers `feature_disabled`.
+ */
+@Serializable
+data class YoutubeCookiesStatus(
+    val configured: Boolean,
+    val setAt: Timestamp? = null,
+    val cookieCount: Int? = null,
+    val hasYoutubeDomain: Boolean? = null,
+    val available: Boolean
+)

@@ -16,7 +16,7 @@ Your own music streaming service, on your own hardware. Search for any song and 
 - **Admin panel** (`/admin`, LAN/Tailscale only by default): users, per-device API keys with a QR code for the app, the download queue, the library, yt-dlp status, audit log and ntfy/webhook notifications.
 - **Android app**: the player for your own server, which caches every song it plays to save mobile data, with offline downloads, export to the phone, synced lyrics, radio and playlist import.
 - Works with other OpenSubsonic apps that search on the server.
-- Multi-user, one revocable key per device. Free software, no ads, no tracking: the app talks only to your server.
+- Multi-user, one revocable key per device. Free software, no ads, no tracking: the app talks only to your server (the one exception is the optional **Sign in to YouTube** page in Settings, which you open yourself and whose session goes only to your server; see [docs/admin-guide.md](docs/admin-guide.md)).
 
 <p align="center">
   <img src="docs/images/listen_now_light.png" width="200" alt="Listen Now: stations, recently played albums and top songs">

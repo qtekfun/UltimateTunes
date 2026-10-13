@@ -137,6 +137,39 @@ class TunesApiFakeServerTest {
         }
 
         @Test
+        fun `the YouTube session status, set and clear`() = runTest {
+            val status = api.youtubeCookiesStatus().value()
+            assertTrue(status.configured)
+            assertEquals(12, status.cookieCount)
+            assertEquals(Instant.parse("2026-10-13T09:00:00Z"), status.setAt)
+            assertEquals("/ut/v1/youtube-cookies/status", server.takeRequest().url.encodedPath)
+
+            val text = "# Netscape HTTP Cookie File\n" +
+                ".youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\tx\n"
+            val stored = api.setYoutubeCookies(text).value()
+            assertEquals(2, stored.cookieCount)
+            val put = server.takeRequest()
+            assertEquals("PUT", put.method)
+            assertEquals("/ut/v1/youtube-cookies", put.url.encodedPath)
+            assertTrue(put.headers["Content-Type"].orEmpty().startsWith("text/plain"))
+            assertEquals(FakeTunesServer.API_KEY, put.headers["X-Api-Key"])
+            assertNull(put.url.queryParameter("apiKey"))
+            assertEquals(text, put.body?.utf8())
+
+            val cleared = api.clearYoutubeCookies().value()
+            assertFalse(cleared.configured)
+            assertNull(cleared.cookieCount)
+            assertEquals("DELETE", server.takeRequest().method)
+        }
+
+        @Test
+        fun `a body that is not a Netscape file is invalid_parameter`() = runTest {
+            val result = api.setYoutubeCookies("not cookies")
+            assertTrue(result is TunesResult.ApiError, "$result")
+            assertEquals(ErrorKind.INVALID_PARAMETER, (result as TunesResult.ApiError).error.kind)
+        }
+
+        @Test
         fun `requestTrack of a yt id is queued, of a library id ready`() = runTest {
             val queued = api.requestTrack(SongId("yt:Qx7Lm2pZ0aB"), RequestReason.PREFETCH).value()
             assertEquals(TrackState.QUEUED, queued.state)
