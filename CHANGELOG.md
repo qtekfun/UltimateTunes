@@ -9,6 +9,17 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.7] - 2026-10-13
+
+Release candidate of 1.0: sign in to YouTube once from the app so your server can download through that session.
+
+### Added
+- YouTube session for downloads: when YouTube challenges your server's address ("Sign in to confirm you're not a bot", "The page needs to be reloaded", intermittent 403s), an admin can give the server a YouTube session. In the Android app, Settings > YouTube account > Sign in to YouTube opens a Google/YouTube login (use a throwaway account, never your main one), captures that session's cookies, uploads them to your own server and wipes them from the phone. The server stores them encrypted (`UT_YTDLP_COOKIES_KEY`, off until you set it), the worker uses a private temporary copy per download, and nothing is logged. The admin panel has a "YouTube account" page (status, clear, manual paste); `PUT/GET/DELETE /ut/v1/youtube-cookies` are admin-only.
+
+### Security
+- The sign-in screen is the one user-initiated place where the app talks to Google, restricted to Google and YouTube hosts, with the cookies wiped from the phone as soon as they are uploaded or the screen closes.
+- The cookies are encrypted at rest with a dedicated Fernet key, never logged, and never leave your server except to YouTube.
+
 ## [1.0.0-rc.6] - 2026-10-13
 
 Release candidate of 1.0: recommendations, charts, optional two-factor sign-in, and more reliable downloads.
