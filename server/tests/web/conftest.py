@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from tests.auth.conftest import fast_passwords, migrate_file
+from tests.auth.conftest import TOTP_KEY, fast_passwords, migrate_file
 from tests.library.harness import seed_files
 from ultimatetunes.admin.settings import AdminSettings
 from ultimatetunes.app import AREAS, create_app
@@ -53,7 +53,12 @@ def services(
         services.db,
         clock,
         services.rate_limiter,
-        AuthSettings(auth_lockout_s=60, auth_max_failures_per_user=3, auth_login_burst=50),
+        AuthSettings(
+            auth_lockout_s=60,
+            auth_max_failures_per_user=3,
+            auth_login_burst=50,
+            totp_encryption_key=TOTP_KEY,
+        ),
         fast_passwords(),
     )
     seed_files(settings.music_dir)

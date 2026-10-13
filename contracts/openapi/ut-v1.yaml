@@ -1120,6 +1120,116 @@ paths:
           $ref: '#/components/responses/NotImplemented'
         '502':
           $ref: '#/components/responses/Upstream'
+  /ut/v1/youtube-cookies:
+    put:
+      operationId: setYoutubeCookies
+      tags:
+      - youtube
+      summary: Set the server-wide YouTube account cookies
+      description: >-
+        D14. Stores the YouTube cookies the downloader uses to get past the bot-check wall,
+        exported (Netscape/Mozilla cookies.txt) from a throwaway account. The Android app sends
+        them after a WebView login; the admin panel can also paste them. **Admin only** (the API
+        key maps to a user; a non-admin key gets 403). The body is the raw cookies.txt text;
+        the server validates the Netscape format, stores it encrypted at rest and never logs it.
+        Needs `UT_YTDLP_COOKIES_KEY` on the server (else `feature_disabled`).
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              description: A Netscape/Mozilla cookies.txt (invented example; never a real session).
+            example: |
+              # Netscape HTTP Cookie File
+              .youtube.com	TRUE	/	TRUE	1999999999	SID	EXAMPLE-invented-cookie-value
+              .youtube.com	TRUE	/	TRUE	1999999999	HSID	EXAMPLE-invented-cookie-value
+      responses:
+        '200':
+          description: Stored. Returns the non-secret status (never the cookies).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YoutubeCookiesStatus'
+              example:
+                configured: true
+                setAt: '2026-10-13T09:00:00.000Z'
+                cookieCount: 2
+                hasYoutubeDomain: true
+                available: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+    delete:
+      operationId: clearYoutubeCookies
+      tags:
+      - youtube
+      summary: Clear the stored YouTube cookies
+      description: D14. Removes the stored session; the server then downloads without an account. Admin only.
+      responses:
+        '200':
+          description: Cleared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YoutubeCookiesStatus'
+              example:
+                configured: false
+                setAt: null
+                cookieCount: null
+                hasYoutubeDomain: null
+                available: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /ut/v1/youtube-cookies/status:
+    get:
+      operationId: getYoutubeCookiesStatus
+      tags:
+      - youtube
+      summary: Whether YouTube cookies are configured
+      description: D14. Non-secret status only (never a cookie value). Admin only.
+      responses:
+        '200':
+          description: The current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YoutubeCookiesStatus'
+              example:
+                configured: true
+                setAt: '2026-10-13T09:00:00.000Z'
+                cookieCount: 12
+                hasYoutubeDomain: true
+                available: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -1271,6 +1381,32 @@ components:
             code: internal_error
             instance: /ut/v1/…
   schemas:
+    YoutubeCookiesStatus:
+      type: object
+      description: Non-secret status of the server-wide YouTube cookies (D14). Never carries a cookie value.
+      required:
+      - configured
+      - available
+      properties:
+        configured:
+          type: boolean
+          description: Whether a YouTube session is stored.
+        setAt:
+          type: string
+          nullable: true
+          format: date-time
+          description: When it was stored (UTC), or null.
+        cookieCount:
+          type: integer
+          nullable: true
+          description: How many cookies the stored file holds, or null.
+        hasYoutubeDomain:
+          type: boolean
+          nullable: true
+          description: Whether a youtube.com cookie is present, or null.
+        available:
+          type: boolean
+          description: Whether the server has an encryption key (`UT_YTDLP_COOKIES_KEY`); false means the feature is off.
     Problem:
       type: object
       description: RFC 9457 problem details (`application/problem+json`). Clients switch on `code` only; the mapping
@@ -1575,6 +1711,11 @@ components:
           minLength: 1
           maxLength: 100
           description: Device name, e.g. `Pixel 9`.
+        totp:
+          type: string
+          maxLength: 64
+          format: password
+          description: TOTP code or recovery code, required only when the account has two-factor authentication enabled.
     CreatedKey:
       type: object
       required:

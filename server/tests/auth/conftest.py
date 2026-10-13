@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 from argon2 import PasswordHasher, Type
+from cryptography.fernet import Fernet
+from pydantic import SecretStr
 
 from tests.conftest import CONTRACTS
 from ultimatetunes.auth.passwords import Passwords
@@ -21,6 +23,8 @@ from ultimatetunes.settings import Settings
 # Made at runtime (12+ characters for the policy): no credential-looking literal in the tests.
 ADMIN_PASSWORD = secrets.token_urlsafe(16)
 USER_PASSWORD = secrets.token_urlsafe(16)
+# A fresh Fernet key per test run, so 2FA secrets can be sealed; never a literal in the source.
+TOTP_KEY = SecretStr(Fernet.generate_key().decode("ascii"))
 IP = "192.0.2.10"
 
 
@@ -47,6 +51,7 @@ def auth_settings() -> AuthSettings:
         auth_key_burst=50.0,
         auth_login_rate_per_s=1.0,
         auth_login_burst=50.0,
+        totp_encryption_key=TOTP_KEY,
     )
 
 

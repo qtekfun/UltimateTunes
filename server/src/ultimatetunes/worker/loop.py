@@ -239,7 +239,9 @@ class Worker:
             run.last = report
             await self._report(run, "downloading", report)
 
-        download = await self.downloader.download(job.video_id, job.staging_dir, on_progress)
+        download = await self.downloader.download(
+            job.video_id, job.staging_dir, on_progress, cookies=job.youtube_cookies
+        )
         await self._report(run, "tagging", self._final_report(run, download))
         # From register on, stopping halfway would leave a reserved path or a moved file
         # without `complete`: a shutdown or an admin cancel no longer interrupts, it waits.
