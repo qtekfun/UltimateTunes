@@ -8,12 +8,14 @@ with and without bracketed parts ("(Live)", "[Remastered]"), keeping the better 
 
 - Titles: a "feat." part ("(feat. X)", "[ft. X]", " feat. X") is dropped and X counts as an
   artist. Bracketed parts are ignored only when both titles name the same version markers
-  ("live", "remix", "acoustic"...), so a live or remixed take never matches the studio one.
+  ("live", "remix", "acoustic"..., MusicBrainz's disambiguation included); otherwise the
+  title similarity is capped at 0.5, so a live or remixed take never matches the studio one.
 - Artists: YouTube Music joins a track's artists with ", "; MusicBrainz credits them one by
   one with join phrases (" & ", " feat. ", " x "). They are compared as sets: the primary
   YouTube artist must be credited (its best similarity), times the mean two-way coverage of
   both lists. The printed credit is also compared as one string with the YouTube artists
-  (featured ones appended); the better value wins.
+  (featured ones appended); the better value wins. A featured artist missing from the credit
+  caps the artist similarity at 0.5, so a solo recording never matches a "feat." version.
 - Duration: 1 within 2 s, falling linearly to 0 at 10 s; 0.5 when either side is unknown.
 
 A score below `TaggingSettings.musicbrainz_min_score` is a weak match: the YouTube Music
@@ -37,11 +39,17 @@ ARTIST_WEIGHT = 0.35
 DURATION_WEIGHT = 0.20
 DURATION_EXACT_MS = 2000
 DURATION_OFF_MS = 10000
+# Caps that keep a score below any sensible threshold whatever the other parts say:
+# 0.45 x 0.5 + 0.35 + 0.20 = 0.775 and 0.45 + 0.35 x 0.5 + 0.20 = 0.825.
+OTHER_VERSION_TITLE_CAP = 0.5
+MISSING_FEATURED_ARTIST_CAP = 0.5
+CREDITED_MIN_SIMILARITY = 0.8
 _BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]|\{[^}]*\}")
-# "(feat. X)", "[ft. X]", "(with X)", or a trailing " feat. X" / " ft. X" / " featuring X".
+# "(feat. X)", "[ft. X]", or " feat. X" / " ft. X" / " featuring X" up to a bracket or the end.
+# Not "(with X)": "To Sir (With Love)" is a title, not a credit.
 _FEATURING = re.compile(
-    r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+([^)\]]+)[)\]]"
-    r"|\s+(?:feat\.|ft\.|featuring)\s+(.+)$",
+    r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring)\s+([^)\]]+)[)\]]"
+    r"|\s+(?:feat\.|ft\.|featuring)\s+([^()\[\]]+?)\s*(?=[(\[]|$)",
     re.IGNORECASE,
 )
 _NAME_SEPARATORS = re.compile(r"\s*,\s+|\s+&\s+")
@@ -102,7 +110,7 @@ def split_featuring(title: str) -> tuple[str, list[str]]:
 
     def keep(match: re.Match[str]) -> str:
         featured.extend(artist_names(match.group(1) or match.group(2)))
-        return ""
+        return " "
 
     return " ".join(_FEATURING.sub(keep, title).split()), featured
 
@@ -117,16 +125,18 @@ def _markers(title: str) -> Counter[str]:
 
 
 def title_similarity(left: str, right: str, right_note: str = "") -> float:
-    """`similarity` of the titles without "feat." parts; bracketed parts are only ignored
-    when both titles name the same version markers (live, remix, acoustic...). The right
-    title's markers include its note (a MusicBrainz disambiguation such as "live, 2015")."""
+    """`similarity` of the titles without "feat." parts when both name the same version
+    markers (live, remix, acoustic...), the right title's note included (a MusicBrainz
+    disambiguation such as "live, 2015"). Otherwise they are different takes: the plain
+    ratio, capped at `OTHER_VERSION_TITLE_CAP`."""
     left, _ = split_featuring(left)
     right, _ = split_featuring(right)
     noted = " ".join([right, *(w for w in normalize(right_note).split() if w in _VERSION_MARKERS)])
     if _markers(left) == _markers(noted):
         return similarity(left, right)
     na, nb = normalize(left), normalize(noted)
-    return SequenceMatcher(None, na, nb).ratio() if na and nb else 0.0
+    ratio = SequenceMatcher(None, na, nb).ratio() if na and nb else 0.0
+    return min(ratio, OTHER_VERSION_TITLE_CAP)
 
 
 def _coverage(names: list[str], others: list[str]) -> float:
@@ -135,7 +145,9 @@ def _coverage(names: list[str], others: list[str]) -> float:
 
 def artist_similarity(query: Query, artist_credit: Any) -> float:
     """YouTube Music artists (plus the title's featured ones) against the MusicBrainz credit,
-    as sets weighted by the primary artist, or as printed strings; the better one."""
+    as sets weighted by the primary artist, or as printed strings; the better one. A featured
+    artist the credit does not name caps it at `MISSING_FEATURED_ARTIST_CAP`: a solo
+    recording does not stand in for a "feat." version."""
     featured = split_featuring(query.title)[1]
     whole = similarity(", ".join([query.artist, *featured]), credit_name(artist_credit) or "")
     youtube = artist_names(query.artist) + featured
@@ -148,7 +160,12 @@ def artist_similarity(query: Query, artist_credit: Any) -> float:
         return whole
     primary = max(similarity(youtube[0], name) for name in credited)
     overlap = (_coverage(youtube, credited) + _coverage(credited, youtube)) / 2
-    return max(whole, primary * overlap)
+    best = max(whole, primary * overlap)
+    missing = any(
+        max(similarity(name, other) for other in credited) < CREDITED_MIN_SIMILARITY
+        for name in featured
+    )
+    return min(best, MISSING_FEATURED_ARTIST_CAP) if missing else best
 
 
 def duration_agreement(left_ms: int | None, right_ms: int | None) -> float:

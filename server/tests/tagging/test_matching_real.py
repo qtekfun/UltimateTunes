@@ -104,8 +104,10 @@ def test_the_query_asks_for_the_primary_artist_and_the_bare_title() -> None:
     [
         ("Tu Enemigo (feat. Juanes)", "Tu Enemigo", ["Juanes"]),
         ("Song [ft. A & B]", "Song", ["A", "B"]),
-        ("Song (with A, B) (Live)", "Song (Live)", ["A", "B"]),
         ("Song feat. A", "Song", ["A"]),
+        ("Song feat. A (Live)", "Song (Live)", ["A"]),
+        ("Song ft. A & B [Remix] (Live)", "Song [Remix] (Live)", ["A", "B"]),
+        ("To Sir (With Love)", "To Sir (With Love)", []),
         ("Song Featuring A, B", "Song", ["A", "B"]),
         ("Feather (Remix)", "Feather (Remix)", []),
         ("Without You", "Without You", []),
@@ -146,3 +148,53 @@ def test_version_markers_keep_takes_apart() -> None:
     assert title_similarity("Song", "Song", "live, 2015-11-12") < 0.9
     assert title_similarity("Song (feat. X)", "Song") == 1.0
     assert title_similarity("!!", "Song (Live)") == 0.0
+
+
+def recording(title: str, artists: list[str], length: int, note: str = "") -> dict[str, Any]:
+    credit = [{"name": name} for name in artists]
+    return {"title": title, "artist-credit": credit, "length": length, "disambiguation": note}
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate"),
+    [
+        (
+            Query("Bohemian Rhapsody (Live)", "Queen", None, 354000),
+            recording("Bohemian Rhapsody", ["Queen"], 354000),
+        ),
+        (
+            Query("Bohemian Rhapsody", "Queen", None, 354000),
+            recording("Bohemian Rhapsody", ["Queen"], 354000, "live, 1986"),
+        ),
+        (
+            Query("Something Just Like This (Remix)", "The Chainsmokers, Coldplay", None, 247000),
+            recording("Something Just Like This", ["The Chainsmokers", "Coldplay"], 247000),
+        ),
+        (
+            Query("Something Just Like This", "The Chainsmokers, Coldplay", None, 247000),
+            recording("Something Just Like This (Remix)", ["The Chainsmokers", "Coldplay"], 247000),
+        ),
+        (
+            Query("Song feat. A (Live)", "B", None, 200000),
+            recording("Song", ["B", "A"], 200000),
+        ),
+    ],
+)
+def test_another_version_of_a_long_title_never_reaches_the_threshold(
+    query: Query, candidate: dict[str, Any]
+) -> None:
+    assert score(query, candidate) < MIN_SCORE
+
+
+def test_a_solo_recording_never_stands_in_for_a_featured_version() -> None:
+    query = Query("Song (feat. B)", "A", None, 200000)
+    assert score(query, recording("Song", ["A"], 200000)) < MIN_SCORE
+    assert score(query, recording("Song", ["A", "B"], 200000)) == 1.0
+    query, recordings = case("tu_enemigo")
+    solo = dict(recordings[2], length=query.duration_ms)  # same length as the YouTube track
+    assert score(query, solo) < MIN_SCORE
+
+
+def test_with_in_brackets_is_part_of_the_title() -> None:
+    query = Query("To Sir (With Love)", "Lulu", None, 165000)
+    assert score(query, recording("To Sir With Love", ["Lulu"], 165000)) == 1.0
