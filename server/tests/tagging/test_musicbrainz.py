@@ -135,3 +135,40 @@ async def test_huge_answers_are_refused(web: respx.MockRouter) -> None:
         musicbrainz, _ = make(client)
         with pytest.raises(LookupFailedError, match="too large"):
             await musicbrainz.search_recordings(QUERY)
+
+
+async def test_a_weak_strict_search_is_followed_by_one_loose_search(
+    web: respx.MockRouter, mb_search: dict[str, Any]
+) -> None:
+    route = web.get(MUSICBRAINZ_URL)
+    route.mock(
+        side_effect=[
+            httpx.Response(200, json={"recordings": [mb_search["recordings"][1]]}),
+            httpx.Response(200, json=mb_search),
+        ]
+    )
+    async with httpx.AsyncClient() as client:
+        musicbrainz, sleeper = make(client)
+        meta = await MetadataResolver(musicbrainz, 0.85).resolve(QUERY, YoutubeIds())
+    assert (meta.needs_review, meta.musicbrainz.recording_id) == (
+        False,
+        "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d01",
+    )
+    sent = [call.request.url.params["query"] for call in route.calls]
+    assert sent == [search_query(QUERY), search_query(QUERY, loose=True)]
+    assert sleeper.slept == [1]  # the second request still waits for its token
+
+
+async def test_a_failed_loose_search_keeps_the_strict_candidate(
+    web: respx.MockRouter, mb_search: dict[str, Any]
+) -> None:
+    weak = mb_search["recordings"][1]
+    web.get(MUSICBRAINZ_URL).mock(
+        side_effect=[httpx.Response(200, json={"recordings": [weak]}), httpx.Response(500)]
+    )
+    async with httpx.AsyncClient() as client:
+        musicbrainz, _ = make(client)
+        meta = await MetadataResolver(musicbrainz, 0.85).resolve(QUERY, YoutubeIds())
+    assert meta.needs_review
+    assert meta.match_score is not None
+    assert meta.match_score < 0.85

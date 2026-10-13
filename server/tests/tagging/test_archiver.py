@@ -5,6 +5,7 @@ and covers, and a fake ffmpeg (plus a golden run with the real one when installe
 
 import hashlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -51,17 +52,21 @@ JPEG = b"\xff\xd8\xff\xe0cover"
 OTHER_TRACK = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001"
 
 
-async def no_sleep(_seconds: float) -> None:
-    return None
+def clock_and_sleep() -> tuple[FakeClock, Callable[[float], Awaitable[None]]]:
+    """A fake clock and a sleep that only advances it (a second MusicBrainz request waits
+    for the next rate-limit token)."""
+    clock = FakeClock()
+
+    async def sleep(seconds: float) -> None:
+        clock.advance(seconds)
+
+    return clock, sleep
 
 
 def archiver(runner: FakeRunner | None = None, **kwargs: Any) -> TaggingArchiver:
+    clock, sleep = clock_and_sleep()
     return TaggingArchiver(
-        TaggingSettings(),
-        ffmpeg=fake_ffmpeg(runner),
-        clock=FakeClock(),
-        sleep=no_sleep,
-        **kwargs,
+        TaggingSettings(), ffmpeg=fake_ffmpeg(runner), clock=clock, sleep=sleep, **kwargs
     )
 
 
@@ -430,8 +435,9 @@ async def test_golden_archive_with_real_ffmpeg(
     web.route(host="coverartarchive.org").respond(404)
     web.route(host="i.ytimg.com").respond(404)
     api = FakeApi()
+    clock, sleep = clock_and_sleep()
     real = TaggingArchiver(
-        real_settings(), ffmpeg=Ffmpeg(real_settings()), clock=FakeClock(), sleep=no_sleep
+        real_settings(), ffmpeg=Ffmpeg(real_settings()), clock=clock, sleep=sleep
     )
     archived = await real.archive(make_request(tmp_path, api))
     path = tmp_path / "music" / str(archived.library_path)

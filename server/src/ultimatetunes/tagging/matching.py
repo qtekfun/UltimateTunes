@@ -4,8 +4,18 @@
 
 Score in [0, 1] = 0.45 x title similarity + 0.35 x artist similarity + 0.20 x duration
 agreement. Similarities compare casefolded, NFKC-normalized text with punctuation removed,
-with and without bracketed parts ("(Live)", "[Remastered]", "(feat. X)"), keeping the better
-one. Duration: 1 within 2 s, falling linearly to 0 at 10 s; 0.5 when either side is unknown.
+with and without bracketed parts ("(Live)", "[Remastered]"), keeping the better one.
+
+- Titles: a "feat." part ("(feat. X)", "[ft. X]", " feat. X") is dropped and X counts as an
+  artist. Bracketed parts are ignored only when both titles name the same version markers
+  ("live", "remix", "acoustic"...), so a live or remixed take never matches the studio one.
+- Artists: YouTube Music joins a track's artists with ", "; MusicBrainz credits them one by
+  one with join phrases (" & ", " feat. ", " x "). They are compared as sets: the primary
+  YouTube artist must be credited (its best similarity), times the mean two-way coverage of
+  both lists. The printed credit is also compared as one string with the YouTube artists
+  (featured ones appended); the better value wins.
+- Duration: 1 within 2 s, falling linearly to 0 at 10 s; 0.5 when either side is unknown.
+
 A score below `TaggingSettings.musicbrainz_min_score` is a weak match: the YouTube Music
 data is kept and the track is marked `needs_review` (RF-04).
 
@@ -15,6 +25,7 @@ Music album wins; ties go to official releases, then to the earliest date.
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
@@ -27,6 +38,30 @@ DURATION_WEIGHT = 0.20
 DURATION_EXACT_MS = 2000
 DURATION_OFF_MS = 10000
 _BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]|\{[^}]*\}")
+# "(feat. X)", "[ft. X]", "(with X)", or a trailing " feat. X" / " ft. X" / " featuring X".
+_FEATURING = re.compile(
+    r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+([^)\]]+)[)\]]"
+    r"|\s+(?:feat\.|ft\.|featuring)\s+(.+)$",
+    re.IGNORECASE,
+)
+_NAME_SEPARATORS = re.compile(r"\s*,\s+|\s+&\s+")
+# Words that name a different take of a song; synonyms map to one marker.
+_VERSION_MARKERS = {
+    "live": "live",
+    "directo": "live",
+    "vivo": "live",
+    "remix": "remix",
+    "acoustic": "acoustic",
+    "acustico": "acoustic",
+    "acústico": "acoustic",
+    "acústica": "acoustic",
+    "acustica": "acoustic",
+    "unplugged": "acoustic",
+    "extended": "extended",
+    "instrumental": "instrumental",
+    "karaoke": "karaoke",
+    "demo": "demo",
+}
 _PUNCT = re.compile(r"[^\w\s]")
 _MBID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _ISRC = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
@@ -59,6 +94,61 @@ def similarity(left: str, right: str) -> float:
         if na and nb:
             best = max(best, SequenceMatcher(None, na, nb).ratio())
     return best
+
+
+def split_featuring(title: str) -> tuple[str, list[str]]:
+    """The title without its "feat." parts, and the featured artists they name."""
+    featured: list[str] = []
+
+    def keep(match: re.Match[str]) -> str:
+        featured.extend(artist_names(match.group(1) or match.group(2)))
+        return ""
+
+    return " ".join(_FEATURING.sub(keep, title).split()), featured
+
+
+def artist_names(text: str) -> list[str]:
+    """Artist names joined with ", " or " & " (YouTube Music joins its artists with ", ")."""
+    return [name for name in (part.strip() for part in _NAME_SEPARATORS.split(text)) if name]
+
+
+def _markers(title: str) -> Counter[str]:
+    return Counter(_VERSION_MARKERS[w] for w in normalize(title).split() if w in _VERSION_MARKERS)
+
+
+def title_similarity(left: str, right: str, right_note: str = "") -> float:
+    """`similarity` of the titles without "feat." parts; bracketed parts are only ignored
+    when both titles name the same version markers (live, remix, acoustic...). The right
+    title's markers include its note (a MusicBrainz disambiguation such as "live, 2015")."""
+    left, _ = split_featuring(left)
+    right, _ = split_featuring(right)
+    noted = " ".join([right, *(w for w in normalize(right_note).split() if w in _VERSION_MARKERS)])
+    if _markers(left) == _markers(noted):
+        return similarity(left, right)
+    na, nb = normalize(left), normalize(noted)
+    return SequenceMatcher(None, na, nb).ratio() if na and nb else 0.0
+
+
+def _coverage(names: list[str], others: list[str]) -> float:
+    return sum(max(similarity(name, other) for other in others) for name in names) / len(names)
+
+
+def artist_similarity(query: Query, artist_credit: Any) -> float:
+    """YouTube Music artists (plus the title's featured ones) against the MusicBrainz credit,
+    as sets weighted by the primary artist, or as printed strings; the better one."""
+    featured = split_featuring(query.title)[1]
+    whole = similarity(", ".join([query.artist, *featured]), credit_name(artist_credit) or "")
+    youtube = artist_names(query.artist) + featured
+    credited = [
+        name
+        for credit in _list(artist_credit)
+        if (name := _text(credit.get("name")) or _text(_dict(credit.get("artist")).get("name")))
+    ]
+    if not youtube or not credited:
+        return whole
+    primary = max(similarity(youtube[0], name) for name in credited)
+    overlap = (_coverage(youtube, credited) + _coverage(credited, youtube)) / 2
+    return max(whole, primary * overlap)
 
 
 def duration_agreement(left_ms: int | None, right_ms: int | None) -> float:
@@ -118,11 +208,11 @@ def _first_artist(artist_credit: Any) -> dict[str, Any]:
 
 def score(query: Query, recording: dict[str, Any]) -> float:
     title = _text(recording.get("title")) or ""
-    artist = credit_name(recording.get("artist-credit")) or ""
     length = recording.get("length")
     total = (
-        TITLE_WEIGHT * similarity(query.title, title)
-        + ARTIST_WEIGHT * similarity(query.artist, artist)
+        TITLE_WEIGHT
+        * title_similarity(query.title, title, _text(recording.get("disambiguation")) or "")
+        + ARTIST_WEIGHT * artist_similarity(query, recording.get("artist-credit"))
         + DURATION_WEIGHT
         * duration_agreement(query.duration_ms, length if isinstance(length, int) else None)
     )
