@@ -75,6 +75,10 @@ class CreateKeyRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: SecretStr = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=100)
+    # Optional TOTP second factor (a code or a recovery code). Not in the frozen ut-v1 contract
+    # yet (docs/2fa.md proposes the additive field): only consulted for 2FA-enabled accounts,
+    # so clients that omit it are unaffected.
+    totp: SecretStr | None = Field(default=None, max_length=64)
 
 
 async def _read_body(request: Request) -> bytes:
@@ -105,6 +109,7 @@ async def create_key(request: Request, service: Service) -> Response:
         _client_ip(request),
         request.headers.get("x-api-key") or request.query_params.get("apiKey") or None,
         trusted=trusted_origin(request),
+        totp_code=body.totp.get_secret_value() if body.totp is not None else None,
     )
     return JSONResponse(
         {"key": key_json(created.key, None), "secret": created.secret},

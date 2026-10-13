@@ -38,6 +38,7 @@ PREFIX = "/web"
 HOME = "/"
 SESSION_COOKIE = "ut_web_session"
 LOGIN_COOKIE = "ut_web_login"
+PENDING_2FA_COOKIE = "ut_web_2fa"
 # The language chosen in Settings ("en" or "es"); absent: the browser's.
 LANG_COOKIE = "ut_web_lang"
 LANG_TTL_S = 365 * 24 * 3600
@@ -78,6 +79,7 @@ class WebSessionCodec(SessionCodec):
         super().__init__(secret, clock, ttl_s)
         self._session = URLSafeSerializer(secret, salt="ultimatetunes.web.session")
         self._login = URLSafeSerializer(secret, salt="ultimatetunes.web.login")
+        self._pending = URLSafeSerializer(secret, salt="ultimatetunes.web.pending2fa")
 
 
 class WebGate:

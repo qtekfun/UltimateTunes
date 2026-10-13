@@ -67,6 +67,13 @@ openssl rand -hex 32 > secrets/admin_session_secret
 chmod 644 secrets/*
 ```
 
+Optional: to offer **two-factor authentication** (TOTP) on the password logins, add a Fernet key and uncomment the `totp_encryption_key` secret in `compose.yaml` (docs/2fa.md). Without it, 2FA cannot be enabled. Keep it as safe as `admin_session_secret`; losing it makes enrolled secrets unreadable (users fall back to recovery codes).
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secrets/totp_encryption_key
+chmod 644 secrets/totp_encryption_key
+```
+
 ## 4. `.env`
 
 Edit the `.env` you downloaded:
