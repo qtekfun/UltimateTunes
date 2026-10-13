@@ -108,7 +108,7 @@ flowchart LR
   only when `UT_YTDLP_POT_PROVIDER_URL` is set. It shares the `pot` network with the worker only
   and leaves through `egress`; the api never sees it.
 - **The Android app talks only to the server.** It never contacts YouTube, MusicBrainz, LRCLIB
-  or any other host; it caches what it plays on the device (Media3 `SimpleCache`).
+  or any other host; it caches what it plays on the device (Media3 `SimpleCache`). The single exception is the optional **Sign in to YouTube** WebView in Settings, opened by the user and limited to Google and YouTube hosts; the cookies it yields go only to the server (`PUT /ut/v1/youtube-cookies`) and are wiped from the phone.
 - **Edge**: the recommended setup is `tailscale serve` (HTTPS inside the tailnet, nothing public,
   `deploy/tailscale/README.md`). Public access only through Caddy (`deploy/caddy/Caddyfile`) or
   Traefik + Authelia (`deploy/traefik/`). A Cloudflare **proxy** may sit in front of Traefik
