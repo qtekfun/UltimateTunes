@@ -16,6 +16,7 @@ import com.qtekfun.ultimatetunes.ui.problem
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -31,6 +32,7 @@ private class FakeWebSession(var youtube: String? = null) : YoutubeWebSession {
 
     override fun cookieSources() = listOf(
         NetscapeCookies.Source(youtube, ".youtube.com", "www.youtube.com"),
+        NetscapeCookies.Source(youtube, ".youtube.com", "music.youtube.com"),
         NetscapeCookies.Source("SID=g1", ".google.com", "accounts.google.com")
     )
 
@@ -40,6 +42,7 @@ private class FakeWebSession(var youtube: String? = null) : YoutubeWebSession {
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @ExtendWith(MainDispatcherExtension::class)
 class YoutubeAccountViewModelTest {
     private val clock = Clock.fixed(Instant.parse("2026-10-13T00:00:00Z"), ZoneOffset.UTC)
@@ -210,6 +213,87 @@ class YoutubeAccountViewModelTest {
         viewModel.onPageFinished("www.youtube.com")
 
         assertEquals(YoutubePhase.SIGNING_IN, viewModel.state.value.phase)
+    }
+
+    @Test
+    fun `continue now captures a session that no page event saw`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        session.youtube = signedIn
+
+        viewModel.continueNow()
+
+        assertEquals(YoutubePhase.DONE, viewModel.reach(YoutubePhase.DONE).phase)
+        assertEquals(null, session.youtube)
+    }
+
+    @Test
+    fun `continue now without a session says so and stays on the login`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.continueNow() // not signing in: ignored
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        session.youtube = "YSC=y"
+
+        viewModel.continueNow()
+
+        val state = viewModel.state.value
+        assertEquals(YoutubePhase.SIGNING_IN, state.phase)
+        assertTrue(state.noSession)
+        viewModel.onPageFinished("accounts.google.com")
+        session.youtube = signedIn
+        viewModel.continueNow()
+        assertFalse(viewModel.reach(YoutubePhase.DONE).noSession)
+    }
+
+    @Test
+    fun `a page that cannot load is reported, and clears with the next page`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.onLoadFailed() // not signing in: ignored
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+
+        viewModel.onLoadFailed()
+        assertTrue(viewModel.state.value.loadFailed)
+        viewModel.onPageFinished("accounts.google.com")
+
+        assertFalse(viewModel.state.value.loadFailed)
+        viewModel.cancel()
+        assertFalse(viewModel.state.value.noSession)
+    }
+
+    @Test
+    fun `the jar is polled while the login is open, whatever the page does`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+
+        testScheduler.advanceTimeBy(3_500) // no session yet, no page event at all
+        assertEquals(YoutubePhase.SIGNING_IN, viewModel.state.value.phase)
+        session.youtube = signedIn
+        testScheduler.advanceTimeBy(1_500)
+
+        assertEquals(YoutubePhase.DONE, viewModel.reach(YoutubePhase.DONE).phase)
+        assertEquals(null, session.youtube)
+    }
+
+    @Test
+    fun `cancelling stops the polling`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        viewModel.cancel()
+        session.youtube = signedIn
+
+        testScheduler.advanceTimeBy(20_000)
+
+        assertEquals(YoutubePhase.IDLE, viewModel.state.value.phase)
     }
 
     @Test

@@ -11,9 +11,13 @@ import android.net.Uri
  * to the user's own server and nowhere else.
  */
 
-/** Google's sign-in page for YouTube; it continues to youtube.com once signed in. */
+/**
+ * Google's sign-in page for YouTube; it continues to music.youtube.com (the site the server's
+ * downloader and catalog use) once signed in.
+ */
 const val YOUTUBE_LOGIN_URL =
-    "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F"
+    "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F" +
+        "&service=youtube"
 
 /** Pages the user may be navigated to: exactly these Google hosts (no other google.com host). */
 private val PAGE_HOSTS = setOf(
@@ -34,7 +38,8 @@ private val RESOURCE_DOMAINS = listOf(
     "googleapis.com",
     "googleusercontent.com",
     "ggpht.com",
-    "ytimg.com"
+    "ytimg.com",
+    "recaptcha.net"
 )
 
 /** True when [host] is [domain] or one of its subdomains. */
@@ -61,10 +66,16 @@ internal fun isAllowedResource(scheme: String?, host: String?): Boolean =
                 RESOURCE_DOMAINS.any { isWithin(host.lowercase(), it) }
             )
 
+private const val FALLBACK_CHROME = "130.0.0.0"
+private val CHROME_VERSION = Regex("""Chrome/(\d+(\.\d+)*)""")
+
 /**
- * The user agent for the login: the WebView's own with the markers that make Google refuse
- * embedded browsers removed (`; wv` and `Version/x.y`), so it reads as the system Chrome.
+ * The user agent for the login: a plain mobile Chrome, with the Chrome version of the installed
+ * WebView ([default]) so it stays plausible. No `; wv` and no `Version/x.y` token, the markers
+ * with which Google refuses embedded browsers (`disallowed_useragent`).
  */
-fun loginUserAgent(default: String): String = default
-    .replace("; wv)", ")")
-    .replace(Regex("""\s?Version/\d+(\.\d+)*"""), "")
+fun loginUserAgent(default: String): String {
+    val chrome = CHROME_VERSION.find(default)?.groupValues?.get(1) ?: FALLBACK_CHROME
+    return "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/$chrome Mobile Safari/537.36"
+}

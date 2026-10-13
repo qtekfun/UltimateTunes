@@ -55,22 +55,44 @@ class YoutubeLoginTest {
     }
 
     @Test
-    fun `the login starts on Google and continues to YouTube`() {
-        assertTrue(YOUTUBE_LOGIN_URL.startsWith("https://accounts.google.com/"))
-        assertTrue(YOUTUBE_LOGIN_URL.contains("continue=https%3A%2F%2Fwww.youtube.com%2F"))
+    fun `the music youtube flow is allowed hop by hop`() {
+        val hops = listOf(
+            "accounts.google.com",
+            "accounts.youtube.com",
+            "consent.google.com",
+            "consent.youtube.com",
+            "myaccount.google.com",
+            "www.youtube.com",
+            "music.youtube.com",
+            "m.youtube.com"
+        )
+        assertTrue(hops.all { isAllowedPage("https", it) }, "$hops")
+        assertTrue(isYoutubeHost("music.youtube.com"))
+        assertTrue(isAllowedResource("https", "www.recaptcha.net"))
     }
 
     @Test
-    fun `the user agent loses the WebView markers`() {
+    fun `the login starts on Google and continues to music youtube`() {
+        assertTrue(YOUTUBE_LOGIN_URL.startsWith("https://accounts.google.com/ServiceLogin"))
+        assertTrue(YOUTUBE_LOGIN_URL.contains("continue=https%3A%2F%2Fmusic.youtube.com%2F"))
+        assertTrue(YOUTUBE_LOGIN_URL.contains("service=youtube"))
+    }
+
+    @Test
+    fun `the user agent is a plain mobile Chrome with the installed Chrome version`() {
         val webView =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A; wv) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36"
+                "(KHTML, like Gecko) Version/4.0 Chrome/131.0.6778.39 Mobile Safari/537.36"
+
+        val agent = loginUserAgent(webView)
 
         assertEquals(
-            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
-            loginUserAgent(webView)
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/131.0.6778.39 Mobile Safari/537.36",
+            agent
         )
-        assertEquals("Chrome/130", loginUserAgent("Chrome/130"))
+        assertFalse(agent.contains("wv"))
+        assertFalse(agent.contains("Version/"))
+        assertTrue(loginUserAgent("odd").contains("Chrome/130.0.0.0"))
     }
 }
