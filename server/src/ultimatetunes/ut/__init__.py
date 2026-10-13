@@ -14,6 +14,7 @@ where the contract allows anonymous calls, `public_router`:
 | `search/routes.py` | `/ut/v1/search` | T06 |
 | `radio/routes.py` | `/ut/v1/radio`, `/ut/v1/listen-now` | T07 |
 | `imports/routes.py` | `/ut/v1/imports` | T11 |
+| `youtube/routes.py` | `/ut/v1/youtube-cookies` (admin only) | D14 |
 
 Errors are `TunesError`s rendered as problems by the app's exception handler.
 """
@@ -27,6 +28,7 @@ from ultimatetunes.jobs import routes as job_routes
 from ultimatetunes.radio import routes as radio_routes
 from ultimatetunes.search import routes as search_routes
 from ultimatetunes.ut import system
+from ultimatetunes.youtube import routes as youtube_routes
 
 __all__ = ["build_ut_router", "current_principal"]
 
@@ -36,7 +38,14 @@ def build_ut_router() -> APIRouter:
     for public in (system.public_router, auth_routes.public_router):
         api.include_router(public)
     authenticated = APIRouter(dependencies=[Depends(current_principal)])
-    for module in (auth_routes, job_routes, search_routes, radio_routes, import_routes):
+    for module in (
+        auth_routes,
+        job_routes,
+        search_routes,
+        radio_routes,
+        import_routes,
+        youtube_routes,
+    ):
         authenticated.include_router(module.router)
     api.include_router(authenticated)
     return api

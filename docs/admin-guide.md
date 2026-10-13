@@ -192,9 +192,44 @@ Downloads fail with `rate_limited_upstream`, the worker log shows `Sign in to co
 
 What it changes: the provider talks to `www.youtube.com`, `www.google.com` and `jnn-pa.googleapis.com` (Google's BotGuard), only the worker can reach it, and the worker loads the matching yt-dlp plugin that is already in the image. Turn it off by removing both lines, then `docker compose --profile pot rm -sf pot-provider` and `docker compose up -d`; the worker then runs yt-dlp exactly as before.
 
-A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, or run the server from another connection; UltimateTunes does not use YouTube cookies or accounts. To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
+A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, run the server from another connection, or sign in with a throwaway YouTube account ([below](#signing-in-with-a-youtube-account-cookies)). To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
 
 yt-dlp updates itself, but the plugin and the provider are pinned to one version in the image. If the canary starts failing while the provider is on, and works with it off, the plugin probably needs a newer release: update the server image when one is out (until then, turn the provider off).
+
+### Signing in with a YouTube account (cookies)
+
+When a PO token is not enough, the worker can authenticate a YouTube account by using its cookies. This is the stronger remedy for IP-flagged servers, but it carries real risk and must be done carefully.
+
+> **Use a throwaway account, never your main one.** Downloading with an account can get it **suspended or banned**, temporarily or permanently. Create a separate Google account only for this, and keep the download volume modest.
+
+**Turn the feature on once.** The server stores the cookies encrypted, so it needs an encryption key: create `./secrets/ytdlp_cookies_key` with a fresh Fernet key (`python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), uncomment the `ytdlp_cookies_key` secret in `server/compose.yaml` (under the api's `secrets:` and at the end of the file), and `docker compose up -d`. Without the key the YouTube account page says the feature is off and nothing can be stored (it never falls back to storing them in the clear).
+
+**Easiest: sign in from the Android app.** The app opens a YouTube sign-in (a WebView), you log in with the throwaway account, and it uploads the session to your server. Nothing is kept on the phone; the server stores it encrypted and the worker uses it. This is the primary path — you do not need to export anything by hand.
+
+**Or export the cookies by hand** (so YouTube does not rotate them out from under you):
+
+1. Install a Netscape-format cookie exporter: "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt" (Firefox). Be careful what you install; those two are the ones the yt-dlp project points to.
+2. Open a **private / incognito** window and log in to YouTube with the **throwaway** account.
+3. In that same tab, go to `https://www.youtube.com/robots.txt`. It must be the only private/incognito tab open.
+4. Export the `youtube.com` cookies to a `cookies.txt` (Netscape/Mozilla format).
+5. **Close the private window** and do not reopen that session. Reusing it in the browser makes YouTube rotate the cookies, and the exported ones stop working.
+
+Then install the exported file (the content is an account credential — keep it to mode `600`, never commit it or paste it into a public issue):
+
+- **Admin panel (primary for a manual export):** the **YouTube account** page under `/admin` shows whether cookies are set (never their values), lets you paste the `cookies.txt`, and has a **Clear** button. The server validates the Netscape format and stores it encrypted; the worker receives the session over the internal network and uses it for downloads.
+- **File (fallback, for file-based ops):** put the `cookies.txt` in `./secrets/ytdlp_cookies` (mode `600`), uncomment the `ytdlp_cookies` secret and `UT_YTDLP_COOKIES_FILE` in `server/compose.yaml`, and `docker compose up -d`. The file is mounted read-only; the worker copies it to a private temporary file for each download (yt-dlp rewrites the cookies file as it refreshes tokens) and deletes the copy afterwards, so the mounted secret is never changed. The admin/app store, when set, takes precedence over this file.
+
+After installing cookies, press **Retry** on failed downloads or wait for the bot-wall pause to end, then **Run the canary now** to confirm. If downloads still fail, the server's IP itself is likely blocked (see the note above). To stop using cookies, clear them in the panel (or with `DELETE /ut/v1/youtube-cookies`), or remove the file secret and restart.
+
+**For app and integration developers.** The endpoint behind this is admin-only and server-wide:
+
+| Method | Path | Body | Auth | Returns |
+|---|---|---|---|---|
+| `PUT` | `/ut/v1/youtube-cookies` | the Netscape `cookies.txt` text (`text/plain`, ≤ `UT_YTDLP_COOKIES_MAX_BYTES`) | an **admin's** API key (`X-Api-Key` or `apiKey`); a normal user gets 403, no key 401 | `200` with the non-secret status |
+| `GET` | `/ut/v1/youtube-cookies/status` | — | admin API key | `{configured, setAt, cookieCount, hasYoutubeDomain, available}` (never a cookie value) |
+| `DELETE` | `/ut/v1/youtube-cookies` | — | admin API key | `200`, cookies cleared |
+
+A bad format is `400 invalid_parameter`; a body over the cap is `413`; with no `UT_YTDLP_COOKIES_KEY` on the server, `PUT` is `409 feature_disabled`. The full schema and examples are in `contracts/openapi/ut-v1.yaml`.
 
 ### Songs cut off or skip
 

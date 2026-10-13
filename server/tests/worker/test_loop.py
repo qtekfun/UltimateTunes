@@ -134,7 +134,12 @@ class Stuck:
         self.started = anyio.Event()
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         part = f"{job_dir}/{video_id}.opus.part"
         with self.stack.services.staging.open_write(part) as out:
@@ -152,7 +157,12 @@ class Raising:
         self.error = error
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         raise self.error
 
@@ -164,7 +174,12 @@ class Silent:
         self.stack = stack
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         final = f"{job_dir}/{video_id}.opus"
         with self.stack.services.staging.open_write(final) as out:
@@ -384,7 +399,12 @@ async def test_a_cancel_seen_in_a_progress_answer(stack: Stack) -> None:
 
     class CancelledMeanwhile:
         async def download(
-            self, video_id: str, job_dir: str, on_progress: ProgressCallback
+            self,
+            video_id: str,
+            job_dir: str,
+            on_progress: ProgressCallback,
+            *,
+            cookies: str | None = None,
         ) -> DownloadResult:
             stack.services.jobs.request_cancel(job_id)
             part = f"{job_dir}/{video_id}.opus.part"

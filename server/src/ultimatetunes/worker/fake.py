@@ -57,12 +57,20 @@ class FakeDownloader:
         self._fail_code = fail_code
         self._sleep = sleep
         self.downloads: list[str] = []
+        # The cookies passed per download (None when unset); lets tests assert the wiring.
+        self.cookies_seen: list[str | None] = []
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         check_video_id(video_id)
         self.downloads.append(video_id)
+        self.cookies_seen.append(cookies)
         final = f"{job_dir}/{video_id}.opus"
         part = f"{final}.part"
         total = len(self._audio)

@@ -462,4 +462,35 @@ ES: dict[str, str] = {
     "Set up two-factor authentication to continue.": (
         "Configura la autenticación de doble factor para continuar."
     ),
+    "YouTube account": "Cuenta de YouTube",
+    "YouTube cookies saved.": "Cookies de YouTube guardadas.",
+    "YouTube cookies cleared.": "Cookies de YouTube borradas.",
+    "Signing in with a YouTube account lets the downloader get past the bot-check wall (Sign in"
+    " to confirm you're not a bot). Use a throwaway account, never your main one: downloading"
+    " with an account can get it suspended.": (
+        "Iniciar sesión con una cuenta de YouTube permite al descargador superar el muro de"
+        " verificación de robots (Inicia sesión para confirmar que no eres un robot). Usa una"
+        " cuenta desechable, nunca la principal: descargar con una cuenta puede suspenderla."
+    ),
+    "The Android app can set this for you by signing in. You can also paste an exported"
+    " cookies.txt below.": (
+        "La aplicación de Android puede configurarlo por ti al iniciar sesión. También puedes"
+        " pegar abajo un cookies.txt exportado."
+    ),
+    "Cookies are set ✓": "Cookies configuradas ✓",
+    "Set at %(at)s (UTC).": "Configuradas el %(at)s (UTC).",
+    "%(count)s cookies stored.": "%(count)s cookies almacenadas.",
+    "A youtube.com cookie is present.": "Hay una cookie de youtube.com.",
+    "No cookies set.": "No hay cookies configuradas.",
+    "This server cannot store cookies: set UT_YTDLP_COOKIES_KEY (a Fernet key, as a Docker"
+    " secret) and restart the api.": (
+        "Este servidor no puede almacenar cookies: define UT_YTDLP_COOKIES_KEY (una clave"
+        " Fernet, como secreto de Docker) y reinicia la api."
+    ),
+    "Paste cookies manually": "Pegar cookies manualmente",
+    "Netscape cookies.txt": "cookies.txt en formato Netscape",
+    "Remove the stored cookies. The server then downloads without an account.": (
+        "Elimina las cookies guardadas. El servidor descarga entonces sin una cuenta."
+    ),
+    "Clear the stored YouTube cookies?": "¿Borrar las cookies de YouTube guardadas?",
 }
