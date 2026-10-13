@@ -81,6 +81,7 @@ def test_server_info(lib: Harness) -> None:
     }
     assert body["capabilities"]["externalSearch"] is True
     assert body["capabilities"]["radio"] is True
+    assert body["capabilities"]["charts"] is True
     # PLAN T16 installs streaming while downloading.
     assert body["capabilities"]["streamingWhileDownloading"] is True
 
@@ -107,3 +108,5 @@ def test_server_info_follows_the_switches(lib: Harness, monkeypatch: pytest.Monk
         radio_settings.cache_clear()
     assert caps["externalSearch"] is False
     assert caps["radio"] is False
+    # Charts need radio, so switching radio off switches charts off too.
+    assert caps["charts"] is False

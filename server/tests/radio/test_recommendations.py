@@ -24,6 +24,7 @@ from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.db import Database
 from ultimatetunes.db.driver import Connection
 from ultimatetunes.errors import FeatureDisabled
+from ultimatetunes.radio.external import SourceShelf
 from ultimatetunes.radio.recommendations import RecommendationsService
 from ultimatetunes.radio.settings import RadioSettings
 from ultimatetunes.search.fake import FakeMusicCatalog
@@ -274,6 +275,48 @@ async def test_a_radio_with_no_new_songs_makes_no_shelf(
     recs = await service.recommend(USER, 20)
     assert recs.because_you_played == []
     assert recs.recommended_for_you == []
+
+
+class _StubSource:
+    """Records what the recommender passes and returns one shelf."""
+
+    source = "stub"
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, int, frozenset[str]]] = []
+
+    async def shelves(self, user_id: str, limit: int, blocked: frozenset[str]) -> list[SourceShelf]:
+        self.seen.append((user_id, limit, blocked))
+        return [SourceShelf("stub", "Stub shelf", [])]
+
+
+async def test_external_shelves_are_appended_with_the_caller_rotation_blocked(
+    library: Database, catalog: FakeMusicCatalog
+) -> None:
+    source = _StubSource()
+    service = RecommendationsService(library, catalog, RadioSettings(), sources=[source])
+    recs = await service.recommend(USER, 20)
+    assert [s.source for s in recs.shelves] == ["stub"]
+    # The caller's seeds (Lighthouse Keeper) and played songs are blocked for the source too.
+    user_id, limit, blocked = source.seen[0]
+    assert (user_id, limit) == (USER, 20)
+    assert LIGHTHOUSE in blocked
+
+
+async def test_external_shelves_run_even_without_song_seeds(
+    library: Database, catalog: FakeMusicCatalog
+) -> None:
+    source = _StubSource()
+    service = RecommendationsService(library, catalog, RadioSettings(), sources=[source])
+    with library.transaction() as conn:
+        _other_user(conn)
+    recs = await service.recommend(OTHER, 20)
+    assert recs.recommended_for_you == []
+    assert recs.because_you_played == []
+    assert [s.source for s in recs.shelves] == ["stub"]
+    assert source.seen[0][2] == frozenset()
+    # No song seed means no YouTube Music radio call; only the external source ran.
+    assert catalog.calls == []
 
 
 async def test_pending_seed_is_resolved_and_used(

@@ -19,6 +19,7 @@ from ultimatetunes.search.catalog import (
     CatalogNotFound,
     CatalogPlaylist,
     CatalogTrack,
+    MoodCategory,
     Thumbnail,
 )
 
@@ -87,6 +88,11 @@ def _build() -> tuple[dict[str, CatalogAlbum], dict[str, CatalogTrack]]:
 
 
 PLAYLIST_ID = "PLfakeRoadTrip0123456789abcdefGH"
+# Invented "Moods & genres" categories (ids follow the opaque base64url shape of the real ones).
+MOODS = (
+    MoodCategory("ggFAKEchill0000000000000", "Chill"),
+    MoodCategory("ggFAKEfocus0000000000000", "Focus"),
+)
 
 
 class FakeMusicCatalog:
@@ -167,3 +173,20 @@ class FakeMusicCatalog:
         return CatalogPlaylist(
             PLAYLIST_ID, "Road Trip (fake)", tuple(self.tracks[v] for v in picks), 1
         )
+
+    async def charts(self, country: str) -> list[CatalogTrack]:
+        self._call("charts")
+        # A deterministic "top chart" for every country: the catalog's songs in order.
+        return list(self.tracks.values())
+
+    async def moods(self) -> list[MoodCategory]:
+        self._call("moods")
+        return list(MOODS)
+
+    async def mood_tracks(self, params: str) -> list[CatalogTrack]:
+        self._call("mood_tracks")
+        picks = {
+            MOODS[0].params: ("Fk2Lp9QwXa1", "Rb8Tn3ZcYv0"),
+            MOODS[1].params: ("Hm3Vx8Nq2Lp", "Tz9Kd4Wb7Rc", "Pa6Ye1Uo3Gs"),
+        }.get(params, ())
+        return [self.tracks[v] for v in picks]
