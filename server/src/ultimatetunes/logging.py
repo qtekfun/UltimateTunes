@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from typing import Any, override
 
 REDACTED = "[REDACTED]"
+# `LogRecord` attribute with the structured fields of an event (`core/security_log.py`).
+FIELDS_ATTR = "ut_fields"
 # Third-party loggers that would log full outbound URLs below WARNING.
 QUIET_LOGGERS = ("httpx", "httpcore")
 
@@ -84,7 +86,9 @@ class RedactingFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
-    """One JSON object per line: time, level, logger, message, and exception if any."""
+    """One JSON object per line: time, level, logger, message, the structured fields of a
+    security or access event (`core/security_log.py`, redacted like everything else, never
+    replacing the four base keys), and exception if any."""
 
     @override
     def format(self, record: logging.LogRecord) -> str:
@@ -94,6 +98,11 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": redact(record.getMessage()),
         }
+        fields = getattr(record, FIELDS_ATTR, None)
+        if isinstance(fields, dict):
+            for name, value in fields.items():
+                key = str(name)
+                entry.setdefault(key, REDACTED if _SECRET_KEY.search(key) else _redact_value(value))
         if record.exc_info:
             entry["exception"] = redact(self.formatException(record.exc_info))
         return json.dumps(entry, ensure_ascii=False)

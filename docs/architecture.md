@@ -145,7 +145,7 @@ From `server/compose.yaml` (production example) and `server/Dockerfile`. All thr
 | Healthcheck | none | `GET http://127.0.0.1:8044/readyz` every 30 s (timeout 5 s, 3 retries, start period 10 s) | none |
 | Restart | `"no"` | `unless-stopped` | `unless-stopped` |
 | Starts after | | `migrate` completed successfully | `api` healthy |
-| Logging | `json-file`, 10 MiB x 3 | same | same |
+| Logging | `json-file`, 10 MiB x 3 | same (JSON lines: access log and security events, [`docs/logging.md`](logging.md)) | same |
 
 Notes:
 
@@ -479,6 +479,14 @@ lease: it releases a running download with a retryable `fail`.
 | Shared cache | `UT_CACHE_MAX_ENTRIES` (200 000), `UT_CACHE_MAX_BYTES` (256 MiB), `UT_HOUSEKEEPING_INTERVAL_S` (600) | Expired entries purged and the cache trimmed oldest first; idle rate-limit buckets forgotten. |
 | Lyrics, covers, MusicBrainz | See section 4 | Global buckets and size caps per upstream. |
 | Containers | `mem_limit` 768m, `cpus` 2.0, `nofile` 4096 / 1024, `pids_limit` 512; optional `pot-provider` 512m, 1.0, 1024, 128 | Bounds a runaway process or tool. |
+
+Every refusal above is visible in the logs: the api writes one `http.request` access line per
+request with the resolved client address (`core/accesslog.py`, wrapping each listener; uvicorn's
+own access log is off) and structured security events (`auth.failure`, `auth.throttled`,
+`auth.lockout`, `auth.success`, `access.denied`, `csrf.failure`, `session.rejected`,
+`ratelimit.hit`, `audit`; `core/security_log.py`, whose `RequestContext` middleware sits right
+inside `ClientAddress`). Names, fields and reasons are listed in
+[`docs/logging.md`](logging.md), for CrowdSec or any log search.
 
 ## 7. Scaling notes
 

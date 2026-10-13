@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from ultimatetunes import cli, listeners
 from ultimatetunes.app import create_app
+from ultimatetunes.core.accesslog import AccessLog
 from ultimatetunes.settings import Settings
 
 TOKEN = "listener-test-token-0123456789abcdef"
@@ -101,13 +102,21 @@ def test_run_api_serves_two_listeners(settings: Settings, monkeypatch: pytest.Mo
         assert config.backlog == settings.backlog == 256
         assert config.h11_max_incomplete_event_size == settings.max_header_bytes == 16384
         assert config.http == "h11"
+        # uvicorn's access log shows the proxy; ours the resolved client (docs/logging.md).
+        assert config.access_log is False
+        assert isinstance(config.app, AccessLog)
+        assert config.app.proxies == settings.proxy_networks
     assert client.limit_concurrency == settings.limit_concurrency == 128
     assert internal.limit_concurrency == settings.internal_limit_concurrency == 32
-    assert isinstance(client.app, listeners.Listener)
-    assert not client.app.internal
-    assert isinstance(internal.app, listeners.Listener)
-    assert internal.app.internal
-    assert client.app.app is internal.app.app  # one app, one set of services
+    assert isinstance(client.app, AccessLog)
+    assert isinstance(internal.app, AccessLog)
+    assert (client.app.listener, internal.app.listener) == ("client", "internal")
+    client_listener, internal_listener = client.app.app, internal.app.app
+    assert isinstance(client_listener, listeners.Listener)
+    assert not client_listener.internal
+    assert isinstance(internal_listener, listeners.Listener)
+    assert internal_listener.internal
+    assert client_listener.app is internal_listener.app  # one app, one set of services
 
 
 def test_run_api_refuses_one_port_for_both(settings: Settings) -> None:

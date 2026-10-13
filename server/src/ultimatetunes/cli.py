@@ -28,6 +28,7 @@ def run_api(settings: Settings) -> int:
     worker API on `UT_INTERNAL_PORT`. uvicorn stops gracefully on SIGTERM within the shutdown
     timeout."""
     from ultimatetunes.app import create_app  # noqa: PLC0415 - only the api role needs FastAPI
+    from ultimatetunes.core.accesslog import AccessLog  # noqa: PLC0415 - same
 
     if settings.internal_port == settings.port:
         raise SystemExit("UT_INTERNAL_PORT must differ from UT_PORT")
@@ -36,6 +37,8 @@ def run_api(settings: Settings) -> int:
         "log_config": None,
         # Client addresses behind a proxy come from `core/forwarded.py` (UT_TRUSTED_PROXIES).
         "proxy_headers": False,
+        # `core/accesslog.py` logs every request with the resolved client address instead.
+        "access_log": False,
         "server_header": False,
         "timeout_graceful_shutdown": settings.shutdown_timeout_s,
         # Slow and idle connections (audit M2); no header timeout exists in uvicorn, so a
@@ -45,8 +48,9 @@ def run_api(settings: Settings) -> int:
         "backlog": settings.backlog,
         "h11_max_incomplete_event_size": settings.max_header_bytes,
     }
+    proxies = settings.proxy_networks
     client = uvicorn.Config(
-        listeners.Listener(app, internal=False),
+        AccessLog(listeners.Listener(app, internal=False), proxies=proxies, listener="client"),
         host=settings.host,
         port=settings.port,
         lifespan="on",
@@ -54,7 +58,7 @@ def run_api(settings: Settings) -> int:
         **common,
     )
     internal = uvicorn.Config(
-        listeners.Listener(app, internal=True),
+        AccessLog(listeners.Listener(app, internal=True), proxies=proxies, listener="internal"),
         host=settings.internal_bind,
         port=settings.internal_port,
         lifespan="off",

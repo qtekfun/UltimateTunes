@@ -41,7 +41,7 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_KEEPALIVE_TIMEOUT_S` | `5` | api | Idle keep-alive connections are closed after this many seconds. |
 | `UT_BACKLOG` | `256` | api | Pending connections the kernel queues before refusing. |
 | `UT_MAX_HEADER_BYTES` | `16384` | api | Largest request line plus headers (bytes). |
-| `UT_LOG_LEVEL` | `INFO` | api, worker | `DEBUG`, `INFO`, `WARNING` or `ERROR`. Logs are JSON on stdout; secrets are always redacted. |
+| `UT_LOG_LEVEL` | `INFO` | api, worker | `DEBUG`, `INFO`, `WARNING` or `ERROR`. Logs are JSON on stdout; secrets are always redacted. The access log (`INFO`) and the security events (`INFO` and `WARNING`) are listed in [logging.md](logging.md); `WARNING` keeps the security warnings but drops the access log and successful sign-ins. |
 | `UT_SHUTDOWN_TIMEOUT_S` | `10` | api | Grace period for open requests on SIGTERM before the api stops. |
 | `UT_WORKER_TOKEN` | (unset) | api, worker | Shared secret of the internal worker API, 32 characters or more (`openssl rand -hex 32`). Unset: the internal API refuses everyone and nothing downloads. Prefer the Docker secret. |
 | `UT_FAKE_YOUTUBE` | `false` | api, worker | Test stack only: a fake catalog and a fake downloader instead of YouTube Music. Never in production. |

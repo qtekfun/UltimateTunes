@@ -44,7 +44,11 @@ from ultimatetunes.admin.security import (
     SessionCodec,
     SessionData,
     clear_cookie,
+    csrf_failure,
     csrf_ok,
+    csrf_reason,
+    not_admin,
+    session_rejected,
     set_cookie,
 )
 from ultimatetunes.admin.settings import AdminSettings
@@ -220,20 +224,27 @@ def lang_of(request: Request) -> Lang:
 def current_admin(request: Request) -> Admin:
     """The signed-in admin. Raises `LoginRequired` or `NotAdmin`."""
     st = state(request)
-    session = st.codec.read_session(request.cookies.get(SESSION_COOKIE))
+    cookie = request.cookies.get(SESSION_COOKIE)
+    session = st.codec.read_session(cookie)
     if session is None:
+        if cookie:
+            session_rejected("invalid_or_expired")
         raise LoginRequired
     try:
         user = st.auth.get_user(session.user_id)
     except NotFound as exc:
+        session_rejected("unknown_user")
         raise LoginRequired from exc
     if user.is_disabled:
+        session_rejected("account_disabled", user.username)
         raise LoginRequired
     with st.services.db.read() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
     if st.codec.fingerprint(user.password_hash, epoch) != session.fingerprint:
+        session_rejected("revoked", user.username)
         raise LoginRequired
     if user.role != "admin":
+        not_admin(user.username)
         raise NotAdmin
     return Admin(user, session, client_ip(request))
 
@@ -250,6 +261,7 @@ def posted(
     """A state change: an admin session, then the CSRF token (checked in that order)."""
     token = form.get(CSRF_FIELD)
     if not csrf_ok(request, admin.session.csrf, token if isinstance(token, str) else None):
+        csrf_failure(request)
         raise CsrfRejected
     return Posted(admin, form)
 
@@ -394,6 +406,7 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
     ) or not st.codec.check_login_token(
         request.cookies.get(LOGIN_COOKIE), token if isinstance(token, str) else None
     ):
+        csrf_failure(request, csrf_reason(request, "login_token"))
         return _forbidden(request, "The form expired or came from another site. Reload and retry.")
     username, password = form.get("username"), form.get("password")
     if not isinstance(username, str) or not isinstance(password, str) or not password:
@@ -406,6 +419,7 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
     except (AuthenticationFailed, AccountDisabled, Forbidden, InvalidParameter):
         return _login_page(request, error="Wrong username or password.", status=401)
     if user.role != "admin":
+        not_admin(user.username)
         return _forbidden(request, "This account is not an administrator.")
     with st.services.db.transaction() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
