@@ -15,16 +15,16 @@ There is **no default account and no default password**: the server never genera
    ```sh
    docker compose run --rm api bootstrap-admin <name>
    ```
-   It asks for the password without echoing it, so it stays out of the shell history and of any file.
+   Unless `UT_BOOTSTRAP_ADMIN_PASSWORD` is still set (then it uses that), it asks for the password twice without echoing it, so it stays out of the shell history and of any file.
 2. **From a file**, for scripted installs. Generate a password, store it in your password manager, feed it on standard input and delete the file:
    ```sh
    openssl rand -base64 24 > secrets/bootstrap_admin_password && chmod 600 secrets/bootstrap_admin_password
    docker compose run --rm -T api bootstrap-admin <name> < secrets/bootstrap_admin_password
-   shred -u secrets/bootstrap_admin_password
+   rm secrets/bootstrap_admin_password
    ```
-3. **At start-up**: `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` (better as the Docker secret `ut_bootstrap_admin_password`) create the admin when the api starts with no users. Remove both once the admin exists; the api logs a warning on every start while they are still set ([deploy/README.md](../deploy/README.md#bootstrap-admin-password)).
+3. **At start-up**: `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` (better as the Docker secret `bootstrap_admin_password` in `server/compose.yaml`, mounted as `/run/secrets/ut_bootstrap_admin_password`) create the admin when the api starts with no users. Remove both once the admin exists; the api logs a warning on every start while both are still set ([deploy/README.md](../deploy/README.md#bootstrap-admin-password)).
 
-The command never resets a password: it does nothing when any user already exists. Then sign in to `/admin` from the LAN, create the other users (Users) and a key per device (API keys → new key, scan the QR code with the phone's camera). The deployment examples answer password sign-in that creates device keys (`POST /ut/v1/keys`) only from the LAN, so away from home a device only uses its key. Never reuse a password or key from a test stack.
+The command never resets a password: it does nothing when any user already exists. Then sign in to `/admin` from the LAN, create the other users (Users) and a key per device (API keys → new key, scan the QR code with the phone's camera). The Traefik examples answer password sign-in that creates device keys (`POST /ut/v1/keys`) only from the LAN, so away from home a device only uses its key; the Caddy example limits only `/admin`, so add the same LAN matcher there if you expose it. Never reuse a password or key from a test stack.
 
 ## Reaching the panel
 
