@@ -150,6 +150,7 @@ def test_home_is_the_sign_in_form_without_a_session(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200
     assert 'action="/web/login"' in r.text
+    assert "/admin" not in r.text  # the panel's address is never advertised to visitors
     assert "<audio" not in r.text
     assert r.headers["content-type"].startswith("text/html")
     assert r.headers["content-security-policy"].startswith("default-src 'none'")
