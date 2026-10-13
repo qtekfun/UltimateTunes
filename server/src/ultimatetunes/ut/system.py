@@ -31,6 +31,7 @@ def get_server_info(request: Request) -> dict[str, object]:
         "capabilities": {
             "externalSearch": search_settings().external_search,
             "radio": radio_settings().radio,
+            "charts": radio_settings().radio and radio_settings().charts,
             "lyrics": True,
             "youtubeMusicImport": True,
             "fileImport": True,

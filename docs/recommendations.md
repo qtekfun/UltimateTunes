@@ -10,13 +10,16 @@ what is **implemented now** versus what stays a **ready-to-approve proposal**.
 
 Hard rules this design keeps (CLAUDE.md, SPEC §6):
 
-- The Android app talks only to the user's server. The server talks only to the hosts already
-  allowlisted in CLAUDE.md. **No new host or dependency is added here.**
+- The Android app talks only to the user's server. The **server** is the one that fetches any
+  external info; a new outbound host is added only with the owner's approval and only after its
+  data license and API terms are verified (each host is added to CLAUDE.md and `docs/architecture.md`).
 - No telemetry, no analytics, no non-free data source, and the user's listening history never
-  leaves the server.
+  leaves the server — external lookups use only public, anonymous identifiers.
 
-The baseline (option A) ships in this PR. Everything that would need a new host (options C–E) is
-described precisely so the owner can approve a host before any of it is built.
+**Status (2026-10-13):** option **A** (first PR), options **B** (YouTube Music charts and moods, no
+new host) and **C** (ListenBrainz, `api.listenbrainz.org`, owner-approved, **off by default**) are
+implemented. Option **E** (stations) is not wired — SomaFM is rejected by its ToS, Radio Paradise is
+uncertain, and a generic admin-configurable feed is the proposed path. Details per option below.
 
 ## How recommendations fit the existing architecture
 
@@ -40,11 +43,11 @@ plays, and keep the rest. No new host, no new dependency, no new table.
 
 | # | Source | New host / dependency? | Free-software / ToS | Status |
 |---|--------|------------------------|---------------------|--------|
-| A | **Your own plays + favourites → existing YouTube Music radio** | **No** (reuses `ytmusicapi`) | Same grey area as the rest of the app (personal use, never offered to third parties); no extra data source | **Implemented in this PR** |
-| B | **YouTube Music charts & moods** (`get_charts`, `get_mood_playlists`) | **No** (reuses `ytmusicapi`) | Same as A | **Proposed** — no new host, needs a small catalog addition; recommended as the next step |
-| C | **ListenBrainz** recommendations / similar artists | **Yes** — `api.listenbrainz.org` | Free data (CC0), ToS-friendly, GPL-compatible | **Proposed, needs owner approval of the host** |
-| D | **MusicBrainz / ListenBrainz "similar artists"** by MBID | **Partly** — MusicBrainz host is already approved for tagging; ListenBrainz is new | Free (CC0) | **Proposed, partial new host** |
-| E | **National radio / public station playlists** (e.g. RadioParadise, SomaFM, or a station's public "now playing" API) | **Yes** — one new host per station | Varies per station; must be checked individually | **Proposed, needs owner approval per host** |
+| A | **Your own plays + favourites → existing YouTube Music radio** | **No** (reuses `ytmusicapi`) | Same grey area as the rest of the app (personal use, never offered to third parties); no extra data source | **Implemented** (first PR) |
+| B | **YouTube Music charts & moods** (`get_charts`, `get_mood_playlists`) | **No** (reuses `ytmusicapi`) | Same as A | **Implemented** (2026-10-13): `GET /ut/v1/charts`, `/ut/v1/moods`, `/ut/v1/moods/{id}` |
+| C | **ListenBrainz** popular recordings per artist | **Yes** — `api.listenbrainz.org` | Free data (CC0 / public domain via the MetaBrainz social contract), read-only, GPL-compatible | **Implemented** (2026-10-13, owner approved the host); **off by default** |
+| D | **MusicBrainz / ListenBrainz "similar artists"** by MBID | **Partly** — MusicBrainz host is already approved for tagging; ListenBrainz is new | Free (CC0) | Folded into C (the public, no-auth signal on `api.listenbrainz.org` is popularity, not similar-artists; see below) |
+| E | **National radio / public station playlists** (e.g. Radio Paradise, SomaFM, or a station's public "now playing" API) | **Yes** — one new host per station | Varies per station; **must** be checked individually | **Not wired** — SomaFM rejected (ToS forbids it), Radio Paradise uncertain, generic admin feed proposed; see below |
 
 ### A. From your own plays and favourites (implemented — the safe baseline)
 
@@ -101,131 +104,102 @@ Recommendations also require `UT_RADIO` on, since they reuse the watch playlist.
 country can default to a new `UT_CHARTS_COUNTRY` admin setting. Recommended as the next step
 because it is the only "public lists / national" source that needs **no** new host.
 
-**Not implemented here** only because it is a larger, separate change (new catalog methods,
-parsing, fakes) and the task scoped this PR to the no-contract-break baseline. It needs no owner
-host approval — only a go-ahead to build it.
+**Implemented (2026-10-13)**: `MusicCatalog.charts(country)`, `moods()` and `mood_tracks(params)`
+on `ytmusicapi` (with the fake, the `GuardedCatalog` cache and parsing), exposed as
+`GET /ut/v1/charts?country=`, `GET /ut/v1/moods` and `GET /ut/v1/moods/{moodId}`. The chart's top
+"videos" carousel is a playlist, so `charts`/`mood_tracks` fetch that playlist's songs; everything
+is mapped local-first like radio. Country defaults to `UT_CHARTS_COUNTRY` (`ZZ` = global). New
+`charts` capability on `/ut/v1/server`. No new host, no new dependency.
 
-### C. ListenBrainz (proposed — needs a new host)
+### C. ListenBrainz (implemented 2026-10-13 — new host, off by default)
 
-**Data source**: `api.listenbrainz.org` — collaborative, open recommendation data
-(recommendation playlists, "similar artists/recordings"), tied to MusicBrainz IDs.
+**Data source**: `api.listenbrainz.org`, read-only and anonymous. The public, no-auth signal there
+is **popularity**: `GET /1/popularity/top-recordings-for-artist/<artist_mbid>` returns an artist's
+most-listened recordings across the MetaBrainz community (recording + artist name). For each of the
+caller's favourite/most-played artists that has a MusicBrainz id (`artists.musicbrainz_id`), the
+server fetches that artist's popular recordings, matches each on YouTube Music (`search_songs`), and
+maps the results local-first into a "Popular on ListenBrainz · <artist>" shelf on
+`/ut/v1/recommendations`.
 
-**New host**: **yes** — `api.listenbrainz.org` (HTTPS). Not currently allowlisted.
+**New host**: **yes** — `api.listenbrainz.org` (HTTPS). Approved by the owner 2026-10-13.
 
-**Free-software/ToS**: ListenBrainz data is **CC0**; the API is free and GPL-compatible. It does
-**not** require sending the user's listening history — read-only lookups (similar artists for an
-MBID, curated recommendation playlists) are enough, so privacy is preserved. (SPEC §9 lists
-ListenBrainz/Last.fm *scrobbling* as out of scope; this is read-only *recommendation lookup*, a
-different use — still worth confirming with the owner.)
+**License/ToS**: ListenBrainz's ToS defers to the MetaBrainz social contract — factual database
+content is **public domain**, non-factual content **CC0**, and commercial use is allowed while
+"charging for the content itself is forbidden". A self-hosted, non-commercial, read-only lookup is
+clearly within terms. **No listening history is sent**: only a public artist MBID. (SPEC §9 lists
+ListenBrainz/Last.fm *scrobbling* as out of scope; this is read-only lookup, a different use.)
 
-**Fit**: the server already stores `musicbrainz_recording_id` / artist MBIDs and already talks to
-MusicBrainz during tagging. A ListenBrainz client would live behind a `Recommender` interface so
-it is optional and off by default.
+**Privacy/safety**: exact constant host (no SSRF, never client input), HTTPS, `follow_redirects=False`,
+`trust_env=False`, no credentials, the ListenBrainz User-Agent with a contact URL, 1 req/s
+(`listenbrainz:global`, as ListenBrainz requires), 1 MiB body, `UT_LISTENBRAINZ_TIMEOUT_S` timeout.
+On any failure the ListenBrainz shelf is dropped and the rest of the recommendations still return.
 
-**Blocked on**: owner approval to add `api.listenbrainz.org` to the allowlist.
+**Switches**: `UT_LISTENBRAINZ_RECOMMENDATIONS` (**off by default**), `UT_LISTENBRAINZ_SEEDS` (1),
+`UT_LISTENBRAINZ_TRACKS` (6), `UT_LISTENBRAINZ_TIMEOUT_S` (5).
 
-### D. MusicBrainz-based similarity (proposed — mostly existing host)
+### D. MusicBrainz-based similarity (folded into C)
 
-**Data source**: MusicBrainz relationships already reachable (`musicbrainz.org`, approved for
-tagging). MusicBrainz alone has limited "similar artist" data; the richer "similar" signal lives
-in ListenBrainz (option C), so D in practice folds into C.
+MusicBrainz alone has limited "similar artist" data, and ListenBrainz's richer *similar-artists*
+dataset lives on its **Labs** API (`labs.api.listenbrainz.org`), a *second* host the owner did not
+approve. So the ListenBrainz integration (C) uses only the main, approved host
+`api.listenbrainz.org` and its public **popularity** endpoint. Similar-artists via the Labs host
+stays a future proposal (needs its own host approval).
 
-**New host**: MusicBrainz itself is already approved; the useful similarity data needs
-ListenBrainz (so, same approval as C).
+### E. National radios / public station playlists (not wired — verified per station 2026-10-13)
 
-### E. National radios / public station playlists (proposed — a new host per station)
+**SomaFM (`somafm.com`) — rejected.** Its Terms of Service (checked 2026-10-13) explicitly forbid
+third-party use: *"We can't grant permission for third-party SomaFM clients or applications, even
+noncommercial ones"*, and *"Scrobbling and/or automated re-posting of playlists and now playing
+information is against our terms of use."* Wiring SomaFM would breach its ToS, so it is **not**
+implemented and should not be.
 
-**Data source**: public "now playing" / recent-tracks feeds some stations publish, e.g.
-RadioParadise (`api.radioparadise.com`), SomaFM (`somafm.com`), or a national broadcaster's open
-playlist API where one exists. Each gives a stream of recently-played tracks that can be matched
-to YouTube Music and seeded like any other list.
+**Radio Paradise (`api.radioparadise.com`) — uncertain, left as a proposal.** Radio Paradise
+publishes a now-playing JSON feed, but it has no public API terms granting reuse of its curated
+playlist/now-playing data (comparable copyright concerns to SomaFM's). Uncertain → documented, not
+wired.
 
-**New host**: **yes — one per station**, each to be allowlisted explicitly.
-
-**Free-software/ToS**: **must be checked per station.** Some publish open playlist data under
-friendly terms (RadioParadise, SomaFM are community-friendly); many national broadcasters
-restrict reuse or have no public API at all. No station is assumed safe; each needs its own ToS
-check **and** owner approval of its host before anything is built.
-
-**Fit**: behind the same optional `Recommender` interface as C, each station a small adapter that
-produces seed tracks matched on YouTube Music (title/artist/duration, as playlist import does).
+**Generic admin-configurable station feed — recommended design, not yet built.** Rather than
+hardcoding broadcasters with uncertain ToS, the preferred path for national radio is a source where
+the **admin** sets a station's host, which is added to a per-server allowlist (the admin takes ToS
+responsibility for the station they choose). This keeps the SSRF rule intact (the host is still an
+explicit allowlist, not free-form client input) but needs its own design for the wildly different
+feed shapes (a configurable field mapping, or per-adapter parsers), so it stays a proposal here.
 
 ## What is implemented vs. proposed
 
-- **Implemented now** (this PR, no new host/dependency, no contract break): option **A**,
-  `GET /ut/v1/recommendations`, server-side.
-- **Proposed, no host approval needed, just a go-ahead**: option **B** (YouTube Music charts and
-  moods) — the recommended next step for "public / national lists".
-- **Proposed, needs the owner to approve a new host first**: options **C/D** (ListenBrainz,
-  `api.listenbrainz.org`) and **E** (per-station hosts, each with its own ToS check).
+- **Implemented** (first PR, no new host/dependency): option **A**, `GET /ut/v1/recommendations`.
+- **Implemented** (2026-10-13, no new host): option **B** — YouTube Music charts and moods,
+  `GET /ut/v1/charts`, `GET /ut/v1/moods`, `GET /ut/v1/moods/{moodId}`.
+- **Implemented** (2026-10-13, owner approved the host, **off by default**): option **C** —
+  ListenBrainz (`api.listenbrainz.org`), as an extra `shelves` entry on `/ut/v1/recommendations`.
+- **Not wired**: option **E** — SomaFM rejected (ToS forbids it), Radio Paradise uncertain, generic
+  admin-configurable feed proposed. Option **D** folded into C (similar-artists needs the Labs host,
+  not approved).
 
-### Hosts to approve (exact names), if the owner wants to go beyond the baseline
+### Outbound hosts
 
-| Option | Host to allowlist | Why | ToS note |
-|--------|-------------------|-----|----------|
-| C/D | `api.listenbrainz.org` | similar artists/recordings, recommendation playlists | CC0 data, free API, read-only (no history sent) |
-| E | `api.radioparadise.com` | station recent-tracks feed | community-friendly; confirm current ToS |
-| E | `somafm.com` | station recent-tracks feed | community-friendly; confirm current ToS |
-| E | *(a specific national broadcaster)* | public playlist API | **check per broadcaster — many restrict reuse** |
+| Option | Host | Status | License / ToS basis |
+|--------|------|--------|---------------------|
+| A, B | `music.youtube.com` (ytmusicapi) | already approved | the app's existing source |
+| C | `api.listenbrainz.org` | **approved 2026-10-13, wired, off by default** | MetaBrainz social contract: public-domain/CC0 data, commercial use allowed, read-only lookup, **no history sent** |
+| E | `somafm.com` | **rejected** | ToS forbids third-party apps and automated re-posting of playlists/now-playing |
+| E | `api.radioparadise.com` | not wired (uncertain) | no public API terms permitting reuse of its curated feed |
+| E | *(a national broadcaster / admin-set host)* | proposal | admin-configurable allowlist, admin owns the per-station ToS check |
 
-No dependency additions are needed for A or B (both reuse `ytmusicapi`). C/D/E would reuse the
-existing `httpx` client — still **no new Python dependency** — only the hosts above.
+No Python dependency was added (A/B reuse `ytmusicapi`; C reuses the existing `httpx`).
 
-## Contract note
+## Contract
 
-`GET /ut/v1/recommendations` is **additive** and is not yet in
-`contracts/openapi/ut-v1.yaml` (contracts are frozen per wave; only the coordinator changes
-them). Its items are `TrackItem`s, which the contract already defines. The proposed schema for
-the coordinator to add:
-
-```yaml
-# paths:
-  /ut/v1/recommendations:
-    get:
-      operationId: getRecommendations
-      tags: [discovery]
-      summary: Recommended songs from your plays and favourites
-      description: >
-        RF-06. New songs to discover, seeded from the caller's most-played and favourite songs
-        into the YouTube Music watch playlist (like /ut/v1/radio). Charged to the caller's
-        bucket. Empty when the caller has no plays or favourites.
-      parameters:
-        - { name: limit, in: query, required: false,
-            schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
-      responses:
-        '200':
-          description: Recommendation shelves (each may be empty).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Recommendations' }
-# components.schemas:
-    Recommendations:
-      type: object
-      required: [recommendedForYou, becauseYouPlayed]
-      properties:
-        recommendedForYou:
-          type: array
-          items: { $ref: '#/components/schemas/TrackItem' }
-          maxItems: 50
-          description: Songs the most seed-radios agree on, best first.
-        becauseYouPlayed:
-          type: array
-          items: { $ref: '#/components/schemas/RecommendationShelf' }
-          maxItems: 10
-    RecommendationShelf:
-      type: object
-      required: [seed, items]
-      properties:
-        seed: { $ref: '#/components/schemas/TrackItem' }
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/TrackItem' }
-          maxItems: 50
-```
+`GET /ut/v1/recommendations` (with `Recommendations`/`RecommendationShelf`/`SourceShelf` — a
+`shelves` array was added for external sources), `GET /ut/v1/charts` (`Charts`), `GET /ut/v1/moods`
+(`Moods`/`MoodCategory`) and `GET /ut/v1/moods/{moodId}` (`MoodTracks`) are now in
+`contracts/openapi/ut-v1.yaml`, together with the new `charts` capability in `ServerInfo`. Items are
+the existing `TrackItem`. All conform under schemathesis. This closes the reviewer's note that
+`/ut/v1/recommendations` shipped undocumented.
 
 ## Android follow-up (not in this PR)
 
-The client would add a "Recommended for you" / "Because you played …" section (SPEC §5 Listen Now
-tab, RF-11), fetching `/ut/v1/recommendations` through `:core:api` (`TunesApi`) and rendering the
-`TrackItem`s with existing components. Server-side is complete for v1; the client work is a
-separate PLAN task once the coordinator adds the endpoint to the contract.
+The client would add a "Recommended for you" / "Because you played …" / "Charts" section (SPEC §5
+Listen Now tab, RF-11), fetching `/ut/v1/recommendations` and `/ut/v1/charts` through `:core:api`
+(`TunesApi`) and rendering the `TrackItem`s with existing components. Server-side is complete for
+v1; the client work is a separate PLAN task.
