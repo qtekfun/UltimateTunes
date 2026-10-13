@@ -13,6 +13,8 @@
 #   COMPOSE_PROFILES=pot                                 starts the pot-provider service
 #   UT_YTDLP_POT_PROVIDER_URL=http://bgutil:4416         tells the worker to use it
 #   UT_POT_SUBNET=10.213.47.0/24, UT_POT_PROVIDER_ADDRESS=10.213.47.250   its network
+# Optional yt-dlp player clients (docs/admin-guide.md, "songs cut off or skip"):
+#   UT_YTDLP_PLAYER_CLIENTS=web_safari,tv   override the worker default (empty = its default)
 # and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
 # stack's token (compose.test.yaml) here.
@@ -107,6 +109,11 @@ services:
       # UT_NOTIFY_HOST in .env to the ntfy host name (required: the token goes only there).
       # - source: notify_token
       #   target: ut_notify_token
+      # Optional: enables TOTP two-factor authentication on the password logins (docs/2fa.md).
+      # Create ./secrets/totp_encryption_key with a Fernet key and uncomment this and the secret
+      # below: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+      # - source: totp_encryption_key
+      #   target: ut_totp_encryption_key
     networks:
       default: {}
       internal:
@@ -143,6 +150,10 @@ services:
       # Optional PO token provider (D13): empty, yt-dlp loads no plugin (as before). With the
       # `pot` profile on, set it to http://bgutil:4416 in .env (the provider's name on `pot`).
       UT_YTDLP_POT_PROVIDER_URL: ${UT_YTDLP_POT_PROVIDER_URL:-}
+      # yt-dlp player clients (D15). Empty keeps the worker's default (web_safari,tv, tuned for
+      # the `pot` provider above). Override in .env if downloads 403/skip or you run no provider,
+      # e.g. UT_YTDLP_PLAYER_CLIENTS=default (docs/admin-guide.md, "songs cut off or skip").
+      UT_YTDLP_PLAYER_CLIENTS: ${UT_YTDLP_PLAYER_CLIENTS:-}
     secrets:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
@@ -206,6 +217,8 @@ secrets:
   #   file: ./secrets/bootstrap_admin_password
   # notify_token:
   #   file: ./secrets/notify_token
+  # totp_encryption_key:
+  #   file: ./secrets/totp_encryption_key
 
 networks:
   internal:
