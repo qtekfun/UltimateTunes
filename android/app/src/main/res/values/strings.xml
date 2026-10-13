@@ -214,6 +214,10 @@
     <string name="youtube_warning_continue">Continue</string>
     <string name="youtube_login_title">Sign in to YouTube</string>
     <string name="youtube_login_close">Cancel sign-in</string>
+    <string name="youtube_login_continue">I\'m signed in — continue</string>
+    <string name="youtube_login_no_session">No signed-in YouTube session found yet. Finish signing in (open YouTube once if needed), then tap Continue again.</string>
+    <string name="youtube_login_load_failed">The sign-in page could not be loaded, or a page of the sign-in was blocked. Check the connection and cancel to try again.</string>
+    <string name="youtube_login_waiting">Waiting for your YouTube session… Tap Continue once you are signed in.</string>
     <string name="youtube_uploading">Sending the session to your server…</string>
     <string name="youtube_done">Signed in. Your server can now use this YouTube session.</string>
     <string name="youtube_failure_title">YouTube account</string>

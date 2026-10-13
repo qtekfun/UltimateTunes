@@ -4,8 +4,8 @@
 package com.qtekfun.ultimatetunes.ui.youtube
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
 import android.webkit.CookieManager
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -51,6 +52,8 @@ import java.io.ByteArrayInputStream
 const val YOUTUBE_SIGN_IN_TAG = "youtube.signIn"
 const val YOUTUBE_SIGN_OUT_TAG = "youtube.signOut"
 const val YOUTUBE_WARNING_CONTINUE_TAG = "youtube.warningContinue"
+const val YOUTUBE_CONTINUE_TAG = "youtube.continue"
+const val YOUTUBE_LOGIN_PROBLEM_TAG = "youtube.loginProblem"
 
 /** What the YouTube account section can do. */
 data class YoutubeActions(
@@ -60,6 +63,8 @@ data class YoutubeActions(
     val cancel: () -> Unit = {},
     val pageFinished: (String?) -> Unit = {},
     val webViewReleased: () -> Unit = {},
+    val continueNow: () -> Unit = {},
+    val loadFailed: () -> Unit = {},
     val remove: () -> Unit = {}
 )
 
@@ -168,7 +173,7 @@ private fun YoutubeDialogs(state: YoutubeAccountUiState, actions: YoutubeActions
             }
         )
 
-        YoutubePhase.SIGNING_IN -> YoutubeLoginDialog(actions)
+        YoutubePhase.SIGNING_IN -> YoutubeLoginDialog(state, actions)
 
         YoutubePhase.UPLOADING -> AlertDialog(
             onDismissRequest = {},
@@ -222,7 +227,7 @@ private fun YoutubeFailure?.messageRes(): Int = when (this) {
  * recording, no Recents thumbnail while the user types a password.
  */
 @Composable
-private fun YoutubeLoginDialog(actions: YoutubeActions) {
+private fun YoutubeLoginDialog(state: YoutubeAccountUiState, actions: YoutubeActions) {
     Dialog(
         onDismissRequest = actions.cancel,
         properties = DialogProperties(
@@ -247,14 +252,48 @@ private fun YoutubeLoginDialog(actions: YoutubeActions) {
                         Text(stringResource(R.string.youtube_login_close))
                     }
                 }
+                LoginStatusLine(state)
                 YoutubeLoginWebView(
                     onPageFinished = actions.pageFinished,
+                    onLoadFailed = actions.loadFailed,
                     onReleased = actions.webViewReleased,
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
+                Button(
+                    onClick = actions.continueNow,
+                    shape = Dimens.PillShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS)
+                        .heightIn(min = 48.dp)
+                        .testTag(YOUTUBE_CONTINUE_TAG)
+                ) { Text(stringResource(R.string.youtube_login_continue)) }
             }
         }
     }
+}
+
+@Composable
+private fun LoginStatusLine(state: YoutubeAccountUiState) {
+    val message = when {
+        state.loadFailed -> R.string.youtube_login_load_failed
+        state.noSession -> R.string.youtube_login_no_session
+        else -> R.string.youtube_login_waiting
+    }
+    val waiting = message == R.string.youtube_login_waiting
+    Text(
+        text = stringResource(message),
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (waiting) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.error
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS)
+            .testTag(YOUTUBE_LOGIN_PROBLEM_TAG)
+    )
 }
 
 /**
@@ -266,11 +305,13 @@ private fun YoutubeLoginDialog(actions: YoutubeActions) {
 @Composable
 private fun YoutubeLoginWebView(
     onPageFinished: (String?) -> Unit,
+    onLoadFailed: () -> Unit,
     onReleased: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val finished by rememberUpdatedState(onPageFinished)
     val released by rememberUpdatedState(onReleased)
+    val failed by rememberUpdatedState(onLoadFailed)
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -283,8 +324,12 @@ private fun YoutubeLoginWebView(
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 settings.safeBrowsingEnabled = true
                 settings.userAgentString = loginUserAgent(settings.userAgentString)
+                CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webViewClient = LoginClient { host -> finished(host) }
+                webViewClient = LoginClient(
+                    pageSeen = { host -> finished(host) },
+                    loadFailed = { failed() }
+                )
                 loadUrl(YOUTUBE_LOGIN_URL)
             }
         },
@@ -298,9 +343,12 @@ private fun YoutubeLoginWebView(
 
 private const val HTTP_FORBIDDEN = 403
 
-private class LoginClient(private val pageFinished: (String?) -> Unit) : WebViewClient() {
+private class LoginClient(
+    private val pageSeen: (String?) -> Unit,
+    private val loadFailed: () -> Unit
+) : WebViewClient() {
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-        !isAllowedPage(request.url)
+        !isAllowedPage(request.url).also { allowed -> if (!allowed) loadFailed() }
 
     override fun shouldInterceptRequest(
         view: WebView,
@@ -318,9 +366,21 @@ private class LoginClient(private val pageFinished: (String?) -> Unit) : WebView
         )
     }
 
-    override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) = Unit
-
-    override fun onPageFinished(view: WebView, url: String?) {
-        pageFinished(url?.let(android.net.Uri::parse)?.host)
+    override fun onReceivedError(
+        view: WebView,
+        request: WebResourceRequest,
+        error: WebResourceError
+    ) {
+        if (request.isForMainFrame) loadFailed()
     }
+
+    // Any of these can be the moment the session cookies appear: look at the jar on each.
+    override fun onPageFinished(view: WebView, url: String?) = pageSeen(hostOf(url))
+
+    override fun onPageCommitVisible(view: WebView, url: String?) = pageSeen(hostOf(url))
+
+    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) =
+        pageSeen(hostOf(url))
+
+    private fun hostOf(url: String?): String? = url?.let(android.net.Uri::parse)?.host
 }
