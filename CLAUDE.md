@@ -104,8 +104,8 @@ Repo: `tools/check-store-texts.sh` · `tools/worktree.sh <task>` (creates the wo
 
 ## Versions and releases
 - Manual and tag-driven, like UltimateCalendar (see `RELEASING.md`). `VERSION` and `CHANGELOG.md` change only in a release PR (`chore: release X.Y.Z`, branch `release/X.Y.Z`), which also carries the store texts `fastlane/metadata/android/{en-US,es-ES}/changelogs/<versionCode>.txt`.
-- **Publishing is paused** (no tags, no GHCR, no GitHub Releases) until the author decides otherwise: releases are built locally (RELEASING.md).
-- When publishing is enabled: the `vX.Y.Z` tag is pushed by the author, or by Claude when the author explicitly asks. The `Release` workflow builds the signed APK and the multi-arch server image and publishes both.
+- **Publishing is on** since 1.0.0-rc.2: the `vX.Y.Z` tag of a merged release PR publishes it. The `Release` workflow builds the signed APK and the multi-arch server image and publishes both (GitHub Release, GHCR).
+- The author allowed Claude to create and push release tags (2026-10-13). The `guard-bash` hook allows only the tag of the current `VERSION`, from `master`, and never a delete, move or force. Run the Release workflow's dry run on the release branch before merging the release PR.
 
 ## What NOT to do
 - Do not implement anything in SPEC "Out of scope".

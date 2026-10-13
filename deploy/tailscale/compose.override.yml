@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 UltimateTunes contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Overlay for server/compose.yaml behind `tailscale serve` (deploy/tailscale/README.md).
+# Copy it next to compose.yaml as compose.override.yml; `docker compose` reads it by itself.
+services:
+  # The image is built on your machine and loaded with `docker load` (GHCR publishing is
+  # paused), so never try to pull it.
+  migrate: {pull_policy: never}
+  api: {pull_policy: never}
+  worker: {pull_policy: never}
+
+networks:
+  # The network the api's port is published on, pinned so its gateway (the address
+  # `tailscale serve` reaches the api from, through Docker's port publishing) is known in
+  # advance: set UT_TRUSTED_PROXIES to that gateway as a /32. Change both if 10.213.46.0/24
+  # overlaps one of your networks.
+  default:
+    ipam:
+      config:
+        - subnet: 10.213.46.0/24
+          gateway: 10.213.46.1

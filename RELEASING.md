@@ -7,11 +7,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Releases are manual and tag-driven, like UltimateCalendar. One version for the server and the app.
 
-## Publishing is paused
+## Publishing
 
-Nothing is published yet: no `v*` tags, no GHCR image, no GitHub Release. The repository is public, so CI runs on GitHub at no cost, but the **Release** and **Nightly** workflows are still disabled (SPEC §11).
+Publishing is on since 1.0.0-rc.2 (2026-10-13, the author's request; SPEC §11): the **Release** workflow is enabled and a `v*` tag push publishes the signed APK as a GitHub Release (pre-release for `-rc.N`) and the server image to GHCR. The repository is public, so this costs nothing. **Nightly** stays disabled.
 
-- **To publish**, the author enables the Release workflow (`gh workflow enable release.yml`) and pushes the tag of a merged release PR (step 7 below). Signing uses the existing `UT_*` repository secrets.
+- **To publish**, push the tag of a merged release PR (step 7 below). Signing uses the existing `UT_*` repository secrets. Before tagging, a dry run (`gh workflow run release.yml --ref <branch> -f dry_run=true`) builds and checks everything without publishing.
 - **Local signed builds** (`./gradlew assembleRelease`) need the four `UT_*` variables in the environment (`UT_KEYSTORE_FILE`, `UT_KEYSTORE_PASSWORD`, `UT_KEY_ALIAS`, `UT_KEY_PASSWORD`); without `UT_KEYSTORE_FILE` the APK is unsigned, and with the file but a missing password or alias the signing step fails. The server image can be built locally with `docker build -f server/Dockerfile .` and run with Compose; migrations first with `ultimatetunes migrate`.
 - `VERSION`, `CHANGELOG.md` and the store changelogs still change only in a release PR, as below.
 
@@ -37,7 +37,7 @@ Without the `UT_*` variables, `./gradlew assembleRelease` builds an unsigned APK
 
 ## Making a release
 
-The coordinator prepares the release PR; the author pushes the tag (Claude only when the author asks). Worked example: the first pre-release, `0.0.1-rc.1`, whose versionCode is `101`.
+The coordinator prepares the release PR and, once it is merged, pushes the tag (the author allowed it on 2026-10-13; the `guard-bash` hook allows only `v` + the current `VERSION` from `master`, never a delete or move). The author can push it too. Worked example: the first pre-release, `0.0.1-rc.1`, whose versionCode is `101`.
 
 1. Compute the version code and branch from an up-to-date `master`:
    ```sh
@@ -60,7 +60,7 @@ The coordinator prepares the release PR; the author pushes the tag (Claude only 
    ```
    On a `release/*` PR, CI's `store-texts` job and the **Release** workflow's dry run (it runs on PRs that change `VERSION`) require the CHANGELOG section and both store changelogs; the dry run also builds the APK and the amd64 + arm64 image without publishing anything.
 6. Merge the PR (squash) once every check is green.
-7. **The author** tags the squash commit on `master` and pushes the tag:
+7. **The author or the coordinator** tags the squash commit on `master` and pushes the tag (pull first, in its own command: the hook checks the tag against the `VERSION` on disk; `tools/tests/guard-bash.test.sh` covers what it allows):
    ```sh
    git switch master && git pull
    git tag -a v0.0.1-rc.1 -m "UltimateTunes 0.0.1-rc.1"
