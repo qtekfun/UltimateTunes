@@ -8,6 +8,7 @@
 !server/uv.lock
 !server/src
 !server/docker/fetch.py
+!server/docker/check_plugin.py
 !server/docker/tools.sh
 !server/docker/yt-dlp-public.key
 !contracts/db/migrations

@@ -420,6 +420,9 @@ def build_worker(settings: Settings, worker: WorkerSettings, client: httpx.Async
         ytdlp = YtDlpRuntime(worker)
         runtime = ytdlp
         downloader = YtDlpDownloader(staging, worker, ytdlp)
+        if worker.ytdlp_pot_provider_url is not None:
+            # A bare base URL (validated: no credentials, path or query), safe to log.
+            log.info("yt-dlp: PO token provider at %s", worker.ytdlp_pot_provider_url)
     return Worker(
         api=api,
         downloader=downloader,

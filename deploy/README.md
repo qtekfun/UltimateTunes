@@ -49,6 +49,8 @@ sudo iptables -I DOCKER-USER -i ut-egress -d 192.168.1.1 -p udp --dport 53 -j AC
 
 With IPv6 on the bridge, add the same with `ip6tables` (`fc00::/7`, `fe80::/10`, `fd7a:115c:a1e0::/48`). On firewalld or nftables hosts, write the equivalent rules (zone `docker`, or a table hooked before Docker's). Persist them with your distribution's tool. Check from the worker: `docker compose exec worker python -c "import urllib.request; urllib.request.urlopen('http://192.168.1.1', timeout=3)"` must time out, while downloads keep working.
 
+The optional PO token provider (`pot-provider`, Compose profile `pot`; [admin guide](../docs/admin-guide.md#sign-in-to-confirm-youre-not-a-bot)) leaves through the same `egress` bridge, so these rules cover it too. The worker talks to it over its own `internal` network `pot` (`UT_POT_SUBNET`, default `10.213.47.0/24`), which these rules do not touch; nothing about it is published on the host.
+
 ### Bootstrap admin password
 
 `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.

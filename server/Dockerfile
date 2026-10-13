@@ -8,6 +8,9 @@
 # per architecture) and a yt-dlp seed zipapp whose SHA2-256SUMS is checked with gpg against the
 # pinned yt-dlp release key. The live yt-dlp sits in the /opt/ytdlp volume, where the worker
 # installs verified updates (T08); /opt/ytdlp-seed is the read-only copy it starts from.
+# The optional PO token plugin (bgutil, D13) sits read-only in /opt/ytdlp-plugins, pinned by version
+# and SHA-256 and pruned to its HTTP provider; the worker loads it only when
+# UT_YTDLP_POT_PROVIDER_URL is set.
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
@@ -27,7 +30,9 @@ RUN uv sync --locked --no-dev --no-editable
 # Tools stage (not shipped): fetches with Python's urllib (no curl | sh) and fails closed on any
 # hash, signature or fingerprint mismatch (server/docker/tools.sh). Bump a version together with
 # its SHA-256 values from the upstream release: Deno's deno-<triple>.zip.sha256sum files, and the
-# `yt-dlp` line of yt-dlp's signed SHA2-256SUMS.
+# `yt-dlp` line of yt-dlp's signed SHA2-256SUMS. The bgutil plugin has no upstream checksum: its
+# SHA-256 was taken from the release zip, whose files were compared with the tag's sources
+# (D13). BGUTIL_VERSION must equal the pot-provider image tag in compose.yaml (a test checks it).
 FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS tools
 ARG TARGETARCH
 ARG DENO_VERSION=2.9.7
@@ -37,10 +42,12 @@ ARG YTDLP_SEED_VERSION=2026.08.19
 ARG YTDLP_SEED_SHA256=1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6
 # "Simon Sawicki (yt-dlp signing key)"; server/docker/yt-dlp-public.key must be exactly this key.
 ARG YTDLP_SIGNER_FPR="AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581"
+ARG BGUTIL_VERSION=2.0.0
+ARG BGUTIL_PLUGIN_SHA256=bce874dfa25896c2798e0f4f8147b7b22e785479eb1e459ab232bf2506c95016
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg gpgv \
     && rm -rf /var/lib/apt/lists/*
-COPY server/docker/fetch.py server/docker/tools.sh server/docker/yt-dlp-public.key /tools/
+COPY server/docker/fetch.py server/docker/check_plugin.py server/docker/tools.sh server/docker/yt-dlp-public.key /tools/
 RUN sh /tools/tools.sh
 
 FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
@@ -58,6 +65,7 @@ RUN apt-get update \
 COPY --from=tools /out/bin/deno /usr/local/bin/deno
 COPY --from=tools /out/share/ /usr/local/share/ultimatetunes/
 COPY --from=tools /out/ytdlp-seed/ /opt/ytdlp-seed/
+COPY --from=tools /out/ytdlp-plugins/ /opt/ytdlp-plugins/
 COPY --from=build /app/.venv /app/.venv
 COPY contracts/db/migrations /app/migrations
 ENV PATH=/app/.venv/bin:$PATH \

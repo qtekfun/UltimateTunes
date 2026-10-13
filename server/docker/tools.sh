@@ -2,15 +2,16 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Tools stage of server/Dockerfile (never shipped): fetches Deno and the yt-dlp seed zipapp,
-# verifies them and lays them out under /out. Every check fails closed: any mismatch stops the
-# build. Inputs come from the Dockerfile's ARGs (environment):
+# Tools stage of server/Dockerfile (never shipped): fetches Deno, the yt-dlp seed zipapp and the
+# bgutil PO token plugin, verifies them and lays them out under /out. Every check fails closed:
+# any mismatch stops the build. Inputs come from the Dockerfile's ARGs (environment):
 #   TARGETARCH, DENO_VERSION, DENO_SHA256_AMD64, DENO_SHA256_ARM64,
-#   YTDLP_SEED_VERSION, YTDLP_SEED_SHA256, YTDLP_SIGNER_FPR
+#   YTDLP_SEED_VERSION, YTDLP_SEED_SHA256, YTDLP_SIGNER_FPR, BGUTIL_VERSION, BGUTIL_PLUGIN_SHA256
 # Output:
 #   /out/bin/deno
 #   /out/share/yt-dlp-keyring.gpg     binary keyring for gpgv (the worker's updater uses it, T08)
 #   /out/ytdlp-seed/{yt-dlp,SHA2-256SUMS,SHA2-256SUMS.sig,VERSION}
+#   /out/ytdlp-plugins/bgutil-http.zip   the plugin, HTTP provider only (`--plugin-dirs`, D13)
 set -eu
 
 here=$(dirname "$0")
@@ -18,7 +19,7 @@ fetch() { python -I "$here/fetch.py" "$@"; }
 work=$(mktemp -d)
 export GNUPGHOME="$work/gnupg"
 mkdir -m 0700 "$GNUPGHOME"
-mkdir -p /out/bin /out/share /out/ytdlp-seed
+mkdir -p /out/bin /out/share /out/ytdlp-seed /out/ytdlp-plugins
 
 # --- Deno: pinned version and per-architecture SHA-256 -------------------------------------
 case "${TARGETARCH:?}" in
@@ -58,5 +59,13 @@ fetch "$rel/yt-dlp" "$work/yt-dlp" "$YTDLP_SEED_SHA256"
 install -m 0755 "$work/yt-dlp" /out/ytdlp-seed/yt-dlp
 install -m 0644 "$work/SHA2-256SUMS" "$work/SHA2-256SUMS.sig" /out/ytdlp-seed/
 printf '%s\n' "$YTDLP_SEED_VERSION" >/out/ytdlp-seed/VERSION
+
+# --- bgutil PO token plugin: pinned SHA-256, the reviewed entry list and version, then pruned
+# to the HTTP provider (the script provider is never installed) -----------------------------
+bgutil=bgutil-ytdlp-pot-provider.zip
+fetch "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_VERSION:?}/$bgutil" \
+    "$work/$bgutil" "${BGUTIL_PLUGIN_SHA256:?}"
+python -I "$here/check_plugin.py" "$work/$bgutil" "$BGUTIL_VERSION" "$work/bgutil-http.zip"
+install -m 0444 "$work/bgutil-http.zip" /out/ytdlp-plugins/bgutil-http.zip
 
 rm -rf "$work"
