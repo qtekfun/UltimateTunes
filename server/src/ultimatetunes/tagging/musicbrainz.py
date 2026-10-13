@@ -7,6 +7,11 @@
 - At most one request per second for the whole worker (`musicbrainz:global` on the
   `RateLimiter`), as MusicBrainz requires. A 503/429 (MusicBrainz's "slow down") is retried
   once, after waiting for the next token and at least `Retry-After` (capped).
+- The query asks for the title without its "feat." parts and the primary (first) YouTube
+  Music artist: MusicBrainz's `artist` field holds every credited name, while a comma-joined
+  list of several artists or a "(feat. X)" title would match nothing. When that strict
+  (phrase) query finds no strong match, a loose one (the title's words, any order) is tried
+  once more; the better candidate of both wins.
 - Redirects are not followed. Any failure is `LookupFailedError`; the caller then keeps the
   YouTube Music data and marks the track `needs_review` (a lookup never fails a job).
 """
@@ -22,11 +27,15 @@ import httpx
 from ultimatetunes import __version__
 from ultimatetunes.core.ratelimit import Limit, RateLimiter
 from ultimatetunes.tagging.matching import (
+    Candidate,
     Query,
     YoutubeIds,
+    artist_names,
     best_candidate,
     from_musicbrainz,
     from_youtube,
+    normalize,
+    split_featuring,
 )
 from ultimatetunes.tagging.model import TrackMetadata
 from ultimatetunes.tagging.ratelimit import wait_for_token
@@ -53,8 +62,18 @@ def _phrase(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def search_query(query: Query) -> str:
-    parts = [f"recording:{_phrase(query.title)}", f"artist:{_phrase(query.artist)}"]
+def _words(text: str) -> str | None:
+    """A Lucene group of the text's words: normalized text has no operators or specials
+    (only letters, digits, `_` and spaces; casefolded, so no `AND`/`OR`/`NOT`)."""
+    words = normalize(text)
+    return f"({words})" if words else None
+
+
+def search_query(query: Query, *, loose: bool = False) -> str:
+    title = split_featuring(query.title)[0] or query.title
+    artist = next(iter(artist_names(query.artist)), query.artist)
+    recording = (_words(title) if loose else None) or _phrase(title)
+    parts = [f"recording:{recording}", f"artist:{_phrase(artist)}"]
     text = " AND ".join(parts)
     if query.album:
         # Optional: boosts the right release without excluding singles and compilations.
@@ -103,8 +122,12 @@ class MusicBrainz:
         except httpx.HTTPError as exc:
             raise LookupFailedError(f"MusicBrainz unreachable: {type(exc).__name__}") from exc
 
-    async def search_recordings(self, query: Query) -> list[dict[str, Any]]:
-        params = {"query": search_query(query), "fmt": "json", "limit": str(SEARCH_LIMIT)}
+    async def search_recordings(self, query: Query, *, loose: bool = False) -> list[dict[str, Any]]:
+        params = {
+            "query": search_query(query, loose=loose),
+            "fmt": "json",
+            "limit": str(SEARCH_LIMIT),
+        }
         response, body = await self._get(params)
         if response.status_code in _SLOW_DOWN:
             await self._sleep(_retry_after(response))
@@ -138,5 +161,20 @@ class MetadataResolver:
             return from_youtube(query, hints, match_score=None)
         candidate = best_candidate(query, recordings)
         if candidate is None or candidate.score < self._min_score:
+            candidate = await _loose(self._musicbrainz, query, candidate)
+        if candidate is None or candidate.score < self._min_score:
             return from_youtube(query, hints, match_score=candidate.score if candidate else None)
         return from_musicbrainz(query, hints, candidate)
+
+
+async def _loose(
+    musicbrainz: MusicBrainz, query: Query, strict: Candidate | None
+) -> Candidate | None:
+    """The second, loose search; the better of its best candidate and the strict one."""
+    try:
+        recordings = await musicbrainz.search_recordings(query, loose=True)
+    except LookupFailedError as exc:
+        log.warning("MusicBrainz loose lookup failed: %s", exc)
+        return strict
+    found = [c for c in (strict, best_candidate(query, recordings)) if c is not None]
+    return max(found, key=lambda c: c.score) if found else None

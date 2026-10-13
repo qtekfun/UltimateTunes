@@ -1,0 +1,1367 @@
+{
+ "gone_gone_gone": {
+  "query": {
+   "title": "Gone Gone Gone",
+   "artist": "David Guetta, Teddy Swims, Tones And I",
+   "album": "Gone Gone Gone",
+   "duration_ms": 209948
+  },
+  "recordings": [
+   {
+    "id": "ce595da2-a67b-425d-8890-9623e691ee77",
+    "title": "Gone Gone Gone",
+    "length": 198004,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": ", "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "0ca1d34e-d0a1-49ed-ad35-87d1b7cc11a9",
+      "title": "The Dome Vol. 112",
+      "status": "Official",
+      "date": "2026-03-20",
+      "release-group": {
+       "id": "5584d587-e1b6-4a49-8a64-b7411c3dc87d",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "a2492396-a949-454e-afed-02d86a0fc572",
+      "title": "Pop Bops 2026",
+      "status": "Official",
+      "date": "2026-06-16",
+      "release-group": {
+       "id": "9c602bc0-d05b-441a-b291-3d22dedc2ea7",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "b1fb3dc4-7cb1-4452-adef-698a1c122945",
+    "title": "Gone Gone Gone (unplugged)",
+    "length": 213899,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      },
+      "joinphrase": " feat. "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "77aa598b-ce40-4b3c-a90b-fafbb9a81bcc",
+      "title": "Gone Gone Gone (unplugged)",
+      "status": "Official",
+      "date": "2026-01-30",
+      "release-group": {
+       "id": "aa6e62da-9d0f-48cf-bf44-6d484a574f0f",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "98614602-5231-47e1-9022-daf0cca1b48c",
+    "title": "Gone Gone Gone (extended)",
+    "length": 255000,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": ", "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "937f02fe-76ab-4726-9127-8cdb6549b94c",
+      "title": "NRJ Hits 2026",
+      "status": "Official",
+      "date": "2025-12-19",
+      "release-group": {
+       "id": "89f32df1-dc28-432b-8c8b-121184dc17e6",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "3aa2e86d-fd44-4ad6-954b-fe99d9659d3b",
+      "title": "Gone Gone Gone",
+      "status": "Official",
+      "date": "2025-10-10",
+      "release-group": {
+       "id": "2100868f-2c7a-4aa7-9e92-184a6fe9a46f",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "4b2ec890-f31f-484e-80c5-9f56daa9e02e",
+    "title": "Gone Gone Gone (MK remix)",
+    "length": 168549,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      },
+      "joinphrase": " feat. "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "8927df0e-09c1-4267-a00e-45ace762b289",
+      "title": "Gone Gone Gone (MK remix)",
+      "status": "Official",
+      "date": "2025-10-31",
+      "release-group": {
+       "id": "c5f4b04c-3c1d-4f13-beaa-e43151ba68a9",
+       "primary-type": "Single"
+      }
+     },
+     {
+      "id": "b90334c1-6a53-4ade-b605-69efac29f5a9",
+      "title": "Gone Gone Gone (MK remix)",
+      "status": "Official",
+      "date": "2025-10-31",
+      "release-group": {
+       "id": "c5f4b04c-3c1d-4f13-beaa-e43151ba68a9",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "9db3ec60-e42b-483d-a00e-ff6d86ef8eea",
+    "title": "Gone Gone Gone (Hypaton remix)",
+    "length": 181818,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      },
+      "joinphrase": " feat. "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "08cfd408-34f5-4f76-b69f-f2ced4517d9c",
+      "title": "Gone Gone Gone (Hypaton remix)",
+      "status": "Official",
+      "date": "2025-12-05",
+      "release-group": {
+       "id": "ab5a6421-0bb5-48b6-b99b-91b9a9fc0e56",
+       "primary-type": "Single"
+      }
+     },
+     {
+      "id": "bcc1c152-30e4-4ae6-bf5d-d88c5bde5151",
+      "title": "Gone Gone Gone (Hypaton remix)",
+      "status": "Official",
+      "date": "2025-12-05",
+      "release-group": {
+       "id": "ab5a6421-0bb5-48b6-b99b-91b9a9fc0e56",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "04f6d7ff-1095-4509-9655-0295af8c4816",
+    "title": "Gone Gone Gone (Hypaton extended remix)",
+    "length": 241818,
+    "artist-credit": [
+     {
+      "name": "David Guetta",
+      "artist": {
+       "id": "302bd7b9-d012-4360-897a-93b00c855680",
+       "name": "David Guetta",
+       "sort-name": "Guetta, David"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Tones and I",
+      "artist": {
+       "id": "663f33f4-8e5f-4773-93ea-493a1135de9a",
+       "name": "Tones and I",
+       "sort-name": "Tones and I"
+      },
+      "joinphrase": " feat. "
+     },
+     {
+      "name": "Teddy Swims",
+      "artist": {
+       "id": "35feae82-8b2c-4f8f-ae7a-af5662848947",
+       "name": "Teddy Swims",
+       "sort-name": "Swims, Teddy"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "5a69963b-5d4c-42c4-9d9e-08c83c89788e",
+      "title": "Gone Gone Gone (Hypaton extended remix)",
+      "status": "Official",
+      "date": "2025-12-05",
+      "release-group": {
+       "id": "ab5a6421-0bb5-48b6-b99b-91b9a9fc0e56",
+       "primary-type": "Single"
+      }
+     },
+     {
+      "id": "08cfd408-34f5-4f76-b69f-f2ced4517d9c",
+      "title": "Gone Gone Gone (Hypaton remix)",
+      "status": "Official",
+      "date": "2025-12-05",
+      "release-group": {
+       "id": "ab5a6421-0bb5-48b6-b99b-91b9a9fc0e56",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "sin_verguenza": {
+  "query": {
+   "title": "Sin Vergüenza",
+   "artist": "Arde Bogotá, Dani Fernández",
+   "album": "Sin Vergüenza",
+   "duration_ms": 216348
+  },
+  "recordings": [
+   {
+    "id": "506bb224-d636-4990-b515-533fe1035d6f",
+    "title": "Sin vergüenza",
+    "length": 216000,
+    "artist-credit": [
+     {
+      "name": "Arde Bogotá",
+      "artist": {
+       "id": "50170478-5516-4d9f-aa6a-130c1909ba8f",
+       "name": "Arde Bogotá",
+       "sort-name": "Arde Bogotá"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Dani Fernández",
+      "artist": {
+       "id": "04775c0c-b529-4e1e-b3e5-196d23d14a53",
+       "name": "Dani Fernández",
+       "sort-name": "Fernández, Dani"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "8a45d50b-1809-4d60-9250-e525d19c6535",
+      "title": "Sin vergüenza",
+      "status": "Official",
+      "date": "2022-07-07",
+      "release-group": {
+       "id": "03c91c3d-40f3-4de5-b26a-ccd7fd31e7b4",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "muerdeme": {
+  "query": {
+   "title": "Muérdeme",
+   "artist": "Despistaos, Suu",
+   "album": "Muérdeme",
+   "duration_ms": 231028
+  },
+  "recordings": [
+   {
+    "id": "228e932e-c315-41ca-bb95-b9b6c77a64c6",
+    "title": "Muérdeme",
+    "length": 231000,
+    "artist-credit": [
+     {
+      "name": "Despistaos",
+      "artist": {
+       "id": "7ca72400-cf88-4bca-9e2c-d040661776ee",
+       "name": "Despistaos",
+       "sort-name": "Despistaos"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "1f8dae68-4c9f-47cb-92f1-08b05190e8bf",
+      "title": "Un millón de madrugadas",
+      "status": "Official",
+      "date": "2026-02-20",
+      "release-group": {
+       "id": "4d01633e-08a4-4be3-9d37-e9b29e704649",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "largate": {
+  "query": {
+   "title": "Lárgate",
+   "artist": "Ana Mena",
+   "album": "Lárgate",
+   "duration_ms": 197308
+  },
+  "recordings": [
+   {
+    "id": "ceaf3572-b1ec-46b3-81f7-ef811965f5f9",
+    "title": "Lárgate",
+    "length": 180074,
+    "artist-credit": [
+     {
+      "name": "Ana Mena",
+      "artist": {
+       "id": "905d9c0c-0632-4fab-a7b5-7d33b9699907",
+       "name": "Ana Mena",
+       "sort-name": "Mena, Ana"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "fd00de91-6c6e-4d2b-a4db-c111ad3bf2f2",
+      "title": "Lárgate",
+      "status": "Official",
+      "date": "2025-10-10",
+      "release-group": {
+       "id": "6b6a32b4-a26f-4be6-b5be-9212d7a3e915",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "tu_enemigo": {
+  "query": {
+   "title": "Tu Enemigo (feat. Juanes)",
+   "artist": "Pablo López",
+   "album": "El Mundo Y Los Amantes Inocentes",
+   "duration_ms": 208948
+  },
+  "recordings": [
+   {
+    "id": "c987974a-65ab-43b0-b6ca-5708597e6577",
+    "title": "Tu enemigo",
+    "disambiguation": "live, 2015-11-12: Teatro Circo Price, Madrid, Spain",
+    "artist-credit": [
+     {
+      "name": "Pablo López",
+      "artist": {
+       "id": "c765e9e5-85b7-488a-86d5-fe8d8d8e9aa5",
+       "name": "Pablo López",
+       "sort-name": "López, Pablo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "3a913b37-3b1e-4516-a1d6-0ce32eab5e5c",
+      "title": "El mundo y los amantes inocentes",
+      "status": "Official",
+      "date": "2016",
+      "release-group": {
+       "id": "73c840b7-90cd-4d36-a6a1-9b198b4581dd",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "aafaf512-d2e4-4627-a9d0-0a25b8172524",
+    "title": "Tu enemigo",
+    "artist-credit": [
+     {
+      "name": "Pablo López",
+      "artist": {
+       "id": "c765e9e5-85b7-488a-86d5-fe8d8d8e9aa5",
+       "name": "Pablo López",
+       "sort-name": "López, Pablo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "f8f3a3cd-944c-43ed-9b5e-e8c2bee22081",
+      "title": "El mundo y los amantes inocentes",
+      "date": "2015-08-31",
+      "release-group": {
+       "id": "73c840b7-90cd-4d36-a6a1-9b198b4581dd",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "814954c0-14f3-45f7-9d48-9756dc7952a9",
+    "title": "Tu enemigo",
+    "length": 229000,
+    "artist-credit": [
+     {
+      "name": "Pablo López",
+      "artist": {
+       "id": "c765e9e5-85b7-488a-86d5-fe8d8d8e9aa5",
+       "name": "Pablo López",
+       "sort-name": "López, Pablo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "3a913b37-3b1e-4516-a1d6-0ce32eab5e5c",
+      "title": "El mundo y los amantes inocentes",
+      "status": "Official",
+      "date": "2016",
+      "release-group": {
+       "id": "73c840b7-90cd-4d36-a6a1-9b198b4581dd",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "736925df-708f-4ffc-9235-221e0588e802",
+    "title": "L'enemic (Tu enemigo)",
+    "length": 203733,
+    "artist-credit": [
+     {
+      "name": "Pablo López",
+      "artist": {
+       "id": "c765e9e5-85b7-488a-86d5-fe8d8d8e9aa5",
+       "name": "Pablo López",
+       "sort-name": "López, Pablo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "6ce3b609-cd48-4534-b37e-22a0b11d511e",
+      "title": "Bum bum: La Marató per la salut cardiovascular",
+      "status": "Official",
+      "date": "2022-11-27",
+      "release-group": {
+       "id": "8a6a2154-6b3e-429a-9db7-a02880ae68e2",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "504521a1-e014-4858-91fa-3ac0a6955137",
+    "title": "Tu Enemigo - En Concierto 360 Grados",
+    "length": 249761,
+    "artist-credit": [
+     {
+      "name": "Pablo López",
+      "artist": {
+       "id": "c765e9e5-85b7-488a-86d5-fe8d8d8e9aa5",
+       "name": "Pablo López",
+       "sort-name": "López, Pablo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "a923e267-9db3-403a-8555-526c97e8a05a",
+      "title": "Un Piano Y Una Voz En 360º Desde La Maestranza De Sevilla (En Concierto 360 Grados)",
+      "status": "Official",
+      "date": "2021-12-16",
+      "release-group": {
+       "id": "d1c4b578-ea38-43ba-9366-e00b98ff1411",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "baja_por_diversion": {
+  "query": {
+   "title": "Baja por diversión (feat. El Drogas)",
+   "artist": "La Fuga",
+   "album": "Negociando gasolina",
+   "duration_ms": 218108
+  },
+  "recordings": [
+   {
+    "id": "5dacac06-39e9-44dd-aa85-cc48d2934a82",
+    "title": "Baja por diversión",
+    "length": 218080,
+    "artist-credit": [
+     {
+      "name": "La Fuga",
+      "artist": {
+       "id": "2aaf62d2-0018-4a34-a4c9-a03820febd6c",
+       "name": "La Fuga",
+       "sort-name": "Fuga, La"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "El Drogas",
+      "artist": {
+       "id": "e10a5c5e-ec49-4290-9c72-803dbb446f4d",
+       "name": "El Drogas",
+       "sort-name": "Drogas, El"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "af5e2456-01d8-4f7f-8b44-5b32fba9a5c7",
+      "title": "Negociando gasolina",
+      "status": "Official",
+      "date": "2005-05-10",
+      "release-group": {
+       "id": "081907f7-4c83-3c96-a8c7-fdafccf1fea8",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "2d554b56-5c5b-4602-a22b-bcdac26980e1",
+      "title": "Negociando gasolina",
+      "status": "Official",
+      "date": "2005",
+      "release-group": {
+       "id": "081907f7-4c83-3c96-a8c7-fdafccf1fea8",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "cf282a5d-3420-419d-93f8-4dce3d1fd85a",
+    "title": "Baja por diversión",
+    "length": 292000,
+    "artist-credit": [
+     {
+      "name": "La Fuga",
+      "artist": {
+       "id": "2aaf62d2-0018-4a34-a4c9-a03820febd6c",
+       "name": "La Fuga",
+       "sort-name": "Fuga, La"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "e8f8c0fb-0db8-437b-8904-ba79c3ad66eb",
+      "title": "Humo y cristales / Mientras brille la luna",
+      "status": "Official",
+      "date": "2017-11-10",
+      "release-group": {
+       "id": "066d542b-f1f8-4f19-9145-92904f093278",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "1b74eb3e-a760-412a-a4c2-76122cba444c",
+    "title": "Baja por diversión",
+    "length": 217000,
+    "artist-credit": [
+     {
+      "name": "La Fuga",
+      "artist": {
+       "id": "2aaf62d2-0018-4a34-a4c9-a03820febd6c",
+       "name": "La Fuga",
+       "sort-name": "Fuga, La"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "b8db88cc-1589-434f-8c25-c9f73204a59b",
+      "title": "En directo",
+      "status": "Official",
+      "date": "2006-04",
+      "release-group": {
+       "id": "f70ed568-4453-3119-929c-d689f408d851",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "eb34b3ef-f162-455b-b3a7-5d8d92d5ef00",
+    "title": "Baja por diversión (2017 remaster)",
+    "length": 216796,
+    "artist-credit": [
+     {
+      "name": "La Fuga",
+      "artist": {
+       "id": "2aaf62d2-0018-4a34-a4c9-a03820febd6c",
+       "name": "La Fuga",
+       "sort-name": "Fuga, La"
+      },
+      "joinphrase": " feat. "
+     },
+     {
+      "name": "El Drogas",
+      "artist": {
+       "id": "e10a5c5e-ec49-4290-9c72-803dbb446f4d",
+       "name": "El Drogas",
+       "sort-name": "Drogas, El"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "22d19baf-5989-4b38-921b-4f9a67fe200c",
+      "title": "Colección definitiva: 20 años",
+      "status": "Official",
+      "date": "2017-05-26",
+      "release-group": {
+       "id": "70adaa1c-34d9-40e9-bc3b-49038ec9bbed",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "bzrp_52": {
+  "query": {
+   "title": "Quevedo: Bzrp Music Sessions, Vol. 52",
+   "artist": "Bizarrap, Quevedo",
+   "album": "Quevedo: Bzrp Music Sessions, Vol. 52",
+   "duration_ms": null
+  },
+  "recordings": [
+   {
+    "id": "ceb41ddc-6fce-469e-b5b5-36106ca4aa18",
+    "title": "Quevedo: Bzrp Music Sessions, Vol. 52",
+    "length": 198938,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Quevedo",
+      "artist": {
+       "id": "ef9bb29f-f466-4e28-8064-32558f4bb2df",
+       "name": "Quevedo",
+       "sort-name": "Quevedo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "0d5afd99-eac4-49ff-b603-5a7c699a8044",
+      "title": "Los Nº1 de los 40 (2022)",
+      "status": "Official",
+      "date": "2022-12-16",
+      "release-group": {
+       "id": "2376b37d-e199-43ff-9e33-bf62928802a6",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "006db9d4-afed-4b53-a268-fc3824be61c3",
+      "title": "Quevedo: Bzrp Music Sessions, Vol. 52/66",
+      "status": "Official",
+      "date": "2025-11",
+      "release-group": {
+       "id": "741d88a2-190b-4899-87cd-985d8742a1b2",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "92b2bbcf-fc85-4883-ab89-cc96b6657a9e",
+    "title": "MHD: Bzrp Music Sessions, Vol. 44",
+    "length": 173000,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "MHD",
+      "artist": {
+       "id": "923b5d99-4020-40d8-9db5-1390986bb4cf",
+       "name": "MHD",
+       "sort-name": "MHD"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "2168d990-2ff1-48cc-8041-c83006a4e32d",
+      "title": "MHD: Bzrp Music Sessions, Vol. 44",
+      "status": "Official",
+      "date": "2021-09-15",
+      "release-group": {
+       "id": "4d4d5d95-71e0-45ea-9b6a-5f964d075b9a",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "faf3b92e-3ca1-44a0-85fc-425a8d84095b",
+    "title": "Frijo: Bzrp Music Sessions, Vol. 10",
+    "length": 130000,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Frijo",
+      "artist": {
+       "id": "95104487-f65d-420a-9e79-d194630d3b43",
+       "name": "Frijo",
+       "sort-name": "Frijo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "17904984-b4f9-4911-a58b-ee7f10ce37e4",
+      "title": "Frijo: Bzrp Music Sessions, Vol. 10",
+      "status": "Official",
+      "date": "2019-07-21",
+      "release-group": {
+       "id": "e6dc1dd5-c49a-450b-a136-84f0eee1c7ac",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "22a67591-9158-4cca-a993-46b97c342f6d",
+    "title": "Arcángel: Bzrp Music Sessions, Vol. 54",
+    "length": 223000,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Arcángel",
+      "artist": {
+       "id": "47e7833f-f1a7-4703-942d-9acf12f39a1d",
+       "name": "Arcángel",
+       "sort-name": "Arcángel"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "65f593b2-82c2-468b-8eaa-d36b3c38b708",
+      "title": "Arcángel: Bzrp Music Sessions, Vol. 54",
+      "status": "Official",
+      "date": "2023-03-22",
+      "release-group": {
+       "id": "b9bb9053-d6cb-4283-abbf-f102fada5ae7",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "ee717c6f-a7b4-4208-9031-4477117bcbf6",
+    "title": "Lismar: Bzrp Music Sessions, Vol. 60",
+    "length": 182000,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Lismar",
+      "artist": {
+       "id": "8f396a1e-3890-43f0-a2f4-f9c3fc44919e",
+       "name": "Lismar",
+       "sort-name": "Lismar"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "3f5b6a02-7003-4159-98f5-73063ddaf808",
+      "title": "Lismar: Bzrp Music Sessions, Vol. 60",
+      "status": "Official",
+      "date": "2024-05-12",
+      "release-group": {
+       "id": "47a9be09-e8a9-4c6c-8a78-5569fb010977",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "649cc99a-aea2-47a1-a2ed-fc2cc02ec5a1",
+    "title": "Zanto: Bzrp Music Sessions, Vol. 8",
+    "length": 142281,
+    "artist-credit": [
+     {
+      "name": "Bizarrap",
+      "artist": {
+       "id": "3b6abaef-febf-4cfe-943f-6a20cf0afdad",
+       "name": "Bizarrap",
+       "sort-name": "Bizarrap"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Zanto",
+      "artist": {
+       "id": "5d823a98-d41f-4815-a1a2-aa6f9899f12a",
+       "name": "Zanto",
+       "sort-name": "Zanto"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "f5c68477-80eb-49d9-89ba-8c032f19e1e6",
+      "title": "Zanto: Bzrp Music Sessions, Vol. 8",
+      "status": "Official",
+      "date": "2019-07-04",
+      "release-group": {
+       "id": "41ba5228-c5f0-419e-9c3c-9b8085342fca",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "pero_a_tu_lado_live": {
+  "query": {
+   "title": "Pero A Tu Lado (En Directo / WiZink Center / Madrid / 17-11-2019)",
+   "artist": "Los Secretos",
+   "album": null,
+   "duration_ms": null
+  },
+  "recordings": [
+   {
+    "id": "5ccd50f2-bb1a-45cd-b1eb-c1416494aaa8",
+    "title": "Pero a tu lado",
+    "length": 196000,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "d95f8692-84a8-45b6-9cb4-dfefcd4380c9",
+      "title": "La historia de Los Secretos",
+      "status": "Official",
+      "date": "1996",
+      "release-group": {
+       "id": "4b977dc2-b5c1-347c-ac75-0db9f9159457",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "cf65fe1a-5db8-4522-b50e-64001e4b5d96",
+    "title": "Pero a tu lado",
+    "length": 199693,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "fe18a893-b533-4d90-b29c-1d2f10e13b8a",
+      "title": "Gracias por elegirme: Las Ventas 10 octubre 2008",
+      "status": "Official",
+      "date": "2008-12-02",
+      "release-group": {
+       "id": "ac3fd70f-38bb-46e0-b94c-e759fb5cdc32",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "b88f7869-b576-4f03-a235-70225aae37f0",
+    "title": "Pero a tu lado",
+    "length": 197066,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "6b79bf52-d8ef-4cee-9b0f-322086c7dafc",
+      "title": "Grandes éxitos",
+      "status": "Official",
+      "date": "1996",
+      "release-group": {
+       "id": "0c200940-b673-3a39-8c4f-06685bdea7b4",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "23a77b1a-0f1e-43e8-a177-b880ce551a1e",
+    "title": "Pero a tu lado",
+    "length": 196000,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "5259a45f-5388-4aa2-a1fb-a980d1b8dd54",
+      "title": "Dos caras distintas",
+      "status": "Official",
+      "release-group": {
+       "id": "b18814e3-3cc6-378b-9252-31db8c66b2f0",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "d14f804f-95a4-432d-82af-607e2286d8d0",
+      "title": "Dos caras distintas",
+      "status": "Official",
+      "date": "2012",
+      "release-group": {
+       "id": "b18814e3-3cc6-378b-9252-31db8c66b2f0",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "c7f4996b-ce9d-4bd7-894e-5e7d401c8c41",
+    "title": "Pero a tu lado",
+    "length": 195000,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "8d128edf-6d4a-4573-bef8-3394e55eba04",
+      "title": "DRO 40 aniversario -... Y el futuro sigue caminando un paso por detrás de nosotros",
+      "status": "Official",
+      "date": "2023-05-26",
+      "release-group": {
+       "id": "8e554f66-ab88-472f-851f-203b7f11aa96"
+      }
+     }
+    ]
+   },
+   {
+    "id": "68dcda91-bdd9-4664-941b-7e97202eb7e4",
+    "title": "Pero a tu lado",
+    "length": 195226,
+    "artist-credit": [
+     {
+      "name": "Los Secretos",
+      "artist": {
+       "id": "ec5872e7-9d15-4624-b949-c82e700fd2e9",
+       "name": "Los Secretos",
+       "sort-name": "Secretos, Los"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "b2ad954f-26dc-47da-8c30-0e0daf8345b4",
+      "title": "El mejor pop español de los 90: Memory Park",
+      "status": "Official",
+      "date": "2018-06-29",
+      "release-group": {
+       "id": "99f4cdfe-ca9f-451c-b6c3-3976d8252919",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "87faaf73-e681-42ab-a516-74ad0822146f",
+      "title": "Cope",
+      "status": "Official",
+      "date": "2013-01-29",
+      "release-group": {
+       "id": "4d477ca3-7a15-4e13-a9b4-d293594054bf",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "mon_amour_remix": {
+  "query": {
+   "title": "Mon Amour (Remix)",
+   "artist": "zzoilo, Aitana",
+   "album": "Mon Amour (Remix)",
+   "duration_ms": null
+  },
+  "recordings": [
+   {
+    "id": "954cc393-dfe5-4dd5-a76c-d85e356bed5b",
+    "title": "Mon amour (remix)",
+    "length": 179940,
+    "artist-credit": [
+     {
+      "name": "zzoilo",
+      "artist": {
+       "id": "a00078d9-fd5f-445a-8c84-e9956fa36b77",
+       "name": "Zzoilo",
+       "sort-name": "Zzoilo"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Aitana",
+      "artist": {
+       "id": "a24f2bd3-0d1b-4c03-8d91-6297ab5a2811",
+       "name": "Aitana",
+       "sort-name": "Aitana"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "dfea342b-89ed-4bf1-be3e-6fb3e63e7d51",
+      "title": "Mon amour (remix)",
+      "status": "Official",
+      "date": "2021-08-18",
+      "release-group": {
+       "id": "d36933d4-f9cf-4073-bf72-ab433d62290e",
+       "primary-type": "Single"
+      }
+     },
+     {
+      "id": "5717dc9c-dd0c-4b0f-b9e0-e90adb14b8ca",
+      "title": "Mon amour (remix)",
+      "status": "Official",
+      "release-group": {
+       "id": "d36933d4-f9cf-4073-bf72-ab433d62290e",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "0386edc3-0681-4921-b38a-6b09dc3d0d20",
+    "title": "Mon Amour",
+    "length": 173895,
+    "artist-credit": [
+     {
+      "name": "Zzoilo",
+      "artist": {
+       "id": "a00078d9-fd5f-445a-8c84-e9956fa36b77",
+       "name": "Zzoilo",
+       "sort-name": "Zzoilo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "935389f5-a396-4ef4-8629-28a2f60c72a4",
+      "title": "Mon Amour",
+      "status": "Official",
+      "date": "2020-12-30",
+      "release-group": {
+       "id": "330c471d-ed2b-4622-8690-d8108a5ebe22",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   },
+   {
+    "id": "cf1a7df6-e427-4211-9676-1fe6d7e48e53",
+    "title": "Mon Amour (remix)",
+    "length": 181827,
+    "artist-credit": [
+     {
+      "name": "Zzoilo",
+      "artist": {
+       "id": "a00078d9-fd5f-445a-8c84-e9956fa36b77",
+       "name": "Zzoilo",
+       "sort-name": "Zzoilo"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Aitana",
+      "artist": {
+       "id": "a24f2bd3-0d1b-4c03-8d91-6297ab5a2811",
+       "name": "Aitana",
+       "sort-name": "Aitana"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "be747d77-d6eb-45a9-b2bd-c993b04265eb",
+      "title": "W9 Hits Rentrée 2022",
+      "status": "Official",
+      "date": "2022-09-02",
+      "release-group": {
+       "id": "ae45c707-4c43-40bf-82e0-e1f12a561415",
+       "primary-type": "Album"
+      }
+     },
+     {
+      "id": "b9849423-396a-4896-8f88-ac48c1783340",
+      "title": "Los Nº 1 de 40 (2021)",
+      "status": "Official",
+      "date": "2021-11-12",
+      "release-group": {
+       "id": "676456b8-e21b-40c8-a6b9-92fee0f16beb",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "64f1184d-337a-488d-afbc-1852cbdf6c18",
+    "title": "Mon Amour",
+    "length": 181826,
+    "artist-credit": [
+     {
+      "name": "zzoilo",
+      "artist": {
+       "id": "a00078d9-fd5f-445a-8c84-e9956fa36b77",
+       "name": "Zzoilo",
+       "sort-name": "Zzoilo"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Aitana",
+      "artist": {
+       "id": "a24f2bd3-0d1b-4c03-8d91-6297ab5a2811",
+       "name": "Aitana",
+       "sort-name": "Aitana"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "bead80bc-73dd-43a1-b0db-19bce3074f5e",
+      "title": "NRJ Latino Hits 2022",
+      "status": "Official",
+      "date": "2022-07-15",
+      "release-group": {
+       "id": "b7a656b1-540f-46be-a49d-f0ed5e1364d5",
+       "primary-type": "Album"
+      }
+     }
+    ]
+   },
+   {
+    "id": "475f2e08-3b85-4f72-a614-d49c62712ec2",
+    "title": "Mon Amour",
+    "length": 179000,
+    "artist-credit": [
+     {
+      "name": "Aitana",
+      "artist": {
+       "id": "a24f2bd3-0d1b-4c03-8d91-6297ab5a2811",
+       "name": "Aitana",
+       "sort-name": "Aitana"
+      },
+      "joinphrase": " & "
+     },
+     {
+      "name": "Zzoilo",
+      "artist": {
+       "id": "a00078d9-fd5f-445a-8c84-e9956fa36b77",
+       "name": "Zzoilo",
+       "sort-name": "Zzoilo"
+      }
+     }
+    ],
+    "releases": [
+     {
+      "id": "e866cd33-3844-4d05-9646-5198fc5949c6",
+      "title": "Mon Amour",
+      "status": "Official",
+      "date": "2021-08-18",
+      "release-group": {
+       "id": "d36933d4-f9cf-4073-bf72-ab433d62290e",
+       "primary-type": "Single"
+      }
+     }
+    ]
+   }
+  ]
+ }
+}
