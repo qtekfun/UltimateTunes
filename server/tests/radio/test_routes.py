@@ -25,6 +25,10 @@ from ultimatetunes.settings import Settings
 SIMILAR = schema_validator("opensubsonic-subset.yaml", "GetSimilarSongs2Response")
 RADIO = schema_validator("ut-v1.yaml", "Radio")
 LISTEN_NOW = schema_validator("ut-v1.yaml", "ListenNow")
+RECOMMENDATIONS = schema_validator("ut-v1.yaml", "Recommendations")
+CHARTS = schema_validator("ut-v1.yaml", "Charts")
+MOODS = schema_validator("ut-v1.yaml", "Moods")
+MOOD_TRACKS = schema_validator("ut-v1.yaml", "MoodTracks")
 # `/ut/v1/recommendations` is an additive endpoint not yet in the contract (proposal in
 # docs/recommendations.md); its items are the contract's `TrackItem`, which is checked here.
 TRACK_ITEM = schema_validator("ut-v1.yaml", "TrackItem")
@@ -276,7 +280,10 @@ def test_recommendations(client: TestClient) -> None:
     r = client.get("/ut/v1/recommendations")
     assert r.status_code == 200
     body = r.json()
+    RECOMMENDATIONS.validate(body)
     _check_items(body)
+    # No external source is on by default, so there are no extra shelves.
+    assert body["shelves"] == []
     # ana's only seed is Lighthouse Keeper (played and starred).
     assert [shelf["seed"]["id"] for shelf in body["becauseYouPlayed"]] == [LIGHTHOUSE]
     shelf = body["becauseYouPlayed"][0]
@@ -337,3 +344,60 @@ def test_recommendations_are_charged_to_the_caller(
     monkeypatch.setattr(catalog, "radio", radio)
     assert client.get("/ut/v1/recommendations").status_code == 200
     assert seen == [Ana.principal.user_id]
+
+
+# ---------------------------------------------------------------------- /ut/v1/charts & moods
+
+
+def test_charts(client: TestClient) -> None:
+    r = client.get("/ut/v1/charts", params={"country": "ES", "limit": "3"})
+    assert r.status_code == 200
+    body = r.json()
+    CHARTS.validate(body)
+    assert body["country"] == "ES"
+    assert 1 <= len(body["items"]) <= 3
+    # Mapped local-first: an archived chart video carries a library id, not a yt: id.
+    assert any(not i["isExternal"] for i in body["items"])
+
+
+def test_charts_default_country(client: TestClient) -> None:
+    body = client.get("/ut/v1/charts").json()
+    assert body["country"] == "ZZ"
+
+
+@pytest.mark.parametrize("params", [{"country": "spain"}, {"country": "es"}, {"limit": "0"}])
+def test_charts_parameter_errors(client: TestClient, params: dict[str, str]) -> None:
+    assert client.get("/ut/v1/charts", params=params).status_code == 400
+
+
+def test_moods_and_mood_tracks(client: TestClient) -> None:
+    moods = client.get("/ut/v1/moods")
+    assert moods.status_code == 200
+    body = moods.json()
+    MOODS.validate(body)
+    assert [c["title"] for c in body["categories"]] == ["Chill", "Focus"]
+    chill = body["categories"][0]["id"]
+    tracks = client.get(f"/ut/v1/moods/{chill}")
+    assert tracks.status_code == 200
+    detail = tracks.json()
+    MOOD_TRACKS.validate(detail)
+    assert detail["id"] == chill
+    assert detail["items"]
+
+
+def test_unknown_mood_is_empty(client: TestClient) -> None:
+    body = client.get("/ut/v1/moods/ggUnknown0000000000000").json()
+    assert body["items"] == []
+
+
+def test_charts_switched_off(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UT_CHARTS", "false")
+    radio_settings.cache_clear()
+    try:
+        r = client.get("/ut/v1/charts")
+        moods = client.get("/ut/v1/moods")
+    finally:
+        radio_settings.cache_clear()
+    assert r.status_code == 409
+    assert r.json()["code"] == "feature_disabled"
+    assert moods.status_code == 409

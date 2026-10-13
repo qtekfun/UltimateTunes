@@ -54,6 +54,7 @@ from ultimatetunes.search.catalog import (
     CatalogThrottled,
     CatalogTrack,
     CatalogUnavailable,
+    MoodCategory,
     MusicCatalog,
 )
 from ultimatetunes.search.settings import SearchSettings
@@ -69,6 +70,9 @@ TTL_ARTIST = DAY
 TTL_TRACK = 30 * DAY
 TTL_RADIO = HOUR
 TTL_PLAYLIST = 600.0
+TTL_CHARTS = 6 * HOUR
+TTL_MOODS = DAY
+TTL_MOOD = 6 * HOUR
 TTL_NOT_FOUND = HOUR
 # ytmusicapi returns one page of about 20 whatever the limit; more would cost extra requests.
 SEARCH_PAGE = 20
@@ -190,6 +194,27 @@ class GuardedCatalog:
             lambda: self._inner.playlist(playlist_id),
             codec.decode_playlist,
             lambda p: p.tracks,
+        )
+
+    async def charts(self, country: str) -> list[CatalogTrack]:
+        return await self._get(
+            f"charts:{country}",
+            TTL_CHARTS,
+            lambda: self._inner.charts(country),
+            codec.decode_tracks,
+            _tracks_of,
+        )
+
+    async def moods(self) -> list[MoodCategory]:
+        return await self._get("moods", TTL_MOODS, self._inner.moods, codec.decode_moods)
+
+    async def mood_tracks(self, params: str) -> list[CatalogTrack]:
+        return await self._get(
+            f"mood:{params}",
+            TTL_MOOD,
+            lambda: self._inner.mood_tracks(params),
+            codec.decode_tracks,
+            _tracks_of,
         )
 
     async def breaker_state(self) -> BreakerState:
