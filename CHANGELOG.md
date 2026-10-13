@@ -15,10 +15,10 @@ Release candidate of 1.0 with better MusicBrainz matching. The app is unchanged 
 
 ### Fixed
 - Server: far fewer songs end up "needs review". The MusicBrainz search no longer sends YouTube Music's comma-joined artists and the "(feat. X)" part of the title as exact phrases (it often found nothing); it searches the title without "feat." and the first artist, then one looser search if needed.
-- Server: artists are compared as a set, featured artists included and accents ignored, so "A, B" matches a credit "A & B" or "A feat. B".
+- Server: artists are compared as a set, featured artists included (found even when their accents differ), so "A, B" matches a credit "A & B" or "A feat. B".
 
 ### Changed
-- Server: a live, remix or acoustic take never matches the studio recording (and the other way round), and a "feat." version never matches a solo recording; both stay "needs review" instead of getting the wrong tags. Remasters, radio edits and original mixes still match.
+- Server: with the default threshold, a live, remix or acoustic take never matches the studio recording (and the other way round), and a "feat." version never matches a solo recording; both stay "needs review" instead of getting the wrong tags. Remasters, radio edits and original mixes still match.
 
 ### Security
 - The repository's command guard lets the coordinator push release tags, but only the tag of the current `VERSION`, from `master`; it refuses deleting, moving or forcing tags (covered by `tools/tests/guard-bash.test.sh`).
