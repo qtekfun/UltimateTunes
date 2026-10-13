@@ -34,7 +34,15 @@ from ultimatetunes import __version__
 from ultimatetunes.admin.i18n import Lang, negotiate
 from ultimatetunes.admin.repository import AdminRepository, audit
 from ultimatetunes.admin.routes import form_data
-from ultimatetunes.admin.security import CSRF_FIELD, LOGIN_TTL_S, SessionData, csrf_ok
+from ultimatetunes.admin.security import (
+    CSRF_FIELD,
+    LOGIN_TTL_S,
+    SessionData,
+    csrf_failure,
+    csrf_ok,
+    csrf_reason,
+    session_rejected,
+)
 from ultimatetunes.auth.repository import User
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.settings import AuthSettings
@@ -205,18 +213,24 @@ def current_listener(request: Request) -> Listener:
     """The signed-in user, any role. Raises `SignInRequired`, or `RateLimited` when the user
     goes over the same request rate as one API key (`UT_AUTH_KEY_RATE_PER_S`/`_BURST`)."""
     st = state(request)
-    session = st.codec.read_session(request.cookies.get(SESSION_COOKIE))
+    cookie = request.cookies.get(SESSION_COOKIE)
+    session = st.codec.read_session(cookie)
     if session is None:
+        if cookie:
+            session_rejected("invalid_or_expired")
         raise SignInRequired
     try:
         user = st.auth.get_user(session.user_id)
     except NotFound as exc:
+        session_rejected("unknown_user")
         raise SignInRequired from exc
     if user.is_disabled:
+        session_rejected("account_disabled", user.username)
         raise SignInRequired
     with st.services.db.read() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
     if st.codec.fingerprint(user.password_hash, epoch) != session.fingerprint:
+        session_rejected("revoked", user.username)
         raise SignInRequired
     limit = Limit(st.auth_settings.auth_key_rate_per_s, st.auth_settings.auth_key_burst)
     decision = st.services.rate_limiter.hit(f"web:user:{user.id}", limit)
@@ -233,6 +247,7 @@ def posted(
     """A state change: a session, then the CSRF token (checked in that order)."""
     token = form.get(CSRF_FIELD)
     if not csrf_ok(request, listener.session.csrf, token if isinstance(token, str) else None):
+        csrf_failure(request)
         raise CsrfRejected
     return Posted(listener, form)
 
@@ -432,6 +447,7 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
     ) or not st.codec.check_login_token(
         request.cookies.get(LOGIN_COOKIE), token if isinstance(token, str) else None
     ):
+        csrf_failure(request, csrf_reason(request, "login_token"))
         return login_page(request, error=MESSAGES["csrf"], status=403)
     username, password = form.get("username"), form.get("password")
     if not isinstance(username, str) or not isinstance(password, str) or not password:

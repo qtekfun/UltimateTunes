@@ -5,6 +5,7 @@
 import json
 from dataclasses import dataclass, field
 
+from ultimatetunes.core.security_log import security_event
 from ultimatetunes.db.repository import Repository, to_db_bool
 
 _USER_COLUMNS = (
@@ -202,6 +203,9 @@ class AuditRepository(Repository):
     """Append-only. `detail` is a small JSON document that never holds a secret."""
 
     def add(self, entry: AuditEntry) -> None:
+        """Writes the entry and mirrors it to the log as an `audit` security event (who, from
+        where, what; never `detail`), in the caller's transaction: a rare rollback leaves the
+        log line without its row."""
         self.run(
             "INSERT INTO audit_log (id, occurred_at, actor_user_id, actor_ip, action,"
             " target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -215,6 +219,15 @@ class AuditRepository(Repository):
                 entry.target_id,
                 entry.detail,
             ),
+        )
+        security_event(
+            "audit",
+            message=f"audit {entry.action}",
+            action=entry.action,
+            user_id=entry.actor_user_id,
+            client_ip=entry.actor_ip,
+            target_type=entry.target_type,
+            target_id=entry.target_id,
         )
 
     def recent(self, limit: int) -> list[AuditEntry]:

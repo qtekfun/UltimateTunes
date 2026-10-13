@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.security_events import events  # noqa: F401 - a fixture for every test
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.db import Database, migrate
 from ultimatetunes.settings import Settings

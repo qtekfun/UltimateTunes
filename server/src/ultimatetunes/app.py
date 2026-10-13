@@ -38,6 +38,7 @@ from ultimatetunes.canary import web as canary_web
 from ultimatetunes.core.bodylimit import BodyLimit, NoSniff
 from ultimatetunes.core.forwarded import ClientAddress
 from ultimatetunes.core.housekeeping import Housekeeping, with_housekeeping
+from ultimatetunes.core.security_log import RequestContext
 from ultimatetunes.core.services import Services, build_services
 from ultimatetunes.errors import InternalError, InvalidParameter, TunesError
 from ultimatetunes.internal_api import build_internal_router
@@ -98,6 +99,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         area.install(app, svc)
     app.add_middleware(NoSniff)
     app.add_middleware(BodyLimit, max_bytes=settings.max_body_bytes)
+    # Right inside ClientAddress: security events carry the resolved client (docs/logging.md).
+    app.add_middleware(RequestContext)
     # Outermost (added last): every layer below sees the real client address (T22).
     app.add_middleware(ClientAddress, proxies=settings.proxy_networks)
     if settings.housekeeping_interval_s > 0:
