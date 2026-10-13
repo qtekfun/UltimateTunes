@@ -13,7 +13,13 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from tests.auth.conftest import ADMIN_PASSWORD, USER_PASSWORD, fast_passwords, migrate_file
+from tests.auth.conftest import (
+    ADMIN_PASSWORD,
+    TOTP_KEY,
+    USER_PASSWORD,
+    fast_passwords,
+    migrate_file,
+)
 from ultimatetunes.admin import routes, web
 from ultimatetunes.admin.notify import Sender
 from ultimatetunes.admin.security import SESSION_COOKIE
@@ -49,7 +55,12 @@ def services(settings: Settings, clock: FakeClock) -> Iterator[Services]:
         services.db,
         clock,
         services.rate_limiter,
-        AuthSettings(auth_lockout_s=60, auth_max_failures_per_user=3, auth_login_burst=50),
+        AuthSettings(
+            auth_lockout_s=60,
+            auth_max_failures_per_user=3,
+            auth_login_burst=50,
+            totp_encryption_key=TOTP_KEY,
+        ),
         fast_passwords(),
     )
     yield services

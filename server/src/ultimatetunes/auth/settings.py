@@ -19,14 +19,46 @@
   their /64.
 """
 
-from pydantic import Field, SecretStr
+from typing import Literal
+
+from pydantic import Field, SecretStr, field_validator
 
 from ultimatetunes.settings import AreaSettings
+
+# Who must use a second factor once the server operator turns the policy on. `off`: nobody is
+# forced (a user may still enable TOTP for themselves); `admins`: every admin; `all`: everyone.
+Require2fa = Literal["off", "admins", "all"]
 
 
 class AuthSettings(AreaSettings):
     bootstrap_admin_username: str | None = None
     bootstrap_admin_password: SecretStr | None = None
+    # Optional TOTP second factor on the password logins (admin panel, web player,
+    # POST /ut/v1/keys). API-key auth is never a second factor (the app keeps working).
+    auth_require_2fa: Require2fa = "off"
+    auth_2fa_window: int = Field(default=1, ge=0, le=10)
+    # Key that seals the TOTP secret at rest (urlsafe-base64 32-byte Fernet key), from an env var
+    # or a Docker secret. Without it, enabling or verifying 2FA fails closed (auth/secretbox.py).
+    totp_encryption_key: SecretStr | None = None
+
+    @field_validator("totp_encryption_key")
+    @classmethod
+    def _valid_fernet_key(cls, value: SecretStr | None) -> SecretStr | None:
+        """A blank key is unset; otherwise it must be a valid Fernet key, checked at start so a
+        malformed one is refused before any 2FA request. The value is never echoed in the error
+        (`hide_input_in_errors`)."""
+        if value is None or not value.get_secret_value().strip():
+            return None
+        from cryptography.fernet import Fernet  # noqa: PLC0415
+
+        try:
+            Fernet(value.get_secret_value().encode("ascii"))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                "UT_TOTP_ENCRYPTION_KEY must be a urlsafe-base64 32-byte Fernet key"
+            ) from exc
+        return value
+
     auth_max_failures_per_ip: int = Field(default=10, ge=1)
     auth_max_failures_per_user: int = Field(default=5, ge=1)
     auth_lockout_s: int = Field(default=900, ge=1)
