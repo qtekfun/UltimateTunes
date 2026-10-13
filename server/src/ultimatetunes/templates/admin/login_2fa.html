@@ -1,0 +1,16 @@
+{# SPDX-FileCopyrightText: 2026 UltimateTunes contributors #}
+{# SPDX-License-Identifier: GPL-3.0-or-later #}
+{% extends "base.html" %}
+{% block title %}{{ _("Two-step verification") }}{% endblock %}
+{% block content %}
+<div class="card login">
+  <img class="mark" src="/admin/static/icon.svg" alt="" width="56" height="56">
+  <h1>{{ _("Two-step verification") }}</h1>
+  <form class="stack" method="post" action="/admin/login/2fa">
+    <input type="hidden" name="csrf" value="{{ two_factor_csrf }}">
+    <label>{{ _("Authentication code") }}<input name="code" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
+    <button type="submit">{{ _("Verify") }}</button>
+  </form>
+  <p class="muted">{{ _("Enter the 6-digit code from your authenticator app, or one of your recovery codes.") }}</p>
+</div>
+{% endblock %}

@@ -71,6 +71,9 @@ class ClaimedJob:
     hints: JobHints
     lease_id: str
     heartbeat_s: int
+    # The server-wide YouTube cookies (decrypted by the api) for this download, when the admin
+    # set a session; None otherwise. Used for one run and never persisted or logged.
+    youtube_cookies: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +133,10 @@ class WorkerApi(Protocol):
         ytdlp_version: str,
         canary: dict[str, Any] | None = None,
     ) -> list[str]: ...
+
+
+def _opt_str(value: Any) -> str | None:
+    return str(value) if isinstance(value, str) and value else None
 
 
 def _hints(raw: dict[str, Any]) -> JobHints:
@@ -254,6 +261,7 @@ class HttpWorkerApi:
             hints=_hints(job.get("hints") or {}),
             lease_id=str(lease["leaseId"]),
             heartbeat_s=int(lease["heartbeatSeconds"]),
+            youtube_cookies=_opt_str(job.get("youtubeCookies")),
         )
 
     async def heartbeat(self, job: ClaimedJob, lease_s: int) -> LeaseInfo:

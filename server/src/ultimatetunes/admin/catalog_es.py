@@ -390,4 +390,107 @@ ES: dict[str, str] = {
     "No such user": "No existe ese usuario",
     "No such key": "No existe esa clave",
     "The role must be admin or user": "El rol debe ser admin o user",
+    # Two-factor authentication (feat/totp-2fa)
+    "Two-factor": "Doble factor",
+    "Two-factor authentication": "Autenticación de doble factor",
+    "Two-step verification": "Verificación en dos pasos",
+    "Authentication code": "Código de autenticación",
+    "Verify": "Verificar",
+    "Enter the 6-digit code from your authenticator app, or one of your recovery codes.": (
+        "Introduce el código de 6 dígitos de tu aplicación de autenticación, o uno de tus"
+        " códigos de recuperación."
+    ),
+    "Your recovery codes": "Tus códigos de recuperación",
+    "Save these now: each one works once if you lose your authenticator. They are shown only"
+    " this once.": (
+        "Guárdalos ahora: cada uno sirve una sola vez si pierdes tu autenticador. Se muestran"
+        " solo esta vez."
+    ),
+    "Two-factor authentication is on for your account.": (
+        "La autenticación de doble factor está activada en tu cuenta."
+    ),
+    "Recovery codes left: %(count)s.": "Códigos de recuperación restantes: %(count)s.",
+    "Generate new recovery codes": "Generar nuevos códigos de recuperación",
+    "This replaces every remaining recovery code with a new set.": (
+        "Esto reemplaza todos los códigos de recuperación restantes por un conjunto nuevo."
+    ),
+    "Current password": "Contraseña actual",
+    "The server requires two-factor authentication for this account, so it cannot be turned off.": (
+        "El servidor exige la autenticación de doble factor en esta cuenta, así que no se puede"
+        " desactivar."
+    ),
+    "Turn off": "Desactivar",
+    "Turn off two-factor authentication": "Desactivar la autenticación de doble factor",
+    "Scan this code": "Escanea este código",
+    "The server requires two-factor authentication for this account.": (
+        "El servidor exige la autenticación de doble factor en esta cuenta."
+    ),
+    "Scan it with an authenticator app such as Aegis, FreeOTP or Google Authenticator, or type"
+    " the secret by hand.": (
+        "Escanéalo con una aplicación de autenticación como Aegis, FreeOTP o Google"
+        " Authenticator, o escribe el secreto a mano."
+    ),
+    "Secret": "Secreto",
+    "Enter the code from the app to confirm": (
+        "Introduce el código de la aplicación para confirmar"
+    ),
+    "Confirm and turn on": "Confirmar y activar",
+    "Add a second factor": "Añade un segundo factor",
+    "Protect your account with a code from an authenticator app, on top of your password. API"
+    " keys used by apps are not affected.": (
+        "Protege tu cuenta con un código de una aplicación de autenticación, además de tu"
+        " contraseña. Las claves de API que usan las apps no se ven afectadas."
+    ),
+    "Set up two-factor authentication": "Configurar la autenticación de doble factor",
+    "QR code for your authenticator app": "Código QR para tu aplicación de autenticación",
+    # Confirmations and errors of the 2FA routes
+    "Two-factor authentication is off.": "La autenticación de doble factor está desactivada.",
+    "Your sign-in expired. Start again.": "Tu inicio de sesión caducó. Empieza de nuevo.",
+    "That code is wrong.": "Ese código es incorrecto.",
+    "The password is wrong.": "La contraseña es incorrecta.",
+    "That code is wrong or has expired, try the current one": (
+        "Ese código es incorrecto o ha caducado, prueba con el actual"
+    ),
+    "Two-factor authentication is already enabled": (
+        "La autenticación de doble factor ya está activada"
+    ),
+    "Start the two-factor setup first": "Inicia primero la configuración de doble factor",
+    "Enable two-factor authentication first": ("Activa primero la autenticación de doble factor"),
+    "Two-factor authentication is required for this account": (
+        "La autenticación de doble factor es obligatoria en esta cuenta"
+    ),
+    "Set up two-factor authentication to continue.": (
+        "Configura la autenticación de doble factor para continuar."
+    ),
+    "YouTube account": "Cuenta de YouTube",
+    "YouTube cookies saved.": "Cookies de YouTube guardadas.",
+    "YouTube cookies cleared.": "Cookies de YouTube borradas.",
+    "Signing in with a YouTube account lets the downloader get past the bot-check wall (Sign in"
+    " to confirm you're not a bot). Use a throwaway account, never your main one: downloading"
+    " with an account can get it suspended.": (
+        "Iniciar sesión con una cuenta de YouTube permite al descargador superar el muro de"
+        " verificación de robots (Inicia sesión para confirmar que no eres un robot). Usa una"
+        " cuenta desechable, nunca la principal: descargar con una cuenta puede suspenderla."
+    ),
+    "The Android app can set this for you by signing in. You can also paste an exported"
+    " cookies.txt below.": (
+        "La aplicación de Android puede configurarlo por ti al iniciar sesión. También puedes"
+        " pegar abajo un cookies.txt exportado."
+    ),
+    "Cookies are set ✓": "Cookies configuradas ✓",
+    "Set at %(at)s (UTC).": "Configuradas el %(at)s (UTC).",
+    "%(count)s cookies stored.": "%(count)s cookies almacenadas.",
+    "A youtube.com cookie is present.": "Hay una cookie de youtube.com.",
+    "No cookies set.": "No hay cookies configuradas.",
+    "This server cannot store cookies: set UT_YTDLP_COOKIES_KEY (a Fernet key, as a Docker"
+    " secret) and restart the api.": (
+        "Este servidor no puede almacenar cookies: define UT_YTDLP_COOKIES_KEY (una clave"
+        " Fernet, como secreto de Docker) y reinicia la api."
+    ),
+    "Paste cookies manually": "Pegar cookies manualmente",
+    "Netscape cookies.txt": "cookies.txt en formato Netscape",
+    "Remove the stored cookies. The server then downloads without an account.": (
+        "Elimina las cookies guardadas. El servidor descarga entonces sin una cuenta."
+    ),
+    "Clear the stored YouTube cookies?": "¿Borrar las cookies de YouTube guardadas?",
 }

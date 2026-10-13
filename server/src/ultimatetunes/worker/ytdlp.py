@@ -260,6 +260,22 @@ def copy_cookies(source: Path) -> Path:
     return copy
 
 
+def write_cookies(text: str) -> Path:
+    """A fresh 0600 cookies file in the worker's tmpfs holding `text` (the session delivered
+    with the job). yt-dlp refreshes it in place and the caller deletes it after the run; the
+    content is a credential and is never logged. A failure cleans the file up first."""
+    fd, name = tempfile.mkstemp(prefix="ut-cookies-", suffix=".txt")
+    copy = Path(name)
+    try:
+        copy.chmod(0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as dest:
+            dest.write(text)
+    except BaseException:
+        copy.unlink(missing_ok=True)
+        raise
+    return copy
+
+
 # ---------------------------------------------------------------- classification
 
 _STORAGE = (
@@ -497,7 +513,12 @@ class YtDlpDownloader:
         return [s for i, s in enumerate(steps) if s and s not in steps[:i]]
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         check_video_id(video_id)
         out_dir = self._staging.local_path(job_dir)
@@ -505,7 +526,7 @@ class YtDlpDownloader:
         for index, clients in enumerate(steps[:-1]):
             run = _Run(job_dir=job_dir, out_dir=out_dir, on_progress=on_progress)
             try:
-                return await self._attempt(video_id, clients, run)
+                return await self._attempt(video_id, clients, run, cookies)
             except DownloadError as error:
                 if run.reported or error.code != WorkerErrorCode.EXTRACTOR_ERROR:
                     raise
@@ -516,9 +537,11 @@ class YtDlpDownloader:
                     steps[index + 1],
                 )
         last = _Run(job_dir=job_dir, out_dir=out_dir, on_progress=on_progress)
-        return await self._attempt(video_id, steps[-1], last)
+        return await self._attempt(video_id, steps[-1], last, cookies)
 
-    async def _attempt(self, video_id: str, clients: str, run: _Run) -> DownloadResult:
+    async def _attempt(
+        self, video_id: str, clients: str, run: _Run, cookies: str | None = None
+    ) -> DownloadResult:
         try:
             run.out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -537,7 +560,7 @@ class YtDlpDownloader:
             )
         # yt-dlp rewrites the cookies file in place, so it never gets the read-only secret: a
         # private 0600 copy per attempt, deleted below whatever happens.
-        cookies_copy = self._prepare_cookies()
+        cookies_copy = self._prepare_cookies(cookies)
         try:
             args = build_args(
                 python=self._python,
@@ -575,8 +598,12 @@ class YtDlpDownloader:
             if cookies_copy is not None:
                 cookies_copy.unlink(missing_ok=True)
 
-    def _prepare_cookies(self) -> Path | None:
-        """The per-attempt cookies copy to pass to yt-dlp, or None when no cookies are set."""
+    def _prepare_cookies(self, cookies: str | None) -> Path | None:
+        """The per-attempt cookies copy to pass to yt-dlp, or None when no cookies are set.
+        The admin/app session delivered with the job (decrypted by the api) wins; otherwise the
+        optional `UT_YTDLP_COOKIES_FILE` fallback is used."""
+        if cookies is not None:
+            return write_cookies(cookies)
         configured = self._settings.ytdlp_cookies_file
         if configured is None:
             return None

@@ -584,3 +584,81 @@ async def test_no_cookie_value_or_copy_path_reaches_the_logs(
     assert COOKIE_VALUE not in logged
     assert COOKIE_VALUE not in caught.value.message
     assert all(str(path) not in logged for path in paths)
+
+
+# ---------------------------------------------------------------- per-job cookies (admin/app)
+
+JOB_COOKIES = (
+    f"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\t{COOKIE_VALUE}\n"
+)
+
+
+def _snap(path: Path) -> tuple[bytes, int]:
+    return path.read_bytes(), path.stat().st_mode & 0o777
+
+
+async def test_per_job_cookies_are_written_passed_and_cleaned_up(
+    staging: LocalStagingStore,
+) -> None:
+    seen: list[Path] = []
+    snapshot: list[tuple[bytes, int]] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        copy = Path(dict(itertools.pairwise(args))["--cookies"])
+        seen.append(copy)
+        snapshot.append(_snap(copy))
+        return await ytdlp._open(args, env)
+
+    dl = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), runner=runner)
+    await dl.download("OkWebm00001", JOB_DIR, Recorder(), cookies=JOB_COOKIES)
+    assert snapshot[0] == (JOB_COOKIES.encode("utf-8"), 0o600)
+    assert not seen[0].exists()
+
+
+async def test_per_job_cookies_are_removed_even_on_failure(staging: LocalStagingStore) -> None:
+    seen: list[Path] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    dl = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), runner=runner)
+    with pytest.raises(DownloadError):
+        await dl.download("GoneVideo01", JOB_DIR, Recorder(), cookies=JOB_COOKIES)
+    assert seen
+    assert not seen[0].exists()
+
+
+async def test_per_job_cookies_win_over_the_file_fallback(
+    staging: LocalStagingStore, tmp_path: Path
+) -> None:
+    source = netscape_cookies(tmp_path, "FILEONLYVALUE")
+    content: list[bytes] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        copy = Path(dict(itertools.pairwise(args))["--cookies"])
+        content.append(_snap(copy)[0])
+        return await ytdlp._open(args, env)
+
+    dl = YtDlpDownloader(
+        staging,
+        WorkerSettings(ytdlp_cookies_file=source),  # the fallback is set too
+        Zipapp(FAKE_ZIPAPP),
+        runner=runner,
+        cookies_roots=(tmp_path,),
+    )
+    await dl.download("OkWebm00001", JOB_DIR, Recorder(), cookies=JOB_COOKIES)
+    assert COOKIE_VALUE.encode() in content[0]
+    assert b"FILEONLYVALUE" not in content[0]
+
+
+async def test_a_plain_download_passes_no_cookies(staging: LocalStagingStore) -> None:
+    seen: list[list[str]] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(args)
+        return await ytdlp._open(args, env)
+
+    dl = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), runner=runner)
+    await dl.download("OkWebm00001", JOB_DIR, Recorder())
+    assert "--cookies" not in seen[0]

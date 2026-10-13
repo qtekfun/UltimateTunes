@@ -68,7 +68,12 @@ ProgressCallback = Callable[[DownloadProgress], Awaitable[None]]
 
 class Downloader(Protocol):
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult: ...
 
 

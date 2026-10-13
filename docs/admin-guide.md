@@ -87,6 +87,15 @@ The table shows, for every account:
 - **Wrong passwords**: from your LAN/Tailscale, 5 wrong passwords lock that username there for 15 min (`UT_AUTH_LOCKOUT_S`). From the Internet a username is never locked: each wrong password makes the next attempt wait longer (1 s, 2 s, 4 s … at most 5 min), and a correct one resets it, so a stranger can keep someone's sign-in from the Internet waiting, but their app keeps working and they can always sign in from home (or put the web player behind Authelia). An address that fails 10 times is locked for 15 min. Repeated `auth.lockout` entries in the audit log show who is being targeted.
 - **Disable**: the account can no longer sign in and **all its API keys stop working** at once, without being revoked (asks for confirmation). **Enable** brings them back. You cannot disable yourself. Use this for someone who should lose access for a while; revoke keys when a device is lost.
 
+## Two-factor authentication
+
+Open **Two-factor** to protect your sign-ins with a code from an authenticator app (TOTP), on top of your password. It covers the three password logins (this panel, the web player and creating a device key with `POST /ut/v1/keys`); **API keys the app already uses are not affected**, so your phone keeps working.
+
+- **Set up**: press **Set up**, scan the QR code (or type the secret) into Aegis, FreeOTP, Google Authenticator or similar, then enter one code to confirm. The server then shows **ten recovery codes once** — save them; each works a single time if you lose your phone. After this, signing in asks for a 6-digit code (a recovery code works in its place).
+- **New recovery codes** / **Turn off**: both ask for your current password first.
+- **Require it for everyone**: set `UT_AUTH_REQUIRE_2FA` to `admins` or `all` (docs/configuration.md). Covered users are sent to the setup page after signing in and cannot turn it off.
+- Full details, the stored-secret caveat and how recovery works: `docs/2fa.md`.
+
 ## API keys
 
 Every device (phone, tablet, another OpenSubsonic app) gets its own key, so one can be revoked without touching the others. A key is 256 random bits, shown **once** and stored only as a hash.
@@ -193,7 +202,11 @@ When a PO token is not enough, the worker can authenticate a YouTube account by 
 
 > **Use a throwaway account, never your main one.** Downloading with an account can get it **suspended or banned**, temporarily or permanently. Create a separate Google account only for this, and keep the download volume modest.
 
-**Export the cookies safely** (so YouTube does not rotate them out from under you):
+**Turn the feature on once.** The server stores the cookies encrypted, so it needs an encryption key: create `./secrets/ytdlp_cookies_key` with a fresh Fernet key (`python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), uncomment the `ytdlp_cookies_key` secret in `server/compose.yaml` (under the api's `secrets:` and at the end of the file), and `docker compose up -d`. Without the key the YouTube account page says the feature is off and nothing can be stored (it never falls back to storing them in the clear).
+
+**Easiest: sign in from the Android app.** The app opens a YouTube sign-in (a WebView), you log in with the throwaway account, and it uploads the session to your server. Nothing is kept on the phone; the server stores it encrypted and the worker uses it. This is the primary path — you do not need to export anything by hand.
+
+**Or export the cookies by hand** (so YouTube does not rotate them out from under you):
 
 1. Install a Netscape-format cookie exporter: "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt" (Firefox). Be careful what you install; those two are the ones the yt-dlp project points to.
 2. Open a **private / incognito** window and log in to YouTube with the **throwaway** account.
@@ -201,12 +214,22 @@ When a PO token is not enough, the worker can authenticate a YouTube account by 
 4. Export the `youtube.com` cookies to a `cookies.txt` (Netscape/Mozilla format).
 5. **Close the private window** and do not reopen that session. Reusing it in the browser makes YouTube rotate the cookies, and the exported ones stop working.
 
-**Install the cookies.** The file content is an account credential: keep it to mode `600` and never commit it or paste it into a public issue.
+Then install the exported file (the content is an account credential — keep it to mode `600`, never commit it or paste it into a public issue):
 
-- **Admin panel (recommended, primary path):** the **YouTube account** page under `/admin` lets you paste or upload the `cookies.txt`. The server validates the Netscape format, stores it **encrypted**, shows only whether cookies are configured (never their values), and has a **Clear** button. The worker receives the session over the internal network and uses it for downloads. *(This page is being added with the encrypted store; until it ships, use the file method below.)*
-- **File (fallback, for file-based ops):** put the `cookies.txt` in `./secrets/ytdlp_cookies` (mode `600`), uncomment the `ytdlp_cookies` secret and `UT_YTDLP_COOKIES_FILE` in `server/compose.yaml`, and `docker compose up -d`. The file is mounted read-only; the worker copies it to a private temporary file for each download (yt-dlp rewrites the cookies file as it refreshes tokens) and deletes the copy afterwards, so the mounted secret is never changed.
+- **Admin panel (primary for a manual export):** the **YouTube account** page under `/admin` shows whether cookies are set (never their values), lets you paste the `cookies.txt`, and has a **Clear** button. The server validates the Netscape format and stores it encrypted; the worker receives the session over the internal network and uses it for downloads.
+- **File (fallback, for file-based ops):** put the `cookies.txt` in `./secrets/ytdlp_cookies` (mode `600`), uncomment the `ytdlp_cookies` secret and `UT_YTDLP_COOKIES_FILE` in `server/compose.yaml`, and `docker compose up -d`. The file is mounted read-only; the worker copies it to a private temporary file for each download (yt-dlp rewrites the cookies file as it refreshes tokens) and deletes the copy afterwards, so the mounted secret is never changed. The admin/app store, when set, takes precedence over this file.
 
-After installing cookies, press **Retry** on failed downloads or wait for the bot-wall pause to end, then **Run the canary now** to confirm. If downloads still fail, the server's IP itself is likely blocked (see the note above). To stop using cookies, clear them in the panel, or remove the file secret and restart.
+After installing cookies, press **Retry** on failed downloads or wait for the bot-wall pause to end, then **Run the canary now** to confirm. If downloads still fail, the server's IP itself is likely blocked (see the note above). To stop using cookies, clear them in the panel (or with `DELETE /ut/v1/youtube-cookies`), or remove the file secret and restart.
+
+**For app and integration developers.** The endpoint behind this is admin-only and server-wide:
+
+| Method | Path | Body | Auth | Returns |
+|---|---|---|---|---|
+| `PUT` | `/ut/v1/youtube-cookies` | the Netscape `cookies.txt` text (`text/plain`, ≤ `UT_YTDLP_COOKIES_MAX_BYTES`) | an **admin's** API key (`X-Api-Key` or `apiKey`); a normal user gets 403, no key 401 | `200` with the non-secret status |
+| `GET` | `/ut/v1/youtube-cookies/status` | — | admin API key | `{configured, setAt, cookieCount, hasYoutubeDomain, available}` (never a cookie value) |
+| `DELETE` | `/ut/v1/youtube-cookies` | — | admin API key | `200`, cookies cleared |
+
+A bad format is `400 invalid_parameter`; a body over the cap is `413`; with no `UT_YTDLP_COOKIES_KEY` on the server, `PUT` is `409 feature_disabled`. The full schema and examples are in `contracts/openapi/ut-v1.yaml`.
 
 ## Audit log
 

@@ -20,7 +20,7 @@
 <header class="top">
   <a class="brand" href="/admin"><img src="/admin/static/icon.svg" alt="" width="24" height="24">UltimateTunes</a>
   <nav aria-label="{{ _("Sections") }}">
-    {% for href, label in [("/admin", "Overview"), ("/admin/users", "Users"), ("/admin/keys", "API keys"), ("/admin/jobs", "Downloads"), ("/admin/library", "Library"), ("/admin/ytdlp", "yt-dlp"), ("/admin/audit", "Audit log"), ("/admin/notifications", "Notifications")] %}
+    {% for href, label in [("/admin", "Overview"), ("/admin/users", "Users"), ("/admin/keys", "API keys"), ("/admin/jobs", "Downloads"), ("/admin/library", "Library"), ("/admin/ytdlp", "yt-dlp"), ("/admin/audit", "Audit log"), ("/admin/notifications", "Notifications"), ("/admin/youtube", "YouTube account"), ("/admin/2fa", "Two-factor")] %}
     <a href="{{ href }}"{% if path == href or (href != "/admin" and path.startswith(href + "/")) %} aria-current="page"{% endif %}>{{ _(label) }}</a>
     {% endfor %}
   </nav>

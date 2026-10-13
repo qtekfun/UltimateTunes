@@ -234,3 +234,57 @@ def test_absurd_ids_are_refused(client: TestClient) -> None:
     status = {"version": "v", "ytdlpVersion": "y"}
     r = client.put(f"/internal/v1/workers/{'w' * 101}/status", json=status, headers=AUTH)
     assert r.json()["detail"] == "Invalid: workerId"
+
+
+# ---------------------------------------------------------------- YouTube cookies in the claim
+
+COOKIES = (
+    "# Netscape HTTP Cookie File\n"
+    ".youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\tEXAMPLE-invented-NOLEAK\n"
+)
+
+
+def _store_cookies(services: Services, monkeypatch: pytest.MonkeyPatch) -> str:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    from ultimatetunes.youtube.cookies import YouTubeCookieStore  # noqa: PLC0415
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", key)
+    YouTubeCookieStore(services.db, services.clock).set(COOKIES)
+    return key
+
+
+def test_claim_carries_cookies_for_a_download_job_when_set(
+    client: TestClient, services: Services, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store_cookies(services, monkeypatch)
+    body = claim(client)
+    assert body["job"]["youtubeCookies"] == COOKIES
+
+
+def test_claim_omits_cookies_when_none_are_set(
+    client: TestClient, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    assert "youtubeCookies" not in claim(client)["job"]
+
+
+def test_claim_omits_cookies_without_a_key(
+    client: TestClient, services: Services, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store_cookies(services, monkeypatch)
+    monkeypatch.delenv("UT_YTDLP_COOKIES_KEY", raising=False)
+    assert "youtubeCookies" not in claim(client)["job"]
+
+
+def test_claim_omits_cookies_when_the_key_changed(
+    client: TestClient, services: Services, job_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    _store_cookies(services, monkeypatch)
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    assert "youtubeCookies" not in claim(client)["job"]

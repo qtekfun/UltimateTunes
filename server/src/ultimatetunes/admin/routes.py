@@ -40,6 +40,8 @@ from ultimatetunes.admin.security import (
     CSRF_FIELD,
     LOGIN_COOKIE,
     LOGIN_TTL_S,
+    PENDING_2FA_COOKIE,
+    PENDING_2FA_TTL_S,
     SESSION_COOKIE,
     SessionCodec,
     SessionData,
@@ -76,6 +78,7 @@ from ultimatetunes.search import guard
 from ultimatetunes.search import service as search_service
 from ultimatetunes.search.guard import GuardedCatalog
 from ultimatetunes.search.settings import SearchSettings
+from ultimatetunes.youtube.cookies import YouTubeCookieStore
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -119,6 +122,9 @@ DONE = {
         " and password, and that this user may write to the topic."
     ),
     "notify_rejected_webhook": "The webhook rejected the credentials (HTTP 401 or 403).",
+    "disabled": "Two-factor authentication is off.",
+    "youtube_saved": "YouTube cookies saved.",
+    "youtube_cleared": "YouTube cookies cleared.",
 }
 
 
@@ -181,6 +187,16 @@ class NotAdmin(Exception):  # noqa: N818
 
 class CsrfRejected(Exception):  # noqa: N818
     """A state change without the session's CSRF token, or a cross-site one."""
+
+
+class EnrollmentRequired(Exception):  # noqa: N818 - a control-flow signal, not an error
+    """A policy-covered admin who has not set up 2FA yet: sent to the setup page, refused
+    everything else until enrolled (`UT_AUTH_REQUIRE_2FA`)."""
+
+
+def _enroll_exempt(path: str) -> bool:
+    """Paths a must-enroll admin may still reach: the 2FA setup itself and signing out."""
+    return path == "/admin/2fa" or path.startswith("/admin/2fa/") or path == "/admin/logout"
 
 
 @dataclass(frozen=True)
@@ -246,6 +262,10 @@ def current_admin(request: Request) -> Admin:
     if user.role != "admin":
         not_admin(user.username)
         raise NotAdmin
+    if st.auth.two_factor.status(user.id, "admin").must_enroll and not _enroll_exempt(
+        request.url.path
+    ):
+        raise EnrollmentRequired
     return Admin(user, session, client_ip(request))
 
 
@@ -343,7 +363,20 @@ def error_status(error: TunesError) -> int:
 
 def handlers() -> dict[type[Exception], object]:
     """Exception handlers `web.install` registers for the panel's own signals."""
-    return {LoginRequired: _login_required, NotAdmin: _not_admin, CsrfRejected: _csrf_rejected}
+    return {
+        LoginRequired: _login_required,
+        NotAdmin: _not_admin,
+        CsrfRejected: _csrf_rejected,
+        EnrollmentRequired: _enrollment_required,
+    }
+
+
+async def _enrollment_required(request: Request, _exc: Exception) -> Response:
+    if request.method in ("GET", "HEAD"):
+        if request.headers.get("hx-request"):
+            return Response(status_code=200, headers={"HX-Redirect": "/admin/2fa"})
+        return RedirectResponse("/admin/2fa", status_code=303)
+    return _forbidden(request, "Set up two-factor authentication to continue.")
 
 
 async def _login_required(request: Request, _exc: Exception) -> Response:
@@ -397,7 +430,9 @@ def _login_page(request: Request, *, error: str | None = None, status: int = 200
 
 
 @router.post("/admin/login", include_in_schema=False)
-def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Response:
+def login(  # noqa: PLR0911 - one return per outcome of the password step, plus the 2FA branch
+    request: Request, form: Annotated[FormData, Depends(form_data)]
+) -> Response:
     st = state(request)
     token = form.get(CSRF_FIELD)
     if request.headers.get("sec-fetch-site", "same-origin") not in (
@@ -421,14 +456,73 @@ def login(request: Request, form: Annotated[FormData, Depends(form_data)]) -> Re
     if user.role != "admin":
         not_admin(user.username)
         return _forbidden(request, "This account is not an administrator.")
+    if st.auth.two_factor.is_enabled(user.id):
+        # The password was right; hold the sign-in until the second factor (`/admin/login/2fa`).
+        with st.services.db.read() as conn:
+            epoch = session_epoch(AdminRepository(conn), user.id)
+        cookie, pending = st.codec.new_pending_2fa(user.id, user.password_hash, epoch)
+        response = _login_2fa_page(request, pending.csrf)
+        set_cookie(response, PENDING_2FA_COOKIE, cookie, PENDING_2FA_TTL_S)
+        clear_cookie(response, LOGIN_COOKIE)
+        return response
+    return _complete_login(request, user)
+
+
+def _login_2fa_page(
+    request: Request, csrf: str, *, error: str | None = None, status: int = 200
+) -> Response:
+    return page(request, "login_2fa.html", {"two_factor_csrf": csrf}, status=status, error=error)
+
+
+def _complete_login(request: Request, user: User) -> Response:
+    """Issues the admin session once every factor has passed, and audits the sign-in. An admin
+    the require-policy covers but who has not enrolled is sent to the setup page."""
+    st = state(request)
+    ip = client_ip(request)
     with st.services.db.transaction() as conn:
         epoch = session_epoch(AdminRepository(conn), user.id)
         audit(conn, st.services.clock, actor_id=user.id, ip=ip, action="admin.login")
     cookie, _session = st.codec.new_session(user.id, user.password_hash, epoch)
-    response = RedirectResponse("/admin", status_code=303)
+    target = "/admin/2fa" if st.auth.two_factor.status(user.id, "admin").must_enroll else "/admin"
+    response = RedirectResponse(target, status_code=303)
     set_cookie(response, SESSION_COOKIE, cookie, st.codec.ttl_s)
     clear_cookie(response, LOGIN_COOKIE)
+    clear_cookie(response, PENDING_2FA_COOKIE)
     return response
+
+
+@router.post("/admin/login/2fa", include_in_schema=False)
+def login_second_factor(
+    request: Request, form: Annotated[FormData, Depends(form_data)]
+) -> Response:
+    """The second step after a correct password: a TOTP code or a recovery code. The pending
+    cookie proves the password step passed for this user (bound to the password fingerprint)."""
+    st = state(request)
+    pending = st.codec.read_pending_2fa(request.cookies.get(PENDING_2FA_COOKIE))
+    token = form.get(CSRF_FIELD)
+    if pending is None or not csrf_ok(
+        request, pending.csrf, token if isinstance(token, str) else None
+    ):
+        csrf_failure(request, csrf_reason(request))
+        return _login_page(request, error="Your sign-in expired. Start again.", status=403)
+    try:
+        user = st.auth.get_user(pending.user_id)
+    except NotFound:
+        return _login_page(request, error="Your sign-in expired. Start again.", status=403)
+    with st.services.db.read() as conn:
+        epoch = session_epoch(AdminRepository(conn), user.id)
+    if (
+        user.is_disabled
+        or user.role != "admin"
+        or st.codec.fingerprint(user.password_hash, epoch) != pending.fingerprint
+    ):
+        # The account changed (password, role, disabled) after the password step: start over.
+        return _login_page(request, error="Your sign-in expired. Start again.", status=403)
+    code = form.get("code")
+    code_value = code if isinstance(code, str) else ""
+    if not st.auth.two_factor.verify_second_factor(user.id, code_value, client_ip(request)):
+        return _login_2fa_page(request, pending.csrf, error="That code is wrong.", status=401)
+    return _complete_login(request, user)
 
 
 @router.post("/admin/logout", include_in_schema=False)
@@ -446,6 +540,105 @@ def logout(request: Request, post: PostedDep) -> Response:
     response = RedirectResponse("/admin/login", status_code=303)
     clear_cookie(response, SESSION_COOKIE)
     return response
+
+
+# ---------------------------------------------------------------------- two-factor
+
+
+def _enrollment_qr(request: Request, uri: str) -> Markup:
+    label = translator(lang_of(request))("QR code for your authenticator app")
+    return qr.to_svg(qr.encode(uri), label=label)
+
+
+def _two_factor_page(
+    request: Request,
+    admin: Admin,
+    *,
+    recovery: list[str] | None = None,
+    error: str | None = None,
+    status: int = 200,
+) -> Response:
+    tf = state(request).auth.two_factor
+    status_data = tf.status(admin.user.id, "admin")
+    pending = (
+        None if status_data.enabled else tf.pending_enrollment(admin.user.id, admin.user.username)
+    )
+    context: dict[str, object] = {
+        "status": status_data,
+        "recovery": recovery,
+        "qr": _enrollment_qr(request, pending.uri) if pending else None,
+        "secret": pending.secret if pending else None,
+    }
+    return page(request, "two_factor.html", context, admin=admin, error=error, status=status)
+
+
+@router.get("/admin/2fa", include_in_schema=False)
+def two_factor_page(request: Request, admin: AdminDep) -> Response:
+    return _two_factor_page(request, admin)
+
+
+@router.post("/admin/2fa/enroll", include_in_schema=False)
+def two_factor_enroll(request: Request, post: PostedDep) -> Response:
+    """Starts (or restarts) the setup: a fresh secret, shown as a QR code to scan."""
+    try:
+        state(request).auth.two_factor.begin_enrollment(
+            post.admin.user.id, post.admin.user.username
+        )
+    except TunesError as exc:
+        return _two_factor_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return _two_factor_page(request, post.admin)
+
+
+@router.post("/admin/2fa/confirm", include_in_schema=False)
+def two_factor_confirm(request: Request, post: PostedDep) -> Response:
+    """Confirms the setup with one code and reveals the recovery codes once."""
+    try:
+        recovery = state(request).auth.two_factor.confirm_enrollment(
+            post.admin.user.id, post.get("code")
+        )
+    except TunesError as exc:
+        return _two_factor_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return _two_factor_page(request, post.admin, recovery=recovery)
+
+
+@router.post("/admin/2fa/disable", include_in_schema=False)
+def two_factor_disable(request: Request, post: PostedDep) -> Response:
+    """Turns the second factor off after the current password is re-entered."""
+    st = state(request)
+    if not _reauthenticate(st, post, request):
+        return _two_factor_page(request, post.admin, error="The password is wrong.", status=401)
+    try:
+        st.auth.two_factor.disable(post.admin.user.id, "admin")
+    except TunesError as exc:
+        return _two_factor_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return back("/admin/2fa", "disabled")
+
+
+@router.post("/admin/2fa/recovery", include_in_schema=False)
+def two_factor_recovery(request: Request, post: PostedDep) -> Response:
+    """Replaces the recovery codes after the current password is re-entered."""
+    st = state(request)
+    if not _reauthenticate(st, post, request):
+        return _two_factor_page(request, post.admin, error="The password is wrong.", status=401)
+    try:
+        recovery = st.auth.two_factor.regenerate_recovery_codes(post.admin.user.id)
+    except TunesError as exc:
+        return _two_factor_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return _two_factor_page(request, post.admin, recovery=recovery)
+
+
+def _reauthenticate(st: AdminState, post: Posted, request: Request) -> bool:
+    """Checks the admin's current password for a sensitive 2FA change (disable, new codes)."""
+    try:
+        st.auth.verify_password(
+            post.admin.user.username,
+            post.get("password"),
+            post.admin.ip,
+            trusted=trusted_origin(request),
+        )
+    except TunesError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------- dashboard
@@ -1105,3 +1298,67 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
     else:
         done = "notify_sent" if outcome == "sent" else "notify_failed"
     return back("/admin/notifications", done)
+
+
+# ---------------------------------------------------------------------- YouTube account
+
+
+def _youtube_store(request: Request) -> YouTubeCookieStore:
+    svc = state(request).services
+    return YouTubeCookieStore(svc.db, svc.clock)
+
+
+def _youtube_page(
+    request: Request, admin: Admin, *, error: str | None = None, status: int = 200
+) -> Response:
+    store = _youtube_store(request)
+    return page(
+        request,
+        "youtube.html",
+        {"status": store.status(), "available": store.available},
+        admin=admin,
+        error=error,
+        status=status,
+    )
+
+
+@router.get("/admin/youtube", include_in_schema=False)
+def youtube_page(request: Request, admin: AdminDep) -> Response:
+    return _youtube_page(request, admin)
+
+
+@router.post("/admin/youtube", include_in_schema=False)
+def save_youtube_cookies(request: Request, post: PostedDep) -> Response:
+    services = state(request).services
+    store = _youtube_store(request)
+    raw = post.get("cookies")
+    text = raw if isinstance(raw, str) else ""
+    try:
+        status_ = store.set(text)  # validates; FeatureDisabled when no key is configured
+    except TunesError as exc:
+        return _youtube_page(request, post.admin, error=exc.message, status=error_status(exc))
+    with services.db.transaction() as conn:
+        audit(
+            conn,
+            services.clock,
+            actor_id=post.admin.user.id,
+            ip=post.admin.ip,
+            action="youtube.cookies.set",
+            detail={"count": status_.cookie_count, "youtube": status_.has_youtube_domain},
+        )
+    return back("/admin/youtube", "youtube_saved")
+
+
+@router.post("/admin/youtube/clear", include_in_schema=False)
+def clear_youtube_cookies(request: Request, post: PostedDep) -> Response:
+    services = state(request).services
+    _youtube_store(request).clear()
+    with services.db.transaction() as conn:
+        audit(
+            conn,
+            services.clock,
+            actor_id=post.admin.user.id,
+            ip=post.admin.ip,
+            action="youtube.cookies.clear",
+        )
+    return back("/admin/youtube", "youtube_cleared")
