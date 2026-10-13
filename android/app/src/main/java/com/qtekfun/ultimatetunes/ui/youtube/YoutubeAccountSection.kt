@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ data class YoutubeActions(
     val confirmWarning: () -> Unit = {},
     val cancel: () -> Unit = {},
     val pageFinished: (String?) -> Unit = {},
+    val webViewReleased: () -> Unit = {},
     val remove: () -> Unit = {}
 )
 
@@ -247,6 +249,7 @@ private fun YoutubeLoginDialog(actions: YoutubeActions) {
                 }
                 YoutubeLoginWebView(
                     onPageFinished = actions.pageFinished,
+                    onReleased = actions.webViewReleased,
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
             }
@@ -261,8 +264,13 @@ private fun YoutubeLoginDialog(actions: YoutubeActions) {
  */
 @SuppressLint("SetJavaScriptEnabled") // Google's sign-in does not work without JavaScript.
 @Composable
-private fun YoutubeLoginWebView(onPageFinished: (String?) -> Unit, modifier: Modifier = Modifier) {
+private fun YoutubeLoginWebView(
+    onPageFinished: (String?) -> Unit,
+    onReleased: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val finished by rememberUpdatedState(onPageFinished)
+    val released by rememberUpdatedState(onReleased)
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -272,6 +280,8 @@ private fun YoutubeLoginWebView(onPageFinished: (String?) -> Unit, modifier: Mod
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.javaScriptCanOpenWindowsAutomatically = false
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                settings.safeBrowsingEnabled = true
                 settings.userAgentString = loginUserAgent(settings.userAgentString)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webViewClient = LoginClient { host -> finished(host) }
@@ -281,6 +291,7 @@ private fun YoutubeLoginWebView(onPageFinished: (String?) -> Unit, modifier: Mod
         onRelease = { webView ->
             webView.stopLoading()
             webView.destroy()
+            released()
         }
     )
 }

@@ -98,6 +98,17 @@ class NetscapeCookiesTest {
     }
 
     @Test
+    fun `the size limit counts UTF-8 bytes, not characters`() {
+        val wide = (1..20_000).joinToString("; ") { "c$it=${"\u00e9\u20ac".repeat(10)}" }
+
+        val text = NetscapeCookies.serialize(listOf(youtube(wide)), now)!!
+
+        assertTrue(text.length < text.toByteArray().size)
+        assertTrue(text.toByteArray().size <= NetscapeCookies.MAX_BYTES)
+        assertTrue(text.endsWith("\n"))
+    }
+
+    @Test
     fun `only a SAPISID type cookie is a signed in session`() {
         assertFalse(NetscapeCookies.hasSession(null))
         assertFalse(NetscapeCookies.hasSession("VISITOR_INFO1_LIVE=a; YSC=b; SID=c"))

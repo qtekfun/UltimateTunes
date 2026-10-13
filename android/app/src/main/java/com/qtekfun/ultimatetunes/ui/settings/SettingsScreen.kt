@@ -107,6 +107,7 @@ fun SettingsRoute(
             confirmWarning = youtubeViewModel::confirmWarning,
             cancel = youtubeViewModel::cancel,
             pageFinished = youtubeViewModel::onPageFinished,
+            webViewReleased = youtubeViewModel::webViewReleased,
             remove = youtubeViewModel::remove
         )
     )
