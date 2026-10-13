@@ -30,6 +30,11 @@ enum class Tab(val route: String, @StringRes val label: Int, @DrawableRes val ic
 
     fun station(seed: SongId): String = "$route/station/${encode(seed.value)}"
 
+    /** The Charts list inside this tab (opened from Listen Now). */
+    val chartsPattern: String get() = "$route/charts"
+
+    val charts: String get() = "$route/charts"
+
     /** Albums, artists and playlists open inside every tab, like stations. */
     val albumPattern: String get() = "$route/album/{${AlbumViewModel.ARG_ID}}"
     val artistPattern: String get() = "$route/artist/{${ArtistViewModel.ARG_ID}}"

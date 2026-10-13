@@ -49,6 +49,15 @@
     <string name="listen_now_top_songs">Canciones más escuchadas</string>
     <string name="listen_now_recently_added">Añadido recientemente</string>
     <string name="listen_now_empty">Todavía no hay nada. Reproduce algo y aparecerá aquí.</string>
+    <string name="listen_now_recommended">Recomendado para ti</string>
+    <string name="listen_now_because_you_played">Porque escuchaste %1$s</string>
+    <string name="listen_now_charts">Listas de éxitos</string>
+
+    <!-- Listas de éxitos -->
+    <string name="charts_title">Listas de éxitos</string>
+    <string name="charts_global">Global</string>
+    <string name="charts_country">Lo más escuchado · %1$s</string>
+    <string name="charts_empty">No hay listas disponibles ahora mismo.</string>
 
     <!-- Radio -->
     <string name="radio_from_songs">Emisoras de tus canciones favoritas</string>
