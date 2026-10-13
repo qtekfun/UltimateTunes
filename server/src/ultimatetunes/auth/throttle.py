@@ -17,6 +17,7 @@
 """
 
 import ipaddress
+import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -24,6 +25,7 @@ from functools import lru_cache
 
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.netaddr import parse_ip
+from ultimatetunes.core.security_log import security_event
 from ultimatetunes.errors import RateLimited
 
 IPV6_GROUP = 64
@@ -51,6 +53,7 @@ class Argon2Slots:
     def slot(self) -> Iterator[None]:
         """Holds one slot while the block runs, or raises `RateLimited` (module doc)."""
         if not self._slots.acquire(timeout=self._wait_s):
+            security_event("auth.throttled", level=logging.WARNING, reason="argon2_busy")
             raise RateLimited(1, "Too many sign-ins at once, try again in a moment")
         try:
             yield

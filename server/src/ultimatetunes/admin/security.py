@@ -31,6 +31,7 @@ nothing external), `no-store`, `nosniff`, no framing and no referrer.
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 
@@ -42,8 +43,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ultimatetunes.admin.settings import IpNetwork
 from ultimatetunes.core.clock import Clock
-from ultimatetunes.core.forwarded import from_trusted_network
+from ultimatetunes.core.forwarded import FUNNEL_HEADER, from_trusted_network, via_untrusted_proxy
 from ultimatetunes.core.netaddr import in_networks
+from ultimatetunes.core.security_log import security_event
 
 SESSION_COOKIE = "ut_admin_session"
 LOGIN_COOKIE = "ut_admin_login"
@@ -112,6 +114,11 @@ class AdminGate:
         request = Request(scope)
         refusal: Response | None = None
         if not from_trusted_network(scope, self._networks, self._denied):
+            security_event(
+                "access.denied",
+                level=logging.WARNING,
+                reason=_refusal_reason(request, self._denied),
+            )
             refusal = PlainTextResponse("Forbidden", status_code=403)
         elif _too_big(request):
             refusal = PlainTextResponse("Payload too large", status_code=413)
@@ -131,6 +138,39 @@ class AdminGate:
             await send(message)
 
         await self._app(scope, receive, send_with_headers)
+
+
+def _refusal_reason(request: Request, denied: tuple[IpNetwork, ...]) -> str:
+    """Why `from_trusted_network` refused a request (the `reason` of `access.denied`)."""
+    if FUNNEL_HEADER in request.headers:
+        return "funnel"
+    if via_untrusted_proxy(request.scope):
+        return "untrusted_proxy"
+    if in_networks(request.client.host if request.client else None, denied):
+        return "worker_network"
+    return "network"
+
+
+def csrf_reason(request: Request, otherwise: str = "token") -> str:
+    """The `reason` of a `csrf.failure` event: a cross-site request, or else a missing or wrong
+    token (`otherwise`: `login_token` for the login forms)."""
+    if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        return "cross_site"
+    return otherwise
+
+
+def session_rejected(reason: str, user: str | None = None) -> None:
+    """A session cookie was sent but is not usable: forged, expired, or ended by a logout,
+    a password change or "sign out every device" (`session.rejected`)."""
+    security_event("session.rejected", level=logging.WARNING, reason=reason, user=user)
+
+
+def not_admin(user: str) -> None:
+    security_event("access.denied", level=logging.WARNING, reason="not_admin", user=user)
+
+
+def csrf_failure(request: Request, reason: str | None = None) -> None:
+    security_event("csrf.failure", level=logging.WARNING, reason=reason or csrf_reason(request))
 
 
 def _too_big(request: Request) -> bool:
