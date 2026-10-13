@@ -13,6 +13,7 @@
     "capabilities": {
         "externalSearch": true,
         "radio": true,
+        "charts": true,
         "lyrics": true,
         "youtubeMusicImport": true,
         "fileImport": true,
