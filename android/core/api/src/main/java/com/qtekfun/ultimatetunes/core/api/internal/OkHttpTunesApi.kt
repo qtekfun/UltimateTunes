@@ -51,6 +51,7 @@ import com.qtekfun.ultimatetunes.core.api.model.SongList
 import com.qtekfun.ultimatetunes.core.api.model.Starred
 import com.qtekfun.ultimatetunes.core.api.model.SubsonicStatus
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
+import com.qtekfun.ultimatetunes.core.api.model.YoutubeCookiesStatus
 import java.io.IOException
 import java.time.Clock
 import java.time.Duration
@@ -118,6 +119,21 @@ internal class OkHttpTunesApi(
 
     override suspend fun revokeKey(id: ApiKeyId): TunesResult<Unit> =
         utUnit("keys", id.value, method = "DELETE")
+
+    override suspend fun youtubeCookiesStatus(): TunesResult<YoutubeCookiesStatus> =
+        ut(YoutubeCookiesStatus.serializer(), "youtube-cookies", "status")
+
+    override suspend fun setYoutubeCookies(
+        netscapeText: String
+    ): TunesResult<YoutubeCookiesStatus> = ut(
+        YoutubeCookiesStatus.serializer(),
+        "youtube-cookies",
+        method = "PUT",
+        body = netscapeText.toRequestBody(TEXT_MEDIA_TYPE)
+    )
+
+    override suspend fun clearYoutubeCookies(): TunesResult<YoutubeCookiesStatus> =
+        ut(YoutubeCookiesStatus.serializer(), "youtube-cookies", method = "DELETE")
 
     override suspend fun requestTrack(id: SongId, reason: RequestReason): TunesResult<TrackStatus> {
         val body = json.encodeToString(RequestTrackBody.serializer(), RequestTrackBody(reason))
@@ -561,6 +577,7 @@ internal class OkHttpTunesApi(
         val UT_PATH = listOf("ut", "v1")
         val IGNORE_BODY: (String) -> Unit = {}
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        val TEXT_MEDIA_TYPE = "text/plain; charset=utf-8".toMediaType()
 
         /** Parameters with a value; null ones are left out. */
         fun params(vararg pairs: Pair<String, Any?>): List<Param> =

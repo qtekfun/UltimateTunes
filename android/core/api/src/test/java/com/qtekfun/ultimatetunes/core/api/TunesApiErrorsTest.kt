@@ -303,4 +303,41 @@ class TunesApiErrorsTest {
         source.set(server.serverConfig())
         assertTrue(api.ping() is TunesResult.Success)
     }
+
+    private fun problemBody(status: Int, code: String) =
+        """{"type":"about:blank","title":"Error","status":$status,"code":"$code"}"""
+
+    @Test
+    fun `a non-admin key and a server without a cookie key are told apart`() = runTest {
+        val api = server.createApi(clock)
+        server.dispatcher.override("ut/v1/youtube-cookies") {
+            MockResponse(
+                code = 403,
+                headers = headersOf("Content-Type", "application/problem+json"),
+                body = problemBody(403, "forbidden")
+            )
+        }
+        val forbidden = api.setYoutubeCookies("# Netscape HTTP Cookie File\n")
+        assertEquals(ErrorKind.FORBIDDEN, (forbidden as TunesResult.ApiError).error.kind)
+        assertEquals(403, forbidden.httpStatus)
+
+        server.dispatcher.override("ut/v1/youtube-cookies") {
+            MockResponse(
+                code = 409,
+                headers = headersOf("Content-Type", "application/problem+json"),
+                body = problemBody(409, "feature_disabled")
+            )
+        }
+        val disabled = api.setYoutubeCookies("# Netscape HTTP Cookie File\n")
+        assertEquals(ErrorKind.FEATURE_DISABLED, (disabled as TunesResult.ApiError).error.kind)
+    }
+
+    @Test
+    fun `the cookie text never appears in a protocol error`() = runTest {
+        val api = server.createApi(clock)
+        server.dispatcher.override("ut/v1/youtube-cookies") { json(200, "SECRET-COOKIE <html>") }
+        val result = api.setYoutubeCookies("# Netscape HTTP Cookie File\nSECRET-COOKIE")
+        assertTrue(result is TunesResult.ProtocolError, "$result")
+        assertFalse(result.toString().contains("SECRET"))
+    }
 }

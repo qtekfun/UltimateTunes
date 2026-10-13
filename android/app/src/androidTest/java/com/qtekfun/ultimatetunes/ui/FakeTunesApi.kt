@@ -59,6 +59,7 @@ import com.qtekfun.ultimatetunes.core.api.model.Starred
 import com.qtekfun.ultimatetunes.core.api.model.TrackItem
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
 import com.qtekfun.ultimatetunes.core.api.model.UserId
+import com.qtekfun.ultimatetunes.core.api.model.YoutubeCookiesStatus
 import java.time.Instant
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -292,6 +293,32 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
     override suspend fun revokeKey(id: ApiKeyId): TunesResult<Unit> = configured {
         revokedKeys += id
     }
+
+    private var youtubeCookies = false
+
+    override suspend fun youtubeCookiesStatus(): TunesResult<YoutubeCookiesStatus> = configured {
+        youtubeStatus()
+    }
+
+    override suspend fun setYoutubeCookies(
+        netscapeText: String
+    ): TunesResult<YoutubeCookiesStatus> = configured {
+        youtubeCookies = true
+        youtubeStatus()
+    }
+
+    override suspend fun clearYoutubeCookies(): TunesResult<YoutubeCookiesStatus> = configured {
+        youtubeCookies = false
+        youtubeStatus()
+    }
+
+    private fun youtubeStatus() = YoutubeCookiesStatus(
+        configured = youtubeCookies,
+        setAt = if (youtubeCookies) Instant.parse("2026-10-13T09:00:00Z") else null,
+        cookieCount = if (youtubeCookies) 2 else null,
+        hasYoutubeDomain = if (youtubeCookies) true else null,
+        available = true
+    )
 
     override suspend fun imports(limit: Int?, offset: Int?): TunesResult<List<Import>> =
         configured { imports.toList() }
