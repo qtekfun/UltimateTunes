@@ -195,6 +195,18 @@ class ScriptedYTMusic(YTMusic):
     def get_playlist(self, playlistId: str, *args: Any, **kwargs: Any) -> Any:
         return self._answer("get_playlist", playlistId, *args, **kwargs)
 
+    @override
+    def get_charts(self, country: str = "ZZ") -> Any:
+        return self._answer("get_charts", country)
+
+    @override
+    def get_mood_categories(self) -> Any:
+        return self._answer("get_mood_categories")
+
+    @override
+    def get_mood_playlists(self, params: str) -> Any:
+        return self._answer("get_mood_playlists", params)
+
 
 ANSWERS: dict[str, object] = {
     "search:songs": load("search_songs.json"),
@@ -289,6 +301,83 @@ async def test_empty_or_mismatched_watch_playlists(executor: ThreadPoolExecutor)
     catalog = catalog_for(yt, executor)
     with pytest.raises(CatalogNotFound):
         await catalog.radio("Fk2Lp9QwXa1", 5)
+
+
+# ---------------------------------------------------------------------- charts & moods
+
+_CHART_PLAYLIST = {
+    "title": "Chart songs (fake)",
+    "tracks": [
+        {"videoId": "Fk2Lp9QwXa1", "title": "Low Tide Letters", "artists": []},
+        {"videoId": "Tz9Kd4Wb7Rc", "title": "Signal Fires", "artists": []},
+    ],
+    "trackCount": 2,
+}
+
+
+async def test_charts_fetches_the_top_playlist_songs(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic(
+        {
+            "get_charts": {"videos": [{"playlistId": "VLPLchart0000"}], "artists": []},
+            "get_playlist": _CHART_PLAYLIST,
+        }
+    )
+    catalog = catalog_for(yt, executor)
+    songs = await catalog.charts("ES")
+    assert [s.video_id for s in songs] == ["Fk2Lp9QwXa1", "Tz9Kd4Wb7Rc"]
+    assert yt.calls[0] == ("get_charts", ("ES",), {})
+    assert yt.calls[1] == ("get_playlist", ("PLchart0000",), {"limit": None})
+
+
+async def test_charts_without_a_usable_playlist_is_empty(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic({"get_charts": {"artists": []}})
+    catalog = catalog_for(yt, executor)
+    assert await catalog.charts("ZZ") == []
+
+
+async def test_charts_rejects_a_bad_country(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic({})
+    catalog = catalog_for(yt, executor)
+    for country in ("spain", "es", "E1", ""):
+        with pytest.raises(CatalogNotFound):
+            await catalog.charts(country)
+    assert yt.calls == []
+
+
+async def test_moods_and_mood_tracks(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic(
+        {
+            "get_mood_categories": {
+                "Moods & moments": [{"title": "Chill", "params": "ggChill000"}],
+                "Genres": [{"title": "Pop", "params": "ggPop00000"}],
+            },
+            "get_mood_playlists": [{"playlistId": "VLPLmood0000"}],
+            "get_playlist": _CHART_PLAYLIST,
+        }
+    )
+    catalog = catalog_for(yt, executor)
+    moods = await catalog.moods()
+    assert [(m.params, m.title) for m in moods] == [
+        ("ggChill000", "Chill"),
+        ("ggPop00000", "Pop"),
+    ]
+    songs = await catalog.mood_tracks("ggChill000")
+    assert [s.video_id for s in songs] == ["Fk2Lp9QwXa1", "Tz9Kd4Wb7Rc"]
+    assert ("get_mood_playlists", ("ggChill000",), {}) in yt.calls
+
+
+async def test_mood_tracks_rejects_a_bad_params(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic({})
+    catalog = catalog_for(yt, executor)
+    with pytest.raises(CatalogNotFound):
+        await catalog.mood_tracks("bad params!")
+    assert yt.calls == []
+
+
+async def test_mood_tracks_without_a_playlist_is_empty(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic({"get_mood_playlists": []})
+    catalog = catalog_for(yt, executor)
+    assert await catalog.mood_tracks("ggChill000") == []
     yt.answers["get_watch_playlist"] = load("watch_playlist.json")
     with pytest.raises(CatalogNotFound):
         await catalog.track("Other000001")

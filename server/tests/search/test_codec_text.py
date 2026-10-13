@@ -33,6 +33,8 @@ async def test_every_record_round_trips() -> None:
     assert codec.decode_artist_refs(codec.encode(artists)) == artists
     no_album = tracks[0].__class__(tracks[0].video_id, "x", (), None, None, False, None, None)
     assert codec.decode_track(codec.encode(no_album)) == no_album
+    moods = await fake.moods()
+    assert codec.decode_moods(codec.encode(moods)) == moods
 
 
 def test_encode_refuses_other_values() -> None:

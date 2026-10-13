@@ -122,6 +122,24 @@ async def test_every_call_is_cached(h: Harness) -> None:
     assert len(await h.catalog.radio("Fk2Lp9QwXa1", 2)) == 2
 
 
+async def test_charts_moods_and_mood_tracks_are_cached(h: Harness) -> None:
+    from ultimatetunes.search.fake import MOODS  # noqa: PLC0415
+
+    assert len(await h.catalog.charts("ES")) >= 1
+    assert await h.catalog.charts("ES") == await h.catalog.charts("ES")
+    assert inner_calls(h, "charts") == 1
+    assert [m.title for m in await h.catalog.moods()] == ["Chill", "Focus"]
+    await h.catalog.moods()
+    assert inner_calls(h, "moods") == 1
+    tracks = await h.catalog.mood_tracks(MOODS[0].params)
+    assert len(tracks) == 2
+    assert await h.catalog.mood_tracks(MOODS[0].params) == tracks
+    assert inner_calls(h, "mood_tracks") == 1
+    # A different country is a different cache key.
+    await h.catalog.charts("ZZ")
+    assert inner_calls(h, "charts") == 2
+
+
 async def test_unknown_ids_are_cached_as_not_found(h: Harness) -> None:
     for _ in range(2):
         with pytest.raises(CatalogNotFound):

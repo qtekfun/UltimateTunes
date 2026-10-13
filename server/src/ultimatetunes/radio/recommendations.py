@@ -32,6 +32,12 @@ from ultimatetunes.db.repository import Repository
 from ultimatetunes.errors import FeatureDisabled
 from ultimatetunes.ids.resolve import TrackRef, tracks_for_videos
 from ultimatetunes.ids.virtual import SONG_PREFIX, song_id
+from ultimatetunes.radio.external import (
+    RecommendationSource,
+    SourceShelf,
+    build_sources,
+    gather_shelves,
+)
 from ultimatetunes.radio.service import _song, radio_settings
 from ultimatetunes.radio.settings import RadioSettings
 from ultimatetunes.search.catalog import CatalogTrack, MusicCatalog
@@ -61,6 +67,9 @@ class Shelf:
 class Recommendations:
     recommended_for_you: Sequence[Song]
     because_you_played: Sequence[Shelf]
+    # Shelves from external sources the admin switched on (ListenBrainz, ...), each off by
+    # default; empty when no source is on or every source degraded.
+    shelves: Sequence[SourceShelf] = ()
 
 
 @dataclass(frozen=True)
@@ -130,32 +139,56 @@ class RecommendationsService:
         catalog: MusicCatalog,
         settings: RadioSettings,
         limits: DownloadLimits | None = None,
+        sources: Sequence[RecommendationSource] | None = None,
     ) -> None:
         self._db = db
         self._catalog = catalog
         self._settings = settings
         self._limits = limits or DownloadLimits()
+        self._sources = list(sources) if sources is not None else []
 
     @classmethod
     def of(cls, services: "Services") -> "RecommendationsService":
-        return cls(services.db, services.catalog, radio_settings())
+        settings = radio_settings()
+        sources = build_sources(services.db, services.catalog, services.rate_limiter, settings)
+        return cls(services.db, services.catalog, settings, sources=sources)
 
     async def recommend(self, user_id: str, limit: int) -> Recommendations:
-        """`recommended_for_you` and up to `recommendation_seeds` shelves, each of `limit` songs.
+        """`recommended_for_you`, up to `recommendation_seeds` "because you played" shelves, and
+        the external-source shelves (ListenBrainz, ...), each of at most `limit` songs.
 
-        Empty (and no catalog call) when the caller has no plays or favourites to seed from.
+        Empty (and no catalog call) when the caller has no plays or favourites to seed from and
+        no external source is on.
         """
         if not self._settings.radio or not self._settings.recommendations:
             raise FeatureDisabled("Recommendations are switched off")
         seeds = await run_in_threadpool(self._pick_seeds, user_id)
         if not seeds:
-            return Recommendations([], [])
+            shelves = await self._external_shelves(user_id, limit, frozenset())
+            return Recommendations([], [], shelves)
         window = min(MAX_ITEMS + OVERFETCH, limit + OVERFETCH)
         radios: list[tuple[_Seed, list[CatalogTrack]]] = []
         for seed in seeds:
             tracks = await self._catalog.radio(seed.video_id, window)
             radios.append((seed, tracks))
-        return await run_in_threadpool(self._build, user_id, radios, limit)
+        local = await run_in_threadpool(self._build, user_id, radios, limit)
+        blocked = await run_in_threadpool(self._blocked, user_id, {s.track_id for s in seeds})
+        shelves = await self._external_shelves(user_id, limit, blocked)
+        return Recommendations(local.recommended_for_you, local.because_you_played, shelves)
+
+    async def _external_shelves(
+        self, user_id: str, limit: int, blocked: frozenset[str]
+    ) -> list[SourceShelf]:
+        if not self._sources:
+            return []
+        return await gather_shelves(self._sources, user_id, limit, blocked)
+
+    def _blocked(self, user_id: str, seed_tracks: set[str]) -> frozenset[str]:
+        """The caller's own rotation (seed songs and anything played): never recommended back,
+        including by an external source."""
+        with self._db.read() as conn:
+            played = RecommendationsRepository(conn).played_ids(user_id)
+        return frozenset(seed_tracks | played)
 
     # ------------------------------------------------------------------ seeds
 

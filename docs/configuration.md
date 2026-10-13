@@ -116,6 +116,12 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_RADIO` | `true` | api | Off: radio and similar songs answer "feature disabled". |
 | `UT_RECOMMENDATIONS` | `true` | api | Off (or `UT_RADIO` off): `/ut/v1/recommendations` answers "feature disabled". Recommendations seed the YouTube Music radio from your own plays and favourites. |
 | `UT_RECOMMENDATION_SEEDS` | `4` | api | How many of your most-played and favourite songs seed the recommendations (one radio each). |
+| `UT_CHARTS` | `true` | api | Off (or `UT_RADIO` off): `/ut/v1/charts` and `/ut/v1/moods` answer "feature disabled". YouTube Music's own public country charts and mood/genre playlists (no new outbound host). |
+| `UT_CHARTS_COUNTRY` | `ZZ` | api | Default country for `/ut/v1/charts` (ISO 3166-1 alpha-2; `ZZ` = global). The client may override it per request. |
+| `UT_LISTENBRAINZ_RECOMMENDATIONS` | `false` | api | Off by default. On: `/ut/v1/recommendations` adds a ListenBrainz shelf (an artist's community-popular recordings, matched on YouTube Music) by contacting `api.listenbrainz.org`. CC0 data, read-only public lookups; only a public artist id is sent, never your listening history. |
+| `UT_LISTENBRAINZ_SEEDS` | `1` | api | How many of your favourite/most-played artists (those with a MusicBrainz id) seed the ListenBrainz lookups. |
+| `UT_LISTENBRAINZ_TRACKS` | `6` | api | How many popular recordings to take from each ListenBrainz artist lookup. |
+| `UT_LISTENBRAINZ_TIMEOUT_S` | `5` | api | Per request to `api.listenbrainz.org`. |
 | `UT_IMPORT_CATALOG_RATE_PER_S` | `0.5` | api | Catalog lookups per second of all playlist imports together, a share of the YouTube Music budget (at most 2). |
 | `UT_IMPORT_CATALOG_BURST` | `1` | api | Burst of that import budget. |
 | `UT_IMPORT_MAX_ACTIVE_PER_USER` | `3` | api | Imports one user may have running at once. |
