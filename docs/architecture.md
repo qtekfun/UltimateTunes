@@ -41,6 +41,9 @@ flowchart LR
     subgraph egressnet["network: egress (bridge ut-egress, 10.213.45.0/24)"]
       wout(("worker's way out"))
     end
+    subgraph potnet["network: pot (internal: true, 10.213.47.0/24), optional"]
+      pot["pot-provider (profile pot), alias bgutil, 10.213.47.250:4416"]
+    end
     vdata[("/data volume")]
     vmusic[("/music bind mount")]
     vstaging[("/staging volume")]
@@ -55,6 +58,7 @@ flowchart LR
     caa["coverartarchive.org and archive.org"]
     lrc["lrclib.net"]
     gh["GitHub releases (yt-dlp)"]
+    bg["www.youtube.com, www.google.com, jnn-pa.googleapis.com (BotGuard)"]
     ntfy["Notification URL (ntfy or webhook)"]
   end
 
@@ -73,6 +77,8 @@ flowchart LR
   wout --> caa
   wout --> img
   wout --> gh
+  worker -->|"HTTP bgutil:4416, PO token requests"| pot
+  pot -->|"through egress"| bg
   api -->|"ytmusicapi"| ytm
   api -->|"covers of yt: items"| img
   api --> lrc
@@ -96,6 +102,11 @@ flowchart LR
 - **The worker never talks to the database** and has no published port. It reaches the api only
   through `http://api:8045` (`UT_API_URL`) on the `internal` network and leaves to the Internet
   through its own `egress` network.
+- **Optional PO token provider** (decision D13, off by default): with Compose's `pot` profile,
+  a fourth container, `pot-provider` (upstream bgutil HTTP server, pinned by digest), mints
+  YouTube proof-of-origin tokens for the worker's yt-dlp, which loads the matching bgutil plugin
+  only when `UT_YTDLP_POT_PROVIDER_URL` is set. It shares the `pot` network with the worker only
+  and leaves through `egress`; the api never sees it.
 - **The Android app talks only to the server.** It never contacts YouTube, MusicBrainz, LRCLIB
   or any other host; it caches what it plays on the device (Media3 `SimpleCache`).
 - **Edge**: the recommended setup is `tailscale serve` (HTTPS inside the tailnet, nothing public,
@@ -127,7 +138,7 @@ From `server/compose.yaml` (production example) and `server/Dockerfile`. All thr
 | PIDs | 512 | 512 | 512 (yt-dlp, ffmpeg and Deno threads count) |
 | Memory / CPU | none (one-shot) | `mem_limit: 768m`, `cpus: 2.0` | `mem_limit: 768m`, `cpus: 2.0` |
 | Open files | default | `nofile` 4096 | `nofile` 1024 |
-| Networks | `default` | `default`, `internal` | `internal`, `egress` |
+| Networks | `default` | `default`, `internal` | `internal`, `egress`, `pot` |
 | Ports | none | `${UT_BIND:-127.0.0.1:8044}:8044` (8045 exposed in the image, never published) | none |
 | Volumes | `data:/data` | `data:/data`, `${UT_MUSIC_PATH}:/music`, `staging:/staging` | `${UT_MUSIC_PATH}:/music`, `staging:/staging`, `ytdlp:/opt/ytdlp` |
 | Secrets | none | `ut_worker_token`, `ut_admin_session_secret`, optional `ut_bootstrap_admin_password` (first start only) | `ut_worker_token` |
@@ -149,8 +160,19 @@ Notes:
   `/staging` partial downloads, one directory per job attempt (`<jobId>/<attemptSeq>`), written
   by the worker and read (streamed, cleaned) by the api; `/opt/ytdlp` the live yt-dlp zipapp and
   its verified updates, plus the worker's canary state file (worker only). The image also ships
-  a read-only seed copy in `/opt/ytdlp-seed`, Deno in `/usr/local/bin/deno` and Debian's
-  `ffmpeg` and `gpgv`.
+  a read-only seed copy in `/opt/ytdlp-seed`, the pinned bgutil yt-dlp plugin zip in
+  `/opt/ytdlp-plugins` (loaded only with `UT_YTDLP_POT_PROVIDER_URL`), Deno in
+  `/usr/local/bin/deno` and Debian's `ffmpeg` and `gpgv`.
+- **`pot-provider`** (optional, Compose profile `pot`; not in the table because it is not our
+  image): `docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.0` pinned by digest, the image's
+  own user `1000:1000`, read-only root filesystem with a `noexec` 64 MiB `/tmp`, all
+  capabilities dropped, `no-new-privileges`, `init`, `mem_limit: 512m` (about 80 MiB idle and
+  115 MiB after minting, measured), `cpus: 1.0`, `pids_limit: 128`, `nofile` 1024, no port
+  published, healthcheck `GET /ping` every 60 s. It listens only on its pinned address on `pot`
+  (`UT_POT_PROVIDER_ADDRESS`, default `10.213.47.250`, port 4416), so nothing on `egress` can
+  connect to it; the worker reaches it as `http://bgutil:4416`, an alias that exists only on
+  `pot` (the service name `pot-provider` may resolve to its `egress` address). Its log is kept
+  short (1 MiB x 2) because upstream prints every BotGuard integrity token it mints.
 - **`migrate`** is a separate command so Kubernetes can run it as a Job later; the api only
   checks the schema version at start (`/readyz` fails while it is behind).
 - **Other commands** of the same entrypoint, run by hand: `docker compose run --rm api ...` for
@@ -170,7 +192,8 @@ Notes:
 |---|---|---|---|
 | `default` | Compose's project bridge, not pinned | `api`, `migrate` | The api's way out (YouTube Music, image hosts, LRCLIB, notifications) and the target of Docker's port publishing of 8044. |
 | `internal` | `internal: true` (no route outside the host), subnet `UT_INTERNAL_SUBNET` (default `10.213.44.0/24`) | `api`, `worker` | The only network the worker shares with the api: `http://api:8045`. |
-| `egress` | bridge, interface name `ut-egress`, subnet `UT_EGRESS_SUBNET` (default `10.213.45.0/24`) | `worker` | The worker's own way out (yt-dlp, MusicBrainz, Cover Art Archive, YouTube thumbnails, GitHub). Not shared with the api. |
+| `egress` | bridge, interface name `ut-egress`, subnet `UT_EGRESS_SUBNET` (default `10.213.45.0/24`) | `worker`, optional `pot-provider` | The worker's own way out (yt-dlp, MusicBrainz, Cover Art Archive, YouTube thumbnails, GitHub), and the optional PO token provider's (BotGuard hosts). Not shared with the api. The provider does not listen here. |
+| `pot` | `internal: true` (no route outside the host), subnet `UT_POT_SUBNET` (default `10.213.47.0/24`) | `worker`, optional `pot-provider` (pinned at `UT_POT_PROVIDER_ADDRESS`, alias `bgutil`) | The worker's requests to the PO token provider (`http://bgutil:4416`). Empty without the `pot` profile. |
 | `proxy` (Traefik example only) | external bridge, `UT_PROXY_SUBNET` (default `10.213.46.0/24`), Traefik pinned at `UT_TRAEFIK_ADDRESS` (`10.213.46.2`) | Traefik, `api` (alias `ultimatetunes-api`), Authelia | Traefik reaches `http://ultimatetunes-api:8044`. The worker never joins it. |
 
 What can reach what:
@@ -189,6 +212,12 @@ What can reach what:
   rules on `ut-egress`: drop new connections to the host and to private ranges, allow the DNS
   resolver.
 - **api to the worker**: never. The worker listens on nothing.
+- **Worker to the PO token provider** (optional): `http://bgutil:4416` over `pot`, plain HTTP
+  inside the host, no authentication (upstream has none). The api cannot resolve or reach it.
+  The worker sends `POST /get_pot` with the video's content binding; the provider answers with a
+  token (`GET /ping` checks it first). Upstream's request also carries proxy, source-address and
+  TLS fields, which our yt-dlp never sets; a compromised worker could set them, but the provider
+  can reach no more than the worker can already reach through `egress`.
 
 **`UT_WORKER_NETWORKS`** (compose sets it to `UT_INTERNAL_SUBNET,UT_EGRESS_SUBNET`; the Traefik
 overlay adds `UT_PROXY_SUBNET`): callers from these CIDRs never get `/admin` (403) or the
@@ -262,7 +291,7 @@ lease gets `409 lease_lost` (the worker discards that job's work).
 ### Outbound (to the Internet)
 
 The only hosts the server contacts (CLAUDE.md). The api leaves through `default`, the worker
-through `egress`; both need DNS.
+(and the optional `pot-provider`) through `egress`; all need DNS.
 
 | Container | Destination | Protocol | What and when | Limits and protections |
 |---|---|---|---|---|
@@ -275,6 +304,7 @@ through `egress`; both need DNS.
 | worker | `coverartarchive.org`, redirected to `archive.org` and its subdomains | HTTPS | Album cover (`front-500`) for the archived file | Redirects followed by hand (at most 3, HTTPS, only those hosts), `image/*`, JPEG, 5 MiB; a missing cover never fails a job |
 | worker | YouTube image hosts (as above) | HTTPS | Cover fallback when Cover Art Archive has none | Exact hosts, no redirects, JPEG, 5 MiB |
 | worker | `api.github.com`, `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` | HTTPS | yt-dlp self-update: latest tag, then `yt-dlp`, `SHA2-256SUMS`, `SHA2-256SUMS.sig` | Every `UT_YTDLP_UPDATE_INTERVAL_H` (24 h), after an extractor error at most every `UT_YTDLP_UPDATE_ON_ERROR_MIN_INTERVAL_S` (1 h), or on the admin's command; size-capped downloads; `gpgv` must report `VALIDSIG` with the pinned fingerprint, the zipapp's SHA-256 must match its signed line, then a smoke test before the `current` symlink is swapped; whole check bounded by `UT_YTDLP_UPDATE_TIMEOUT_S` 300 s; off with `UT_YTDLP_AUTO_UPDATE=false` |
+| pot-provider (optional, profile `pot`) | `www.youtube.com`, `www.google.com`, `jnn-pa.googleapis.com` | HTTPS | BotGuard: the YouTube home page (challenge and config; `/youtubei/v1/att/get` as upstream's fallback), the BotGuard interpreter script the challenge names (served from `www.google.com`), and Google's `GenerateIT` integrity-token endpoint; then it mints PO tokens locally for each worker request. Hosts observed through a logging proxy on 2026-10-13 (D13) | Upstream code, not ours: pinned by digest, unauthenticated, reachable only from the worker; minters cached (integrity token about 12 h), so a run of downloads costs a handful of requests. With the provider on, the worker's yt-dlp also sends the token to YouTube with its own requests (above) |
 
 Nothing else: Spotify playlists arrive as uploaded files, import URLs are only parsed for a
 YouTube/YouTube Music playlist id (allowlisted hosts, no request to the URL), and the Android app
@@ -447,7 +477,7 @@ lease: it releases a running download with a retryable `fail`.
 | Listeners of an in-flight `yt:` stream | `UT_MAX_LISTENERS_PER_JOB` (8), `UT_MAX_LISTENERS_PER_KEY` (4), `UT_LISTENER_RETRY_AFTER_S` (5) | 503 with `Retry-After` beyond. |
 | Shared cache | `UT_CACHE_MAX_ENTRIES` (200 000), `UT_CACHE_MAX_BYTES` (256 MiB), `UT_HOUSEKEEPING_INTERVAL_S` (600) | Expired entries purged and the cache trimmed oldest first; idle rate-limit buckets forgotten. |
 | Lyrics, covers, MusicBrainz | See section 4 | Global buckets and size caps per upstream. |
-| Containers | `mem_limit` 768m, `cpus` 2.0, `nofile` 4096 / 1024, `pids_limit` 512 | Bounds a runaway process or tool. |
+| Containers | `mem_limit` 768m, `cpus` 2.0, `nofile` 4096 / 1024, `pids_limit` 512; optional `pot-provider` 512m, 1.0, 1024, 128 | Bounds a runaway process or tool. |
 
 ## 7. Scaling notes
 

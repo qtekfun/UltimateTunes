@@ -121,7 +121,7 @@ Keep the page open: it refreshes on its own. Common errors:
 | `video_unavailable` | Removed, private, region-blocked or age-gated video. Retrying will not help. |
 | `format_unavailable` | No Opus or M4A audio offered for it. Retrying will not help. |
 | `extractor_error` | The downloader could not read the page, usually a YouTube change: update yt-dlp (below), then **Retry**. |
-| `rate_limited_upstream` | YouTube throttled or blocked the worker; it pauses claiming by itself (`UT_BLOCKED_PAUSE_S`). Wait, then retry. |
+| `rate_limited_upstream` | YouTube throttled or blocked the worker; it pauses claiming by itself (`UT_BLOCKED_PAUSE_S`). Wait, then retry. If the log says "not a bot", see ["Sign in to confirm you're not a bot"](#sign-in-to-confirm-youre-not-a-bot). |
 | `network_error` | Timeout or connection error; tried again by itself. |
 | `tagging_failed`, `storage_error` | The file could not be processed or moved into `/music`. Check `docker compose logs worker` and free space. |
 | `lease_expired` | The worker stopped mid-download (restart, crash); tried again by itself. |
@@ -167,6 +167,23 @@ Press **Update yt-dlp now** after a wave of failed downloads. The command waits 
 ### Run the canary now
 
 Press **Run the canary now** to check right away, for example after an update. Results appear under Canary runs within minutes. If it keeps failing with the newest yt-dlp, look at the yt-dlp issue tracker; there is nothing to fix on the server side.
+
+### "Sign in to confirm you're not a bot"
+
+Downloads fail with `rate_limited_upstream`, the worker log shows `Sign in to confirm you're not a bot`, and the worker pauses claiming (`UT_BLOCKED_PAUSE_S`, 30 minutes doubling to 4 hours). YouTube has flagged your server's IP address and wants a proof-of-origin (PO) token with each download. The worker can get one from an optional local token provider (decision D13; [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider), GPL-3.0):
+
+1. In the `.env` next to `server/compose.yaml`, add:
+   ```
+   COMPOSE_PROFILES=pot
+   UT_YTDLP_POT_PROVIDER_URL=http://bgutil:4416
+   ```
+   If `10.213.47.0/24` overlaps one of your networks, also set `UT_POT_SUBNET` and `UT_POT_PROVIDER_ADDRESS` (an address inside it).
+2. `docker compose up -d`. A new `pot-provider` container starts (`docker compose ps` shows it healthy) and the worker logs `yt-dlp: PO token provider at http://bgutil:4416` when it starts.
+3. Press **Retry** on the failed downloads, or wait for the pause to end. Then **Run the canary now** to confirm.
+
+What it changes: the provider talks to `www.youtube.com`, `www.google.com` and `jnn-pa.googleapis.com` (Google's BotGuard), only the worker can reach it, and the worker loads the matching yt-dlp plugin that is already in the image. Turn it off by removing both lines, then `docker compose --profile pot rm -sf pot-provider` and `docker compose up -d`; the worker then runs yt-dlp exactly as before.
+
+A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, or run the server from another connection; UltimateTunes does not use YouTube cookies or accounts. To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
 
 ## Audit log
 
