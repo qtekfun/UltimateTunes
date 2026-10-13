@@ -13,13 +13,13 @@ There is **no default account and no default password**: the server never genera
 
 1. **On the terminal (recommended).** With the stack up, run once:
    ```sh
-   docker compose run --rm api bootstrap-admin <name>
+   docker compose exec api ultimatetunes bootstrap-admin <name>
    ```
    Unless `UT_BOOTSTRAP_ADMIN_PASSWORD` is still set (then it uses that), it asks for the password twice without echoing it, so it stays out of the shell history and of any file.
 2. **From a file**, for scripted installs. Generate a password, store it in your password manager, feed it on standard input and delete the file:
    ```sh
    openssl rand -base64 24 > secrets/bootstrap_admin_password && chmod 600 secrets/bootstrap_admin_password
-   docker compose run --rm -T api bootstrap-admin <name> < secrets/bootstrap_admin_password
+   docker compose exec -T api ultimatetunes bootstrap-admin <name> < secrets/bootstrap_admin_password
    rm secrets/bootstrap_admin_password
    ```
 3. **At start-up**: `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` (better as the Docker secret `bootstrap_admin_password` in `server/compose.yaml`, mounted as `/run/secrets/ut_bootstrap_admin_password`) create the admin when the api starts with no users. Remove both once the admin exists; the api logs a warning on every start while both are still set ([deploy/README.md](../deploy/README.md#bootstrap-admin-password)).
@@ -142,7 +142,7 @@ When a song is downloaded the worker looks it up in MusicBrainz. If no match sco
 2. Tags look right: press **Mark reviewed**. It leaves the list and nothing else changes.
 3. Tags are wrong or it is the wrong song: tick **Sure** and press **Delete** (asks for confirmation). The track and its file are removed; searching for it again downloads it anew.
 
-Correcting tags is not possible from the panel; edit the file with your usual tag editor, then rescan: the api scans `/music` when it starts, or run `docker compose run --rm api scan-library`.
+Correcting tags is not possible from the panel; edit the file with your usual tag editor, then rescan: the api scans `/music` when it starts, or run `docker compose exec api ultimatetunes scan-library`.
 
 ### Delete tracks or albums
 

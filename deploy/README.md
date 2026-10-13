@@ -11,7 +11,7 @@ The container layout, networks and every connection in and out are described in 
 
 | File | What |
 |---|---|
-| `tailscale/README.md` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. Why not Funnel. |
+| `tailscale/` | `tailscale serve` (HTTPS inside your tailnet): the default and recommended way. A step-by-step guide (build, secrets, `.env`, first admin, publish, update, turn off) with `compose.override.yml` and `.env.example`, including the optional PO token provider. Why not Funnel. |
 | `caddy/Caddyfile` | Caddy on the host for public exposure: TLS, HSTS, request limits, `/admin` and `POST /ut/v1/keys` LAN/Tailscale-only. |
 | `traefik/` | The same with Traefik v3 + Authelia: static config (`traefik.yml`), routers and middlewares (`dynamic/ultimatetunes.yml`), Traefik's stack with a pinned `proxy` network (`compose.traefik.yaml`) and an overlay for `server/compose.yaml` with the labels variant (`compose.labels.yaml`). |
 | `traefik-cloudflared/` | Traefik v3 + Authelia reached through Cloudflare Tunnel (`cloudflared`): `.env.example` with every variable, an overlay with the routers as labels, Traefik and cloudflared pinned and trusted by address. Read its README for the Cloudflare caveats. |
@@ -53,7 +53,7 @@ The optional PO token provider (`pot-provider`, Compose profile `pot`; [admin gu
 
 ### Bootstrap admin password
 
-`UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose run --rm api bootstrap-admin <name>` once, which asks for the password on the terminal.
+`UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` create the first admin on the first start. Prefer the Docker secret over the env var (an env var shows in `docker inspect`): put the password in `./secrets/bootstrap_admin_password` and uncomment the `bootstrap_admin_password` secret in `server/compose.yaml`. **After the first start, remove the variable, the secret and the file**: the api never reads them again and logs a warning on every start while they are still set. Or skip them altogether and run `docker compose exec api ultimatetunes bootstrap-admin <name>` once, which asks for the password on the terminal.
 
 ## Notifications with ntfy
 

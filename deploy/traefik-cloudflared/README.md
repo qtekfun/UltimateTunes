@@ -118,7 +118,7 @@ From the repository root, on the host:
    alias utc='docker compose --env-file deploy/traefik-cloudflared/.env -f server/compose.yaml -f deploy/traefik-cloudflared/compose.override.yml'
    utc config --quiet && utc up -d
    # Write the admin password into server/secrets/bootstrap_admin_password (chmod 600), then:
-   utc run --rm -T api bootstrap-admin admin < server/secrets/bootstrap_admin_password
+   utc exec -T api ultimatetunes bootstrap-admin admin < server/secrets/bootstrap_admin_password
    shred -u server/secrets/bootstrap_admin_password
    ```
 5. **Devices get their keys at home.** `POST /ut/v1/keys` (password login) and `/admin` answer only on the LAN: sign in from the app at home, or create a key in the panel (Keys → new key) and scan its QR code. Away from home the app only needs its key.

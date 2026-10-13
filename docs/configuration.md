@@ -62,7 +62,7 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_WEB_ENABLED` | `true` | api | Serve the web player at `/web`; off, every `/web` path answers 404. |
 | `UT_WEB_SESSION_TTL_S` | `604800` | api | Lifetime of a web player session (7 days; between 5 minutes and 30 days). Its cookies are signed with `UT_ADMIN_SESSION_SECRET`. |
 | `UT_BOOTSTRAP_ADMIN_USERNAME` | (unset) | api | With `UT_BOOTSTRAP_ADMIN_PASSWORD`: creates the first admin when the api starts with no users. There is never a default password. |
-| `UT_BOOTSTRAP_ADMIN_PASSWORD` | (unset) | api | Password of that first admin (12 characters or more). Remove it once the admin exists (deploy/README.md, "Bootstrap admin password"); `docker compose run --rm api bootstrap-admin <name>` asks for it instead. |
+| `UT_BOOTSTRAP_ADMIN_PASSWORD` | (unset) | api | Password of that first admin (12 characters or more). Remove it once the admin exists (deploy/README.md, "Bootstrap admin password"); `docker compose exec api ultimatetunes bootstrap-admin <name>` asks for it instead. |
 | `UT_AUTH_MAX_FAILURES_PER_IP` | `10` | api | Failed sign-ins or key checks from one IP (IPv6: its /64) before that IP is locked for `UT_AUTH_LOCKOUT_S`. |
 | `UT_AUTH_MAX_FAILURES_PER_USER` | `5` | api | Failed password checks of one username **from the admin networks** (LAN/Tailscale) before it is locked there for `UT_AUTH_LOCKOUT_S`. From outside, a username is never locked: it gets a growing delay (below); this count only decides when the streak is logged and audited. |
 | `UT_AUTH_LOCKOUT_S` | `900` | api | How long a locked IP, or a username locked from the admin networks, stays locked. |
