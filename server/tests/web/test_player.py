@@ -308,6 +308,22 @@ def test_static_files(client: TestClient, name: str, kind: str) -> None:
     assert r.headers["content-type"].startswith(kind)
 
 
+def test_the_logo_is_the_apps_launcher_icon() -> None:
+    """icon.svg is the launcher icon drawn from the same vector drawables: note, tile, light."""
+    res = Path(__file__).resolve().parents[3] / "android" / "app" / "src" / "main" / "res"
+    foreground = (res / "drawable" / "ic_launcher_foreground.xml").read_text(encoding="utf-8")
+    background = (res / "drawable" / "ic_launcher_background.xml").read_text(encoding="utf-8")
+    logo = (PACKAGE / "static" / "web" / "icon.svg").read_text(encoding="utf-8")
+    note = re.search(r'android:pathData="([^"]+)"', foreground)
+    assert note is not None
+    assert f'd="{note.group(1)}"' in logo
+    for colour in re.findall(r'(?:start|end)Color="#FF([0-9A-F]{6})"', background):
+        assert f'stop-color="#{colour}"' in logo
+    assert "translate(28.5 30.1) scale(2)" in logo
+    assert 'viewBox="18 18 72 72"' in logo
+    assert "http" not in logo.replace("http://www.w3.org/2000/svg", "")
+
+
 def test_unknown_static_files(client: TestClient) -> None:
     assert client.get("/web/static/../settings.py").status_code == 404
     assert client.get("/web/static/admin.css").status_code == 404

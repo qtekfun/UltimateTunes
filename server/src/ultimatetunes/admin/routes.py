@@ -77,9 +77,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 STATIC_FILES = {
-    "htmx.min.js": "text/javascript",
-    "admin.js": "text/javascript",
-    "admin.css": "text/css",
+    "htmx.min.js": ("admin", "text/javascript"),
+    "admin.js": ("admin", "text/javascript"),
+    "admin.css": ("admin", "text/css"),
+    # The web player's logo (static/web/icon.svg): one file, two users.
+    "icon.svg": ("web", "image/svg+xml"),
 }
 # Highest `?page=` a list accepts (50 rows each).
 MAX_PAGE = 1000
@@ -359,10 +361,11 @@ def _forbidden(request: Request, message: str) -> Response:
 
 @router.get("/admin/static/{name}", include_in_schema=False)
 def static(name: str) -> Response:
-    media_type = STATIC_FILES.get(name)
-    if media_type is None:
+    found = STATIC_FILES.get(name)
+    if found is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    body = (resources.files("ultimatetunes") / "static" / "admin" / name).read_bytes()
+    folder, media_type = found
+    body = (resources.files("ultimatetunes") / "static" / folder / name).read_bytes()
     return Response(body, media_type=media_type, headers={"Cache-Control": "max-age=3600"})
 
 

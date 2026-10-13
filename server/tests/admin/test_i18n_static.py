@@ -98,7 +98,10 @@ def test_pages_reference_only_local_assets(
         "/admin/static/htmx.min.js",
         "/admin/static/admin.js",
     ]
-    assert re.findall(r'<link[^>]*href="([^"]+)"', page) == ["/admin/static/admin.css"]
+    assert re.findall(r'<link[^>]*href="([^"]+)"', page) == [
+        "/admin/static/icon.svg",
+        "/admin/static/admin.css",
+    ]
     assert "//" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', page))
     assert "script-src 'self'" in CSP
     assert "default-src 'none'" in CSP
@@ -115,5 +118,8 @@ def test_static_files(client: TestClient) -> None:
     assert "eval(" not in confirm.text
     css = client.get("/admin/static/admin.css")
     assert css.headers["content-type"].startswith("text/css")
-    for name in ("htmx.min.js.license", "../admin/routes.py", "nope.js"):
+    logo = client.get("/admin/static/icon.svg")
+    assert logo.headers["content-type"].startswith("image/svg+xml")
+    assert logo.content == (PACKAGE / "static" / "web" / "icon.svg").read_bytes()
+    for name in ("htmx.min.js.license", "../admin/routes.py", "nope.js", "blank.svg"):
         assert client.get(f"/admin/static/{name}").status_code == 404
