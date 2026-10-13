@@ -228,4 +228,50 @@ ES: dict[str, str] = {
     ),
     "Wrong username or password.": "Usuario o contraseña incorrectos.",
     "Too many attempts. Wait and try again.": "Demasiados intentos. Espera y vuelve a probar.",
+    # Two-factor authentication (feat/totp-2fa)
+    "Two-factor authentication": "Autenticación de doble factor",
+    "Two-step verification": "Verificación en dos pasos",
+    "Authentication code": "Código de autenticación",
+    "Verify": "Verificar",
+    "That code is wrong.": "Ese código es incorrecto.",
+    "Your sign-in expired. Start again.": "Tu inicio de sesión caducó. Empieza de nuevo.",
+    "Set up two-factor authentication to continue.": (
+        "Configura la autenticación de doble factor para continuar."
+    ),
+    "Enter the 6-digit code from your authenticator app, or one of your recovery codes.": (
+        "Introduce el código de 6 dígitos de tu aplicación de autenticación, o uno de tus"
+        " códigos de recuperación."
+    ),
+    "Two-factor authentication is off.": "La autenticación de doble factor está desactivada.",
+    "Save these recovery codes now: each one works once if you lose your authenticator. They"
+    " are shown only this once.": (
+        "Guarda ahora estos códigos de recuperación: cada uno sirve una sola vez si pierdes tu"
+        " autenticador. Se muestran solo esta vez."
+    ),
+    "Two-factor authentication is on.": "La autenticación de doble factor está activada.",
+    "Recovery codes left: %(count)s.": "Códigos de recuperación restantes: %(count)s.",
+    "Generate new recovery codes": "Generar nuevos códigos de recuperación",
+    "The server requires two-factor authentication for your account, so it cannot be turned off.": (
+        "El servidor exige la autenticación de doble factor en tu cuenta, así que no se puede"
+        " desactivar."
+    ),
+    "Turn off two-factor authentication": "Desactivar la autenticación de doble factor",
+    "The server requires two-factor authentication for your account.": (
+        "El servidor exige la autenticación de doble factor en tu cuenta."
+    ),
+    "Scan this code with an authenticator app, or type the secret by hand.": (
+        "Escanea este código con una aplicación de autenticación, o escribe el secreto a mano."
+    ),
+    "Secret": "Secreto",
+    "Enter the code from the app to confirm": (
+        "Introduce el código de la aplicación para confirmar"
+    ),
+    "Confirm and turn on": "Confirmar y activar",
+    "Protect your account with a code from an authenticator app, on top of your password. The"
+    " app's API keys are not affected.": (
+        "Protege tu cuenta con un código de una aplicación de autenticación, además de tu"
+        " contraseña. Las claves de API de la app no se ven afectadas."
+    ),
+    "Set up two-factor authentication": "Configurar la autenticación de doble factor",
+    "QR code for your authenticator app": "Código QR para tu aplicación de autenticación",
 }

@@ -55,6 +55,54 @@
   </form>
 </section>
 
+<section class="card" aria-labelledby="h-2fa">
+  <h2 id="h-2fa">{{ _("Two-factor authentication") }}</h2>
+  {% if tf_recovery %}
+  <p class="muted hint">{{ _("Save these recovery codes now: each one works once if you lose your authenticator. They are shown only this once.") }}</p>
+  <ul class="codes">
+    {% for code in tf_recovery %}<li><code>{{ code }}</code></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if two_factor.enabled %}
+  <p>{{ _("Two-factor authentication is on.") }} {{ _("Recovery codes left: %(count)s.", count=two_factor.recovery_remaining) }}</p>
+  <form method="post" hx-push-url="false" action="/web/settings/2fa/recovery" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h3>{{ _("Generate new recovery codes") }}</h3>
+    <input class="visually-hidden" type="text" name="username" value="{{ me.user.username }}" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+    <label>{{ _("Current password") }}<input type="password" name="password" autocomplete="current-password" required maxlength="1024"></label>
+    <button class="secondary" type="submit">{{ _("Generate new recovery codes") }}</button>
+  </form>
+  {% if two_factor.required %}
+  <p class="muted hint">{{ _("The server requires two-factor authentication for your account, so it cannot be turned off.") }}</p>
+  {% else %}
+  <form method="post" hx-push-url="false" action="/web/settings/2fa/disable" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h3>{{ _("Turn off two-factor authentication") }}</h3>
+    <input class="visually-hidden" type="text" name="username" value="{{ me.user.username }}" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+    <label>{{ _("Current password") }}<input type="password" name="password" autocomplete="current-password" required maxlength="1024"></label>
+    <button class="secondary danger" type="submit">{{ _("Turn off two-factor authentication") }}</button>
+  </form>
+  {% endif %}
+  {% elif tf_qr %}
+  {% if two_factor.required %}<p class="notice">{{ _("The server requires two-factor authentication for your account.") }}</p>{% endif %}
+  <p class="muted hint">{{ _("Scan this code with an authenticator app, or type the secret by hand.") }}</p>
+  {{ tf_qr }}
+  <p>{{ _("Secret") }}: <code>{{ tf_secret }}</code></p>
+  <form method="post" hx-push-url="false" action="/web/settings/2fa/confirm" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ _("Enter the code from the app to confirm") }}<input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="64"></label>
+    <button class="primary" type="submit">{{ _("Confirm and turn on") }}</button>
+  </form>
+  {% else %}
+  {% if two_factor.required %}<p class="notice">{{ _("The server requires two-factor authentication for your account.") }}</p>{% endif %}
+  <p class="muted hint">{{ _("Protect your account with a code from an authenticator app, on top of your password. The app's API keys are not affected.") }}</p>
+  <form method="post" hx-push-url="false" action="/web/settings/2fa/enroll">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="primary" type="submit">{{ _("Set up two-factor authentication") }}</button>
+  </form>
+  {% endif %}
+</section>
+
 <section class="card" aria-labelledby="h-keys">
   <h2 id="h-keys">{{ _("Devices and API keys") }}</h2>
   <p class="muted hint">{{ _("The app and other music players use these keys. Create new ones in the app or ask an administrator.") }}</p>
