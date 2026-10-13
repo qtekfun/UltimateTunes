@@ -78,9 +78,15 @@ entryPoints:
 
 Authelia decides from `X-Forwarded-Host`, `-Uri` and `-Method`. With `trustForwardHeader: true`, Traefik passes on the values it received from a trusted forwarder instead of setting its own, and cloudflared is a trusted forwarder that carries **every** Internet request, so a tunnel client could make Authelia judge a URL under a `bypass` rule while Traefik routes it to `/admin`. `dynamic.example.yml` sets it to `false`. **If you reuse an existing Authelia middleware** (one that already protects other services) for anything behind this tunnel, check it: with `trustForwardHeader: true` it is open to the same trick for every service it guards, so change it to `false`.
 
-### The internal worker API is not on Traefik's network
+### Prefer a dedicated network shared only with Traefik (closes residual I2)
 
-The api joins Traefik's network, where other homelab containers live. `server/compose.yaml` pins the api's address on the api-worker network (`UT_API_INTERNAL_ADDRESS`) and binds the internal listener (8045) to it (`UT_INTERNAL_HOST`), so a neighbour on Traefik's network gets "connection refused" on `api:8045`; only the client port (8044) answers there.
+This overlay joins the api to the network named in `UT_TRAEFIK_NETWORK`. If you point it at the **shared** network your Traefik already uses for every other service, then every neighbour there (a CI runner, another app) can reach the api's client port (8044) directly and, keeping Docker's default `NET_RAW`, could spoof the pinned proxy address to forge an `X-Forwarded-For` and reach the `/admin` login — residual **I2** in `SECURITY.md`. The admin password and Authelia still stand, but the network boundary should not depend on them.
+
+The stronger layout, and the one `deploy/traefik/` uses, is a **dedicated bridge that only Traefik and this api join** (there it is called `proxy`). Create it once, give Traefik one extra network with a pinned address on it, and point `UT_TRAEFIK_NETWORK` at it; no other container can then reach the api or claim the address it trusts. Set `UT_TRUSTED_PROXIES` to that pinned Traefik address and cloudflared's address, and add the dedicated subnet to `UT_WORKER_NETWORKS` (the overlay already does, via `UT_TRAEFIK_SUBNET`). The trade-off is one extra network on Traefik and recreating the Traefik container once to attach it. Use the shared network only if that is genuinely not acceptable, and then keep only trusted containers on it.
+
+### The internal worker API is not on the proxy network
+
+Whichever network the api joins for Traefik, `server/compose.yaml` pins the api's address on the api-worker network (`UT_API_INTERNAL_ADDRESS`) and binds the internal listener (8045) to it (`UT_INTERNAL_HOST`), so a neighbour on the proxy network gets "connection refused" on `api:8045`; only the client port (8044) answers there.
 
 ### Why the admin allowlist must not include 172.16.0.0/12
 
