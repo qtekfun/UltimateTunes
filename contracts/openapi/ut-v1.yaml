@@ -1250,13 +1250,7 @@ paths:
       tags:
       - youtube
       summary: Set the server-wide YouTube account cookies
-      description: >-
-        D14. Stores the YouTube cookies the downloader uses to get past the bot-check wall,
-        exported (Netscape/Mozilla cookies.txt) from a throwaway account. The Android app sends
-        them after a WebView login; the admin panel can also paste them. **Admin only** (the API
-        key maps to a user; a non-admin key gets 403). The body is the raw cookies.txt text;
-        the server validates the Netscape format, stores it encrypted at rest and never logs it.
-        Needs `UT_YTDLP_COOKIES_KEY` on the server (else `feature_disabled`).
+      description: 'D14. Stores the YouTube cookies the downloader uses to get past the bot-check wall, exported (Netscape/Mozilla cookies.txt) from a throwaway account. The Android app sends them after a WebView login; the admin panel can also paste them. **Admin only** (the API key maps to a user; a non-admin key gets 403). The body is the raw cookies.txt text; the server validates the Netscape format, stores it encrypted at rest and never logs it. Needs `UT_YTDLP_COOKIES_KEY` on the server (else `feature_disabled`).'
       requestBody:
         required: true
         content:

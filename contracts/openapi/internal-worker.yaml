@@ -839,13 +839,7 @@ components:
           $ref: '#/components/schemas/JobHints'
         youtubeCookies:
           type: string
-          description: >-
-            Optional. The server-wide YouTube account cookies (Netscape/Mozilla cookies.txt
-            text), present only for a download job and only when an administrator has configured
-            a YouTube session (`PUT /ut/v1/youtube-cookies` in ut-v1, stored encrypted; decrypted
-            by the api for the claim). The worker writes it to a private 0600 temporary file,
-            passes `yt-dlp --cookies <file>`, and deletes the file after the run. An account
-            credential: never log it, never write it to a persistent or shared path.
+          description: 'Optional. The server-wide YouTube account cookies (Netscape/Mozilla cookies.txt text), present only for a download job and only when an administrator has configured a YouTube session (`PUT /ut/v1/youtube-cookies` in ut-v1, stored encrypted; decrypted by the api for the claim). The worker writes it to a private 0600 temporary file, passes `yt-dlp --cookies <file>`, and deletes the file after the run. An account credential: never log it, never write it to a persistent or shared path.'
     Claimed:
       type: object
       required:
