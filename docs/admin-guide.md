@@ -7,13 +7,32 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 How to run an UltimateTunes server day to day from its admin panel. Installing it is in the [README](../README.md#self-host-it-on-your-homelab) and [deploy/README.md](../deploy/README.md); every setting is in [configuration.md](configuration.md); how the containers talk to each other is in [architecture.md](architecture.md).
 
+## First admin
+
+There is **no default account and no default password**: the server never generates one and never prints one. You choose the first admin's password (12 to 1024 characters; only its Argon2id hash is stored). Pick one way:
+
+1. **On the terminal (recommended).** With the stack up, run once:
+   ```sh
+   docker compose run --rm api bootstrap-admin <name>
+   ```
+   Unless `UT_BOOTSTRAP_ADMIN_PASSWORD` is still set (then it uses that), it asks for the password twice without echoing it, so it stays out of the shell history and of any file.
+2. **From a file**, for scripted installs. Generate a password, store it in your password manager, feed it on standard input and delete the file:
+   ```sh
+   openssl rand -base64 24 > secrets/bootstrap_admin_password && chmod 600 secrets/bootstrap_admin_password
+   docker compose run --rm -T api bootstrap-admin <name> < secrets/bootstrap_admin_password
+   rm secrets/bootstrap_admin_password
+   ```
+3. **At start-up**: `UT_BOOTSTRAP_ADMIN_USERNAME` + `UT_BOOTSTRAP_ADMIN_PASSWORD` (better as the Docker secret `bootstrap_admin_password` in `server/compose.yaml`, mounted as `/run/secrets/ut_bootstrap_admin_password`) create the admin when the api starts with no users. Remove both once the admin exists; the api logs a warning on every start while both are still set ([deploy/README.md](../deploy/README.md#bootstrap-admin-password)).
+
+The command never resets a password: it does nothing when any user already exists. Then sign in to `/admin` from the LAN, create the other users (Users) and a key per device (API keys → new key, scan the QR code with the phone's camera). The Traefik examples answer password sign-in that creates device keys (`POST /ut/v1/keys`) only from the LAN, so away from home a device only uses its key; the Caddy example limits only `/admin`, so add the same LAN matcher there if you expose it. Never reuse a password or key from a test stack.
+
 ## Reaching the panel
 
 The panel lives at `/admin` on the api's client port, for example `https://music.example.com/admin`.
 
 - It needs **HTTPS** (for example `tailscale serve`, or a reverse proxy such as Caddy) or `localhost`: the session cookie is `Secure`.
 - Only the networks in `UT_ADMIN_ALLOWED_NETWORKS` reach it (loopback, private LAN ranges and Tailscale by default). Anything else gets 403, even with the right password. Behind a reverse proxy, set `UT_TRUSTED_PROXIES` to the proxy's single address, or the panel refuses proxied requests ([deploy/README.md](../deploy/README.md#reverse-proxies-and-the-client-address-ut_trusted_proxies)).
-- Only accounts with the **Administrator** role can sign in. The first admin is created once from the command line: `docker compose run --rm api bootstrap-admin <name>` (it asks for the password).
+- Only accounts with the **Administrator** role can sign in. The first admin is created once ([First admin](#first-admin) below).
 - A session lasts 8 hours (`UT_ADMIN_SESSION_TTL_S`). **Sign out** ends every session of your account, on every browser. Set `UT_ADMIN_SESSION_SECRET` (a Docker secret) or sessions also end whenever the api restarts.
 - The panel is in English, or in Spanish when the browser prefers Spanish. It follows the system's light or dark mode, and works on a phone (tables turn into one card per row).
 - Every change in the panel carries the session's form token (CSRF protection) and is written to the audit log. Actions that cannot be undone ask for confirmation first.
