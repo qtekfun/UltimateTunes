@@ -306,7 +306,7 @@ def test_po_tokens_are_redacted(template: str) -> None:
 
 
 def test_provider_listings_are_kept() -> None:
-    line = "[debug] [youtube] [pot] PO Token Providers: bgutil:http-2.0.0 (external)"
+    line = "[debug] [youtube] [pot] PO Token Providers: bgutil:http-2.0.2 (external)"
     assert redact(line) == line
 
 
@@ -398,14 +398,14 @@ def _zip(path: Path, entries: dict[str, str]) -> str:
     return str(path)
 
 
-# The layout of upstream's release zip (2.0.0): two directories and three modules.
+# The layout of upstream's release zip (2.0.2): two directories and three modules.
 BASE = "yt_dlp_plugins/extractor/getpot_bgutil.py"
 HTTP = "yt_dlp_plugins/extractor/getpot_bgutil_http.py"
 SCRIPT = "yt_dlp_plugins/extractor/getpot_bgutil_script.py"
 GOOD = {
     "yt_dlp_plugins/": "",
     "yt_dlp_plugins/extractor/": "",
-    BASE: "x = 1\n__version__ = '2.0.0'\n",
+    BASE: "x = 1\n__version__ = '2.0.2'\n",
     HTTP: "class BgUtilHTTPPTP: ...\n",
     SCRIPT: "class BgUtilScriptPTP: ...\n",
 }
@@ -413,8 +413,8 @@ GOOD = {
 
 def test_the_build_check_keeps_only_the_http_provider(tmp_path: Path) -> None:
     out = tmp_path / "bgutil-http.zip"
-    message = _check_plugin().check(_zip(tmp_path / "ok.zip", GOOD), "2.0.0", str(out))
-    assert "bgutil plugin 2.0.0" in message
+    message = _check_plugin().check(_zip(tmp_path / "ok.zip", GOOD), "2.0.2", str(out))
+    assert "bgutil plugin 2.0.2" in message
     with zipfile.ZipFile(out) as pruned:
         assert pruned.namelist() == ["yt_dlp_plugins/", "yt_dlp_plugins/extractor/", BASE, HTTP]
         assert pruned.read(HTTP) == GOOD[HTTP].encode()
@@ -422,7 +422,7 @@ def test_the_build_check_keeps_only_the_http_provider(tmp_path: Path) -> None:
         # Fixed dates: the same input gives the same file.
         assert {info.date_time for info in pruned.infolist()} == {(2026, 1, 1, 0, 0, 0)}
     again = tmp_path / "again.zip"
-    _check_plugin().check(_zip(tmp_path / "ok2.zip", GOOD), "2.0.0", str(again))
+    _check_plugin().check(_zip(tmp_path / "ok2.zip", GOOD), "2.0.2", str(again))
     assert again.read_bytes() == out.read_bytes()
 
 
@@ -443,7 +443,7 @@ def test_the_build_check_refuses_anything_else(
 ) -> None:
     out = tmp_path / "out.zip"
     with pytest.raises(SystemExit, match=re.escape(message)):
-        _check_plugin().check(_zip(tmp_path / "bad.zip", entries), "2.0.0", str(out))
+        _check_plugin().check(_zip(tmp_path / "bad.zip", entries), "2.0.2", str(out))
     assert not out.exists()
 
 
@@ -455,7 +455,7 @@ def test_the_build_check_refuses_duplicate_entries(tmp_path: Path) -> None:
         with pytest.warns(UserWarning, match="Duplicate name"):
             archive.writestr(HTTP, "shadow\n")
     with pytest.raises(SystemExit, match="entries differ"):
-        _check_plugin().check(str(path), "2.0.0", str(tmp_path / "out.zip"))
+        _check_plugin().check(str(path), "2.0.2", str(tmp_path / "out.zip"))
 
 
 def test_the_build_check_command_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -463,7 +463,7 @@ def test_the_build_check_command_line(tmp_path: Path, capsys: pytest.CaptureFixt
     with pytest.raises(SystemExit):
         module.main(["check_plugin.py"])
     out = tmp_path / "out.zip"
-    module.main(["check_plugin.py", _zip(tmp_path / "ok.zip", GOOD), "2.0.0", str(out)])
+    module.main(["check_plugin.py", _zip(tmp_path / "ok.zip", GOOD), "2.0.2", str(out)])
     assert "HTTP provider only" in capsys.readouterr().out
     assert out.is_file()
 
