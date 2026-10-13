@@ -5,12 +5,19 @@
 The yt-dlp paths default to the image layout of spike T03c (SPEC section 11): the live zipapp
 in the `/opt/ytdlp` volume, a verified seed copy in the image (`/opt/ytdlp-seed/yt-dlp`), the
 pinned yt-dlp release key as a gpgv keyring, and Deno as the JS runtime.
+
+Optional PO token provider (decision D13, 2026-10-13): `UT_YTDLP_POT_PROVIDER_URL` points yt-dlp's
+bgutil plugin (baked into the image under `/opt/ytdlp-plugins`) at the `pot-provider` container.
+Unset, yt-dlp runs exactly as before (no plugin directory at all).
 """
 
+import ipaddress
+import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from ultimatetunes.settings import AreaSettings
 
@@ -20,6 +27,49 @@ CLIENTS_PATTERN = r"^[a-z0-9_]+(,[a-z0-9_]+)*$"
 # one), written in gpg's groups of four and compared without spaces.
 YTDLP_SIGNER = "AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581"
 YTDLP_KEY_FINGERPRINT = YTDLP_SIGNER.replace(" ", "")
+# A container or service name on a Docker network: one DNS label that starts with a letter, so
+# it can never be read as a number or hex IPv4 address (`inet_aton`) and never needs public DNS.
+_SERVICE_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _internal_host(host: str) -> bool:
+    """A Docker service name, or a loopback or private address (never link-local: cloud
+    metadata services live there)."""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return _SERVICE_NAME.fullmatch(host) is not None
+    return (address.is_private or address.is_loopback) and not (
+        address.is_link_local or address.is_unspecified or address.is_multicast
+    )
+
+
+def internal_base_url(value: str) -> str:
+    """The canonical `http(s)://host[:port]` of a service on an internal network, or ValueError.
+
+    Only a scheme, a host and a port: no credentials, path, query or fragment, and a host that
+    is a single-label service name or a private/loopback address, so the URL can only lead to a
+    container next to the worker. Rebuilt from its parts, so it never carries `,` or `;` (the
+    separators of yt-dlp's `--extractor-args`). Errors never echo the value.
+    """
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError("not a valid URL") from exc
+    if parts.scheme not in ("http", "https"):
+        raise ValueError("the URL must be http or https")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("the URL must not carry credentials")
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        raise ValueError("the URL must be a bare base URL (no path, query or fragment)")
+    host = parts.hostname
+    if not host or not _internal_host(host):
+        raise ValueError("the host must be a service name on a Docker network or a private address")
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None:
+        netloc = f"{netloc}:{port}"
+    return f"{parts.scheme}://{netloc}"
 
 
 class WorkerSettings(AreaSettings):
@@ -67,3 +117,15 @@ class WorkerSettings(AreaSettings):
     ytdlp_timeout_s: float = Field(default=600.0, gt=0)
     deno_path: Path = Path("/usr/local/bin/deno")
     gpgv_path: Path = Path("/usr/bin/gpgv")
+    # PO token provider (D13): the base URL of the bgutil HTTP server (`pot-provider` in
+    # compose.yaml, reached as `http://bgutil:4416`). Unset or empty: no plugin is loaded.
+    ytdlp_pot_provider_url: str | None = None
+    # Where the image keeps the pinned bgutil plugin zip (read-only, Dockerfile).
+    ytdlp_plugin_dir: Path = Path("/opt/ytdlp-plugins")
+
+    @field_validator("ytdlp_pot_provider_url")
+    @classmethod
+    def _internal_provider(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return internal_base_url(value)

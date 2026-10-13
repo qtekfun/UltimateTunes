@@ -20,6 +20,10 @@
   up front and grows past the limit is stopped by the worker itself.
 - The subprocess gets a minimal environment (no secrets) and is killed when the job is
   cancelled, the lease is lost or the timeout runs out.
+- Optional PO token provider (D13): with `UT_YTDLP_POT_PROVIDER_URL` set, the only plugin
+  directory is the image's pinned bgutil plugin (`--no-plugin-dirs --plugin-dirs <dir>`) and
+  its HTTP provider gets the validated base URL. Unset, no plugin is loaded at all. PO tokens
+  never reach a log (`redact`).
 """
 
 import json
@@ -48,7 +52,7 @@ from ultimatetunes.worker.downloader import (
     ProgressCallback,
     check_video_id,
 )
-from ultimatetunes.worker.settings import WorkerSettings
+from ultimatetunes.worker.settings import WorkerSettings, internal_base_url
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +83,10 @@ SKIP_MARKERS = ("does not pass filter", "larger than max-filesize")
 KEEP_LOG_LINES = 40
 EXIT_USAGE = 2
 _URL = re.compile(r"https?://\S+")
+# A PO token next to its name ("POT: ...", "po_token=...", '"poToken": "..."').
+_PO_TOKEN = re.compile(r"(?i)(po[ _-]?token|\bpot)([\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-+/=%.]{8,}")
+# The bgutil plugin's HTTP provider (`youtubepot-bgutilhttp:base_url=...`).
+POT_PROVIDER_ARGS = "youtubepot-bgutilhttp"
 
 
 class ZipappSource(Protocol):
@@ -88,8 +96,9 @@ class ZipappSource(Protocol):
 
 
 def redact(line: str) -> str:
-    """Log-safe text: googlevideo URLs carry the client IP and tokens, so no URL is logged."""
-    return _URL.sub("<url>", line)[:500]
+    """Log-safe text: googlevideo URLs carry the client IP and tokens, so no URL is logged, and
+    a PO token printed by name is replaced too."""
+    return _PO_TOKEN.sub(r"\1\2<redacted>", _URL.sub("<url>", line))[:500]
 
 
 def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
@@ -101,13 +110,25 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
     out_dir: Path,
     video_id: str,
     limits: DownloadLimits,
+    pot_provider_url: str | None = None,
+    plugin_dir: Path | None = None,
 ) -> list[str]:
-    """The yt-dlp command line (spike T03c). `video_id` must already be checked."""
+    """The yt-dlp command line (spike T03c). `video_id` must already be checked. With
+    `pot_provider_url` (D13), `plugin_dir` is the only plugin directory and the bgutil HTTP
+    provider gets that base URL; without it no plugin is loaded."""
     # Validated integers only (pydantic checked them; `int` again so no text gets through).
     max_duration = int(limits.max_track_duration_s)
     max_bytes = int(limits.max_download_bytes)
     if max_duration <= 0 or max_bytes <= 0:
         raise ValueError("download limits must be positive")
+    plugins = ["--no-plugin-dirs"]
+    pot: list[str] = []
+    if pot_provider_url is not None:
+        # Settings validated it; checked again so nothing else can reach the argument.
+        if plugin_dir is None or internal_base_url(pot_provider_url) != pot_provider_url:
+            raise ValueError("the PO token provider needs a canonical URL and a plugin directory")
+        plugins += ["--plugin-dirs", str(plugin_dir)]
+        pot = ["--extractor-args", f"{POT_PROVIDER_ARGS}:base_url={pot_provider_url}"]
     return [
         python,
         "-I",
@@ -115,7 +136,7 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
         str(zipapp),
         "--ignore-config",
         "--no-quiet",
-        "--no-plugin-dirs",
+        *plugins,
         "--no-cache-dir",
         "--no-playlist",
         "--no-mtime",
@@ -127,6 +148,7 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
         f"deno:{deno}",
         "--extractor-args",
         f"youtube:player_client={clients}",
+        *pot,
         "--format",
         FORMAT_SELECTOR,
         "--match-filter",
@@ -439,6 +461,13 @@ class YtDlpDownloader:
         zipapp = self._runtime.current_zipapp().resolve()
         if not zipapp.is_file():
             raise DownloadError(WorkerErrorCode.INTERNAL_ERROR, "the zipapp is not installed")
+        pot_url = self._settings.ytdlp_pot_provider_url
+        plugin_dir = self._settings.ytdlp_plugin_dir
+        if pot_url is not None and not plugin_dir.is_dir():
+            # yt-dlp would refuse the directory; without the plugin, no PO token either.
+            raise DownloadError(
+                WorkerErrorCode.INTERNAL_ERROR, "the yt-dlp plugin directory is missing"
+            )
         args = build_args(
             python=self._python,
             zipapp=zipapp,
@@ -447,6 +476,8 @@ class YtDlpDownloader:
             out_dir=run.out_dir,
             video_id=video_id,
             limits=self._limits,
+            pot_provider_url=pot_url,
+            plugin_dir=plugin_dir,
         )
         process = await self._runner(args, minimal_env(run.out_dir))
         try:

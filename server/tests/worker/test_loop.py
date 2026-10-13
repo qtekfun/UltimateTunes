@@ -4,6 +4,7 @@
 downloaders: success, failures and retries, cancel, lost leases, a killed worker, shutdown,
 the circuit breaker, yt-dlp updates and status reports. No network, no real download."""
 
+import logging
 import signal
 import threading
 from collections.abc import AsyncIterator, Callable
@@ -603,6 +604,21 @@ async def test_build_worker_picks_the_downloader(settings: Settings) -> None:
         assert isinstance(real.downloader, YtDlpDownloader)
         assert real.runtime is not None
         assert real.worker_id == loop.default_worker_id()
+
+
+async def test_build_worker_logs_the_po_token_provider(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger=loop.__name__)
+    async with httpx.AsyncClient() as client:
+        build_worker(settings.model_copy(update={"fake_youtube": False}), WorkerSettings(), client)
+        assert "PO token provider" not in caplog.text
+        build_worker(
+            settings.model_copy(update={"fake_youtube": False}),
+            WorkerSettings(ytdlp_pot_provider_url="http://pot-provider:4416"),
+            client,
+        )
+    assert "PO token provider at http://pot-provider:4416" in caplog.text
 
 
 def test_worker_command_runs_the_loop(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
