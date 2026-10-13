@@ -1,0 +1,1 @@
+Release candidate of 1.0. New: sign in to YouTube from Settings so your server can keep downloading when YouTube blocks it. Use a throwaway account; the session goes only to your own server and is wiped from the phone.
