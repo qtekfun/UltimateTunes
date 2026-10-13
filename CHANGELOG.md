@@ -9,6 +9,36 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-10-13
+
+First release candidate of 1.0: the server, the web player, the admin panel and the Android app work end to end. Install it, deploy it and run the SECURITY.md checklist; 1.0.0 will follow from the same code.
+
+### Added
+- Server: library scan, browsing and streaming over OpenSubsonic (JSON and XML, Range, cover art sizes, ReplayGain fields, per-user favourites and play counts).
+- Server: external YouTube Music tracks stream while they download, then are tagged (MusicBrainz, Cover Art Archive), archived into the library with safe paths, and served from disk afterwards; `needs review` for uncertain tags.
+- Server: Listen Now shelves, local-first radio and `getSimilarSongs2`; track request and status endpoints; `ultimatetunes scan-library`.
+- Server: download limits per file and per user (track length, file size, queued jobs, bytes per day), a per-user catalog budget, a minimum free disk space that pauses downloads, and notifications when it runs low.
+- Server: notifications to ntfy or a webhook, with optional token or basic-auth credentials from environment variables or Docker secrets.
+- Web player at `/`: Listen Now, Radio, Library, Search, playlist imports, settings and a now-playing view, with its own sign-in (session cookie; the API key never reaches the browser). `UT_WEB_ENABLED=false` turns it off.
+- Admin panel: users and roles, per-device API keys with a QR code, downloads queue, needs-review list, audit log, notifications, yt-dlp update and canary; overview of what needs attention, disk space and budgets; paged and filterable lists; confirmations for destructive actions; English and Spanish.
+- "Sign out every device" in the web player (own account) and the admin panel (any user).
+- Android: Library, Search, playlists, synced lyrics, imports and settings; Media3 playback with a client cache, queue prefetch and offline downloads; export of songs to the phone; the full player slides as a sheet that follows the finger.
+- Android: connect by scanning the admin panel's QR code with the phone's camera app; the app always asks before connecting.
+- Deployment examples: Caddy, Traefik, Tailscale, and Traefik behind Cloudflare Tunnel with Authelia.
+- Docs: admin guide, configuration reference of every `UT_*` setting, architecture and connections, web player, measurements.
+
+### Changed
+- Workers long-poll for jobs, so new downloads start at once.
+- SQLite planner statistics are kept fresh automatically.
+- Android: one message area above the player, re-tapping a tab returns to its first screen, no white flash at launch in dark mode; new launcher icon and store assets.
+
+### Security
+- Hardening for public access: threat model and checklist in SECURITY.md, admin panel limited to the admin networks, split password lockout for admin networks and outside, connection and header limits, pinned egress network for the worker, internal listener bound to the internal network.
+- Outside sign-in failures per username cost a growing delay (1 s doubling to 5 min) instead of a lockout; global failure budget and limited concurrent password checks; IPv6 counted per /64.
+- Forwarded client addresses are read from the right and stop at the first untrusted hop.
+- ffmpeg only accepts the expected containers and codecs; the api's `/tmp` is `noexec`; HEAD requests never start a download.
+- Notification targets on loopback, link-local or multicast addresses are refused, and credentials are only sent to the configured host.
+
 ## [0.0.1-rc.1] - 2026-10-12
 
 First pre-release, to validate the release pipeline. Not ready for use yet: the server information endpoint the app checks first, playback, downloads to the library, Listen Now and the admin panel are still being built, so the app cannot connect to a server in this version.
