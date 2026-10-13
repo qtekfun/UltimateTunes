@@ -124,7 +124,7 @@ class AdminGate:
                 headers = MutableHeaders(scope=message)
                 for name, value in SECURITY_HEADERS.items():
                     if name == "Cache-Control":
-                        # Pages are never cached; the two static files say their own lifetime.
+                        # Pages are never cached; the static files say their own lifetime.
                         headers.setdefault(name, value)
                     else:
                         headers[name] = value

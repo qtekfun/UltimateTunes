@@ -49,7 +49,8 @@ header.top {
   border-bottom: 1px solid var(--line);
 }
 
-header.top .brand { font-weight: 700; margin-right: 8px; color: var(--text); text-decoration: none; }
+header.top .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-right: 8px; color: var(--text); text-decoration: none; }
+header.top .brand img { display: block; }
 header.top nav { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1; }
 header.top nav a { color: var(--muted); text-decoration: none; }
 header.top nav a[aria-current="page"] { color: var(--accent); font-weight: 600; }
@@ -109,6 +110,7 @@ button.danger { background: var(--danger); border-color: var(--danger); }
 
 svg.qr { width: 260px; max-width: 100%; height: auto; display: block; margin: 8px 0; }
 .login { max-width: 360px; margin: 10vh auto; }
+.login .mark { display: block; margin: 0 0 8px; }
 
 /* ------------------------------------------------------------------ polish (layout, a11y) */
 
