@@ -9,6 +9,16 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-10-13
+
+Release candidate of 1.0 that makes the server's security activity analysable (for CrowdSec, a SIEM or a log search). The app is unchanged since 1.0.0-rc.1.
+
+### Added
+- Server: a structured JSON security event log (`ultimatetunes.security`) with the real client address: every sign-in success and failure (web, admin, API keys), throttling and lockouts, denied admin/network access, CSRF failures, rejected sessions, rate-limit hits, and a copy of each audit entry. New `docs/logging.md` lists every event and field.
+
+### Changed
+- Server: the access log is now UltimateTunes' own (JSON, real client address after trusted-proxy resolution, credentials in the query string redacted), replacing uvicorn's; it also covers the internal worker listener. Secrets are never logged.
+
 ## [1.0.0-rc.4] - 2026-10-13
 
 Release candidate of 1.0: the web player and the admin panel now carry the app's icon. The app is unchanged since 1.0.0-rc.1.
