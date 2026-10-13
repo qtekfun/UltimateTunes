@@ -82,8 +82,25 @@ if re.search(r"\bgh\s+api\b.*rulesets", cmd):
     block("the user manages rulesets.")
 if re.search(r"\bgh\s+release\b", cmd):
     block("releases are created by the Release workflow from a tag (RELEASING.md).")
-if re.search(r"\bgit\s+push\b.*\bv\d+\.\d+\.\d+", cmd) or re.search(r"\bgit\s+tag\s+v\d", cmd):
-    block("release tags are pushed by the author, or by Claude only when the author asks explicitly.")
+# Release tags: the author allowed Claude to create and push them (2026-10-13), but only the tag
+# of the version on master (`v` + VERSION), from master, never moved or deleted.
+_tag = re.search(r"\bgit\s+tag\b(.*?)\bv(\d+\.\d+\.\d+\S*)", cmd)
+_push = re.search(r"\bgit\s+push\b(.*?)\bv(\d+\.\d+\.\d+[^\s;&|]*)", cmd)
+if _tag or _push:
+    if (_tag and re.search(r"\s-[a-zA-Z]*[dfm]|--delete|--force", _tag.group(1))) or (
+        _push and re.search(r"--delete|\s-d\b|:\s*$|\s:", _push.group(1) + " ")
+    ):
+        block("release tags are never deleted, moved or forced (RELEASING.md); ask the author.")
+    try:
+        with open(os.path.join(workdir, "VERSION"), encoding="utf-8") as f:
+            version = f.read().strip()
+    except OSError:
+        version = ""
+    for found in (_tag, _push):
+        if found and found.group(2) != version:
+            block(f"only the tag of the current VERSION (v{version or '?'}) may be created or pushed.")
+    if branch() != "master":
+        block("release tags are created from an up-to-date master (RELEASING.md).")
 if re.search(r"\bcurl\b.*\|\s*(ba|z)?sh\b", cmd):
     block("do not pipe downloads into a shell.")
 sys.exit(0)

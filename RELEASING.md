@@ -37,7 +37,7 @@ Without the `UT_*` variables, `./gradlew assembleRelease` builds an unsigned APK
 
 ## Making a release
 
-The coordinator prepares the release PR; the author pushes the tag (Claude only when the author asks). Worked example: the first pre-release, `0.0.1-rc.1`, whose versionCode is `101`.
+The coordinator prepares the release PR and, once it is merged, pushes the tag (the author allowed it on 2026-10-13; the `guard-bash` hook allows only `v` + the current `VERSION` from `master`, never a delete or move). The author can push it too. Worked example: the first pre-release, `0.0.1-rc.1`, whose versionCode is `101`.
 
 1. Compute the version code and branch from an up-to-date `master`:
    ```sh
@@ -60,7 +60,7 @@ The coordinator prepares the release PR; the author pushes the tag (Claude only 
    ```
    On a `release/*` PR, CI's `store-texts` job and the **Release** workflow's dry run (it runs on PRs that change `VERSION`) require the CHANGELOG section and both store changelogs; the dry run also builds the APK and the amd64 + arm64 image without publishing anything.
 6. Merge the PR (squash) once every check is green.
-7. **The author** tags the squash commit on `master` and pushes the tag:
+7. **The author or the coordinator** tags the squash commit on `master` and pushes the tag:
    ```sh
    git switch master && git pull
    git tag -a v0.0.1-rc.1 -m "UltimateTunes 0.0.1-rc.1"
