@@ -9,7 +9,8 @@
 # Replace music.example.org with your name; Caddy gets and renews the certificate itself
 # (ports 80 and 443 must reach it). Then set in the server's .env:
 #   UT_TRUSTED_PROXIES=<the Docker bridge gateway the api sees, see deploy/README.md>
-# and in Caddy's environment the networks allowed to open /admin through it (space-separated,
+# and in Caddy's environment the networks allowed to open /admin (and sign in with a password
+# for a device key, POST /ut/v1/keys) through it (space-separated,
 # narrow: your LAN's /24 and your tailnet, never a Docker bridge range such as 172.16.0.0/12):
 #   UT_ADMIN_LAN_RANGES="192.168.1.0/24"
 #   UT_ADMIN_TAILNET_RANGES="100.64.0.0/10 fd7a:115c:a1e0::/48"
@@ -88,6 +89,7 @@ music.example.org {
 	# 		events 300
 	# 		window 1m
 	# 	}
+	# 	# Only reaches LAN clients while @keys_login_from_outside is in place.
 	# 	zone keys_per_ip {
 	# 		match {
 	# 			method POST
