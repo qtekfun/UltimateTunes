@@ -60,7 +60,7 @@ The coordinator prepares the release PR and, once it is merged, pushes the tag (
    ```
    On a `release/*` PR, CI's `store-texts` job and the **Release** workflow's dry run (it runs on PRs that change `VERSION`) require the CHANGELOG section and both store changelogs; the dry run also builds the APK and the amd64 + arm64 image without publishing anything.
 6. Merge the PR (squash) once every check is green.
-7. **The author or the coordinator** tags the squash commit on `master` and pushes the tag:
+7. **The author or the coordinator** tags the squash commit on `master` and pushes the tag (pull first, in its own command: the hook checks the tag against the `VERSION` on disk; `tools/tests/guard-bash.test.sh` covers what it allows):
    ```sh
    git switch master && git pull
    git tag -a v0.0.1-rc.1 -m "UltimateTunes 0.0.1-rc.1"

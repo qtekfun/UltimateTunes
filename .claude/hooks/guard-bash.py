@@ -8,6 +8,7 @@ Exit code 2 blocks the tool call and shows stderr to Claude.
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -82,25 +83,136 @@ if re.search(r"\bgh\s+api\b.*rulesets", cmd):
     block("the user manages rulesets.")
 if re.search(r"\bgh\s+release\b", cmd):
     block("releases are created by the Release workflow from a tag (RELEASING.md).")
+# Git commands are also checked token by token, segment by segment (`;`, `&&`, `||`, `|`, new
+# lines), after the global options (`git -C dir`, `-c k=v`, `--git-dir=…`), so quoting, chaining
+# or `git -C` cannot get around the rules above.
 # Release tags: the author allowed Claude to create and push them (2026-10-13), but only the tag
-# of the version on master (`v` + VERSION), from master, never moved or deleted.
-_tag = re.search(r"\bgit\s+tag\b(.*?)\bv(\d+\.\d+\.\d+\S*)", cmd)
-_push = re.search(r"\bgit\s+push\b(.*?)\bv(\d+\.\d+\.\d+[^\s;&|]*)", cmd)
-if _tag or _push:
-    if (_tag and re.search(r"\s-[a-zA-Z]*[dfm]|--delete|--force", _tag.group(1))) or (
-        _push and re.search(r"--delete|\s-d\b|:\s*$|\s:", _push.group(1) + " ")
-    ):
-        block("release tags are never deleted, moved or forced (RELEASING.md); ask the author.")
+# of the version on master (`v` + VERSION), from master, never deleted, moved or forced, and
+# never several refs at once.
+_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+_VERSION_TAG = re.compile(r"^v\d+\.\d+\.\d+")
+_MASTER = {"master", "refs/heads/master"}
+
+
+def _segments(text: str) -> list[list[str]]:
+    out = []
+    for seg in re.split(r"&&|\|\||[;|\n]", text):
+        try:
+            out.append(shlex.split(seg))
+        except ValueError:
+            out.append(seg.split())
+    return out
+
+
+def _git_call(tokens: list[str]) -> tuple[str, str, list[str]] | None:
+    """(directory, subcommand, arguments) of a git call, or None."""
+    i = 0
+    while i < len(tokens) and re.match(r"^[A-Za-z_]\w*=", tokens[i]):
+        i += 1
+    if i >= len(tokens) or os.path.basename(tokens[i]) != "git":
+        return None
+    i += 1
+    directory = workdir
+    while i < len(tokens) and tokens[i].startswith("-"):
+        opt = tokens[i]
+        if opt in _GLOBAL_WITH_VALUE and i + 1 < len(tokens):
+            if opt == "-C":
+                directory = os.path.join(directory, os.path.expanduser(tokens[i + 1]))
+            i += 2
+        else:
+            i += 1
+    if i >= len(tokens):
+        return None
+    return directory, tokens[i], tokens[i + 1 :]
+
+
+def _version_of(directory: str) -> str:
     try:
-        with open(os.path.join(workdir, "VERSION"), encoding="utf-8") as f:
-            version = f.read().strip()
+        with open(os.path.join(directory, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
     except OSError:
-        version = ""
-    for found in (_tag, _push):
-        if found and found.group(2) != version:
+        return ""
+
+
+def _branch_of(directory: str) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", directory, "branch", "--show-current"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+    except OSError:
+        return ""
+
+
+def _short_flags(arg: str) -> str:
+    return arg[1:] if re.match(r"^-[A-Za-z]+$", arg) else ""
+
+
+def _check_tags(directory: str, tags: list[str]) -> None:
+    if not tags:
+        return
+    version = _version_of(directory)
+    for name in tags:
+        if name != f"v{version}":
             block(f"only the tag of the current VERSION (v{version or '?'}) may be created or pushed.")
-    if branch() != "master":
+    if _branch_of(directory) != "master":
         block("release tags are created from an up-to-date master (RELEASING.md).")
+
+
+def _check_push(directory: str, args: list[str]) -> None:
+    positional = []
+    for arg in args:
+        flags = _short_flags(arg)
+        if arg in ("--force", "--force-with-lease", "--force-if-includes") or arg.startswith("--force-with-lease=") or "f" in flags:
+            block("no force-push (CLAUDE.md, Workflow).")
+        if arg in ("--delete", "--prune", "--mirror", "--all", "--tags", "--follow-tags") or "d" in flags:
+            block("push one ref at a time; never delete, prune or mirror (RELEASING.md).")
+        if not arg.startswith("-"):
+            positional.append(arg)
+    tags = []
+    for spec in positional[1:]:  # the first one is the remote
+        if spec.startswith("+") or spec.startswith(":") or "*" in spec:
+            block("no forced, deleting or wildcard refspecs.")
+        src, _, dst = spec.partition(":")
+        dst = dst or src
+        if dst in _MASTER or dst.endswith("/master") and dst.startswith("refs/heads/"):
+            if remote_has_master():
+                block("never push to master; open a PR from your branch.")
+        names = [s.removeprefix("refs/tags/") for s in (src, dst)]
+        if any(_VERSION_TAG.match(n) for n in names):
+            if names[0] != names[1]:
+                block("a release tag is pushed under its own name.")
+            tags.append(names[0])
+    _check_tags(directory, tags)
+
+
+def _check_tag(directory: str, args: list[str]) -> None:
+    names = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        flags = _short_flags(arg)
+        if arg in ("-m", "-F", "-u", "--message", "--file", "--local-user", "--cleanup", "--format", "--sort", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged"):
+            skip = True
+            continue
+        if arg in ("--delete", "--force") or "d" in flags or "f" in flags:
+            if any(_VERSION_TAG.match(a) for a in args):
+                block("release tags are never deleted, moved or forced (RELEASING.md); ask the author.")
+        if _VERSION_TAG.match(arg):
+            names.append(arg)
+    _check_tags(directory, names)
+
+
+for _tokens in _segments(cmd):
+    _call = _git_call(_tokens)
+    if _call is None:
+        continue
+    _dir, _sub, _args = _call
+    if _sub == "push":
+        _check_push(_dir, _args)
+    elif _sub == "tag":
+        _check_tag(_dir, _args)
 if re.search(r"\bcurl\b.*\|\s*(ba|z)?sh\b", cmd):
     block("do not pipe downloads into a shell.")
 sys.exit(0)
