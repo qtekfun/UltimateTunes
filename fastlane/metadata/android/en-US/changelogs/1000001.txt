@@ -1,0 +1,1 @@
+First release candidate of 1.0. Connect by scanning the QR code from your server's admin panel with the camera app. Play your library and YouTube Music, with a cache of everything you play, offline downloads, synced lyrics, radio, playlists, imports and export of songs to the phone. Smoother full player, messages above the player and no white flash at launch in dark mode.
