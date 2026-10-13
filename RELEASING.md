@@ -7,11 +7,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Releases are manual and tag-driven, like UltimateCalendar. One version for the server and the app.
 
-## Publishing is paused
+## Publishing
 
-Nothing is published yet: no `v*` tags, no GHCR image, no GitHub Release. The repository is public, so CI runs on GitHub at no cost, but the **Release** and **Nightly** workflows are still disabled (SPEC §11).
+Publishing is on since 1.0.0-rc.2 (2026-10-13, the author's request; SPEC §11): the **Release** workflow is enabled and a `v*` tag push publishes the signed APK as a GitHub Release (pre-release for `-rc.N`) and the server image to GHCR. The repository is public, so this costs nothing. **Nightly** stays disabled.
 
-- **To publish**, the author enables the Release workflow (`gh workflow enable release.yml`) and pushes the tag of a merged release PR (step 7 below). Signing uses the existing `UT_*` repository secrets.
+- **To publish**, push the tag of a merged release PR (step 7 below). Signing uses the existing `UT_*` repository secrets. Before tagging, a dry run (`gh workflow run release.yml --ref <branch> -f dry_run=true`) builds and checks everything without publishing.
 - **Local signed builds** (`./gradlew assembleRelease`) need the four `UT_*` variables in the environment (`UT_KEYSTORE_FILE`, `UT_KEYSTORE_PASSWORD`, `UT_KEY_ALIAS`, `UT_KEY_PASSWORD`); without `UT_KEYSTORE_FILE` the APK is unsigned, and with the file but a missing password or alias the signing step fails. The server image can be built locally with `docker build -f server/Dockerfile .` and run with Compose; migrations first with `ultimatetunes migrate`.
 - `VERSION`, `CHANGELOG.md` and the store changelogs still change only in a release PR, as below.
 
