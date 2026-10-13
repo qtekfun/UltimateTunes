@@ -9,6 +9,10 @@
 #   UT_INTERNAL_SUBNET=10.213.44.0/24 the api-worker network (change it if it overlaps yours)
 #   UT_API_INTERNAL_ADDRESS=10.213.44.250 the api's pinned address on it (inside that subnet)
 #   UT_EGRESS_SUBNET=10.213.45.0/24   the worker's way out (change it if it overlaps yours)
+# Optional PO token provider (docs/admin-guide.md, "Sign in to confirm you're not a bot"):
+#   COMPOSE_PROFILES=pot                                 starts the pot-provider service
+#   UT_YTDLP_POT_PROVIDER_URL=http://bgutil:4416         tells the worker to use it
+#   UT_POT_SUBNET=10.213.47.0/24, UT_POT_PROVIDER_ADDRESS=10.213.47.250   its network
 # and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
 # stack's token (compose.test.yaml) here.
@@ -18,7 +22,8 @@
 # Migrations run first (`migrate`), then the api. The worker never touches the database: it
 # talks to the api's internal worker API (token-protected, api:8045 over `internal`) and leaves
 # through its own `egress` network (yt-dlp, MusicBrainz, Cover Art Archive, GitHub releases).
-# Only the api calls YouTube Music (music.youtube.com), through `default`.
+# Only the api calls YouTube Music (music.youtube.com), through `default`. The optional
+# `pot-provider` (profile `pot`) answers only the worker, over `pot`, and leaves through `egress`.
 
 x-hardening: &hardening
   image: ghcr.io/qtekfun/ultimatetunes-server:${UT_VERSION:?set UT_VERSION}
@@ -135,13 +140,62 @@ services:
       # The api's internal listener (UT_INTERNAL_PORT), not the client port. `api` resolves to
       # its address on `internal`, the only network the worker shares with it.
       UT_API_URL: http://api:8045
+      # Optional PO token provider (D13): empty, yt-dlp loads no plugin (as before). With the
+      # `pot` profile on, set it to http://bgutil:4416 in .env (the provider's name on `pot`).
+      UT_YTDLP_POT_PROVIDER_URL: ${UT_YTDLP_POT_PROVIDER_URL:-}
     secrets:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
     # `internal` reaches the api; `egress` is its own way out (yt-dlp to www.youtube.com,
     # MusicBrainz, Cover Art Archive, GitHub), so the worker shares no other network with the api.
-    networks: [egress, internal]
+    # `pot` reaches the optional PO token provider (nothing else is on it without the profile).
+    networks: [egress, internal, pot]
+
+  # Optional PO token provider for yt-dlp (D13), off unless the `pot` profile is enabled
+  # (COMPOSE_PROFILES=pot). The bgutil HTTP server (GPL-3.0) mints YouTube proof-of-origin tokens
+  # with BotGuard; the worker's yt-dlp plugin (pinned in the image, same version) asks it for one.
+  # It has no authentication, so it listens only on its pinned address on `pot`, which only the
+  # worker shares: nothing published, never on the api's networks. Through `egress` it reaches
+  # www.youtube.com, www.google.com and jnn-pa.googleapis.com (BotGuard; docs/architecture.md).
+  pot-provider:
+    # Upstream 2.0.0 (Node flavour), pinned by digest; bump together with BGUTIL_VERSION and
+    # BGUTIL_PLUGIN_SHA256 in server/Dockerfile (a test keeps them on one version).
+    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.0@sha256:ed86b6fdd5e430ddd7c8ce1adb55e1ab54db7c7dbc1bcbf3a82454a85b971164
+    profiles: [pot]
+    # The image's own non-root `node` user.
+    user: "1000:1000"
+    init: true
+    command: ["--host", "${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}", "--port", "4416"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    # Node, jsdom and the BotGuard VM: about 80 MiB idle, 115 MiB after minting (measured).
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    ulimits:
+      nofile: {soft: 1024, hard: 1024}
+    restart: unless-stopped
+    # Upstream always prints the BotGuard integrity token it mints (IP-bound, about 12 h): keep
+    # little of its log on disk and never ship it anywhere.
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}:4416/ping').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      egress: {}
+      pot:
+        ipv4_address: ${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}
+        # The name the worker uses (http://bgutil:4416). Unlike `pot-provider`, which Docker may
+        # resolve to the address on `egress` (where nothing listens), it exists only on `pot`.
+        aliases: [bgutil]
 
 secrets:
   worker_token:
@@ -171,6 +225,13 @@ networks:
     # A fixed interface name for those firewall rules.
     driver_opts:
       com.docker.network.bridge.name: ut-egress
+  pot:
+    # Worker <-> optional PO token provider only, no route out. Pinned so the provider listens
+    # on one fixed address (UT_POT_PROVIDER_ADDRESS, inside this subnet) and not on `egress`.
+    internal: true
+    ipam:
+      config:
+        - subnet: ${UT_POT_SUBNET:-10.213.47.0/24}
 
 volumes:
   data:
