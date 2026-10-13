@@ -9,6 +9,7 @@
 {# No history snapshots (a new API key must never land in localStorage), no eval, no inline scripts. #}
 <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
 <title>{% block title %}{{ _("Admin") }}{% endblock %} · UltimateTunes</title>
+<link rel="icon" href="/admin/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/admin/static/admin.css">
 <script src="/admin/static/htmx.min.js" defer></script>
 <script src="/admin/static/admin.js" defer></script>
@@ -17,7 +18,7 @@
 <a class="skip" href="#main">{{ _("Skip to content") }}</a>
 {% if admin %}
 <header class="top">
-  <a class="brand" href="/admin">UltimateTunes</a>
+  <a class="brand" href="/admin"><img src="/admin/static/icon.svg" alt="" width="24" height="24">UltimateTunes</a>
   <nav aria-label="{{ _("Sections") }}">
     {% for href, label in [("/admin", "Overview"), ("/admin/users", "Users"), ("/admin/keys", "API keys"), ("/admin/jobs", "Downloads"), ("/admin/library", "Library"), ("/admin/ytdlp", "yt-dlp"), ("/admin/audit", "Audit log"), ("/admin/notifications", "Notifications")] %}
     <a href="{{ href }}"{% if path == href or (href != "/admin" and path.startswith(href + "/")) %} aria-current="page"{% endif %}>{{ _(label) }}</a>

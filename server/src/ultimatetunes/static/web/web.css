@@ -134,7 +134,8 @@ p.error { background: var(--bg-2); border-left: 4px solid var(--danger); padding
   padding: 1.25rem 0.75rem calc(var(--player-h) + 1rem);
   background: var(--bg-2); border-right: 1px solid var(--line);
 }
-.brand { font-weight: 800; font-size: 1.2rem; padding: 0.25rem 0.75rem 1rem; color: var(--accent); }
+.brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 800; font-size: 1.2rem; padding: 0.25rem 0.75rem 1rem; color: var(--accent); }
+.brand img { display: block; flex: none; }
 .tab { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-radius: 8px; }
 .tab:hover { text-decoration: none; background: var(--bg-3); }
 .tab[aria-current="page"] { color: var(--accent); background: var(--bg-3); font-weight: 600; }
@@ -426,6 +427,7 @@ input[type="range"] { accent-color: var(--accent); }
   .shell { display: block; }
   .topbar { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem 0; }
   .topbar .brand { padding: 0.25rem; font-size: 1.05rem; }
+  .topbar .brand img { width: 24px; height: 24px; }
   .sidebar {
     position: fixed; z-index: 31; left: 0; right: 0; bottom: 0; top: auto;
     height: calc(var(--tabs-h) + env(safe-area-inset-bottom)); width: auto;

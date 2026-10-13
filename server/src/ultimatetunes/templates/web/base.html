@@ -24,11 +24,11 @@
 <div id="loading" class="loading-bar" aria-hidden="true"></div>
 <div class="shell" hx-boost="true" hx-target="#content" hx-swap="innerHTML show:window:top" hx-indicator="#loading">
   <header class="topbar">
-    <a class="brand" href="/">UltimateTunes</a>
+    <a class="brand" href="/"><img src="/web/static/icon.svg" alt="" width="28" height="28">UltimateTunes</a>
     <a class="icon-button" href="/web/settings" aria-label="{{ _("Settings") }}" title="{{ _("Settings") }}">{% include "_icon_settings.html" %}</a>
   </header>
   <nav class="sidebar" aria-label="{{ _("Sections") }}">
-    <a class="brand" href="/">UltimateTunes</a>
+    <a class="brand" href="/"><img src="/web/static/icon.svg" alt="" width="28" height="28">UltimateTunes</a>
     {% for href, label, icon in sections %}
     <a class="tab" href="{{ href }}" data-nav>{% include icon %}<span>{{ _(label) }}</span></a>
     {% endfor %}

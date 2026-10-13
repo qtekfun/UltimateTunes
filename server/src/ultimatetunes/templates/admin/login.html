@@ -4,6 +4,7 @@
 {% block title %}{{ _("Sign in") }}{% endblock %}
 {% block content %}
 <div class="card login">
+  <img class="mark" src="/admin/static/icon.svg" alt="" width="56" height="56">
   <h1>{{ _("Sign in") }}</h1>
   <form class="stack" method="post" action="/admin/login">
     <input type="hidden" name="csrf" value="{{ login_token }}">
