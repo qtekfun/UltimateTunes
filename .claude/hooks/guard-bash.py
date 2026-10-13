@@ -144,7 +144,10 @@ def _branch_of(directory: str) -> str:
 
 
 def _short_flags(arg: str) -> str:
-    return arg[1:] if re.match(r"^-[A-Za-z]+$", arg) else ""
+    """The flags of a short-option group, up to one that takes the rest as its value (`-mfix`)."""
+    if not re.match(r"^-[A-Za-z]+$", arg):
+        return ""
+    return re.split(r"[mF]", arg[1:], maxsplit=1)[0]
 
 
 def _check_tags(directory: str, tags: list[str]) -> None:
@@ -213,6 +216,33 @@ for _tokens in _segments(cmd):
         _check_push(_dir, _args)
     elif _sub == "tag":
         _check_tag(_dir, _args)
+
+# Second, conservative layer on the raw text, so shell constructs the token parser does not model
+# (subshells, `bash -c`, `$(…)`, `xargs`, quoted separators, `cd` in the middle) cannot reach a
+# release tag. Any command that names a version tag must name only the current one, from master,
+# with nothing around it that could delete, move, force or re-route it.
+_RAW_TAG = re.compile(r"(?<![\w.-])v\d+\.\d+\.\d+[\w.+-]*")
+_RAW_DANGER = re.compile(
+    r"--delete\b|(?<!\S)-[a-ln-zA-EG-Z]*[df]|--force|--mirror|--prune\b|--tags\b|--follow-tags"
+    r"|(?<![\w/-])[+:]\s*['\"]*\s*(refs/tags/|tags/)?v\d|['\"]{2}\s*:|\bxargs\b|\beval\b|\b(ba|z|da)?sh\s+-c\b"
+    r"|\$\(|`|\bgit\s+config\b|\s-c\s+\S|--config-env|(?:^|[;&|(\n]\s*)cd\s|\bpushd\b"
+)
+if re.search(r"\bgit\b", cmd):
+    _named = {m.group(0) for m in _RAW_TAG.finditer(cmd)}
+    if _named and re.search(r"\b(push|tag|update-ref)\b|refs/tags/", cmd):
+        _lead = re.match(r"\s*cd\s+(\S+)\s*&&", cmd)
+        _rest = cmd[_lead.end():] if _lead else cmd
+        _version = _version_of(workdir)
+        if _named != {f"v{_version}"}:
+            block(f"a command that names a release tag may name only v{_version or '?'} (RELEASING.md).")
+        if _RAW_DANGER.search(_rest):
+            block("release tag commands stay plain: no delete, force, wildcard, config, wrapper or cd "
+                  "in the middle (RELEASING.md); tag and push in separate simple commands.")
+        if _branch_of(workdir) != "master":
+            block("release tags are created from an up-to-date master (RELEASING.md).")
+# Push behaviour must not be changed through config or aliases.
+if re.search(r"\bgit\b.*(\s-c\s+|--config-env[=\s]|\bconfig\s+(--\S+\s+)*)(push\.|remote\.[^.\s]+\.(push|mirror)|alias\.)", cmd, re.I):
+    block("do not change push behaviour or define aliases through git config.")
 if re.search(r"\bcurl\b.*\|\s*(ba|z)?sh\b", cmd):
     block("do not pipe downloads into a shell.")
 sys.exit(0)

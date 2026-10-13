@@ -38,7 +38,8 @@ allowed "$m" "$push origin $t"
 allowed "$m" "$push origin refs/tags/$t"
 allowed "$m" "$tag -a $t -m x&&$push origin $t"
 allowed "$m" "git -C $m push origin $t"
-allowed "$m" "$tag -l && echo v0.9.0"
+allowed "$m" "$tag -mfix $t"
+allowed "$m" "git log --oneline -3"
 allowed "$m" "$push -u origin feat/x"
 allowed "$m" "git status"
 
@@ -77,6 +78,33 @@ blocked "$m" "$push origin 'refs/tags/*'"
 blocked "$m" "$push origin $t && $push origin :v1.0.0-rc.1"
 blocked "$m" "$push origin $t; $push origin --delete v1.0.0-rc.1"
 blocked "$m" "$tag -a $t -m x && $tag -d v1.0.0-rc.1"
+
+# Shell constructs around git: quoted separators, subshells, wrappers, a cd in the middle.
+blocked "$m" "$push origin -o \"x;\" --delete $t"
+blocked "$m" "$tag -m \"a; b\" v9.9.9"
+blocked "$m" "$tag -m \"line1
+line2\" v9.9.9"
+blocked "$m" "($push origin --delete $t)"
+blocked "$m" "{ $push origin --delete $t; }"
+blocked "$m" "if true; then $push origin --delete $t; fi"
+blocked "$m" "true & $push origin --delete $t"
+blocked "$m" "env $push origin --delete $t"
+blocked "$m" "command $push origin --delete $t"
+blocked "$m" "sudo $push origin --delete $t"
+blocked "$m" "echo \$($push origin $t)"
+blocked "$m" "echo \`$push origin $t\`"
+blocked "$m" "echo $t | xargs $push origin"
+blocked "$m" "bash -c \"$push origin $t\""
+blocked "$m" "cd $b; $tag -a $t -m x"
+blocked "$m" "$tag -l && echo v0.9.0"
+blocked "$m" "$push origin tags/v9.9.9"
+blocked "$m" "$push -uf origin feat/x"
+blocked "$m" "git update-ref -d refs/tags/$t"
+
+# Push behaviour is not changed through config or aliases.
+blocked "$m" "git -c push.followTags=true push origin feat/x"
+blocked "$m" "git -c remote.origin.mirror=true push origin"
+blocked "$m" "git config alias.p push"
 
 # master and releases stay out of reach.
 blocked "$m" "$push origin master"
