@@ -392,3 +392,55 @@ def test_keys_ignore_totp_for_accounts_without_2fa(client: TestClient, auth: Aut
         json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": "whatever"},
     )
     assert r.status_code == 201, r.text
+
+
+def _require_all(client: TestClient, clock: FakeClock) -> AuthService:
+    """Swap the app's auth service for one whose policy requires 2FA for everyone."""
+    svc: AuthService = client.app.state.auth  # type: ignore[attr-defined]
+    required = AuthService(
+        svc._db,
+        clock,
+        svc._limiter,
+        AuthSettings(auth_lockout_s=60, auth_require_2fa="all", totp_encryption_key=TOTP_KEY),
+        svc._passwords,
+    )
+    client.app.state.auth = required  # type: ignore[attr-defined]
+    return required
+
+
+def test_keys_refused_for_a_policy_covered_but_unenrolled_account(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    required = _require_all(client, clock)
+    bob = next(u for u in required.list_users() if u.username == "bob")
+    # Password alone must NOT mint a durable key while the policy covers an unenrolled account.
+    refused = client.post(
+        "/ut/v1/keys", json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel"}
+    )
+    assert refused.status_code == 403, refused.text
+    assert required.list_keys(bob.id) == []
+
+
+def test_keys_work_once_a_required_account_enrolls(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    required = _require_all(client, clock)
+    secret = _enable_2fa(required, clock, "bob")
+    # Now enrolled: a code is required and accepted.
+    without = client.post(
+        "/ut/v1/keys", json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel"}
+    )
+    assert without.status_code == 401
+    code = totp.code_at(secret, int(clock.now().timestamp()))
+    with_code = client.post(
+        "/ut/v1/keys",
+        json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": code},
+    )
+    assert with_code.status_code == 201, with_code.text
+
+
+def test_keys_still_work_without_a_policy_for_an_unenrolled_account(
+    client: TestClient, auth: AuthService
+) -> None:
+    # Policy off (default fixture), no enrollment: password alone keeps working.
+    assert new_key(client, "bob", USER_PASSWORD)

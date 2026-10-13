@@ -52,9 +52,13 @@ factor:
 A covered user who has not enrolled yet gets **no usable session**: after the password step they
 are redirected to the setup page (the admin panel's **Two-factor** page, the web player's
 **Settings**) and every other route is refused until they enroll — only enrollment, the 2FA setup
-actions and signing out are reachable. Once a covered user has enrolled, they cannot turn the
-factor off. The policy is an environment variable, so it is part of the deployment, not something
-a single admin session can switch.
+actions and signing out are reachable. **`POST /ut/v1/keys` is gated the same way**: a
+covered-but-unenrolled account cannot create a device key with its password alone (the server
+answers `403`, "enroll first"), since an API key is more durable than a session. Enrollment is
+session-based (panel/web player), so the policy never strands a user — or the bootstrap admin —
+out of enrolling. Once a covered user has enrolled, they cannot turn the factor off. The policy is
+an environment variable, so it is part of the deployment, not something a single admin session can
+switch.
 
 ## Brute force and replay
 

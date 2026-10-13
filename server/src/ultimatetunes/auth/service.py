@@ -705,12 +705,29 @@ class AuthService:
         if presenter is not None and presenter.user_id != user.id:
             _failure("conflicting_auth", client_ip, user=user.username, credential=CREDENTIAL_KEY)
             raise ConflictingAuth()
-        if self.two_factor.is_enabled(user.id) and not self.two_factor.verify_second_factor(
-            user.id, totp_code or "", client_ip
-        ):
-            _failure("second_factor", client_ip, user=user.username, credential=CREDENTIAL_ACCOUNT)
-            raise AuthenticationFailed()
-        actor = Principal(user.id, user.username, _role(user.role))
+        role = _role(user.role)
+        if self.two_factor.is_enabled(user.id):
+            if not self.two_factor.verify_second_factor(user.id, totp_code or "", client_ip):
+                _failure(
+                    "second_factor", client_ip, user=user.username, credential=CREDENTIAL_ACCOUNT
+                )
+                raise AuthenticationFailed()
+        elif self.two_factor.requires(role):
+            # The require-2FA policy covers this account but it has not enrolled yet. A device key
+            # is more durable than a session, so refuse it here too (fail closed), the same way
+            # sessions are gated: the user must enroll first, which happens in the web player or
+            # admin panel (session-based, so the policy never strands them out of enrolling).
+            _failure(
+                "2fa_enrollment_required",
+                client_ip,
+                user=user.username,
+                credential=CREDENTIAL_ACCOUNT,
+            )
+            raise Forbidden(
+                "Set up two-factor authentication in the web player or admin panel before"
+                " creating a device key"
+            )
+        actor = Principal(user.id, user.username, role)
         return self.create_key(user.id, name, actor=actor, client_ip=client_ip)
 
     def list_keys(self, user_id: str) -> list[ApiKey]:
