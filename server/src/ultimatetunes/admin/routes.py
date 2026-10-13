@@ -78,6 +78,7 @@ from ultimatetunes.search import guard
 from ultimatetunes.search import service as search_service
 from ultimatetunes.search.guard import GuardedCatalog
 from ultimatetunes.search.settings import SearchSettings
+from ultimatetunes.youtube.cookies import YouTubeCookieStore
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -122,6 +123,8 @@ DONE = {
     ),
     "notify_rejected_webhook": "The webhook rejected the credentials (HTTP 401 or 403).",
     "disabled": "Two-factor authentication is off.",
+    "youtube_saved": "YouTube cookies saved.",
+    "youtube_cleared": "YouTube cookies cleared.",
 }
 
 
@@ -1295,3 +1298,67 @@ async def test_notification(request: Request, post: PostedDep) -> Response:
     else:
         done = "notify_sent" if outcome == "sent" else "notify_failed"
     return back("/admin/notifications", done)
+
+
+# ---------------------------------------------------------------------- YouTube account
+
+
+def _youtube_store(request: Request) -> YouTubeCookieStore:
+    svc = state(request).services
+    return YouTubeCookieStore(svc.db, svc.clock)
+
+
+def _youtube_page(
+    request: Request, admin: Admin, *, error: str | None = None, status: int = 200
+) -> Response:
+    store = _youtube_store(request)
+    return page(
+        request,
+        "youtube.html",
+        {"status": store.status(), "available": store.available},
+        admin=admin,
+        error=error,
+        status=status,
+    )
+
+
+@router.get("/admin/youtube", include_in_schema=False)
+def youtube_page(request: Request, admin: AdminDep) -> Response:
+    return _youtube_page(request, admin)
+
+
+@router.post("/admin/youtube", include_in_schema=False)
+def save_youtube_cookies(request: Request, post: PostedDep) -> Response:
+    services = state(request).services
+    store = _youtube_store(request)
+    raw = post.get("cookies")
+    text = raw if isinstance(raw, str) else ""
+    try:
+        status_ = store.set(text)  # validates; FeatureDisabled when no key is configured
+    except TunesError as exc:
+        return _youtube_page(request, post.admin, error=exc.message, status=error_status(exc))
+    with services.db.transaction() as conn:
+        audit(
+            conn,
+            services.clock,
+            actor_id=post.admin.user.id,
+            ip=post.admin.ip,
+            action="youtube.cookies.set",
+            detail={"count": status_.cookie_count, "youtube": status_.has_youtube_domain},
+        )
+    return back("/admin/youtube", "youtube_saved")
+
+
+@router.post("/admin/youtube/clear", include_in_schema=False)
+def clear_youtube_cookies(request: Request, post: PostedDep) -> Response:
+    services = state(request).services
+    _youtube_store(request).clear()
+    with services.db.transaction() as conn:
+        audit(
+            conn,
+            services.clock,
+            actor_id=post.admin.user.id,
+            ip=post.admin.ip,
+            action="youtube.cookies.clear",
+        )
+    return back("/admin/youtube", "youtube_cleared")

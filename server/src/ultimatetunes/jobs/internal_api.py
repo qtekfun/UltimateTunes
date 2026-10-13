@@ -8,6 +8,7 @@ The worker token is checked before (`internal_api.py`). Handlers are thin: the q
 problems by the app.
 """
 
+import logging
 from functools import partial
 from typing import Annotated, Literal
 
@@ -17,15 +18,18 @@ from pydantic.alias_generators import to_camel
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
+from ultimatetunes.auth.secretbox import InvalidToken
 from ultimatetunes.core.clock import format_ts
 from ultimatetunes.core.services import services
-from ultimatetunes.errors import InvalidParameter
+from ultimatetunes.errors import FeatureDisabled, InvalidParameter
 from ultimatetunes.jobs.archive import archive_finalizer
 from ultimatetunes.jobs.queue import Claimed, JobResult, Lease, ProgressReport
 from ultimatetunes.jobs.settings import JobsSettings
 from ultimatetunes.jobs.signal import ClaimAbandoned, claim_waiting
 from ultimatetunes.jobs.workers import CanaryResult, WorkerRegistry
+from ultimatetunes.youtube.cookies import YouTubeCookieStore
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 JobId = Annotated[str, Path(alias="jobId")]
@@ -127,31 +131,52 @@ def _result(result: JobResult) -> dict[str, object]:
     }
 
 
+def _youtube_cookies(request: Request, kind: str) -> str | None:
+    """The decrypted YouTube cookies for a download job, or None. Never raises into the claim:
+    a missing key or an undecryptable blob serves the job without cookies (logged, no content)."""
+    if kind != "download":
+        return None
+    svc = services(request)
+    store = YouTubeCookieStore(svc.db, svc.clock)
+    if not store.available:
+        return None
+    try:
+        return store.current()
+    except (FeatureDisabled, InvalidToken, ValueError):  # ValueError: corrupt row, UnicodeError
+        log.warning("YouTube cookies could not be decrypted; the job runs without them")
+        return None
+
+
 def _claimed(request: Request, claimed: Claimed) -> dict[str, object]:
     job = claimed.job
     hints = services(request).jobs.hints(job)
-    return {
-        "job": {
-            "id": job.id,
-            "kind": job.kind,
-            "trackId": job.track_id,
-            "videoId": job.yt_video_id,
-            "attempt": job.attempts,
-            "maxAttempts": job.max_attempts,
-            "priority": job.priority,
-            "stagingDir": job.staging_dir,
-            "hints": {
-                "title": hints.title,
-                "artist": hints.artist_name,
-                "album": hints.album_name,
-                "albumBrowseId": hints.yt_album_browse_id,
-                "artistChannelId": hints.yt_artist_channel_id,
-                "durationMs": hints.duration_ms,
-                "year": hints.year,
-                "trackNumber": hints.track_number,
-                "thumbnailUrl": hints.yt_thumbnail_url,
-            },
+    cookies = _youtube_cookies(request, job.kind)
+    job_body: dict[str, object] = {
+        "id": job.id,
+        "kind": job.kind,
+        "trackId": job.track_id,
+        "videoId": job.yt_video_id,
+        "attempt": job.attempts,
+        "maxAttempts": job.max_attempts,
+        "priority": job.priority,
+        "stagingDir": job.staging_dir,
+        "hints": {
+            "title": hints.title,
+            "artist": hints.artist_name,
+            "album": hints.album_name,
+            "albumBrowseId": hints.yt_album_browse_id,
+            "artistChannelId": hints.yt_artist_channel_id,
+            "durationMs": hints.duration_ms,
+            "year": hints.year,
+            "trackNumber": hints.track_number,
+            "thumbnailUrl": hints.yt_thumbnail_url,
         },
+    }
+    if cookies is not None:
+        # Only present for a download job when the admin set a session (never logged).
+        job_body["youtubeCookies"] = cookies
+    return {
+        "job": job_body,
         "lease": {
             "leaseId": claimed.lease.lease_id,
             "expiresAt": claimed.lease.expires_at,

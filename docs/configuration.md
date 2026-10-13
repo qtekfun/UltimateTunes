@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Everything the server reads is an environment variable starting with `UT_` (12-factor: no config files, nothing stored in the container). The api and the worker run from the same image and read the same names; the **Container** column says which of them uses each one.
 
-- **Secrets** (`UT_WORKER_TOKEN`, `UT_ADMIN_SESSION_SECRET`, `UT_BOOTSTRAP_ADMIN_PASSWORD`, `UT_NOTIFY_TOKEN`, `UT_NOTIFY_USERNAME`, `UT_NOTIFY_PASSWORD`) can also be Docker secrets: a file named after the variable in lower case, prefix included, in `/run/secrets/` (for example `/run/secrets/ut_worker_token`). [`server/compose.yaml`](../server/compose.yaml) mounts them that way. Never put secrets in `.env` files you commit.
+- **Secrets** (`UT_WORKER_TOKEN`, `UT_ADMIN_SESSION_SECRET`, `UT_BOOTSTRAP_ADMIN_PASSWORD`, `UT_NOTIFY_TOKEN`, `UT_NOTIFY_USERNAME`, `UT_NOTIFY_PASSWORD`, `UT_TOTP_ENCRYPTION_KEY`, `UT_YTDLP_COOKIES_KEY`) can also be Docker secrets: a file named after the variable in lower case, prefix included, in `/run/secrets/` (for example `/run/secrets/ut_worker_token`). [`server/compose.yaml`](../server/compose.yaml) mounts them that way. Never put secrets in `.env` files you commit.
 - **Booleans** accept `true`/`false` (also `1`/`0`, `yes`/`no`). **Sizes** are in bytes, **durations** in the unit the name ends with (`_S` seconds, `_H` hours, `_DAYS` days).
 - A value out of its allowed range stops the container at start with a validation error naming the variable.
 - Unknown `UT_*` variables are ignored, so a typo does not fail: check the name against this table.
@@ -59,6 +59,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_NOTIFY_USERNAME` | (unset) | api | User for HTTP Basic login to the notification server, together with `UT_NOTIFY_PASSWORD` (no `:`); needs `UT_NOTIFY_HOST`. Prefer the Docker secret. |
 | `UT_NOTIFY_PASSWORD` | (unset) | api | Password for that HTTP Basic login. Prefer the Docker secret. |
 | `UT_NOTIFY_HOST` | (unset) | api | Host name (optional `:port`, default 443) the notification credentials may go to, for example `ntfy.example.com`. Required with credentials; a target URL on any other host gets none (deploy/README.md, "Notifications with ntfy"). |
+| `UT_YTDLP_COOKIES_KEY` | (unset) | api | Fernet key (urlsafe-base64, 32 bytes) that encrypts the YouTube cookies the admin or app uploads, at rest in the database; its own key, not the TOTP one. Unset: the cookies store is disabled and fails closed (never plaintext). Prefer the Docker secret `ut_ytdlp_cookies_key`. See [admin-guide.md](admin-guide.md), "Signing in with a YouTube account". |
+| `UT_YTDLP_COOKIES_MAX_BYTES` | `262144` | api | Largest `cookies.txt` the `PUT /ut/v1/youtube-cookies` endpoint and the admin page accept (256 KiB; a real one is a few KiB). |
 | `UT_WEB_ENABLED` | `true` | api | Serve the web player at `/web`; off, every `/web` path answers 404. |
 | `UT_WEB_SESSION_TTL_S` | `604800` | api | Lifetime of a web player session (7 days; between 5 minutes and 30 days). Its cookies are signed with `UT_ADMIN_SESSION_SECRET`. |
 | `UT_BOOTSTRAP_ADMIN_USERNAME` | (unset) | api | With `UT_BOOTSTRAP_ADMIN_PASSWORD`: creates the first admin when the api starts with no users. There is never a default password. |
@@ -187,6 +189,7 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_GPGV_PATH` | `/usr/bin/gpgv` | worker | gpgv binary that verifies yt-dlp updates. |
 | `UT_YTDLP_POT_PROVIDER_URL` | (unset) | worker | Optional PO token provider (decision D13): base URL of the bgutil HTTP server, `http://bgutil:4416` with compose's `pot` profile (the provider's alias on the `pot` network). Unset or empty: yt-dlp loads no plugin, exactly as before. Only `http(s)://host[:port]` is accepted, with a Docker service name (one label starting with a letter) or an address in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1` or `fc00::/7` (no IPv6 zone id, no IPv4-mapped or 6to4 form, no port 0); anything else stops the worker at start. See [admin-guide.md](admin-guide.md), "Sign in to confirm you're not a bot". |
 | `UT_YTDLP_PLUGIN_DIR` | `/opt/ytdlp-plugins` | worker | Read-only folder in the image with the pinned bgutil yt-dlp plugin, pruned to its HTTP provider (`bgutil-http.zip`); the only plugin folder yt-dlp searches, and only when `UT_YTDLP_POT_PROVIDER_URL` is set. |
+| `UT_YTDLP_COOKIES_FILE` | (unset) | worker | Optional **fallback** path of a Netscape/Mozilla `cookies.txt` exported from a **throwaway** YouTube account, normally the read-only Docker secret `ut_ytdlp_cookies` at `/run/secrets/ut_ytdlp_cookies`; the path must sit inside `/run/secrets`. Unset or empty: no cookies from a file (the admin/app store is the primary path). yt-dlp rewrites the cookies file in place, so the worker copies it to a private 0600 temp per download and deletes it afterwards, and passes `--cookies <copy>`. The content is an account credential, never logged. See [admin-guide.md](admin-guide.md), "Signing in with a YouTube account". |
 
 ## Canary
 

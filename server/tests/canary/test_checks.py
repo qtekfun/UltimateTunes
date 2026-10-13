@@ -252,7 +252,12 @@ class Lying:
         self.write = write
 
     async def download(
-        self, video_id: str, job_dir: str, on_progress: ProgressCallback
+        self,
+        video_id: str,
+        job_dir: str,
+        on_progress: ProgressCallback,
+        *,
+        cookies: str | None = None,
     ) -> DownloadResult:
         final = f"{job_dir}/{video_id}.webm"
         if self.write:
@@ -307,7 +312,12 @@ async def test_reports_are_stamped_when_the_run_ends(
 
     class SlowDownloader(FakeDownloader):
         async def download(
-            self, video_id: str, job_dir: str, on_progress: ProgressCallback
+            self,
+            video_id: str,
+            job_dir: str,
+            on_progress: ProgressCallback,
+            *,
+            cookies: str | None = None,
         ) -> DownloadResult:
             clock.advance(30)
             return await super().download(video_id, job_dir, on_progress)

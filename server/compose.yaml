@@ -114,6 +114,11 @@ services:
       # below: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
       # - source: totp_encryption_key
       #   target: ut_totp_encryption_key
+      # Optional: enables the YouTube cookies the admin/app uploads to be stored encrypted
+      # (admin-guide.md, "Signing in with a YouTube account"). Create ./secrets/ytdlp_cookies_key
+      # with its own Fernet key (same command as above) and uncomment this and the secret below.
+      # - source: ytdlp_cookies_key
+      #   target: ut_ytdlp_cookies_key
     networks:
       default: {}
       internal:
@@ -150,6 +155,12 @@ services:
       # Optional PO token provider (D13): empty, yt-dlp loads no plugin (as before). With the
       # `pot` profile on, set it to http://bgutil:4416 in .env (the provider's name on `pot`).
       UT_YTDLP_POT_PROVIDER_URL: ${UT_YTDLP_POT_PROVIDER_URL:-}
+      # Optional fallback YouTube cookies file (docs/admin-guide.md, "Signing in with a YouTube
+      # account"). The admin panel's encrypted store is the primary path; this points yt-dlp at
+      # a cookies.txt secret for ops who prefer a file. Uncomment with the secret below. Unset:
+      # no cookies from a file (as before). yt-dlp rewrites it, so the worker copies it per
+      # download and never touches the read-only secret directly.
+      # UT_YTDLP_COOKIES_FILE: /run/secrets/ut_ytdlp_cookies
       # yt-dlp player clients (D15). Empty keeps the worker's default (web_safari,tv, tuned for
       # the `pot` provider above). Override in .env if downloads 403/skip or you run no provider,
       # e.g. UT_YTDLP_PLAYER_CLIENTS=default (docs/admin-guide.md, "songs cut off or skip").
@@ -158,6 +169,12 @@ services:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
         target: ut_worker_token
+      # Optional: a YouTube cookies.txt exported from a THROWAWAY account (admin-guide.md).
+      # Uncomment this, the top-level secret, and UT_YTDLP_COOKIES_FILE above. Mounted
+      # read-only; the worker copies it to a private 0600 temp per download and never rewrites
+      # the secret in place. The content is an account credential: keep the file mode 600.
+      # - source: ytdlp_cookies
+      #   target: ut_ytdlp_cookies
     # `internal` reaches the api; `egress` is its own way out (yt-dlp to www.youtube.com,
     # MusicBrainz, Cover Art Archive, GitHub), so the worker shares no other network with the api.
     # `pot` reaches the optional PO token provider (nothing else is on it without the profile).
@@ -219,6 +236,14 @@ secrets:
   #   file: ./secrets/notify_token
   # totp_encryption_key:
   #   file: ./secrets/totp_encryption_key
+  # YouTube cookies (admin-guide.md, "Signing in with a YouTube account"). The key encrypts
+  # the cookies the admin/app uploads; required to enable the feature, fail-closed without it
+  # (`openssl rand -base64 32` → a urlsafe Fernet key). `ytdlp_cookies` is the optional file
+  # fallback (one cookies.txt, mode 600); the admin/app store is the primary path.
+  # ytdlp_cookies_key:
+  #   file: ./secrets/ytdlp_cookies_key
+  # ytdlp_cookies:
+  #   file: ./secrets/ytdlp_cookies
 
 networks:
   internal:
