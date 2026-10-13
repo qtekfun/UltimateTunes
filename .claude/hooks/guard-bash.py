@@ -204,6 +204,8 @@ def _check_tag(directory: str, args: list[str]) -> None:
                 block("release tags are never deleted, moved or forced (RELEASING.md); ask the author.")
         if _VERSION_TAG.match(arg):
             names.append(arg)
+        elif names and not arg.startswith("-"):
+            block("a release tag goes on the checked-out master HEAD; do not name another commit.")
     _check_tags(directory, names)
 
 
@@ -228,6 +230,12 @@ _RAW_DANGER = re.compile(
     r"|\$\(|`|\bgit\s+config\b|\s-c\s+\S|--config-env|(?:^|[;&|(\n]\s*)cd\s|\bpushd\b"
 )
 if re.search(r"\bgit\b", cmd):
+    # A computed name (`v$(cat VERSION)`, `v$V`, `` v`…` ``) would skip every check below.
+    if re.search(r"\b(push|tag)\b", cmd) and re.search(r"(?<![\w.-])['\"]?v['\"]?(\$|`)", cmd):
+        block("spell the release tag out (v1.2.3), never compute it in the command (RELEASING.md).")
+    # Deleting or forcing something whose name is computed could hit a release tag.
+    if re.search(r"[$`]", cmd) and _RAW_DANGER.search(cmd) and re.search(r"\b(push|tag)\b", cmd):
+        block("no delete or force on a computed ref name; spell it out (RELEASING.md).")
     _named = {m.group(0) for m in _RAW_TAG.finditer(cmd)}
     if _named and re.search(r"\b(push|tag|update-ref)\b|refs/tags/", cmd):
         _lead = re.match(r"\s*cd\s+(\S+)\s*&&", cmd)

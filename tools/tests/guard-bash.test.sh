@@ -101,6 +101,17 @@ blocked "$m" "$push origin tags/v9.9.9"
 blocked "$m" "$push -uf origin feat/x"
 blocked "$m" "git update-ref -d refs/tags/$t"
 
+blocked "$m" "cd $b && $tag -a \"v\$(cat VERSION)\" -m x"
+blocked "$m" "cd $b && $push origin \"v\$(cat VERSION)\""
+blocked "$m" "git -C $b tag -a \"v\$(<VERSION)\" -m x"
+blocked "$m" "$tag -a v\`cat VERSION\` -m x"
+blocked "$m" "V=\$(cat VERSION); $tag -a \"v\$V\" -m \"UltimateTunes \$V\""
+blocked "$m" "$tag -a $t -m x HEAD~1"
+blocked "$m" "$tag -a $t -m x feat/x"
+
+blocked "$m" "($push origin --delete \"\$TAG\")"
+blocked "$m" "$tag -d \"\$(git describe --abbrev=0)\""
+
 # Push behaviour is not changed through config or aliases.
 blocked "$m" "git -c push.followTags=true push origin feat/x"
 blocked "$m" "git -c remote.origin.mirror=true push origin"
