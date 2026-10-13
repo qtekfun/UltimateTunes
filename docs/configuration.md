@@ -116,6 +116,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_CATALOG_USER_RATE_PER_S` | `0.5` | api | Each user's budget of uncached catalog lookups (album, artist, track, radio, playlist, covers); past it 429 until it refills. Shown per user in the panel. |
 | `UT_CATALOG_USER_BURST` | `60` | api | Burst of each user's catalog lookups. |
 | `UT_RADIO` | `true` | api | Off: radio and similar songs answer "feature disabled". |
+| `UT_RECOMMENDATIONS` | `true` | api | Off (or `UT_RADIO` off): `/ut/v1/recommendations` answers "feature disabled". Recommendations seed the YouTube Music radio from your own plays and favourites. |
+| `UT_RECOMMENDATION_SEEDS` | `4` | api | How many of your most-played and favourite songs seed the recommendations (one radio each). |
 | `UT_IMPORT_CATALOG_RATE_PER_S` | `0.5` | api | Catalog lookups per second of all playlist imports together, a share of the YouTube Music budget (at most 2). |
 | `UT_IMPORT_CATALOG_BURST` | `1` | api | Burst of that import budget. |
 | `UT_IMPORT_MAX_ACTIVE_PER_USER` | `3` | api | Imports one user may have running at once. |
