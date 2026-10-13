@@ -198,3 +198,53 @@ def test_a_solo_recording_never_stands_in_for_a_featured_version() -> None:
 def test_with_in_brackets_is_part_of_the_title() -> None:
     query = Query("To Sir (With Love)", "Lulu", None, 165000)
     assert score(query, recording("To Sir With Love", ["Lulu"], 165000)) == 1.0
+
+
+def test_a_disambiguation_marker_counts_once_and_only_when_new() -> None:
+    live_take = Query("Song (Live)", "A", None, 200000)
+    assert score(live_take, recording("Song (live)", ["A"], 200000, "live, 2015")) == 1.0
+    assert score(live_take, recording("Song", ["A"], 200000, "live, 2015")) == 1.0
+    studio = Query("Live Forever", "Oasis", None, 276000)
+    assert score(studio, recording("Live Forever", ["Oasis"], 276000, "live, 1995")) < MIN_SCORE
+    assert score(studio, recording("Live Forever", ["Oasis"], 276000)) == 1.0
+    live = Query("Live Forever (Live)", "Oasis", None, 276000)
+    assert score(live, recording("Live Forever (live)", ["Oasis"], 276000, "live")) == 1.0
+    assert score(live, recording("Live Forever - Live", ["Oasis"], 276000, "live")) == 1.0
+
+
+def test_featured_artists_are_found_accents_aside_or_inside_the_printed_credit() -> None:
+    query = Query("Song (feat. Suu)", "Despistaos", None, 200000)
+    assert score(query, recording("Song", ["Despistaos", "Süu"], 200000)) >= MIN_SCORE
+    by_artist_name = {
+        "title": "Song",
+        "length": 200000,
+        "artist-credit": [
+            {"name": "Despistaos", "joinphrase": " feat. "},
+            {"name": "S.", "artist": {"name": "Süu"}},
+        ],
+    }
+    assert artist_similarity(query, by_artist_name["artist-credit"]) > 0.5  # not capped
+    duo = Query("Song (feat. Garfunkel)", "Paul Simon", None, 200000)
+    assert score(duo, recording("Song", ["Paul Simon", "Simon & Garfunkel"], 200000)) >= MIN_SCORE
+    assert score(duo, recording("Song", ["Paul Simon", "Simon & Garfunkelson"], 200000)) < (
+        MIN_SCORE
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate"),
+    [
+        (Query("Song (Remastered 2011)", "A", None, 200000), recording("Song", ["A"], 200000)),
+        (Query("Song (Radio Edit)", "A", None, 200000), recording("Song", ["A"], 200000)),
+        (
+            Query("Song (feat. B) [Radio Edit]", "A", None, 200000),
+            recording("Song [Radio Edit]", ["A", "B"], 200000),
+        ),
+        (Query("Song (Original Mix)", "A", None, 200000), recording("Song", ["A"], 200000)),
+        (Query("Song", "A", None, 200000), recording("Song (2011 remaster)", ["A"], 200000)),
+    ],
+)
+def test_remasters_edits_and_original_mixes_still_match(
+    query: Query, candidate: dict[str, Any]
+) -> None:
+    assert score(query, candidate) >= MIN_SCORE

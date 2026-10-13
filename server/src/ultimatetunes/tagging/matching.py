@@ -124,6 +124,18 @@ def _markers(title: str) -> Counter[str]:
     return Counter(_VERSION_MARKERS[w] for w in normalize(title).split() if w in _VERSION_MARKERS)
 
 
+def _version_part(title: str) -> str:
+    """What names the take: the bracketed parts and anything after " - "."""
+    _, dash, after = title.partition(" - ")
+    return " ".join([*_BRACKETS.findall(title), after if dash else ""])
+
+
+def _fold(text: str) -> str:
+    """`normalize`, then without accents ("Süu" -> "suu")."""
+    decomposed = unicodedata.normalize("NFKD", normalize(text))
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
 def title_similarity(left: str, right: str, right_note: str = "") -> float:
     """`similarity` of the titles without "feat." parts when both name the same version
     markers (live, remix, acoustic...), the right title's note included (a MusicBrainz
@@ -131,7 +143,11 @@ def title_similarity(left: str, right: str, right_note: str = "") -> float:
     ratio, capped at `OTHER_VERSION_TITLE_CAP`."""
     left, _ = split_featuring(left)
     right, _ = split_featuring(right)
-    noted = " ".join([right, *(w for w in normalize(right_note).split() if w in _VERSION_MARKERS)])
+    # The note adds a marker only when the title's version part does not already name it:
+    # "Song (live)" + "live, 2015" is one live take, "Live Forever" + "live" is not the studio.
+    named = _markers(_version_part(right))
+    extra = sorted({kind for kind in _markers(right_note) if kind not in named})
+    noted = " ".join([right, *extra])
     if _markers(left) == _markers(noted):
         return similarity(left, right)
     na, nb = normalize(left), normalize(noted)
@@ -151,9 +167,10 @@ def artist_similarity(query: Query, artist_credit: Any) -> float:
     featured = split_featuring(query.title)[1]
     whole = similarity(", ".join([query.artist, *featured]), credit_name(artist_credit) or "")
     youtube = artist_names(query.artist) + featured
+    entries = _list(artist_credit)
     credited = [
         name
-        for credit in _list(artist_credit)
+        for credit in entries
         if (name := _text(credit.get("name")) or _text(_dict(credit.get("artist")).get("name")))
     ]
     if not youtube or not credited:
@@ -161,11 +178,26 @@ def artist_similarity(query: Query, artist_credit: Any) -> float:
     primary = max(similarity(youtube[0], name) for name in credited)
     overlap = (_coverage(youtube, credited) + _coverage(credited, youtube)) / 2
     best = max(whole, primary * overlap)
-    missing = any(
-        max(similarity(name, other) for other in credited) < CREDITED_MIN_SIMILARITY
-        for name in featured
-    )
+    missing = any(not _is_credited(name, entries) for name in featured)
     return min(best, MISSING_FEATURED_ARTIST_CAP) if missing else best
+
+
+def _is_credited(name: str, entries: list[dict[str, Any]]) -> bool:
+    """The name, accents aside, is close to a credited name (as credited or the artist's
+    own), or is whole words of the printed credit ("Garfunkel" in "Simon & Garfunkel")."""
+    names = [
+        _fold(text)
+        for credit in entries
+        for text in (_text(credit.get("name")), _text(_dict(credit.get("artist")).get("name")))
+        if text
+    ]
+    folded = _fold(name)
+    if any(
+        SequenceMatcher(None, folded, other).ratio() >= CREDITED_MIN_SIMILARITY for other in names
+    ):
+        return True
+    printed = _fold(credit_name(entries) or "")
+    return bool(folded) and f" {folded} " in f" {printed} "
 
 
 def duration_agreement(left_ms: int | None, right_ms: int | None) -> float:
