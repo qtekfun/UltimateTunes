@@ -175,8 +175,9 @@ Notes:
   short (1 MiB x 2) because upstream prints every BotGuard integrity token it mints.
 - **`migrate`** is a separate command so Kubernetes can run it as a Job later; the api only
   checks the schema version at start (`/readyz` fails while it is behind).
-- **Other commands** of the same entrypoint, run by hand: `docker compose run --rm api ...` for
-  `bootstrap-admin <name>` (first admin, password on the terminal), `scan-library` and
+- **Other commands** of the same entrypoint, run by hand inside the running api
+  (`docker compose exec api ultimatetunes ...`; `run --rm api` would clash with the api's pinned
+  address on `internal`) for `bootstrap-admin <name>` (first admin, password on the terminal), `scan-library` and
   `canary --only catalog`; `docker compose run --rm worker canary` for the full canary, since
   only the worker has yt-dlp (`/opt/ytdlp`) and talks to `www.youtube.com`.
 - **Test stack** (`server/compose.test.yaml`): built from source (`ultimatetunes-server:test`, or the tag in `UT_TEST_IMAGE_TAG`; `tools/ci-local.sh` uses `ci-local`),
