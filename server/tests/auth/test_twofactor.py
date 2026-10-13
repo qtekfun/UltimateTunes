@@ -3,19 +3,33 @@
 """Enrollment, the login second step, recovery codes and the require-policy (auth/twofactor.py)."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from cryptography.fernet import Fernet
+from pydantic import SecretStr
 
-from tests.auth.conftest import Account
+from tests.auth.conftest import TOTP_KEY, Account
 from tests.security_events import collect, rendered
 from ultimatetunes.auth import totp
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.auth.twofactor import TwoFactorService
 from ultimatetunes.core.clock import Clock, FakeClock
-from ultimatetunes.errors import Conflict
+from ultimatetunes.errors import Conflict, FeatureDisabled
 
 IP = "192.0.2.50"
+
+
+def _service_like(service: AuthService, **settings: object) -> AuthService:
+    """A second AuthService on the same database/clock/limiter with different settings."""
+    return AuthService(
+        service._db,
+        service._clock,
+        service._limiter,
+        AuthSettings(**settings),  # type: ignore[arg-type]
+        service._passwords,
+    )
 
 
 @pytest.fixture
@@ -149,6 +163,53 @@ def test_verify_fails_closed_while_only_pending(tf: TwoFactorService, user: Acco
     assert not tf.verify_second_factor(user.user_id, "123456", IP)
 
 
+def test_enrollment_fails_closed_without_an_encryption_key(
+    service: AuthService, user: Account
+) -> None:
+    keyless = _service_like(service, totp_encryption_key=None).two_factor
+    with pytest.raises(FeatureDisabled):
+        keyless.begin_enrollment(user.user_id, user.username)
+
+
+def test_verify_totp_fails_closed_without_the_key(
+    service: AuthService, tf: TwoFactorService, clock: FakeClock, user: Account
+) -> None:
+    enrollment = tf.begin_enrollment(user.user_id, user.username)
+    secret = enrollment.secret
+    tf.confirm_enrollment(user.user_id, _now_code(clock, secret))
+    clock.advance(totp.PERIOD_S)
+    keyless = _service_like(service, totp_encryption_key=None).two_factor
+    # The sealed secret cannot be opened, so a TOTP code is refused rather than bypassed.
+    assert not keyless.verify_second_factor(user.user_id, _now_code(clock, secret), IP)
+
+
+def test_verify_totp_fails_closed_with_the_wrong_key(
+    service: AuthService, tf: TwoFactorService, clock: FakeClock, user: Account
+) -> None:
+    enrollment = tf.begin_enrollment(user.user_id, user.username)
+    secret = enrollment.secret
+    tf.confirm_enrollment(user.user_id, _now_code(clock, secret))
+    clock.advance(totp.PERIOD_S)
+    other_key = SecretStr(Fernet.generate_key().decode("ascii"))
+    wrong = _service_like(service, totp_encryption_key=other_key).two_factor
+    assert not wrong.verify_second_factor(user.user_id, _now_code(clock, secret), IP)
+
+
+def test_concurrent_use_of_a_code_admits_exactly_one(
+    tf: TwoFactorService, clock: FakeClock, user: Account
+) -> None:
+    enrollment = tf.begin_enrollment(user.user_id, user.username)
+    secret = enrollment.secret
+    tf.confirm_enrollment(user.user_id, _now_code(clock, secret))
+    clock.advance(totp.PERIOD_S)
+    code = _now_code(clock, secret)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(lambda _: tf.verify_second_factor(user.user_id, code, IP), range(2))
+        )
+    assert sum(results) == 1
+
+
 def test_recovery_code_race_is_treated_as_spent(
     tf: TwoFactorService, clock: FakeClock, user: Account, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -243,7 +304,7 @@ def test_disable_refused_when_the_policy_requires_it(service: AuthService, user:
         service._db,
         service._clock,
         service._limiter,
-        AuthSettings(auth_require_2fa="all"),
+        AuthSettings(auth_require_2fa="all", totp_encryption_key=TOTP_KEY),
         service._passwords,
     ).two_factor
     enrollment = tf.begin_enrollment(user.user_id, user.username)

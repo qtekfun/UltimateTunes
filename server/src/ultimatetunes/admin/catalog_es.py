@@ -459,4 +459,7 @@ ES: dict[str, str] = {
     "Two-factor authentication is required for this account": (
         "La autenticación de doble factor es obligatoria en esta cuenta"
     ),
+    "Set up two-factor authentication to continue.": (
+        "Configura la autenticación de doble factor para continuar."
+    ),
 }

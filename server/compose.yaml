@@ -107,6 +107,11 @@ services:
       # UT_NOTIFY_HOST in .env to the ntfy host name (required: the token goes only there).
       # - source: notify_token
       #   target: ut_notify_token
+      # Optional: enables TOTP two-factor authentication on the password logins (docs/2fa.md).
+      # Create ./secrets/totp_encryption_key with a Fernet key and uncomment this and the secret
+      # below: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+      # - source: totp_encryption_key
+      #   target: ut_totp_encryption_key
     networks:
       default: {}
       internal:
@@ -206,6 +211,8 @@ secrets:
   #   file: ./secrets/bootstrap_admin_password
   # notify_token:
   #   file: ./secrets/notify_token
+  # totp_encryption_key:
+  #   file: ./secrets/totp_encryption_key
 
 networks:
   internal:

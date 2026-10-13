@@ -235,6 +235,9 @@ ES: dict[str, str] = {
     "Verify": "Verificar",
     "That code is wrong.": "Ese código es incorrecto.",
     "Your sign-in expired. Start again.": "Tu inicio de sesión caducó. Empieza de nuevo.",
+    "Set up two-factor authentication to continue.": (
+        "Configura la autenticación de doble factor para continuar."
+    ),
     "Enter the 6-digit code from your authenticator app, or one of your recovery codes.": (
         "Introduce el código de 6 dígitos de tu aplicación de autenticación, o uno de tus"
         " códigos de recuperación."

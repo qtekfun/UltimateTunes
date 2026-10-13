@@ -6,8 +6,11 @@ import re
 
 from fastapi.testclient import TestClient
 
+from tests.auth.conftest import TOTP_KEY, fast_passwords
 from tests.web.conftest import People, csrf_of
 from ultimatetunes.auth import totp
+from ultimatetunes.auth.service import AuthService
+from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.clock import FakeClock
 
 _SECRET = re.compile(r"<code>([A-Z2-7]{16,})</code>")
@@ -109,3 +112,40 @@ def test_disable_needs_the_password(
     )
     assert good.status_code == 303
     assert not auth.two_factor.is_enabled(people.ana.user.id)
+
+
+def test_required_user_is_gated_until_enrolled(
+    client: TestClient, people: People, clock: FakeClock
+) -> None:
+    svc = client.app.state.web.services  # type: ignore[attr-defined]
+    required = AuthService(
+        svc.db,
+        clock,
+        svc.rate_limiter,
+        AuthSettings(auth_require_2fa="all", totp_encryption_key=TOTP_KEY),
+        fast_passwords(),
+    )
+    client.app.state.web.auth = required  # type: ignore[attr-defined]
+    form = client.get("/web/login")
+    r = client.post(
+        "/web/login",
+        data={
+            "csrf": csrf_of(form.text),
+            "username": people.ana.user.username,
+            "password": people.ana.password,
+        },
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/web/settings"
+    # A protected page is refused and points at Settings; Settings itself is reachable.
+    blocked = client.get("/web/library")
+    assert blocked.status_code == 303
+    assert blocked.headers["location"] == "/web/settings"
+    settings = client.get("/web/settings")
+    assert settings.status_code == 200
+    csrf = csrf_of(settings.text)
+    started = client.post("/web/settings/2fa/enroll", data={"csrf": csrf})
+    secret = _secret_on_page(started.text)
+    client.post("/web/settings/2fa/confirm", data={"csrf": csrf, "code": _code(clock, secret)})
+    # After enrolling, the rest of the player opens up.
+    assert client.get("/web/library").status_code == 200

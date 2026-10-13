@@ -1411,6 +1411,13 @@ components:
           minLength: 1
           maxLength: 100
           description: Device name, e.g. `Pixel 9`.
+        totp:
+          type: string
+          maxLength: 64
+          format: password
+          description: >-
+            TOTP code or recovery code for the second factor. Optional; required only when the
+            account has two-factor authentication enabled, otherwise ignored.
     CreatedKey:
       type: object
       required:

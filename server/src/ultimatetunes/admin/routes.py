@@ -186,6 +186,16 @@ class CsrfRejected(Exception):  # noqa: N818
     """A state change without the session's CSRF token, or a cross-site one."""
 
 
+class EnrollmentRequired(Exception):  # noqa: N818 - a control-flow signal, not an error
+    """A policy-covered admin who has not set up 2FA yet: sent to the setup page, refused
+    everything else until enrolled (`UT_AUTH_REQUIRE_2FA`)."""
+
+
+def _enroll_exempt(path: str) -> bool:
+    """Paths a must-enroll admin may still reach: the 2FA setup itself and signing out."""
+    return path == "/admin/2fa" or path.startswith("/admin/2fa/") or path == "/admin/logout"
+
+
 @dataclass(frozen=True)
 class Admin:
     user: User
@@ -249,6 +259,10 @@ def current_admin(request: Request) -> Admin:
     if user.role != "admin":
         not_admin(user.username)
         raise NotAdmin
+    if st.auth.two_factor.status(user.id, "admin").must_enroll and not _enroll_exempt(
+        request.url.path
+    ):
+        raise EnrollmentRequired
     return Admin(user, session, client_ip(request))
 
 
@@ -346,7 +360,20 @@ def error_status(error: TunesError) -> int:
 
 def handlers() -> dict[type[Exception], object]:
     """Exception handlers `web.install` registers for the panel's own signals."""
-    return {LoginRequired: _login_required, NotAdmin: _not_admin, CsrfRejected: _csrf_rejected}
+    return {
+        LoginRequired: _login_required,
+        NotAdmin: _not_admin,
+        CsrfRejected: _csrf_rejected,
+        EnrollmentRequired: _enrollment_required,
+    }
+
+
+async def _enrollment_required(request: Request, _exc: Exception) -> Response:
+    if request.method in ("GET", "HEAD"):
+        if request.headers.get("hx-request"):
+            return Response(status_code=200, headers={"HX-Redirect": "/admin/2fa"})
+        return RedirectResponse("/admin/2fa", status_code=303)
+    return _forbidden(request, "Set up two-factor authentication to continue.")
 
 
 async def _login_required(request: Request, _exc: Exception) -> Response:

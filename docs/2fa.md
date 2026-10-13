@@ -49,9 +49,12 @@ factor:
 - `admins` — every admin must use it.
 - `all` — every account must use it.
 
-A covered user who has not enrolled yet is signed in but sent straight to the setup page, and
-cannot turn the factor off while the policy covers them. The policy is an environment variable so
-it is part of the deployment, not something a single admin session can switch.
+A covered user who has not enrolled yet gets **no usable session**: after the password step they
+are redirected to the setup page (the admin panel's **Two-factor** page, the web player's
+**Settings**) and every other route is refused until they enroll — only enrollment, the 2FA setup
+actions and signing out are reachable. Once a covered user has enrolled, they cannot turn the
+factor off. The policy is an environment variable, so it is part of the deployment, not something
+a single admin session can switch.
 
 ## Brute force and replay
 
@@ -59,40 +62,54 @@ it is part of the deployment, not something a single admin session can switch.
   second step unchanged.
 - The second step has its **own** lockout bucket (`auth:2fa:<user id>`): repeated wrong codes lock
   that user's second step for `UT_AUTH_LOCKOUT_S` after `UT_AUTH_MAX_FAILURES_PER_USER` tries.
-- A code is accepted within `UT_AUTH_2FA_WINDOW` (default ±1) 30 s steps for clock drift, and the
-  **last accepted step is remembered**, so a code cannot be replayed inside its validity window
-  (RFC 6238 §5.2).
+- A code is accepted within `UT_AUTH_2FA_WINDOW` (default ±1) 30 s steps for clock drift. A code
+  is **strictly single-use**: accepting it advances the stored time step with one atomic
+  conditional `UPDATE` (`WHERE last_step < step`), so even two requests presenting the same valid
+  code at the same moment cannot both succeed — at most one wins (RFC 6238 §5.2).
 - The shared secret and the recovery codes never appear in logs, the audit log or an error. Every
   outcome is an `auth.2fa` security event with the user id and a reason, never a code.
 
-## Secret at rest — caveat and proposal
+## Secret at rest — encrypted
 
-The TOTP shared secret **must be reversible** (the server recomputes codes from it), so it is
-stored in the database (`user_totp.secret`). The current dependency set has **no AEAD library**
-(same note as the authenticated-notification credentials in `SECURITY.md`), so the secret is stored
-as-is.
+The TOTP shared secret **must be reversible** (the server recomputes codes from it), so it cannot
+be a hash. It is **encrypted at rest** with **`cryptography.fernet.Fernet`** (AES-128-CBC +
+HMAC-SHA256; `cryptography`, Apache-2.0 OR BSD-3-Clause) under a key the operator supplies out of
+band, so the database alone is not enough to read the secrets. Recovery codes are stored only as
+Argon2id hashes and spent once.
 
-**Protect `/data`.** A stolen database exposes the TOTP secrets (an attacker who also has the
-password could then generate codes). The recovery codes are **not** at risk: they are stored only
-as Argon2id hashes.
+### The key
 
-A follow-up proposal, left for the owner to approve, is to add a vetted AEAD dependency and encrypt
-`user_totp.secret` at rest with a key from an environment variable / Docker secret (so the database
-alone is not enough). The recommended package is **`cryptography`** (Apache-2.0 **OR** BSD-3-Clause;
-GPL-3.0-compatible), using **`cryptography.fernet.Fernet`** (AES-128-CBC + HMAC-SHA256). An
-alternative is **`PyNaCl`** (Apache-2.0; libsodium secretbox, XSalsa20-Poly1305). Either is a new
-dependency and therefore needs the owner's explicit approval and a license check before it is added
-(CLAUDE.md). This is **not** implemented in this change.
+Set **`UT_TOTP_ENCRYPTION_KEY`** to a urlsafe-base64 32-byte Fernet key, from an environment
+variable or the Docker secret `ut_totp_encryption_key`. Generate one with:
 
-## `POST /ut/v1/keys` and the app — additive contract change (proposed)
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
-The server reads an **optional** `totp` field on `POST /ut/v1/keys` and, when the account has 2FA
-enabled, requires a valid code (a TOTP code or a recovery code) in addition to the password, so a
-stolen password alone cannot enroll a new device. The field is optional and is consulted only for
-2FA-enabled accounts, so the frozen `contracts/openapi/ut-v1.yaml` and clients that do not send it
-are unaffected — `ut-v1.yaml` was **not** edited (it is frozen per wave).
+- **2FA needs the key.** Without it, enrollment and the login second step **fail closed** with a
+  clear operator error — the server never falls back to storing or accepting a plaintext secret.
+- **Protect the key as well as the database.** Keep it where you keep `UT_ADMIN_SESSION_SECRET`
+  (an env var or a Docker secret, never in the repo or `.env`). If an attacker has *both* the
+  database and the key, they can read the secrets; either one alone is not enough.
+- **If the key is lost**, enrolled TOTP secrets become unreadable. Affected users sign in with a
+  **recovery code** (recovery codes do not use this key) and re-enroll; set a new key first.
 
-Proposed additive change for the coordinator to apply to `ut-v1.yaml` (`CreateKeyRequest`):
+### Key rotation (optional, proposed)
+
+Rotation is not implemented. The clean way to add it later is **`cryptography.fernet.MultiFernet`**:
+`UT_TOTP_ENCRYPTION_KEY` becomes a comma-separated list (new key first for encryption, old keys
+still accepted for decryption), and a one-off `ultimatetunes rotate-totp-keys` command re-encrypts
+every `user_totp.secret` with the first key. Until then, rotating the key means asking enrolled
+users to re-enroll (or restoring the old key).
+
+## `POST /ut/v1/keys` and the app — `totp` field
+
+`CreateKeyRequest` carries an **optional** `totp` field (`contracts/openapi/ut-v1.yaml`, added by
+the coordinator with this change). When the account has 2FA enabled, the server requires a valid
+code (a TOTP code or a recovery code) in addition to the password, so a stolen password alone
+cannot enroll a new device. The field is optional and consulted only for 2FA-enabled accounts, so
+it is backward-compatible: clients that do not send it keep creating keys for accounts without a
+second factor.
 
 ```yaml
     CreateKeyRequest:
@@ -100,7 +117,7 @@ Proposed additive change for the coordinator to apply to `ut-v1.yaml` (`CreateKe
         username: { type: string, minLength: 1, maxLength: 64 }
         password: { type: string, minLength: 1, maxLength: 1024 }
         name:     { type: string, minLength: 1, maxLength: 100 }
-        totp:                       # NEW, optional
+        totp:                       # optional
           type: string
           maxLength: 64
           description: >-
