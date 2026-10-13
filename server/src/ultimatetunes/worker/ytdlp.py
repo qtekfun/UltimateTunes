@@ -52,7 +52,7 @@ from ultimatetunes.worker.downloader import (
     ProgressCallback,
     check_video_id,
 )
-from ultimatetunes.worker.settings import WorkerSettings, internal_base_url
+from ultimatetunes.worker.settings import UNSAFE_URL_CHARS, WorkerSettings, internal_base_url
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +125,11 @@ def build_args(  # noqa: PLR0913 - the inputs of one yt-dlp command line
     pot: list[str] = []
     if pot_provider_url is not None:
         # Settings validated it; checked again so nothing else can reach the argument.
-        if plugin_dir is None or internal_base_url(pot_provider_url) != pot_provider_url:
+        if (
+            plugin_dir is None
+            or internal_base_url(pot_provider_url) != pot_provider_url
+            or UNSAFE_URL_CHARS & set(pot_provider_url)
+        ):
             raise ValueError("the PO token provider needs a canonical URL and a plugin directory")
         plugins += ["--plugin-dirs", str(plugin_dir)]
         pot = ["--extractor-args", f"{POT_PROVIDER_ARGS}:base_url={pot_provider_url}"]

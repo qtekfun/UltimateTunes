@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.storage import LocalStagingStore
 from ultimatetunes.errors import WorkerErrorCode
+from ultimatetunes.worker import settings as worker_settings
 from ultimatetunes.worker import ytdlp
 from ultimatetunes.worker.downloader import DownloadError, DownloadProgress
 from ultimatetunes.worker.settings import WorkerSettings, internal_base_url
@@ -52,6 +53,9 @@ def anyio_backend() -> str:
         ("http://192.168.1.20:4416", "http://192.168.1.20:4416"),
         ("http://[::1]:4416", "http://[::1]:4416"),
         ("http://[fd00::5]:4416", "http://[fd00::5]:4416"),
+        ("http://[FD00:0:0::5]:4416", "http://[fd00::5]:4416"),
+        ("http://172.31.255.254", "http://172.31.255.254"),
+        ("http://127.0.0.2:4416", "http://127.0.0.2:4416"),
     ],
 )
 def test_internal_urls_are_accepted_in_canonical_form(raw: str, canonical: str) -> None:
@@ -92,6 +96,22 @@ def test_internal_urls_are_accepted_in_canonical_form(raw: str, canonical: str) 
         # Separators of yt-dlp's --extractor-args can never get through.
         "http://pot-provider:4416;base_url=http://8.8.8.8",
         "http://pot,provider:4416",
+        # IPv6 zone ids would carry `%`, `,` or `;` into the argument.
+        "http://[fd00::5%a;b=c]:1",
+        "http://[fd00::5%25a,b]:4416",
+        "http://[fe80::1%eth0]:4416",
+        # Only 10/8, 172.16/12, 192.168/16, 127/8, ::1 and fc00::/7.
+        "http://100.64.0.1:4416",
+        "http://192.0.2.10:4416",
+        "http://198.51.100.7:4416",
+        "http://172.32.0.1:4416",
+        "http://240.0.0.1:4416",
+        "http://[::ffff:10.0.0.1]:4416",
+        "http://[::ffff:127.0.0.1]:4416",
+        "http://[2002:a00:1::1]:4416",
+        "http://[64:ff9b::a00:1]:4416",
+        # Port 0.
+        "http://pot-provider:0",
     ],
 )
 def test_anything_but_an_internal_base_url_is_refused_at_load(raw: str) -> None:
@@ -180,6 +200,8 @@ def test_with_a_provider_only_the_image_plugin_dir_is_searched(tmp_path: Path) -
         ("http://pot-provider:4416/", Path("/p")),
         ("http://8.8.8.8:4416", Path("/p")),
         ("http://pot-provider:4416;x=y", Path("/p")),
+        ("http://[fd00::5%a;b=c]:1", Path("/p")),
+        ("http://[fd00::5%25a,b]:4416", Path("/p")),
     ],
 )
 def test_the_command_line_refuses_an_unchecked_provider(
@@ -376,37 +398,80 @@ def _zip(path: Path, entries: dict[str, str]) -> str:
     return str(path)
 
 
+# The layout of upstream's release zip (2.0.0): two directories and three modules.
+BASE = "yt_dlp_plugins/extractor/getpot_bgutil.py"
+HTTP = "yt_dlp_plugins/extractor/getpot_bgutil_http.py"
+SCRIPT = "yt_dlp_plugins/extractor/getpot_bgutil_script.py"
 GOOD = {
-    "yt_dlp_plugins/extractor/getpot_bgutil.py": "x = 1\n__version__ = '2.0.0'\n",
-    "yt_dlp_plugins/extractor/getpot_bgutil_http.py": "",
+    "yt_dlp_plugins/": "",
+    "yt_dlp_plugins/extractor/": "",
+    BASE: "x = 1\n__version__ = '2.0.0'\n",
+    HTTP: "class BgUtilHTTPPTP: ...\n",
+    SCRIPT: "class BgUtilScriptPTP: ...\n",
 }
 
 
-def test_the_build_check_accepts_the_pinned_layout(tmp_path: Path) -> None:
-    out = _check_plugin().check(_zip(tmp_path / "ok.zip", GOOD), "2.0.0")
-    assert "bgutil plugin 2.0.0" in out
+def test_the_build_check_keeps_only_the_http_provider(tmp_path: Path) -> None:
+    out = tmp_path / "bgutil-http.zip"
+    message = _check_plugin().check(_zip(tmp_path / "ok.zip", GOOD), "2.0.0", str(out))
+    assert "bgutil plugin 2.0.0" in message
+    with zipfile.ZipFile(out) as pruned:
+        assert pruned.namelist() == ["yt_dlp_plugins/", "yt_dlp_plugins/extractor/", BASE, HTTP]
+        assert pruned.read(HTTP) == GOOD[HTTP].encode()
+        assert pruned.read(BASE) == GOOD[BASE].encode()
+        # Fixed dates: the same input gives the same file.
+        assert {info.date_time for info in pruned.infolist()} == {(2026, 1, 1, 0, 0, 0)}
+    again = tmp_path / "again.zip"
+    _check_plugin().check(_zip(tmp_path / "ok2.zip", GOOD), "2.0.0", str(again))
+    assert again.read_bytes() == out.read_bytes()
 
 
 @pytest.mark.parametrize(
     ("entries", "message"),
     [
-        ({**GOOD, "evil.py": ""}, "unexpected entry"),
-        ({**GOOD, "yt_dlp_plugins/../x.py": ""}, "unexpected entry"),
-        ({"yt_dlp_plugins/extractor/getpot_bgutil.py": "__version__ = '2.0.0'\n"}, "missing"),
-        ({**GOOD, "yt_dlp_plugins/extractor/getpot_bgutil.py": "__version__ = '2.0.1'\n"}, "2.0.1"),
-        ({**GOOD, "yt_dlp_plugins/extractor/getpot_bgutil.py": ""}, "version none"),
+        ({**GOOD, "evil.py": ""}, "evil.py"),
+        ({**GOOD, "yt_dlp_plugins/../x.py": ""}, "yt_dlp_plugins/../x.py"),
+        ({**GOOD, "yt_dlp_plugins/extractor/getpot_new.py": ""}, "getpot_new.py"),
+        ({k: v for k, v in GOOD.items() if k != HTTP}, "getpot_bgutil_http.py"),
+        ({k: v for k, v in GOOD.items() if k != SCRIPT}, "getpot_bgutil_script.py"),
+        ({**GOOD, BASE: "__version__ = '2.0.1'\n"}, "2.0.1"),
+        ({**GOOD, BASE: ""}, "version none"),
     ],
 )
 def test_the_build_check_refuses_anything_else(
     tmp_path: Path, entries: dict[str, str], message: str
 ) -> None:
+    out = tmp_path / "out.zip"
     with pytest.raises(SystemExit, match=re.escape(message)):
-        _check_plugin().check(_zip(tmp_path / "bad.zip", entries), "2.0.0")
+        _check_plugin().check(_zip(tmp_path / "bad.zip", entries), "2.0.0", str(out))
+    assert not out.exists()
+
+
+def test_the_build_check_refuses_duplicate_entries(tmp_path: Path) -> None:
+    path = tmp_path / "dup.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in GOOD.items():
+            archive.writestr(name, text)
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            archive.writestr(HTTP, "shadow\n")
+    with pytest.raises(SystemExit, match="entries differ"):
+        _check_plugin().check(str(path), "2.0.0", str(tmp_path / "out.zip"))
 
 
 def test_the_build_check_command_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     module = _check_plugin()
     with pytest.raises(SystemExit):
         module.main(["check_plugin.py"])
-    module.main(["check_plugin.py", _zip(tmp_path / "ok.zip", GOOD), "2.0.0"])
-    assert "2.0.0" in capsys.readouterr().out
+    out = tmp_path / "out.zip"
+    module.main(["check_plugin.py", _zip(tmp_path / "ok.zip", GOOD), "2.0.0", str(out)])
+    assert "HTTP provider only" in capsys.readouterr().out
+    assert out.is_file()
+
+
+@pytest.mark.parametrize("host", ["a;b", "a,b", "a%b"])
+def test_the_last_guard_refuses_separators_whatever_the_host_check_says(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    monkeypatch.setattr(worker_settings, "_internal_host", lambda _host: host)
+    with pytest.raises(ValueError, match="extractor arguments"):
+        internal_base_url("http://pot-provider:4416")

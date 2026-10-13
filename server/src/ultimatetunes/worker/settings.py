@@ -32,16 +32,36 @@ YTDLP_KEY_FINGERPRINT = YTDLP_SIGNER.replace(" ", "")
 _SERVICE_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
-def _internal_host(host: str) -> bool:
-    """A Docker service name, or a loopback or private address (never link-local: cloud
-    metadata services live there)."""
+# The only address ranges a PO token provider may live in: private and loopback, nothing else
+# (no link-local metadata services, no IPv4-mapped or 6to4 forms of other addresses).
+INTERNAL_NETWORKS = tuple(
+    ipaddress.ip_network(net)
+    for net in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "::1/128",
+        "fc00::/7",
+    )
+)
+# Characters that must never reach yt-dlp's `--extractor-args` (its separators, and `%` of an
+# IPv6 zone id or an escape).
+UNSAFE_URL_CHARS = frozenset(",;%")
+
+
+def _internal_host(host: str) -> str | None:
+    """The canonical form of a Docker service name or an address inside `INTERNAL_NETWORKS`, or
+    None. IPv6 zone ids (`%...`) are refused."""
+    if "%" in host:
+        return None
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        return _SERVICE_NAME.fullmatch(host) is not None
-    return (address.is_private or address.is_loopback) and not (
-        address.is_link_local or address.is_unspecified or address.is_multicast
-    )
+        return host if _SERVICE_NAME.fullmatch(host) else None
+    if any(address in net for net in INTERNAL_NETWORKS):
+        return str(address)
+    return None
 
 
 def internal_base_url(value: str) -> str:
@@ -49,8 +69,9 @@ def internal_base_url(value: str) -> str:
 
     Only a scheme, a host and a port: no credentials, path, query or fragment, and a host that
     is a single-label service name or a private/loopback address, so the URL can only lead to a
-    container next to the worker. Rebuilt from its parts, so it never carries `,` or `;` (the
-    separators of yt-dlp's `--extractor-args`). Errors never echo the value.
+    container next to the worker. Rebuilt from its parts, so it never carries `,`, `;` (the
+    separators of yt-dlp's `--extractor-args`) or `%` (IPv6 zone ids are refused). Errors never
+    echo the value.
     """
     try:
         parts = urlsplit(value.strip())
@@ -63,13 +84,18 @@ def internal_base_url(value: str) -> str:
         raise ValueError("the URL must not carry credentials")
     if parts.path not in ("", "/") or parts.query or parts.fragment:
         raise ValueError("the URL must be a bare base URL (no path, query or fragment)")
-    host = parts.hostname
-    if not host or not _internal_host(host):
+    host = _internal_host(parts.hostname or "")
+    if host is None:
         raise ValueError("the host must be a service name on a Docker network or a private address")
+    if port == 0:
+        raise ValueError("the URL must not use port 0")
     netloc = f"[{host}]" if ":" in host else host
     if port is not None:
         netloc = f"{netloc}:{port}"
-    return f"{parts.scheme}://{netloc}"
+    url = f"{parts.scheme}://{netloc}"
+    if UNSAFE_URL_CHARS & set(url):  # a last guard, whatever the host check lets through
+        raise ValueError("the URL contains characters yt-dlp's extractor arguments cannot carry")
+    return url
 
 
 class WorkerSettings(AreaSettings):
