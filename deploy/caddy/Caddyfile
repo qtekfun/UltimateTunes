@@ -52,6 +52,17 @@ music.example.org {
 	}
 	respond @admin_from_outside 403
 
+	# Password sign-in that creates device keys: LAN/Tailscale only too, like the Traefik examples.
+	# Devices get their key at home (or by the panel's QR code); away from home they only use it.
+	# Remove this block if you want password logins from anywhere (the api still limits them per
+	# IP and delays them per username).
+	@keys_login_from_outside {
+		method POST
+		path /ut/v1/keys
+		not remote_ip {$UT_ADMIN_LAN_RANGES:192.168.1.0/24} {$UT_ADMIN_TAILNET_RANGES:100.64.0.0/10 fd7a:115c:a1e0::/48}
+	}
+	respond @keys_login_from_outside 403
+
 	# The internal worker API is not even on this port; never route it. The readiness probe is
 	# for the host's own health checks (127.0.0.1:8044/readyz), not for the Internet.
 	respond /internal/* 404
