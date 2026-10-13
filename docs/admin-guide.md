@@ -185,6 +185,8 @@ What it changes: the provider talks to `www.youtube.com`, `www.google.com` and `
 
 A PO token helps but guarantees nothing: if downloads still fail with a token, the address itself is blocked (common for data-centre IPs). Wait it out, or run the server from another connection; UltimateTunes does not use YouTube cookies or accounts. To check that tokens are really used, run `docker compose logs pot-provider`: each token minted adds a `Generating POT for ...` line. That log also holds the BotGuard integrity token the provider minted, so do not post it in public bug reports.
 
+yt-dlp updates itself, but the plugin and the provider are pinned to one version in the image. If the canary starts failing while the provider is on, and works with it off, the plugin probably needs a newer release: update the server image when one is out (until then, turn the provider off).
+
 ## Audit log
 
 Every sign-in to the panel, every account and key change, and every action taken in the panel (retries, cancels, deletes, reviews, worker commands, notification settings), newest first, 50 per page. Each entry has the time (UTC), who did it, from which address, the action, its target and a short detail. Passwords, keys and notification URLs are never recorded.

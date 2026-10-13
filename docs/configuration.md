@@ -174,8 +174,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_YTDLP_TIMEOUT_S` | `600` | worker | Bound of one yt-dlp download. |
 | `UT_DENO_PATH` | `/usr/local/bin/deno` | worker | The JavaScript runtime yt-dlp needs. |
 | `UT_GPGV_PATH` | `/usr/bin/gpgv` | worker | gpgv binary that verifies yt-dlp updates. |
-| `UT_YTDLP_POT_PROVIDER_URL` | (unset) | worker | Optional PO token provider (decision D13): base URL of the bgutil HTTP server, `http://bgutil:4416` with compose's `pot` profile (the provider's alias on the `pot` network). Unset or empty: yt-dlp loads no plugin, exactly as before. Only `http(s)://host[:port]` with a Docker service name (one label) or a private/loopback address is accepted; anything else stops the worker at start. See [admin-guide.md](admin-guide.md), "Sign in to confirm you're not a bot". |
-| `UT_YTDLP_PLUGIN_DIR` | `/opt/ytdlp-plugins` | worker | Read-only folder in the image with the pinned bgutil yt-dlp plugin; the only plugin folder yt-dlp searches, and only when `UT_YTDLP_POT_PROVIDER_URL` is set. |
+| `UT_YTDLP_POT_PROVIDER_URL` | (unset) | worker | Optional PO token provider (decision D13): base URL of the bgutil HTTP server, `http://bgutil:4416` with compose's `pot` profile (the provider's alias on the `pot` network). Unset or empty: yt-dlp loads no plugin, exactly as before. Only `http(s)://host[:port]` is accepted, with a Docker service name (one label starting with a letter) or an address in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1` or `fc00::/7` (no IPv6 zone id, no IPv4-mapped or 6to4 form, no port 0); anything else stops the worker at start. See [admin-guide.md](admin-guide.md), "Sign in to confirm you're not a bot". |
+| `UT_YTDLP_PLUGIN_DIR` | `/opt/ytdlp-plugins` | worker | Read-only folder in the image with the pinned bgutil yt-dlp plugin, pruned to its HTTP provider (`bgutil-http.zip`); the only plugin folder yt-dlp searches, and only when `UT_YTDLP_POT_PROVIDER_URL` is set. |
 
 ## Canary
 

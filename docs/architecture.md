@@ -160,7 +160,7 @@ Notes:
   `/staging` partial downloads, one directory per job attempt (`<jobId>/<attemptSeq>`), written
   by the worker and read (streamed, cleaned) by the api; `/opt/ytdlp` the live yt-dlp zipapp and
   its verified updates, plus the worker's canary state file (worker only). The image also ships
-  a read-only seed copy in `/opt/ytdlp-seed`, the pinned bgutil yt-dlp plugin zip in
+  a read-only seed copy in `/opt/ytdlp-seed`, the pinned bgutil yt-dlp plugin, pruned to its HTTP provider, in
   `/opt/ytdlp-plugins` (loaded only with `UT_YTDLP_POT_PROVIDER_URL`), Deno in
   `/usr/local/bin/deno` and Debian's `ffmpeg` and `gpgv`.
 - **`pot-provider`** (optional, Compose profile `pot`; not in the table because it is not our
