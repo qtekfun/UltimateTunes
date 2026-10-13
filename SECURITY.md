@@ -82,7 +82,7 @@ An adversarial assessment of 1.0.0-rc.4, requested before public exposure. Two i
 - **M2 on the `tailscale serve` path.** uvicorn has no request-header read timeout (residual M2), and `tailscale serve` — the day-one exposure — adds none either, so a slow-headers client already on the tailnet could hold connection slots. Low risk (the attacker must already be a tailnet peer). Fronting even the tailnet with Caddy (`read_header`) closes it; otherwise it is accepted for a trusted-tailnet deployment.
 - **I1 reaffirmed.** The shared origin of the panel and the player (residual I1) is the main thing to resolve before the player grows richer content; mitigations listed under Residual risks still hold.
 
-The items the assessment could not cover are environment-dependent and appear as *author* lines in the checklist below (narrowed admin networks, real TLS/HSTS, limits re-measured through the real proxy, image/ZAP scans in CI, a tested backup restore).
+The items the assessment could not cover are environment-dependent and appear as *author* lines in the checklist below (narrowed admin networks, real TLS/HSTS, limits re-measured through the real proxy, a tested backup restore).
 
 ## Checklist before opening to the Internet (T22)
 Evidence for each item; the ones marked *author* depend on the homelab and are done there, not in this repository (nothing is deployed or published by the project).
