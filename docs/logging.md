@@ -169,3 +169,8 @@ Example (a wrong password on the web player through Traefik):
   `tailscale serve`, public ones behind Traefik), never the proxy's address.
 - The audit log in the database is the durable record; the log is the stream. Keep the
   container logs as long as your analysis needs (`json-file` rotates at 30 MiB by default).
+- **Cardinality**: `user`, `path` and `user_agent` are client-controlled and clipped to 256
+  characters but otherwise unbounded in distinct values, so a spray from many usernames, paths
+  or agents inflates index cardinality and volume by about one access line plus one event per
+  request. The per-IP rate limits and the clip bound it; size the SIEM index for it and alert on
+  the rate of `auth.failure`/`access.denied` rather than keeping every distinct value hot.
