@@ -14,6 +14,8 @@ import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicOk
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -94,18 +96,28 @@ class LyricsViewModelTest {
 
     @Test
     fun `a failure can be retried, and showing it again retries too`() = runTest {
-        server.dispatcher.override("rest/getLyricsBySongId") { dropConnection() }
+        // The server holds each answer until the test lets it go, so the loading state can be
+        // observed without racing the network thread; OkHttp may retry a dropped connection, so
+        // the number of requests is not asserted.
+        val release = Semaphore(0)
+        server.dispatcher.override("rest/getLyricsBySongId") {
+            check(release.tryAcquire(RELEASE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) { "not released" }
+            dropConnection()
+        }
         val viewModel = LyricsViewModel(connectedApi(server))
         viewModel.retry()
         assertEquals(0, server.requestCount)
 
         viewModel.show(song)
+        release.release(RELEASES)
         assertEquals(LoadState.Failed(LoadError.NETWORK), viewModel.loaded().content)
+
+        release.drainPermits() // leftovers must not let the next answer through early
 
         viewModel.show(song)
         assertEquals(LoadState.Loading, viewModel.state.value.content)
+        release.release(RELEASES)
         assertEquals(LoadState.Failed(LoadError.NETWORK), viewModel.loaded().content)
-        assertEquals(2, server.requestCount)
 
         server.dispatcher.clearOverrides()
         viewModel.retry()
@@ -183,3 +195,8 @@ class LyricsViewModelTest {
         }
     }
 }
+
+private const val RELEASE_TIMEOUT_SECONDS = 10L
+
+/** Enough permits for every attempt OkHttp may make on one dropped connection. */
+private const val RELEASES = 4
