@@ -9,6 +9,22 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-10-13
+
+First published release candidate of 1.0. It contains everything listed under 1.0.0-rc.1 (never published) plus the changes below. The app is unchanged since 1.0.0-rc.1; the server gains an optional PO token provider against YouTube's bot check.
+
+### Added
+- Server: optional PO token provider for yt-dlp (`pot` Compose profile, `UT_YTDLP_POT_PROVIDER_URL`) against YouTube's "Sign in to confirm you're not a bot". Off by default; only the worker can reach it; the plugin is pinned in the image with only its HTTP provider.
+- Docs: step-by-step Tailscale deployment (`deploy/tailscale/`) with a Compose overlay and `.env.example`; a "First admin" section (there is no default account or password).
+
+### Changed
+- One-off commands run inside the running api (`docker compose exec api ultimatetunes bootstrap-admin <name>`); `docker compose run --rm api ...` clashes with the api's pinned internal address.
+
+### Security
+- Public pages no longer link to the admin panel.
+- The Caddy example refuses password sign-in for device keys (`POST /ut/v1/keys`) from outside the LAN and tailnet, like the Traefik examples.
+- File secrets in the deployment guides stay readable by the containers (uid 10001) inside an owner-only folder.
+
 ## [1.0.0-rc.1] - 2026-10-13
 
 First release candidate of 1.0: the server, the web player, the admin panel and the Android app work end to end. Install it, deploy it and run the SECURITY.md checklist; 1.0.0 will follow from the same code.
