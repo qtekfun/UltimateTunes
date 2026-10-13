@@ -1,0 +1,1 @@
+Versión candidata a la 1.0. Arreglo: iniciar sesión en YouTube desde Ajustes ahora termina solo y tiene un botón "Ya inicié sesión, continuar", para que tu servidor siga descargando cuando YouTube lo bloquea.
