@@ -327,6 +327,7 @@ def test_pages_load_nothing_from_other_hosts_and_run_no_inline_script() -> None:
         assert "<script>" not in text, template.name
         assert " on" + "click=" not in text, template.name
         assert "style=" not in text, template.name
+        assert "/admin" not in text, template.name  # the panel is never advertised
         for src in re.findall(r'<script src="([^"]+)"', text):
             assert src.startswith("/web/static/"), template.name
     player = (PACKAGE / "static" / "web" / "player.js").read_text(encoding="utf-8")
