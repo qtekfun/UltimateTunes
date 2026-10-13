@@ -150,7 +150,7 @@ android() {
 docker_gate() {
   local tag="ultimatetunes-server:ci-local" project="$compose_project" rc
   # Its own image tag, so a local test stack running on `:test` keeps its image.
-  export UT_TEST_IMAGE_TAG=ci-local
+  local -x UT_TEST_IMAGE_TAG=ci-local
   docker build -f server/Dockerfile -t "$tag" . || return 1
   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" \
     "$TRIVY_IMAGE" image --quiet --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$tag" || return 1
