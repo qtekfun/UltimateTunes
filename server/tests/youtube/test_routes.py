@@ -104,3 +104,29 @@ def test_set_and_clear_are_audited_without_the_content(
     assert "youtube.cookies.set" in actions
     assert "youtube.cookies.clear" in actions
     assert all(COOKIE_VALUE not in str(r["detail"] or "") for r in rows)
+
+
+def test_a_chunked_body_over_the_cap_is_refused(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UT_YTDLP_COOKIES_MAX_BYTES", "1024")
+
+    def chunks() -> Any:
+        yield COOKIES.encode()
+        for _ in range(100):
+            yield b"# padding padding padding padding\n"
+
+    r = client.put("/ut/v1/youtube-cookies", content=chunks(), headers=_admin())
+    assert r.status_code == 413
+
+
+def test_a_declared_length_over_the_cap_is_refused_unread(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UT_YTDLP_COOKIES_MAX_BYTES", "1024")
+    r = client.put(
+        "/ut/v1/youtube-cookies",
+        content=b"x" * 5000,
+        headers={**_admin(), "Content-Length": "5000"},
+    )
+    assert r.status_code == 413

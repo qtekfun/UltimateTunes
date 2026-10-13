@@ -11,7 +11,7 @@ to `lease_lost` by dropping the job. The bearer token never reaches a log line.
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import anyio
@@ -73,7 +73,7 @@ class ClaimedJob:
     heartbeat_s: int
     # The server-wide YouTube cookies (decrypted by the api) for this download, when the admin
     # set a session; None otherwise. Used for one run and never persisted or logged.
-    youtube_cookies: str | None = None
+    youtube_cookies: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

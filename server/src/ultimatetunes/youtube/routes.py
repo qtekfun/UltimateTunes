@@ -104,8 +104,15 @@ async def clear_youtube_cookies(request: Request, principal: Caller) -> Response
 
 
 async def _read_cookies(request: Request, max_bytes: int) -> str:
-    """The request body as text, refusing anything over the cap. The body is never logged."""
-    raw = await request.body()
-    if len(raw) > max_bytes:
+    """The request body as text, refusing anything over the cap *before* buffering it: the
+    declared length is checked first, then the body is read as a capped stream. The body is
+    never logged."""
+    declared = request.headers.get("content-length", "")
+    if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
         raise PayloadTooLarge(f"The cookies file must be at most {max_bytes} bytes")
-    return raw.decode("utf-8", "replace")
+    received = bytearray()
+    async for chunk in request.stream():
+        received.extend(chunk)
+        if len(received) > max_bytes:
+            raise PayloadTooLarge(f"The cookies file must be at most {max_bytes} bytes")
+    return received.decode("utf-8", "replace")

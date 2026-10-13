@@ -711,3 +711,49 @@ async def test_a_plain_download_passes_no_cookies(staging: LocalStagingStore) ->
     dl = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), runner=runner)
     await dl.download("OkWebm00001", JOB_DIR, Recorder())
     assert "--cookies" not in seen[0]
+
+
+# ---------------------------------------------------------------- hardening (review of D14)
+
+
+def test_lines_about_cookies_or_with_tabs_are_never_logged() -> None:
+    assert redact("ERROR: invalid Netscape format cookies file: bad line") == (
+        "<redacted: cookie data>"
+    )
+    assert redact("ERROR: Cookie parse") == "<redacted: cookie data>"
+    assert redact(f".youtube.com\tTRUE\t/\tTRUE\t0\tSID\t{COOKIE_VALUE}") == (
+        "<redacted: cookie data>"
+    )
+    assert redact("plain line") == "plain line"
+    error = classify([f"ERROR: bad line .youtube.com\tTRUE\t{COOKIE_VALUE}"], 1)
+    assert COOKIE_VALUE not in error.message
+
+
+async def test_a_timeout_removes_the_cookies_copy(staging: LocalStagingStore) -> None:
+    seen: list[Path] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    slow = YtDlpDownloader(
+        staging, WorkerSettings(ytdlp_timeout_s=0.5), Zipapp(FAKE_ZIPAPP), runner=runner
+    )
+    with pytest.raises(DownloadError):
+        await slow.download("HangForever", JOB_DIR, Recorder(), cookies=JOB_COOKIES)
+    assert seen
+    assert not seen[0].exists()
+
+
+async def test_a_cancel_removes_the_cookies_copy(staging: LocalStagingStore) -> None:
+    seen: list[Path] = []
+
+    async def runner(args: list[str], env: dict[str, str]) -> Any:
+        seen.append(Path(dict(itertools.pairwise(args))["--cookies"]))
+        return await ytdlp._open(args, env)
+
+    dl = YtDlpDownloader(staging, WorkerSettings(), Zipapp(FAKE_ZIPAPP), runner=runner)
+    with anyio.move_on_after(0.5):
+        await dl.download("HangForever", JOB_DIR, Recorder(), cookies=JOB_COOKIES)
+    assert seen
+    assert not seen[0].exists()

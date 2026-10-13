@@ -93,6 +93,7 @@ SKIP_MARKERS = ("does not pass filter", "larger than max-filesize")
 KEEP_LOG_LINES = 40
 EXIT_USAGE = 2
 _URL = re.compile(r"https?://\S+")
+_COOKIE_LINE = re.compile(r"(?i)cookie")
 # A PO token next to its name ("POT: ...", "po_token=...", '"poToken": "..."').
 _PO_TOKEN = re.compile(r"(?i)(po[ _-]?token|\bpot)([\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-+/=%.]{8,}")
 # The bgutil plugin's HTTP provider (`youtubepot-bgutilhttp:base_url=...`).
@@ -111,7 +112,11 @@ class ZipappSource(Protocol):
 
 def redact(line: str) -> str:
     """Log-safe text: googlevideo URLs carry the client IP and tokens, so no URL is logged, and
-    a PO token printed by name is replaced too."""
+    a PO token printed by name is replaced too. A line that mentions cookies or contains a tab
+    (a cookie-file line echoed by a parse error) is dropped entirely, so no cookie value can
+    reach a log or an error message."""
+    if _COOKIE_LINE.search(line) or "\t" in line:
+        return "<redacted: cookie data>"
     return _PO_TOKEN.sub(r"\1\2<redacted>", _URL.sub("<url>", line))[:500]
 
 
