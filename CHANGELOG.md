@@ -14,7 +14,7 @@ All notable changes to UltimateTunes (server and app share one version). Written
 Release candidate of 1.0: the web player and the admin panel now carry the app's icon. The app is unchanged since 1.0.0-rc.1.
 
 ### Changed
-- Web player and admin panel: the logo, favicon and empty-state note are the app's launcher icon (same gradient and note), shown next to the name in the sidebar, the phone top bar and both sign-in pages.
+- Web player and admin panel: the logo and favicon are the app's launcher icon (same gradient and note), shown next to the name in the sidebar, the phone top bar and both sign-in pages; the empty-state and missing-cover placeholders use the app's note.
 
 ## [1.0.0-rc.3] - 2026-10-13
 
