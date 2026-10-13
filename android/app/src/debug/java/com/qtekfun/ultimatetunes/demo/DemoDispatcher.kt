@@ -11,22 +11,29 @@ import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndex
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
 import com.qtekfun.ultimatetunes.core.api.model.Capabilities
+import com.qtekfun.ultimatetunes.core.api.model.Charts
 import com.qtekfun.ultimatetunes.core.api.model.Import
 import com.qtekfun.ultimatetunes.core.api.model.ImportList
 import com.qtekfun.ultimatetunes.core.api.model.ImportSource
 import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.Me
+import com.qtekfun.ultimatetunes.core.api.model.MoodCategory
+import com.qtekfun.ultimatetunes.core.api.model.MoodTracks
+import com.qtekfun.ultimatetunes.core.api.model.Moods
 import com.qtekfun.ultimatetunes.core.api.model.OpenSubsonicInfo
 import com.qtekfun.ultimatetunes.core.api.model.PlayQueue
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.Radio
+import com.qtekfun.ultimatetunes.core.api.model.RecommendationShelf
+import com.qtekfun.ultimatetunes.core.api.model.Recommendations
 import com.qtekfun.ultimatetunes.core.api.model.Role
 import com.qtekfun.ultimatetunes.core.api.model.SearchResult
 import com.qtekfun.ultimatetunes.core.api.model.ServerInfo
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.api.model.SourceShelf
 import com.qtekfun.ultimatetunes.core.api.model.Starred
 import com.qtekfun.ultimatetunes.core.api.model.TrackState
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
@@ -148,9 +155,19 @@ internal class DemoDispatcher(
             "GET imports/*" -> imports.get(id)?.let { ok(Import.serializer(), it) }
                 ?: problem(404, "not_found", "No such import in the demo")
 
-            else -> problem(501, "not_implemented", "The demo does not do this")
+            else -> discovery(route, id, query)
         }
     }
+
+    /** RF-11 discovery endpoints, kept apart so the main router stays simple. */
+    private fun discovery(route: String, id: String, query: (String) -> String?): MockResponse =
+        when (route) {
+            "GET recommendations" -> ok(Recommendations.serializer(), recommendations())
+            "GET charts" -> ok(Charts.serializer(), charts(query("country")))
+            "GET moods" -> ok(Moods.serializer(), moods())
+            "GET moods/*" -> ok(MoodTracks.serializer(), moodTracks(id))
+            else -> problem(501, "not_implemented", "The demo does not do this")
+        }
 
     private fun serverInfo() = ServerInfo(
         name = "UltimateTunes Demo",
@@ -230,6 +247,52 @@ internal class DemoDispatcher(
         recentlyAdded = DemoCatalog.recentlyAdded.map { it.toAlbumItem() },
         mostPlayed = DemoCatalog.mostPlayed.map { it.toTrackItem() },
         favouriteRadios = DemoCatalog.stations
+    )
+
+    private fun recommendations(): Recommendations {
+        val seeds = DemoCatalog.mostPlayed.take(2)
+        val forYou = seeds.flatMap { similarTo(it, RECOMMENDATION_SHELF) }
+            .distinctBy { it.id }
+            .take(RECOMMENDATION_SHELF)
+            .map { it.toTrackItem() }
+        val shelf = DemoCatalog.artists.firstOrNull()?.let { artist ->
+            SourceShelf(
+                source = "listenbrainz",
+                title = "Popular on ListenBrainz · ${artist.name}",
+                items = DemoCatalog.songs.take(RECOMMENDATION_SHELF).map { it.toTrackItem() }
+            )
+        }
+        return Recommendations(
+            recommendedForYou = forYou,
+            becauseYouPlayed = seeds.map { seed ->
+                RecommendationShelf(
+                    seed = seed.toTrackItem(),
+                    items = similarTo(seed, RECOMMENDATION_SHELF).map { it.toTrackItem() }
+                )
+            },
+            shelves = listOfNotNull(shelf)
+        )
+    }
+
+    private fun charts(country: String?) = Charts(
+        country = country ?: GLOBAL_COUNTRY,
+        items = (DemoCatalog.mostPlayed + DemoCatalog.songs)
+            .distinctBy { it.id }
+            .take(CHART_LENGTH)
+            .map { it.toTrackItem() }
+    )
+
+    private fun moods() = Moods(
+        listOf(
+            MoodCategory("moods_chill", "Chill"),
+            MoodCategory("moods_focus", "Focus"),
+            MoodCategory("moods_commute", "Commute")
+        )
+    )
+
+    private fun moodTracks(id: String) = MoodTracks(
+        id = id,
+        items = DemoCatalog.songs.take(CHART_LENGTH).map { it.toTrackItem() }
     )
 
     // ---- OpenSubsonic ----
@@ -590,6 +653,9 @@ internal class DemoDispatcher(
         const val DEMO_USER_ID = "0199e0de-0000-7000-8000-000000000001"
         const val KEY_PREFIX_LENGTH = 12
         const val RADIO_LENGTH = 25
+        const val RECOMMENDATION_SHELF = 10
+        const val CHART_LENGTH = 20
+        const val GLOBAL_COUNTRY = "ZZ"
         const val SEARCH_LIMIT = 20
         const val DEFAULT_LIST_SIZE = 10
         val KEY_ID = ApiKeyId("0199e0de-0000-7000-8000-000000000002")

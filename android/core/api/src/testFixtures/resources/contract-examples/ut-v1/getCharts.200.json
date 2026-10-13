@@ -1,0 +1,31 @@
+{
+    "country": "ES",
+    "items": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001",
+            "title": "Lighthouse Keeper",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 214,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "yt:Rb4Tn8wKx1c",
+            "title": "Copper Fields",
+            "artist": "Marisol Vega",
+            "artistId": "ytartist:UCm2Hj6Rt9VbN1cX4zQw8LpA",
+            "album": "Copper Fields",
+            "albumId": "ytalbum:MPREb_W2pZ7nQx4Ld",
+            "durationSec": 198,
+            "year": null,
+            "coverArt": "yt:Rb4Tn8wKx1c",
+            "isExternal": true,
+            "libraryState": null
+        }
+    ]
+}

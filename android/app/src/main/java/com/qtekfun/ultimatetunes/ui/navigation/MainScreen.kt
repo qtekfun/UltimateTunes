@@ -77,6 +77,7 @@ import com.qtekfun.ultimatetunes.ui.actions.TrackMenuActions
 import com.qtekfun.ultimatetunes.ui.actions.TrackMenuSheet
 import com.qtekfun.ultimatetunes.ui.album.AlbumRoute
 import com.qtekfun.ultimatetunes.ui.artist.ArtistRoute
+import com.qtekfun.ultimatetunes.ui.charts.ChartsRoute
 import com.qtekfun.ultimatetunes.ui.designsystem.LocalAppSnackbar
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.imports.ImportRoute
@@ -335,7 +336,8 @@ private fun TabHome(tab: Tab, contentPadding: PaddingValues, navigator: Navigato
             contentPadding = contentPadding,
             onPlay = navigator.play,
             onOpenStation = navigator.openStation,
-            onOpenAlbum = navigator.openAlbum
+            onOpenAlbum = navigator.openAlbum,
+            onOpenCharts = navigator.openCharts
         )
 
         Tab.RADIO -> RadioRoute(
@@ -363,6 +365,7 @@ private fun rememberNavigator(
         openArtist = { navController.navigate(tab.artist(it)) },
         openPlaylist = { navController.navigate(tab.playlist(it)) },
         openStation = { navController.navigate(tab.station(it)) },
+        openCharts = { navController.navigate(tab.charts) },
         openPage = { navController.navigate(Tab.LIBRARY.page(it)) }
     )
 }
@@ -376,6 +379,13 @@ private fun NavGraphBuilder.details(
 ) {
     composable(tab.stationPattern) {
         StationRoute(
+            contentPadding = contentPadding,
+            onBack = { navController.popBackStack() },
+            onPlay = onPlay
+        )
+    }
+    composable(tab.chartsPattern) {
+        ChartsRoute(
             contentPadding = contentPadding,
             onBack = { navController.popBackStack() },
             onPlay = onPlay

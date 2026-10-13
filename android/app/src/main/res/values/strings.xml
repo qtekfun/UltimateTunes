@@ -49,6 +49,15 @@
     <string name="listen_now_top_songs">Top Songs</string>
     <string name="listen_now_recently_added">Recently Added</string>
     <string name="listen_now_empty">Nothing here yet. Play something and it will show up here.</string>
+    <string name="listen_now_recommended">Recommended for You</string>
+    <string name="listen_now_because_you_played">Because You Played %1$s</string>
+    <string name="listen_now_charts">Charts</string>
+
+    <!-- Charts -->
+    <string name="charts_title">Charts</string>
+    <string name="charts_global">Global</string>
+    <string name="charts_country">Top Songs · %1$s</string>
+    <string name="charts_empty">No charts available right now.</string>
 
     <!-- Radio -->
     <string name="radio_from_songs">Stations from Your Top Songs</string>

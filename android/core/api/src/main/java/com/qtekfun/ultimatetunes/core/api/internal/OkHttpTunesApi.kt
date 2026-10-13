@@ -19,6 +19,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ApiKeyList
 import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
+import com.qtekfun.ultimatetunes.core.api.model.Charts
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.CreateImportBody
 import com.qtekfun.ultimatetunes.core.api.model.CreateKeyRequest
@@ -31,12 +32,15 @@ import com.qtekfun.ultimatetunes.core.api.model.ListenNow
 import com.qtekfun.ultimatetunes.core.api.model.Lyrics
 import com.qtekfun.ultimatetunes.core.api.model.LyricsList
 import com.qtekfun.ultimatetunes.core.api.model.Me
+import com.qtekfun.ultimatetunes.core.api.model.MoodTracks
+import com.qtekfun.ultimatetunes.core.api.model.Moods
 import com.qtekfun.ultimatetunes.core.api.model.PlayQueue
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.Playlists
 import com.qtekfun.ultimatetunes.core.api.model.Problem
 import com.qtekfun.ultimatetunes.core.api.model.Radio
+import com.qtekfun.ultimatetunes.core.api.model.Recommendations
 import com.qtekfun.ultimatetunes.core.api.model.RequestReason
 import com.qtekfun.ultimatetunes.core.api.model.RequestTrackBody
 import com.qtekfun.ultimatetunes.core.api.model.SearchResult
@@ -145,6 +149,17 @@ internal class OkHttpTunesApi(
 
     override suspend fun listenNow(): TunesResult<ListenNow> =
         ut(ListenNow.serializer(), "listen-now")
+
+    override suspend fun recommendations(limit: Int?): TunesResult<Recommendations> =
+        ut(Recommendations.serializer(), "recommendations", query = params("limit" to limit))
+
+    override suspend fun charts(country: String?, limit: Int?): TunesResult<Charts> =
+        ut(Charts.serializer(), "charts", query = params("country" to country, "limit" to limit))
+
+    override suspend fun moods(): TunesResult<Moods> = ut(Moods.serializer(), "moods")
+
+    override suspend fun moodTracks(id: String, limit: Int?): TunesResult<MoodTracks> =
+        ut(MoodTracks.serializer(), "moods", id, query = params("limit" to limit))
 
     override suspend fun imports(limit: Int?, offset: Int?): TunesResult<List<Import>> =
         ut(ImportList.serializer(), "imports", query = params("limit" to limit, "offset" to offset))

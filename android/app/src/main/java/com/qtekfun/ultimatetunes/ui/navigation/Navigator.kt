@@ -22,6 +22,8 @@ data class Navigator(
     val openArtist: (ArtistId) -> Unit = {},
     val openPlaylist: (PlaylistId) -> Unit = {},
     val openStation: (SongId) -> Unit = {},
+    /** The Charts list (from Listen Now). */
+    val openCharts: () -> Unit = {},
     /** A Library page ([LibraryPage]). */
     val openPage: (LibraryPage) -> Unit = {}
 )
