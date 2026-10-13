@@ -174,6 +174,8 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_YTDLP_TIMEOUT_S` | `600` | worker | Bound of one yt-dlp download. |
 | `UT_DENO_PATH` | `/usr/local/bin/deno` | worker | The JavaScript runtime yt-dlp needs. |
 | `UT_GPGV_PATH` | `/usr/bin/gpgv` | worker | gpgv binary that verifies yt-dlp updates. |
+| `UT_YTDLP_POT_PROVIDER_URL` | (unset) | worker | Optional PO token provider (decision D13): base URL of the bgutil HTTP server, `http://bgutil:4416` with compose's `pot` profile (the provider's alias on the `pot` network). Unset or empty: yt-dlp loads no plugin, exactly as before. Only `http(s)://host[:port]` is accepted, with a Docker service name (one label starting with a letter) or an address in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1` or `fc00::/7` (no IPv6 zone id, no IPv4-mapped or 6to4 form, no port 0); anything else stops the worker at start. See [admin-guide.md](admin-guide.md), "Sign in to confirm you're not a bot". |
+| `UT_YTDLP_PLUGIN_DIR` | `/opt/ytdlp-plugins` | worker | Read-only folder in the image with the pinned bgutil yt-dlp plugin, pruned to its HTTP provider (`bgutil-http.zip`); the only plugin folder yt-dlp searches, and only when `UT_YTDLP_POT_PROVIDER_URL` is set. |
 
 ## Canary
 
@@ -202,6 +204,9 @@ These are not read by the server: Docker Compose substitutes them into the compo
 | `UT_INTERNAL_SUBNET` | `server/compose.yaml`, deploy examples | Subnet of the api-worker `internal` network (default `10.213.44.0/24`); change it if it overlaps yours. |
 | `UT_API_INTERNAL_ADDRESS` | `server/compose.yaml` | The api's fixed address on that network (default `10.213.44.250`). |
 | `UT_EGRESS_SUBNET` | `server/compose.yaml`, deploy examples | Subnet of the worker's `egress` network to the Internet (default `10.213.45.0/24`). |
+| `COMPOSE_PROFILES` | `server/compose.yaml` | Docker Compose's own variable: `pot` starts the optional PO token provider (`pot-provider`); also set `UT_YTDLP_POT_PROVIDER_URL`. Unset: no provider runs. |
+| `UT_POT_SUBNET` | `server/compose.yaml` | Subnet of the `pot` network that only the worker and `pot-provider` share (default `10.213.47.0/24`). |
+| `UT_POT_PROVIDER_ADDRESS` | `server/compose.yaml` | The provider's fixed address on it (default `10.213.47.250`), the only address it listens on. |
 | `UT_PROXY_SUBNET` | `deploy/traefik/` | Subnet of the network shared with Traefik (default `10.213.46.0/24`). |
 | `UT_TRAEFIK_ADDRESS` | `deploy/traefik/` | Traefik's fixed address on it (default `10.213.46.2`), the only trusted proxy. |
 | `UT_PUBLIC_HOST` | `deploy/traefik-cloudflared/` | Public host name of the server (for example `music.example.com`). |
