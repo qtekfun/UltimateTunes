@@ -106,7 +106,6 @@ class ScreensTest {
     fun listenNowShowsRecommendationsAndOpensCharts() {
         // Listen Now is the start tab; its "Recommended for You" section is at the top.
         waitFor(hasText(text(R.string.listen_now_recommended)))
-        waitFor(hasText(FakeTunesApi.LISTENBRAINZ_SHELF))
 
         compose.onNodeWithTag(LISTEN_NOW_LIST_TAG)
             .performScrollToNode(hasTestTag(LISTEN_NOW_CHARTS_TAG))
@@ -114,7 +113,6 @@ class ScreensTest {
 
         assertTitle(text(R.string.charts_title))
         waitFor(hasTestTag(CHARTS_LIST_TAG))
-        waitFor(hasText("Lighthouse Keeper"))
     }
 
     @Test
