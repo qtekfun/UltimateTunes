@@ -1,7 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 -- SPDX-License-Identifier: GPL-3.0-or-later
 -- Optional TOTP two-factor authentication on the password logins (feat/totp-2fa).
--- The shared secret is stored (reversible-sensitive; see SECURITY.md: protect /data).
+-- The shared secret is stored encrypted at rest (Fernet ciphertext, urlsafe-base64 text) under
+-- UT_TOTP_ENCRYPTION_KEY; the key lives only in the environment (SECURITY.md, docs/2fa.md).
 -- Recovery codes are stored only as Argon2id hashes, never in clear.
 CREATE TABLE user_totp (
     user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,

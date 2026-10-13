@@ -112,6 +112,7 @@ MESSAGES = {
     "attempts": "Too many attempts. Wait and try again.",
     "code": "That code is wrong.",
     "expired": "Your sign-in expired. Start again.",
+    "enroll": "Set up two-factor authentication to continue.",
 }
 
 
@@ -178,6 +179,21 @@ class CsrfRejected(Exception):  # noqa: N818
     """A state change without the session's CSRF token, or a cross-site one."""
 
 
+class EnrollmentRequired(Exception):  # noqa: N818 - a control-flow signal, not an error
+    """A policy-covered user who has not set up 2FA yet: sent to Settings to enroll, refused
+    everything else until enrolled (`UT_AUTH_REQUIRE_2FA`)."""
+
+
+def _enroll_exempt(path: str) -> bool:
+    """Paths a must-enroll user may still reach: Settings (which hosts the 2FA setup), the 2FA
+    actions and signing out."""
+    return (
+        path == PREFIX + "/settings"
+        or path.startswith(PREFIX + "/settings/2fa")
+        or path == (PREFIX + "/logout")
+    )
+
+
 @dataclass(frozen=True)
 class Listener:
     user: User
@@ -240,6 +256,11 @@ def current_listener(request: Request) -> Listener:
     decision = st.services.rate_limiter.hit(f"web:user:{user.id}", limit)
     if not decision.allowed:
         raise RateLimited(decision.retry_after_s)
+    role: Role = "admin" if user.role == "admin" else "user"
+    if st.auth.two_factor.status(user.id, role).must_enroll and not _enroll_exempt(
+        request.url.path
+    ):
+        raise EnrollmentRequired
     return Listener(user, session, client_ip(request))
 
 
@@ -307,6 +328,21 @@ def _signed_out(request: Request) -> Response:
     )
 
 
+def _enrollment_required(request: Request) -> Response:
+    """A must-enroll user: pages go to Settings (which hosts the 2FA setup); the player's calls
+    and media get 403 JSON, with an HX redirect so the shell navigates there."""
+    settings_path = PREFIX + "/settings"
+    if _is_page(request) and request.method == "GET":
+        if request.headers.get("hx-request"):
+            return Response(status_code=200, headers={"HX-Redirect": settings_path})
+        return RedirectResponse(settings_path, status_code=303)
+    headers = {"HX-Redirect": settings_path} if request.headers.get("hx-request") else {}
+    message = translator(lang_of(request))(MESSAGES["enroll"])
+    return JSONResponse(
+        {"error": "forbidden", "message": message}, status_code=403, headers=headers
+    )
+
+
 def _csrf_refused(request: Request) -> Response:
     """Pages and forms get the error page (HTMX swaps it into `#content`); the player's calls
     and the star buttons get JSON, which `player.js` shows in its status line."""
@@ -338,6 +374,8 @@ class WebRoute(APIRoute):
                 return await original(request)
             except SignInRequired:
                 return _signed_out(request)
+            except EnrollmentRequired:
+                return _enrollment_required(request)
             except CsrfRejected:
                 return _csrf_refused(request)
             except TunesError as error:

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from tests.auth.conftest import ADMIN_PASSWORD, IP, USER_PASSWORD, fast_passwords
+from tests.auth.conftest import ADMIN_PASSWORD, IP, TOTP_KEY, USER_PASSWORD, fast_passwords
 from ultimatetunes.app import create_app
 from ultimatetunes.auth import totp, web
 from ultimatetunes.auth.routes import CreateKeyRequest
@@ -31,7 +31,7 @@ def auth_services(settings: Settings, clock: FakeClock) -> Services:
         services.db,
         clock,
         services.rate_limiter,
-        AuthSettings(auth_lockout_s=60, auth_max_failures_per_user=2),
+        AuthSettings(auth_lockout_s=60, auth_max_failures_per_user=2, totp_encryption_key=TOTP_KEY),
         fast_passwords(),
     )
     return services

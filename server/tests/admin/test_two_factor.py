@@ -7,7 +7,7 @@ import re
 from fastapi.testclient import TestClient
 
 from tests.admin.conftest import People, csrf_of
-from tests.auth.conftest import ADMIN_PASSWORD, fast_passwords
+from tests.auth.conftest import ADMIN_PASSWORD, TOTP_KEY, fast_passwords
 from ultimatetunes.auth import totp
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.auth.settings import AuthSettings
@@ -148,6 +148,37 @@ def test_required_admin_without_enrollment_is_sent_to_setup(
     )
     assert r.status_code == 303
     assert r.headers["location"] == "/admin/2fa"
+
+
+def test_required_admin_is_gated_until_enrolled(
+    client: TestClient, people: People, clock: FakeClock
+) -> None:
+    svc = client.app.state.admin.services  # type: ignore[attr-defined]
+    required = AuthService(
+        svc.db,
+        clock,
+        svc.rate_limiter,
+        AuthSettings(auth_require_2fa="admins", totp_encryption_key=TOTP_KEY),
+        fast_passwords(),
+    )
+    client.app.state.admin.auth = required  # type: ignore[attr-defined]
+    form = client.get("/admin/login")
+    client.post(
+        "/admin/login",
+        data={"csrf": csrf_of(form.text), "username": "alice", "password": ADMIN_PASSWORD},
+    )
+    # A protected page is refused and points at the setup; only the 2FA page is reachable.
+    blocked = client.get("/admin/users")
+    assert blocked.status_code == 303
+    assert blocked.headers["location"] == "/admin/2fa"
+    setup_page = client.get("/admin/2fa")
+    assert setup_page.status_code == 200
+    csrf = csrf_of(setup_page.text)
+    # Enroll, then the rest of the panel opens up.
+    started = client.post("/admin/2fa/enroll", data={"csrf": csrf})
+    secret = _secret_on_page(started.text)
+    client.post("/admin/2fa/confirm", data={"csrf": csrf, "code": _code(clock, secret)})
+    assert client.get("/admin/users").status_code == 200
 
 
 def test_regenerate_recovery_codes(

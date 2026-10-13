@@ -298,9 +298,16 @@ class UserTotpRepository(Repository):
             (last_step, now, now, user_id),
         )
 
-    def record_step(self, user_id: str, last_step: int) -> None:
-        """Advances the last matched step so that code can never be replayed."""
-        self.run("UPDATE user_totp SET last_step = ? WHERE user_id = ?", (last_step, user_id))
+    def claim_step(self, user_id: str, step: int) -> int:
+        """Atomically advances `last_step` to `step` only if it is still behind it, and returns
+        the number of rows changed (1 = this request won the step, 0 = already used or a later
+        step won). The single conditional UPDATE makes a code strictly single-use even when two
+        valid requests race: at most one can move the step forward."""
+        return self.run(
+            "UPDATE user_totp SET last_step = ?"
+            " WHERE user_id = ? AND (last_step IS NULL OR last_step < ?)",
+            (step, user_id, step),
+        )
 
     def delete(self, user_id: str) -> int:
         return self.run("DELETE FROM user_totp WHERE user_id = ?", (user_id,))

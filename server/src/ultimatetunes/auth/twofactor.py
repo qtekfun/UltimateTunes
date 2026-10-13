@@ -38,13 +38,14 @@ from ultimatetunes.auth.repository import (
     UserTotpRepository,
     audit_detail,
 )
+from ultimatetunes.auth.secretbox import InvalidToken, SecretBox
 from ultimatetunes.auth.settings import AuthSettings
 from ultimatetunes.core.authn import Role
 from ultimatetunes.core.clock import Clock, format_ts
 from ultimatetunes.core.ratelimit import RateLimiter
 from ultimatetunes.core.security_log import security_event
 from ultimatetunes.db.database import Database
-from ultimatetunes.errors import Conflict
+from ultimatetunes.errors import Conflict, FeatureDisabled
 from ultimatetunes.ids import new_id
 
 log = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ class TwoFactorService:
         self._limiter = limiter
         self._settings = settings
         self._passwords = passwords
+        self._box = SecretBox(settings.totp_encryption_key)
 
     # ------------------------------------------------------------------ policy and status
 
@@ -124,16 +126,18 @@ class TwoFactorService:
     # ------------------------------------------------------------------ enrollment
 
     def begin_enrollment(self, user_id: str, username: str) -> Enrollment:
-        """A fresh secret for `user_id`, stored unconfirmed, with its `otpauth://` URI. Refused
-        when a second factor is already on (disable it first)."""
+        """A fresh secret for `user_id`, encrypted and stored unconfirmed, with its `otpauth://`
+        URI. Refused when a second factor is already on (disable it first), and fails closed
+        with a clear operator error when no encryption key is configured."""
         now = format_ts(self._clock.now())
         secret = totp.generate_secret()
+        sealed = self._box.encrypt(secret)  # FeatureDisabled when UT_TOTP_ENCRYPTION_KEY is unset
         with self._db.transaction() as conn:
             repo = UserTotpRepository(conn)
             existing = repo.get(user_id)
             if existing is not None and existing.enabled:
                 raise Conflict("Two-factor authentication is already enabled")
-            repo.upsert_secret(user_id, secret, now)
+            repo.upsert_secret(user_id, sealed, now)
         return Enrollment(secret=secret, uri=totp.otpauth_uri(secret, username, ISSUER))
 
     def pending_enrollment(self, user_id: str, username: str) -> Enrollment | None:
@@ -142,7 +146,8 @@ class TwoFactorService:
         row = self._row(user_id)
         if row is None or row.enabled:
             return None
-        return Enrollment(secret=row.secret, uri=totp.otpauth_uri(row.secret, username, ISSUER))
+        secret = self._box.decrypt(row.secret)
+        return Enrollment(secret=secret, uri=totp.otpauth_uri(secret, username, ISSUER))
 
     def confirm_enrollment(self, user_id: str, code: str) -> list[str]:
         """Turns the pending enrollment on once `code` proves the secret was scanned, and
@@ -156,7 +161,7 @@ class TwoFactorService:
             if row is None or row.enabled:
                 raise Conflict("Start the two-factor setup first")
             step = totp.verify(
-                row.secret,
+                self._box.decrypt(row.secret),
                 code,
                 int(now_dt.timestamp()),
                 window=self._settings.auth_2fa_window,
@@ -236,17 +241,24 @@ class TwoFactorService:
         return True
 
     def _check_totp(self, row: UserTotp, code: str, user_id: str) -> str | None:
+        try:
+            secret = self._box.decrypt(row.secret)
+        except (InvalidToken, FeatureDisabled):
+            # Wrong or missing UT_TOTP_ENCRYPTION_KEY: fail closed, never accept blindly.
+            self._event("secret_unavailable", user_id)
+            return None
         step = totp.verify(
-            row.secret,
+            secret,
             code,
             int(self._clock.now().timestamp()),
             window=self._settings.auth_2fa_window,
-            after_step=row.last_step,
         )
         if step is None:
             return None
+        # Claim the step atomically: two concurrent valid requests cannot both win it (no replay).
         with self._db.transaction() as conn:
-            UserTotpRepository(conn).record_step(user_id, step)
+            if not UserTotpRepository(conn).claim_step(user_id, step):
+                return None
         return "totp_ok"
 
     def _check_recovery(self, user_id: str, code: str) -> str | None:
