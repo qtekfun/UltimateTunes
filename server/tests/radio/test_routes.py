@@ -25,6 +25,9 @@ from ultimatetunes.settings import Settings
 SIMILAR = schema_validator("opensubsonic-subset.yaml", "GetSimilarSongs2Response")
 RADIO = schema_validator("ut-v1.yaml", "Radio")
 LISTEN_NOW = schema_validator("ut-v1.yaml", "ListenNow")
+# `/ut/v1/recommendations` is an additive endpoint not yet in the contract (proposal in
+# docs/recommendations.md); its items are the contract's `TrackItem`, which is checked here.
+TRACK_ITEM = schema_validator("ut-v1.yaml", "TrackItem")
 XMLNS = "{http://subsonic.org/restapi}"
 
 
@@ -255,3 +258,82 @@ def test_ut_catalog_lookups_are_charged_to_the_caller(
     assert client.get("/ut/v1/radio", params={"seed": "yt:Qx7Lm2pZ0aB"}).status_code == 200
     assert similar(client, id="yt:Qx7Lm2pZ0aB")["status"] == "ok"
     assert seen == [Ana.principal.user_id, Ana.principal.user_id]
+
+
+# ---------------------------------------------------------------------- /ut/v1/recommendations
+
+
+def _check_items(body: dict[str, Any]) -> None:
+    for item in body["recommendedForYou"]:
+        TRACK_ITEM.validate(item)
+    for shelf in body["becauseYouPlayed"]:
+        TRACK_ITEM.validate(shelf["seed"])
+        for item in shelf["items"]:
+            TRACK_ITEM.validate(item)
+
+
+def test_recommendations(client: TestClient) -> None:
+    r = client.get("/ut/v1/recommendations")
+    assert r.status_code == 200
+    body = r.json()
+    _check_items(body)
+    # ana's only seed is Lighthouse Keeper (played and starred).
+    assert [shelf["seed"]["id"] for shelf in body["becauseYouPlayed"]] == [LIGHTHOUSE]
+    shelf = body["becauseYouPlayed"][0]
+    assert [i["id"] for i in shelf["items"]] == [
+        LOW_TIDE,
+        "yt:Rb8Tn3ZcYv0",
+        "yt:Qx7Lm2pZ0aB",
+        "yt:Hm3Vx8Nq2Lp",
+        "yt:Tz9Kd4Wb7Rc",
+        "yt:Pa6Ye1Uo3Gs",
+    ]
+    assert shelf["items"][1]["libraryState"] == "pending"
+    assert [i["id"] for i in body["recommendedForYou"]] == [i["id"] for i in shelf["items"]]
+
+
+def test_recommendations_limit(client: TestClient) -> None:
+    r = client.get("/ut/v1/recommendations", params={"limit": "2"})
+    assert r.status_code == 200
+    body = r.json()
+    _check_items(body)
+    assert len(body["recommendedForYou"]) == 2
+    assert all(len(shelf["items"]) <= 2 for shelf in body["becauseYouPlayed"])
+
+
+@pytest.mark.parametrize("params", [{"limit": "0"}, {"limit": "51"}, {"limit": "many"}])
+def test_recommendations_parameter_errors(client: TestClient, params: dict[str, str]) -> None:
+    assert client.get("/ut/v1/recommendations", params=params).status_code == 400
+
+
+def test_recommendations_switched_off(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UT_RECOMMENDATIONS", "false")
+    radio_settings.cache_clear()
+    try:
+        r = client.get("/ut/v1/recommendations")
+    finally:
+        radio_settings.cache_clear()
+    assert r.status_code == 409
+    assert r.json()["code"] == "feature_disabled"
+
+
+def test_recommendations_upstream_failure(client: TestClient, catalog: FakeMusicCatalog) -> None:
+    catalog.fail_with = UpstreamUnavailable()
+    r = client.get("/ut/v1/recommendations")
+    assert r.status_code == 502
+    assert r.json()["code"] == "upstream_unavailable"
+
+
+def test_recommendations_are_charged_to_the_caller(
+    client: TestClient, catalog: FakeMusicCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str | None] = []
+    real = catalog.radio
+
+    async def radio(video_id: str, limit: int) -> list[CatalogTrack]:
+        seen.append(current_bucket())
+        return await real(video_id, limit)
+
+    monkeypatch.setattr(catalog, "radio", radio)
+    assert client.get("/ut/v1/recommendations").status_code == 200
+    assert seen == [Ana.principal.user_id]
