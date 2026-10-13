@@ -157,7 +157,7 @@ Notes:
   `bootstrap-admin <name>` (first admin, password on the terminal), `scan-library` and
   `canary --only catalog`; `docker compose run --rm worker canary` for the full canary, since
   only the worker has yt-dlp (`/opt/ytdlp`) and talks to `www.youtube.com`.
-- **Test stack** (`server/compose.test.yaml`): built from source (`ultimatetunes-server:test`),
+- **Test stack** (`server/compose.test.yaml`): built from source (`ultimatetunes-server:test`, or the tag in `UT_TEST_IMAGE_TAG`; `tools/ci-local.sh` uses `ci-local`),
   `UT_FAKE_YOUTUBE=true` (fake catalog and fake downloader: nothing leaves the host), a fixed
   public worker token in the environment instead of a secret, the worker only on `internal` (no
   `egress`: it needs no Internet), `internal` not pinned (several test stacks run at once),
