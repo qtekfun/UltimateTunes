@@ -14,12 +14,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
+import com.qtekfun.ultimatetunes.ui.charts.CHARTS_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_API_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_SERVER_URL_TAG
@@ -31,6 +33,8 @@ import com.qtekfun.ultimatetunes.ui.imports.IMPORT_PROGRESS_TAG
 import com.qtekfun.ultimatetunes.ui.imports.IMPORT_URL_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.imports.IMPORT_URL_TAG
 import com.qtekfun.ultimatetunes.ui.library.libraryRowTag
+import com.qtekfun.ultimatetunes.ui.listennow.LISTEN_NOW_CHARTS_TAG
+import com.qtekfun.ultimatetunes.ui.listennow.LISTEN_NOW_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.lyrics.LYRICS_ACTIVE_LINE_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.LibraryPage
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
@@ -96,6 +100,19 @@ class ScreensTest {
         compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
         assertTitle(text(R.string.tab_library))
         compose.onNodeWithTag(libraryRowTag(page)).performClick()
+    }
+
+    @Test
+    fun listenNowShowsRecommendationsAndOpensCharts() {
+        // Listen Now is the start tab; its "Recommended for You" section is at the top.
+        waitFor(hasText(text(R.string.listen_now_recommended)))
+
+        compose.onNodeWithTag(LISTEN_NOW_LIST_TAG)
+            .performScrollToNode(hasTestTag(LISTEN_NOW_CHARTS_TAG))
+        compose.onNodeWithTag(LISTEN_NOW_CHARTS_TAG).performClick()
+
+        assertTitle(text(R.string.charts_title))
+        waitFor(hasTestTag(CHARTS_LIST_TAG))
     }
 
     @Test

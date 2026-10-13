@@ -243,6 +243,62 @@ class TunesApiFakeServerTest {
         }
 
         @Test
+        fun `recommendations has the personal shelf, the seed shelves and the external ones`() =
+            runTest {
+                val recs = api.recommendations(limit = 15).value()
+                assertEquals(2, recs.recommendedForYou.size)
+                assertTrue(recs.recommendedForYou.first().isExternal)
+                val seedShelf = recs.becauseYouPlayed.single()
+                assertEquals("Lighthouse Keeper", seedShelf.seed.title)
+                assertEquals("Copper Fields", seedShelf.items.single().title)
+                val source = recs.shelves.single()
+                assertEquals("listenbrainz", source.source)
+                assertEquals("Popular on ListenBrainz · The Paper Lanterns", source.title)
+                assertFalse(recs.isEmpty)
+                val request = server.takeRequest()
+                assertEquals("/ut/v1/recommendations", request.url.encodedPath)
+                assertEquals("15", request.url.queryParameter("limit"))
+            }
+
+        @Test
+        fun `charts sends the country and decodes local-first items`() = runTest {
+            val charts = api.charts(country = "ES", limit = 40).value()
+            assertEquals("ES", charts.country)
+            assertEquals(2, charts.items.size)
+            assertFalse(charts.items.first().isExternal)
+            assertTrue(charts.items.last().isExternal)
+            val request = server.takeRequest()
+            assertEquals("/ut/v1/charts", request.url.encodedPath)
+            assertEquals("ES", request.url.queryParameter("country"))
+            assertEquals("40", request.url.queryParameter("limit"))
+
+            api.charts().value()
+            val defaults = server.takeRequest()
+            assertNull(defaults.url.queryParameter("country"))
+            assertNull(defaults.url.queryParameter("limit"))
+        }
+
+        @Test
+        fun `moods lists the categories, and a category yields its songs`() = runTest {
+            val moods = api.moods().value()
+            assertEquals(
+                listOf("Chill", "Focus", "Commute", "2020s"),
+                moods.categories.map { it.title }
+            )
+            assertEquals("moods_chill", moods.categories.first().id)
+
+            val tracks = api.moodTracks(moods.categories.first().id, limit = 10).value()
+            assertEquals("moods_chill", tracks.id)
+            assertEquals(2, tracks.items.size)
+            assertEquals("Tidewater", tracks.items.first().title)
+            val request = server.takeRequest() // moods
+            assertEquals("/ut/v1/moods", request.url.encodedPath)
+            val tracksRequest = server.takeRequest()
+            assertEquals("/ut/v1/moods/moods_chill", tracksRequest.url.encodedPath)
+            assertEquals("10", tracksRequest.url.queryParameter("limit"))
+        }
+
+        @Test
         fun `a file import is a multipart upload`() = runTest {
             val csv = "title,artist\nLighthouse Keeper,The Paper Lanterns\n".encodeToByteArray()
             val created = api.createFileImport(

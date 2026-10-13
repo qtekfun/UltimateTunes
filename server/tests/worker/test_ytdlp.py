@@ -13,6 +13,7 @@ from typing import Any
 
 import anyio
 import pytest
+from pydantic import ValidationError
 
 from ultimatetunes.core.limits import DownloadLimits
 from ultimatetunes.core.storage import LocalStagingStore
@@ -197,11 +198,23 @@ async def test_lines_are_split_and_capped() -> None:
     assert seen[3] == "last"
 
 
+def test_player_clients_default_and_validation() -> None:
+    # Empty (compose forwards `${UT_YTDLP_PLAYER_CLIENTS:-}` unset) keeps the default.
+    assert WorkerSettings().ytdlp_player_clients == "web_safari,tv"
+    assert WorkerSettings(ytdlp_player_clients="").ytdlp_player_clients == "web_safari,tv"
+    assert WorkerSettings(ytdlp_player_clients="  ").ytdlp_player_clients == "web_safari,tv"
+    assert WorkerSettings(ytdlp_player_clients="mweb,tv").ytdlp_player_clients == "mweb,tv"
+    with pytest.raises(ValidationError):
+        WorkerSettings(ytdlp_player_clients="Bad Client")
+
+
 def test_the_ladder_drops_duplicates_and_empties(staging: LocalStagingStore) -> None:
-    assert downloader(staging).ladder() == ["default", "web_embedded"]
-    same = downloader(staging, ytdlp_fallback_clients="default")
-    assert same.ladder() == ["default"]
-    assert downloader(staging, ytdlp_fallback_clients="").ladder() == ["default"]
+    assert downloader(staging).ladder() == ["web_safari,tv", "default"]
+    same = downloader(staging, ytdlp_player_clients="tv", ytdlp_fallback_clients="tv")
+    assert same.ladder() == ["tv"]
+    assert downloader(staging, ytdlp_player_clients="tv", ytdlp_fallback_clients="").ladder() == [
+        "tv"
+    ]
 
 
 # ---------------------------------------------------------------- real subprocess runs
@@ -235,14 +248,50 @@ async def test_an_unknown_size_stays_null(staging: LocalStagingStore) -> None:
     assert all(r.expected_size is None for r in recorder.reports)
 
 
+# `clienta` is the first rung (it fails in the fixture), `clientb` the working fallback.
+def laddered(
+    staging: LocalStagingStore, *, player: str = "clienta", fallback: str = "clientb"
+) -> YtDlpDownloader:
+    return YtDlpDownloader(
+        staging,
+        WorkerSettings(ytdlp_player_clients=player, ytdlp_fallback_clients=fallback),
+        Zipapp(FAKE_ZIPAPP),
+    )
+
+
 async def test_the_client_ladder_retries_extraction_failures(staging: LocalStagingStore) -> None:
     recorder = Recorder()
-    result = await downloader(staging).download("LadderFmt01", JOB_DIR, recorder)
+    result = await laddered(staging).download("LadderFmt01", JOB_DIR, recorder)
     assert result.final_path == f"{JOB_DIR}/LadderFmt01.webm"
-    no_fallback = downloader(staging, ytdlp_fallback_clients="")
+    no_fallback = laddered(staging, fallback="")
     with pytest.raises(DownloadError) as caught:
         await no_fallback.download("LadderFmt01", JOB_DIR, recorder)
     assert caught.value.code == WorkerErrorCode.EXTRACTOR_ERROR
+
+
+async def test_a_403_on_the_first_client_takes_the_ladder(staging: LocalStagingStore) -> None:
+    # A 403 (network_error) before any byte on `clienta` falls through to `clientb`.
+    recorder = Recorder()
+    result = await laddered(staging).download("Forbid403A1", JOB_DIR, recorder)
+    assert result.final_path == f"{JOB_DIR}/Forbid403A1.webm"
+    assert result.size_bytes == staging.size(result.final_path)
+
+
+async def test_a_403_on_every_client_fails_the_job_cleanly(staging: LocalStagingStore) -> None:
+    with pytest.raises(DownloadError) as caught:
+        await laddered(staging).download("Block403All", JOB_DIR, Recorder())
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.NETWORK_ERROR, True)
+    # Nothing was left behind as a usable file.
+    assert not staging.exists(f"{JOB_DIR}/Block403All.webm")
+
+
+async def test_a_short_final_file_is_rejected_not_archived(staging: LocalStagingStore) -> None:
+    # yt-dlp announced the full size but the file ended short: a truncated download must never
+    # be returned as complete (SPEC section 11, abort-on-size-mismatch).
+    with pytest.raises(DownloadError) as caught:
+        await downloader(staging).download("ShortFile01", JOB_DIR, Recorder())
+    assert (caught.value.code, caught.value.retryable) == (WorkerErrorCode.NETWORK_ERROR, True)
+    assert "not the announced" in caught.value.message
 
 
 @pytest.mark.parametrize(

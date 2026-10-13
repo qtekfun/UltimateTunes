@@ -13,6 +13,8 @@
 #   COMPOSE_PROFILES=pot                                 starts the pot-provider service
 #   UT_YTDLP_POT_PROVIDER_URL=http://bgutil:4416         tells the worker to use it
 #   UT_POT_SUBNET=10.213.47.0/24, UT_POT_PROVIDER_ADDRESS=10.213.47.250   its network
+# Optional yt-dlp player clients (docs/admin-guide.md, "songs cut off or skip"):
+#   UT_YTDLP_PLAYER_CLIENTS=web_safari,tv   override the worker default (empty = its default)
 # and two fresh random secrets: ./secrets/worker_token and ./secrets/admin_session_secret
 # (`openssl rand -hex 32` each; the worker token needs 32+ characters). Never reuse the test
 # stack's token (compose.test.yaml) here.
@@ -159,6 +161,10 @@ services:
       # no cookies from a file (as before). yt-dlp rewrites it, so the worker copies it per
       # download and never touches the read-only secret directly.
       # UT_YTDLP_COOKIES_FILE: /run/secrets/ut_ytdlp_cookies
+      # yt-dlp player clients (D15). Empty keeps the worker's default (web_safari,tv, tuned for
+      # the `pot` provider above). Override in .env if downloads 403/skip or you run no provider,
+      # e.g. UT_YTDLP_PLAYER_CLIENTS=default (docs/admin-guide.md, "songs cut off or skip").
+      UT_YTDLP_PLAYER_CLIENTS: ${UT_YTDLP_PLAYER_CLIENTS:-}
     secrets:
       - source: worker_token
         # pydantic-settings reads /run/secrets/<env name>, prefix included.
@@ -181,9 +187,9 @@ services:
   # worker shares: nothing published, never on the api's networks. Through `egress` it reaches
   # www.youtube.com, www.google.com and jnn-pa.googleapis.com (BotGuard; docs/architecture.md).
   pot-provider:
-    # Upstream 2.0.0 (Node flavour), pinned by digest; bump together with BGUTIL_VERSION and
+    # Upstream 2.0.2 (Node flavour), pinned by digest; bump together with BGUTIL_VERSION and
     # BGUTIL_PLUGIN_SHA256 in server/Dockerfile (a test keeps them on one version).
-    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.0@sha256:ed86b6fdd5e430ddd7c8ce1adb55e1ab54db7c7dbc1bcbf3a82454a85b971164
+    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.2@sha256:d7d34108b76e52c7d3b575fe9e797e4bf41c1b2a08f80c5292eff6f851ce8472
     profiles: [pot]
     # The image's own non-root `node` user.
     user: "1000:1000"

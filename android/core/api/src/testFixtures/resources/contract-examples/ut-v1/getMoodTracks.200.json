@@ -1,0 +1,31 @@
+{
+    "id": "moods_chill",
+    "items": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01c002",
+            "title": "Tidewater",
+            "artist": "The Paper Lanterns",
+            "artistId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001",
+            "album": "Harbour Lights",
+            "albumId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "durationSec": 187,
+            "year": 2023,
+            "coverArt": "al-0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001",
+            "isExternal": false,
+            "libraryState": "ready"
+        },
+        {
+            "id": "yt:Qx7Lm2pZ0aB",
+            "title": "Paper Moons (Live)",
+            "artist": "The Paper Lanterns",
+            "artistId": "ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe",
+            "album": "Lanterns at Dusk",
+            "albumId": "ytalbum:MPREb_k3Vd9QmT2xL",
+            "durationSec": 262,
+            "year": null,
+            "coverArt": "yt:Qx7Lm2pZ0aB",
+            "isExternal": true,
+            "libraryState": "pending"
+        }
+    ]
+}

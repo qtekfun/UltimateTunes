@@ -14,9 +14,13 @@ import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.ui.album.AlbumContent
 import com.qtekfun.ultimatetunes.ui.artist.ArtistContent
+import com.qtekfun.ultimatetunes.ui.charts.ChartsContent
 import com.qtekfun.ultimatetunes.ui.imports.ImportProgress
 import com.qtekfun.ultimatetunes.ui.imports.ImportRow
 import com.qtekfun.ultimatetunes.ui.listennow.ListenNowContent
+import com.qtekfun.ultimatetunes.ui.listennow.RecommendationsContent
+import com.qtekfun.ultimatetunes.ui.listennow.SeedShelf
+import com.qtekfun.ultimatetunes.ui.listennow.SourceShelf
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.ArtistTile
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -105,6 +109,16 @@ internal object PreviewData {
         mostPlayed = tracks.take(n = 3),
         stations = stations
     )
+
+    val recommendations = RecommendationsContent(
+        recommendedForYou = tracks.take(n = 4),
+        becauseYouPlayed = listOf(SeedShelf("Lighthouse Keeper", tracks.drop(n = 1).take(n = 3))),
+        sources = listOf(
+            SourceShelf("Popular on ListenBrainz · The Paper Lanterns", tracks.takeLast(n = 3))
+        )
+    )
+
+    val charts = ChartsContent(country = "ES", tracks = tracks)
 
     val radio = RadioContent(
         featured = stations.take(1),
