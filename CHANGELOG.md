@@ -9,6 +9,13 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.8] - 2026-10-14
+
+Release candidate of 1.0: the in-app YouTube sign-in now finishes on its own. The server is unchanged since 1.0.0-rc.7.
+
+### Fixed
+- Android: after signing in to Google in Settings > YouTube account, the sign-in no longer stays loading. The app now checks the session every second, captures it as soon as it exists, and has an "I'm signed in - continue" button that works even while a page is still loading. The login starts on music.youtube.com with a normal mobile Chrome identity so Google does not treat the WebView as an embedded app, and a blocked or failed page shows a message instead of an endless spinner.
+
 ## [1.0.0-rc.7] - 2026-10-13
 
 Release candidate of 1.0: sign in to YouTube once from the app so your server can download through that session.
