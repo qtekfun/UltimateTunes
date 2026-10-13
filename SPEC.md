@@ -424,3 +424,23 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken by the coordinator — Android polish (#70, 2026-10-12)
 - One app-wide snackbar host, above the mini player and tab bar, or at the top of the open full player. Re-tapping the open tab pops it to its first screen. A dark window theme in dark mode (no white flash at launch).
 - No R8/ProGuard rules beyond the libraries' consumer rules: a minified build was checked on the Pixel 8 (cold start 260 ms).
+
+### Taken by the coordinator — admin panel polish (#71, 2026-10-12)
+- Admin lists that grow (downloads queue, needs review, audit log) are paged at 50 rows with `?page=` (ASCII digits, at most 1000) and keep their filters; the audit log is filterable by action and actor (only known values accepted). Migration `0701_admin_list_indexes.sql` indexes `audit_log(action, occurred_at)` and `jobs(updated_at)`.
+- "Mark reviewed" (`POST /admin/library/tracks/{item_id}/reviewed`, audited `track.review`) clears `needs_review`; deleting stays the other way out. No tag editing in the panel.
+- Destructive panel actions ask for confirmation through `data-confirm` and the first-party `/admin/static/admin.js` (no inline scripts, CSP unchanged); without JavaScript they still work.
+- `RateLimiter` gains a read-only `peek(key, limit)`, so the panel shows per-user catalog/search budgets and the shared YouTube Music budget without spending them.
+- `docs/configuration.md` is the reference of every `UT_*` setting, enforced by a test against the settings classes and the compose files; `docs/admin-guide.md` describes every panel page.
+
+### Taken by the coordinator — final audit fixes (#74, 2026-10-12)
+- Outside sign-in failures per username cost a growing delay instead of a lockout: `UT_AUTH_OUTSIDE_BACKOFF_BASE_S` (1 s) doubling up to `UT_AUTH_OUTSIDE_BACKOFF_MAX_S` (300 s), reset by a success, reserved before the password hash is checked. The inside counter keeps the lockout (`UT_AUTH_MAX_FAILURES_PER_USER`, `UT_AUTH_LOCKOUT_S`); the global failure budget only holds back unknown keys and usernames with outside failures on record. Known trade-off: an outsider who knows a username can slow that user's outside password sign-in for as long as the attack lasts (sessions, API keys and LAN/Tailscale sign-in are unaffected). With several api replicas, the reservation will need a row lock or compare-and-set.
+- The edge examples add a strict per-client limit on `POST /web/login` and count IPv6 per /64. Forwarded chains are walked from the right and stop at the first untrusted hop, whatever their length.
+- ffmpeg/ffprobe inputs: the demuxer is forced from the extension (webm, opus, ogg, m4a, mp4 only), with format, codec and protocol whitelists.
+- "Sign out every device" revokes every key and bumps both session epochs (audited `user.sign_out_all`): in the web player for one's own account, in the panel for any user.
+- The api's `/tmp` is a `noexec,nosuid` 64 MiB tmpfs; the worker's stays exec until verified with yt-dlp and its JS runtime. HEAD never starts a download.
+- Accepted residual risks (SECURITY.md): the panel and the web player share one origin; containers on the proxy network must be trusted; the public client address relies on the edge's `X-Forwarded-For`.
+
+### Taken by the coordinator — QR connect through the camera app (#75, 2026-10-13)
+- The app does not scan QR codes itself: the phone's camera app (or Lens) opens the `ultimatetunes://connect` link from the panel's QR code and the app handles it. No camera or barcode library (ML Kit needs Google Play services; ZXing is not approved).
+- A connect link is parsed strictly and always needs an explicit confirmation showing the host and the full URL; Connect works only after the dialog has been shown unchanged for 1 s. It connects only after `/ut/v1/server` and `/ut/v1/me` succeed, and the previous connection is restored unless both succeed. `http` in a link follows the same cleartext policy as manual entry. Links replayed from Recents are ignored, and the key never goes into an intent, a `Bundle` or a log.
+- While a link dialog is showing, further links are dropped (the dialog says so): the first link wins. Known trade-off: during the key check of a replacement the player queue is reset as on any reconnect; an unreachable server or one that is not UltimateTunes never touches the current connection.
