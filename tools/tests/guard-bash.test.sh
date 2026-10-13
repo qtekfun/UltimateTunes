@@ -112,6 +112,13 @@ blocked "$m" "$tag -a $t -m x feat/x"
 blocked "$m" "($push origin --delete \"\$TAG\")"
 blocked "$m" "$tag -d \"\$(git describe --abbrev=0)\""
 
+# ...but computed values in commit messages and branch names stay fine (heredoc commit style).
+allowed "$b" "git commit -m \"\$(cat <<'X'
+docs: explain how to push a tag
+X
+)\""
+allowed "$m" "git -C $b push -u origin \"\$(git -C $b branch --show-current)\""
+
 # Push behaviour is not changed through config or aliases.
 blocked "$m" "git -c push.followTags=true push origin feat/x"
 blocked "$m" "git -c remote.origin.mirror=true push origin"

@@ -229,12 +229,15 @@ _RAW_DANGER = re.compile(
     r"|(?<![\w/-])[+:]\s*['\"]*\s*(refs/tags/|tags/)?v\d|['\"]{2}\s*:|\bxargs\b|\beval\b|\b(ba|z|da)?sh\s+-c\b"
     r"|\$\(|`|\bgit\s+config\b|\s-c\s+\S|--config-env|(?:^|[;&|(\n]\s*)cd\s|\bpushd\b"
 )
+_DELETE_OR_FORCE = re.compile(
+    r"--delete\b|(?<!\S)-[a-ln-zA-EG-Z]*[df][a-ln-zA-EG-Z]*(?!\S)|--force|--mirror|--prune\b"
+)
 if re.search(r"\bgit\b", cmd):
     # A computed name (`v$(cat VERSION)`, `v$V`, `` v`…` ``) would skip every check below.
     if re.search(r"\b(push|tag)\b", cmd) and re.search(r"(?<![\w.-])['\"]?v['\"]?(\$|`)", cmd):
         block("spell the release tag out (v1.2.3), never compute it in the command (RELEASING.md).")
     # Deleting or forcing something whose name is computed could hit a release tag.
-    if re.search(r"[$`]", cmd) and _RAW_DANGER.search(cmd) and re.search(r"\b(push|tag)\b", cmd):
+    if re.search(r"[$`]", cmd) and _DELETE_OR_FORCE.search(cmd) and re.search(r"\b(push|tag)\b", cmd):
         block("no delete or force on a computed ref name; spell it out (RELEASING.md).")
     _named = {m.group(0) for m in _RAW_TAG.finditer(cmd)}
     if _named and re.search(r"\b(push|tag|update-ref)\b|refs/tags/", cmd):
