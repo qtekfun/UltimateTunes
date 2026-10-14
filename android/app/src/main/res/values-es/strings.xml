@@ -220,7 +220,7 @@
     <string name="youtube_login_continue">Ya inicié sesión — continuar</string>
     <string name="youtube_login_no_session">Todavía no se encontró una sesión de YouTube iniciada. Termina de iniciar sesión (abre YouTube una vez si hace falta) y pulsa Continuar de nuevo.</string>
     <string name="youtube_login_load_failed">No se pudo cargar la página de inicio de sesión, o se bloqueó una página del proceso. Revisa la conexión y cancela para intentarlo de nuevo.</string>
-    <string name="youtube_login_waiting">Esperando tu sesión de YouTube… Pulsa Continuar cuando hayas iniciado sesión.</string>
+    <string name="youtube_login_waiting">Esperando tu sesión de YouTube… Si Google te pide aprobar el inicio de sesión en un dispositivo (la notificación de este teléfono también vale), apruébalo y vuelve: continúa solo. O pulsa Continuar.</string>
     <string name="youtube_uploading">Enviando la sesión a tu servidor…</string>
     <string name="youtube_done">Sesión iniciada. Tu servidor ya puede usar esta sesión de YouTube.</string>
     <string name="youtube_failure_title">Cuenta de YouTube</string>
@@ -270,4 +270,9 @@
     <string name="local_network_open_settings">Abrir Ajustes</string>
     <string name="local_network_not_now">Ahora no</string>
     <string name="error_local_network">Android está bloqueando la conexión con tu servidor en la red local. Permite el acceso para continuar.</string>
+
+    <!-- Inicio de sesión de YouTube: lo que ve (sin secretos) -->
+    <string name="youtube_login_yes">sí</string>
+    <string name="youtube_login_no">no</string>
+    <string name="youtube_login_diagnostics">Página: %1$s · Sesión de Google: %2$s · Sesión de YouTube: %3$s · Bloqueado: %4$s</string>
 </resources>

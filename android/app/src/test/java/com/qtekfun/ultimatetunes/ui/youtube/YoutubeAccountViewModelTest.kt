@@ -27,18 +27,20 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 
 /** A cookie jar in memory (invented cookies only). */
-private class FakeWebSession(var youtube: String? = null) : YoutubeWebSession {
+private class FakeWebSession(var youtube: String? = null, var google: String = "SID=g1") :
+    YoutubeWebSession {
     var clears = 0
 
     override fun cookieSources() = listOf(
         NetscapeCookies.Source(youtube, ".youtube.com", "www.youtube.com"),
         NetscapeCookies.Source(youtube, ".youtube.com", "music.youtube.com"),
-        NetscapeCookies.Source("SID=g1", ".google.com", "accounts.google.com")
+        NetscapeCookies.Source(google, ".google.com", "accounts.google.com")
     )
 
     override fun clear() {
         clears++
         youtube = null
+        google = "SID=g1"
     }
 }
 
@@ -247,6 +249,95 @@ class YoutubeAccountViewModelTest {
         session.youtube = signedIn
         viewModel.continueNow()
         assertFalse(viewModel.reach(YoutubePhase.DONE).noSession)
+    }
+
+    @Test
+    fun `a Google only session is taken to YouTube Music, at most every fifteen seconds`() =
+        runTest {
+            val viewModel = viewModel()
+            viewModel.loaded()
+            viewModel.startSignIn()
+            viewModel.confirmWarning()
+            session.google = "SID=g1; SAPISID=g2"
+
+            viewModel.onPageFinished("myaccount.google.com")
+            val first = checkNotNull(viewModel.state.value.navigate)
+            assertEquals(YOUTUBE_MUSIC_URL, first.url)
+            assertTrue(viewModel.state.value.diagnostics.googleSession)
+            assertFalse(viewModel.state.value.diagnostics.youtubeSession)
+
+            viewModel.onNavigated(first.id + 1) // another request: ignored
+            assertEquals(first, viewModel.state.value.navigate)
+            viewModel.onNavigated(first.id)
+            assertEquals(null, viewModel.state.value.navigate)
+            viewModel.onPageFinished("myaccount.google.com") // too soon after the last kick
+            assertEquals(null, viewModel.state.value.navigate)
+            viewModel.continueNow() // the user asked: now
+            assertEquals(YOUTUBE_MUSIC_URL, viewModel.state.value.navigate?.url)
+            assertFalse(viewModel.state.value.noSession)
+        }
+
+    @Test
+    fun `a Google only session is retried once the interval has passed`() = runTest {
+        var now = Instant.parse("2026-10-13T00:00:00Z")
+        val moving = object : Clock() {
+            override fun getZone() = ZoneOffset.UTC
+
+            override fun withZone(zone: java.time.ZoneId?) = this
+
+            override fun instant(): Instant = now
+        }
+        val viewModel = YoutubeAccountViewModel(connectedApi(server), session, moving)
+            .also { created += it }
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+        session.google = "SAPISID=g2"
+
+        viewModel.onPageFinished("a.google.com")
+        val first = checkNotNull(viewModel.state.value.navigate)
+        viewModel.onNavigated(first.id)
+        now = now.plusSeconds(16)
+        viewModel.onPageFinished("a.google.com")
+
+        assertEquals(first.id + 1, viewModel.state.value.navigate?.id)
+    }
+
+    @Test
+    fun `continue with nothing signed in loads the login again and says so`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.startSignIn()
+        viewModel.confirmWarning()
+
+        viewModel.continueNow()
+
+        val state = viewModel.state.value
+        assertEquals(YOUTUBE_LOGIN_URL, state.navigate?.url)
+        assertTrue(state.noSession)
+        assertFalse(state.diagnostics.googleSession)
+        viewModel.onPageFinished("accounts.google.com")
+        assertEquals("accounts.google.com", viewModel.state.value.diagnostics.page)
+        assertEquals(YOUTUBE_LOGIN_URL, viewModel.state.value.navigate?.url) // not on its own
+    }
+
+    @Test
+    fun `blocked hosts are listed once, lowercase, and capped`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        viewModel.onBlocked(null)
+        viewModel.onBlocked("  ")
+        viewModel.onBlocked("Ads.Example.com")
+        viewModel.onBlocked("ads.example.com")
+        repeat(12) { viewModel.onBlocked("h$it.example.com") }
+
+        val blocked = viewModel.state.value.diagnostics.blockedHosts
+        assertEquals("ads.example.com", blocked.first())
+        assertEquals(8, blocked.size)
+        assertEquals(blocked.distinct(), blocked)
+        viewModel.startSignIn()
+        viewModel.confirmWarning() // a new login starts with a clean report
+        assertEquals(emptyList<String>(), viewModel.state.value.diagnostics.blockedHosts)
     }
 
     @Test

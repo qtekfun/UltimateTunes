@@ -110,6 +110,8 @@ fun SettingsRoute(
             webViewReleased = youtubeViewModel::webViewReleased,
             continueNow = youtubeViewModel::continueNow,
             loadFailed = youtubeViewModel::onLoadFailed,
+            blocked = youtubeViewModel::onBlocked,
+            navigated = youtubeViewModel::onNavigated,
             remove = youtubeViewModel::remove
         )
     )
