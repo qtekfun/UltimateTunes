@@ -95,4 +95,15 @@ class YoutubeLoginTest {
         assertFalse(agent.contains("Version/"))
         assertTrue(loginUserAgent("odd").contains("Chrome/130.0.0.0"))
     }
+
+    @Test
+    fun `the client hint brands say Chrome, never Android WebView`() {
+        val brands = loginBrands("131.0.6778.39")
+
+        assertEquals(listOf("Not.A/Brand", "Chromium", "Google Chrome"), brands.map { it.name })
+        assertTrue(brands.drop(1).all { it.major == "131" && it.full == "131.0.6778.39" })
+        assertFalse(brands.any { it.name.contains("WebView") })
+        assertEquals("131.0.6778.39", loginChromeVersion("... Chrome/131.0.6778.39 Mobile ..."))
+        assertEquals("130.0.0.0", loginChromeVersion("odd"))
+    }
 }
