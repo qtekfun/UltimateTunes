@@ -12,6 +12,14 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Android 17 blocks an app that targets SDK 37 from reaching the local network (a server on
+      your LAN, or a name your DNS maps to a LAN address) unless it holds this permission. The app
+      asks for it only when the configured server is on the local network, after explaining why.
+      It is still only ever used to talk to your own server.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
     <application
         android:name=".UltimateTunesApp"
         android:allowBackup="false"

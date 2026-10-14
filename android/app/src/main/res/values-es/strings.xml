@@ -261,4 +261,13 @@
     <string name="player_position">Posición en la canción</string>
     <string name="player_position_state">%1$s de %2$s</string>
     <string name="player_remaining">-%1$s</string>
+
+    <!-- Permiso de red local de Android 17 -->
+    <string name="local_network_title">¿Permitir el acceso a tu red local?</string>
+    <string name="local_network_rationale">Tu servidor está en tu red doméstica y Android 17 impide que las apps lleguen a él hasta que permitas el acceso a \"Dispositivos cercanos\". UltimateTunes lo usa solo para hablar con tu propio servidor.</string>
+    <string name="local_network_denied">Android sigue bloqueando la conexión con tu servidor. Abre Ajustes, entra en Permisos y permite \"Dispositivos cercanos\" para UltimateTunes; después vuelve.</string>
+    <string name="local_network_allow">Permitir</string>
+    <string name="local_network_open_settings">Abrir Ajustes</string>
+    <string name="local_network_not_now">Ahora no</string>
+    <string name="error_local_network">Android está bloqueando la conexión con tu servidor en la red local. Permite el acceso para continuar.</string>
 </resources>
