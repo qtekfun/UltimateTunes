@@ -217,7 +217,7 @@
     <string name="youtube_login_continue">I\'m signed in — continue</string>
     <string name="youtube_login_no_session">No signed-in YouTube session found yet. Finish signing in (open YouTube once if needed), then tap Continue again.</string>
     <string name="youtube_login_load_failed">The sign-in page could not be loaded, or a page of the sign-in was blocked. Check the connection and cancel to try again.</string>
-    <string name="youtube_login_waiting">Waiting for your YouTube session… Tap Continue once you are signed in.</string>
+    <string name="youtube_login_waiting">Waiting for your YouTube session… If Google asks you to approve the sign-in on a device (this phone\'s notification works too), approve it and come back: it carries on by itself. Or tap Continue.</string>
     <string name="youtube_uploading">Sending the session to your server…</string>
     <string name="youtube_done">Signed in. Your server can now use this YouTube session.</string>
     <string name="youtube_failure_title">YouTube account</string>
@@ -267,4 +267,9 @@
     <string name="local_network_open_settings">Open Settings</string>
     <string name="local_network_not_now">Not now</string>
     <string name="error_local_network">Android is blocking the connection to your server on the local network. Allow access to continue.</string>
+
+    <!-- YouTube sign-in: what it sees (no secrets) -->
+    <string name="youtube_login_yes">yes</string>
+    <string name="youtube_login_no">no</string>
+    <string name="youtube_login_diagnostics">Page: %1$s · Google session: %2$s · YouTube session: %3$s · Blocked: %4$s</string>
 </resources>

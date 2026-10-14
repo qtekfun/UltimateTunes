@@ -24,7 +24,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val YOUTUBE_DOMAIN = ".youtube.com"
+private const val GOOGLE_DOMAIN = ".google.com"
 private const val POLL_MS = 1_000L
+
+/**
+ * Where a Google-only session is taken to YouTube Music, so Google mints the YouTube cookies the
+ * server's downloader needs (they only appear once the browser has visited YouTube).
+ */
+const val YOUTUBE_MUSIC_URL = "https://music.youtube.com/"
+
+/** A page is loaded again by the sign-in at most this often. */
+private const val KICK_EVERY_MS = 15_000L
+
+/** The sign-in screen lists at most this many blocked hosts. */
+private const val MAX_BLOCKED_HOSTS = 8
 
 /** Polling stops after 15 minutes; the Continue button stays. */
 private const val MAX_POLLS = 900
@@ -77,6 +90,21 @@ enum class YoutubeFailure {
     SERVER
 }
 
+/**
+ * What the sign-in can see, without any secret: the host of the page the WebView shows, whether
+ * the jar holds a Google and a YouTube session (yes or no, never a name or a value) and the hosts
+ * our allow list refused. It is what tells a stuck sign-in from a capture bug.
+ */
+data class LoginDiagnostics(
+    val page: String? = null,
+    val googleSession: Boolean = false,
+    val youtubeSession: Boolean = false,
+    val blockedHosts: List<String> = emptyList()
+)
+
+/** A page the WebView must load now (the sign-in asks for it; [id] makes each request new). */
+data class NavigateRequest(val id: Int, val url: String)
+
 data class YoutubeAccountUiState(
     val status: YoutubeStatus = YoutubeStatus.Loading,
     val phase: YoutubePhase = YoutubePhase.IDLE,
@@ -84,7 +112,9 @@ data class YoutubeAccountUiState(
     /** The user asked to continue but the jar holds no signed-in session (WebView screen). */
     val noSession: Boolean = false,
     /** The sign-in page itself could not be loaded (WebView screen). */
-    val loadFailed: Boolean = false
+    val loadFailed: Boolean = false,
+    val diagnostics: LoginDiagnostics = LoginDiagnostics(),
+    val navigate: NavigateRequest? = null
 )
 
 /**
@@ -106,6 +136,8 @@ class YoutubeAccountViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(YoutubeAccountUiState())
     private var poller: Job? = null
+    private var lastKickMs: Long? = null
+    private var navigations = 0
     val state: StateFlow<YoutubeAccountUiState> = mutableState.asStateFlow()
 
     init {
@@ -135,8 +167,15 @@ class YoutubeAccountViewModel @Inject constructor(
     fun confirmWarning() {
         if (mutableState.value.phase != YoutubePhase.WARNING) return
         session.clear()
+        lastKickMs = null
         mutableState.update {
-            it.copy(phase = YoutubePhase.SIGNING_IN, noSession = false, loadFailed = false)
+            it.copy(
+                phase = YoutubePhase.SIGNING_IN,
+                noSession = false,
+                loadFailed = false,
+                diagnostics = LoginDiagnostics(),
+                navigate = null
+            )
         }
         startPolling()
     }
@@ -152,20 +191,24 @@ class YoutubeAccountViewModel @Inject constructor(
                 phase = YoutubePhase.IDLE,
                 failure = null,
                 noSession = false,
-                loadFailed = false
+                loadFailed = false,
+                diagnostics = LoginDiagnostics(),
+                navigate = null
             )
         }
     }
 
     /**
      * The WebView shows a page (finished, committed or a history update): look at the jar now.
-     * [host] is unused on purpose: the session can appear on any hop, so no page is skipped.
+     * The session can appear on any hop, so no page is skipped; [host] only goes to the
+     * diagnostics.
      */
-    @Suppress("UNUSED_PARAMETER")
     fun onPageFinished(host: String?) {
         if (mutableState.value.phase != YoutubePhase.SIGNING_IN) return
-        mutableState.update { it.copy(loadFailed = false) }
-        captureNow()
+        mutableState.update {
+            it.copy(loadFailed = false, diagnostics = it.diagnostics.copy(page = host))
+        }
+        evaluate(userAsked = false)
     }
 
     /**
@@ -178,44 +221,100 @@ class YoutubeAccountViewModel @Inject constructor(
             repeat(MAX_POLLS) {
                 if (mutableState.value.phase != YoutubePhase.SIGNING_IN) return@launch
                 delay(POLL_MS)
-                captureNow()
+                evaluate(userAsked = false)
             }
         }
     }
 
-    /** "I'm signed in, continue": captures now, or says that there is no session. */
+    /**
+     * "I'm signed in, continue": captures now if the jar holds a YouTube session. With only a
+     * Google session it takes the WebView to YouTube Music so the YouTube cookies get created;
+     * with nothing it loads the sign-in again (a Google approval that finished while the page
+     * stayed stuck then carries on by itself) and says that no session was found.
+     */
     fun continueNow() {
         if (mutableState.value.phase != YoutubePhase.SIGNING_IN) return
-        if (!captureNow()) mutableState.update { it.copy(noSession = true) }
+        if (!evaluate(userAsked = true)) {
+            val google = mutableState.value.diagnostics.googleSession
+            mutableState.update { it.copy(noSession = !google) }
+        }
     }
 
-    /** The sign-in page failed to load or a page of the flow was blocked. */
+    /** The sign-in page failed to load, or a page of the flow was blocked. */
     fun onLoadFailed() {
         if (mutableState.value.phase != YoutubePhase.SIGNING_IN) return
         mutableState.update { it.copy(loadFailed = true) }
     }
 
-    /** Reads the jar and, when it holds a signed-in session, wipes it and uploads. */
-    private fun captureNow(): Boolean {
-        val body = signedInCookies()
-        if (body == null || mutableState.value.phase != YoutubePhase.SIGNING_IN) return false
-        poller?.cancel()
-        session.clear() // The WebView keeps nothing from here on.
+    /** Our allow list refused [host]: remembered (host only, no path) for the diagnostics. */
+    fun onBlocked(host: String?) {
+        val name = host?.lowercase()?.takeIf { it.isNotBlank() } ?: return
         mutableState.update {
-            it.copy(phase = YoutubePhase.UPLOADING, noSession = false, loadFailed = false)
+            val blocked = it.diagnostics.blockedHosts
+            if (name in blocked || blocked.size >= MAX_BLOCKED_HOSTS) {
+                it
+            } else {
+                it.copy(diagnostics = it.diagnostics.copy(blockedHosts = blocked + name))
+            }
         }
-        viewModelScope.launch { upload(body) }
-        return true
     }
 
-    /** The Netscape text of the jar when it holds a signed-in session, else null. */
-    private fun signedInCookies(): String? {
+    /** The WebView took the page asked for through [YoutubeAccountUiState.navigate]. */
+    fun onNavigated(id: Int) {
+        mutableState.update { if (it.navigate?.id == id) it.copy(navigate = null) else it }
+    }
+
+    /**
+     * Reads the jar. A YouTube session is captured and uploaded. A Google session without a
+     * YouTube one is taken to YouTube Music; nothing at all is loaded again only when the user
+     * asked, since a stuck page may already have been approved on the other device.
+     */
+    private fun evaluate(userAsked: Boolean): Boolean {
         val sources = session.cookieSources()
-        val signedIn = sources.any {
-            it.domain == YOUTUBE_DOMAIN && NetscapeCookies.hasSession(it.cookieHeader)
+        val youtube = sources.hasSessionFor(YOUTUBE_DOMAIN)
+        val google = sources.hasSessionFor(GOOGLE_DOMAIN)
+        mutableState.update {
+            it.copy(
+                diagnostics = it.diagnostics.copy(googleSession = google, youtubeSession = youtube)
+            )
         }
-        if (!signedIn) return null
-        return NetscapeCookies.serialize(sources, clock.instant())
+        if (youtube) return capture(sources)
+        val now = clock.millis()
+        val due = lastKickMs?.let { now - it >= KICK_EVERY_MS } ?: true
+        when {
+            google && (userAsked || due) -> navigateTo(YOUTUBE_MUSIC_URL, now)
+            !google && userAsked -> navigateTo(YOUTUBE_LOGIN_URL, now)
+        }
+        return false
+    }
+
+    private fun navigateTo(url: String, now: Long) {
+        lastKickMs = now
+        navigations += 1
+        mutableState.update { it.copy(navigate = NavigateRequest(navigations, url)) }
+    }
+
+    private fun List<NetscapeCookies.Source>.hasSessionFor(domain: String) =
+        any { it.domain == domain && NetscapeCookies.hasSession(it.cookieHeader) }
+
+    /** Wipes the jar and uploads the Netscape text of [sources] (they hold a YouTube session). */
+    private fun capture(sources: List<NetscapeCookies.Source>): Boolean {
+        val body = NetscapeCookies.serialize(sources, clock.instant())
+        val signingIn = mutableState.value.phase == YoutubePhase.SIGNING_IN
+        if (body != null && signingIn) {
+            poller?.cancel()
+            session.clear() // The WebView keeps nothing from here on.
+            mutableState.update {
+                it.copy(
+                    phase = YoutubePhase.UPLOADING,
+                    noSession = false,
+                    loadFailed = false,
+                    navigate = null
+                )
+            }
+            viewModelScope.launch { upload(body) }
+        }
+        return body != null && signingIn
     }
 
     /** The WebView went away (rotation, back, destroyed): its jar must not outlive it. */
