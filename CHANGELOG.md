@@ -9,6 +9,14 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.9] - 2026-10-14
+
+Release candidate of 1.0: the Android app now finishes the YouTube sign-in after Google's 2-step approval and can reach a server on your home network. The server is unchanged since 1.0.0-rc.7.
+
+### Fixed
+- Android: signing in to YouTube (Settings > YouTube account) no longer stays on the same screen after Google's 2-step approval. Google's login can leave the session only on google.com; the app now takes the sign-in window to YouTube Music so the YouTube session gets created, then captures it. "I'm signed in - continue" looks again at once, and a line under the page shows what the app sees (page host, Google/YouTube session yes or no, blocked hosts; never a secret). The window now presents Chrome's client hints instead of "Android WebView".
+- Android: on Android 17 the app asks for the "Local network" permission when your server's address is on your home network, and explains it when the connection is blocked, instead of spinning forever.
+
 ## [1.0.0-rc.8] - 2026-10-14
 
 Release candidate of 1.0: the in-app YouTube sign-in now finishes on its own. The server is unchanged since 1.0.0-rc.7.

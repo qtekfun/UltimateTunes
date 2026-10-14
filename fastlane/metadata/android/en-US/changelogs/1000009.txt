@@ -1,0 +1,1 @@
+Release candidate of 1.0. Fixes: signing in to YouTube from Settings now finishes after Google's 2-step approval, and the app asks for the Local network permission to reach a server at home.
