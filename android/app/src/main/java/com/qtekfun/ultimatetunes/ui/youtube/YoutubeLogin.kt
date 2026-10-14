@@ -79,3 +79,29 @@ fun loginUserAgent(default: String): String {
     return "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/$chrome Mobile Safari/537.36"
 }
+
+/** One entry of the `Sec-CH-UA` brand list the sign-in WebView sends (see [loginBrands]). */
+data class LoginBrand(val name: String, val major: String, val full: String)
+
+/** The Chrome version the user agent claims: the installed WebView's, else a plausible one. */
+fun loginChromeVersion(default: String): String =
+    CHROME_VERSION.find(default)?.groupValues?.get(1) ?: FALLBACK_CHROME
+
+private const val GREASE_BRAND = "Not.A/Brand"
+private const val GREASE_MAJOR = "99"
+private const val GREASE_FULL = "99.0.0.0"
+
+/**
+ * The client-hint brands of a real Chrome with [chromeFull] (`130.0.6723.58`): Chromium, Google
+ * Chrome and the deliberately odd "GREASE" brand. A WebView that replaces its user agent still
+ * sends the brands of the system default, among them "Android WebView", which contradicts the
+ * Chrome user agent and is something Google can read; these say the same thing as the user agent.
+ */
+fun loginBrands(chromeFull: String): List<LoginBrand> {
+    val major = chromeFull.substringBefore('.')
+    return listOf(
+        LoginBrand(GREASE_BRAND, GREASE_MAJOR, GREASE_FULL),
+        LoginBrand("Chromium", major, chromeFull),
+        LoginBrand("Google Chrome", major, chromeFull)
+    )
+}

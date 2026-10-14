@@ -27,8 +27,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -39,6 +43,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
+import androidx.webkit.UserAgentMetadata
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
@@ -54,6 +61,7 @@ const val YOUTUBE_SIGN_OUT_TAG = "youtube.signOut"
 const val YOUTUBE_WARNING_CONTINUE_TAG = "youtube.warningContinue"
 const val YOUTUBE_CONTINUE_TAG = "youtube.continue"
 const val YOUTUBE_LOGIN_PROBLEM_TAG = "youtube.loginProblem"
+const val YOUTUBE_LOGIN_DIAGNOSTICS_TAG = "youtube.loginDiagnostics"
 
 /** What the YouTube account section can do. */
 data class YoutubeActions(
@@ -65,7 +73,18 @@ data class YoutubeActions(
     val webViewReleased: () -> Unit = {},
     val continueNow: () -> Unit = {},
     val loadFailed: () -> Unit = {},
+    val blocked: (String?) -> Unit = {},
+    val navigated: (Int) -> Unit = {},
     val remove: () -> Unit = {}
+)
+
+/** What the sign-in WebView reports to the view model. */
+data class LoginWebViewEvents(
+    val pageFinished: (String?) -> Unit = {},
+    val loadFailed: () -> Unit = {},
+    val blocked: (String?) -> Unit = {},
+    val released: () -> Unit = {},
+    val navigated: (Int) -> Unit = {}
 )
 
 /** Settings, "YouTube account" (D14): the status, sign in (WebView) and sign out. */
@@ -254,9 +273,14 @@ private fun YoutubeLoginDialog(state: YoutubeAccountUiState, actions: YoutubeAct
                 }
                 LoginStatusLine(state)
                 YoutubeLoginWebView(
-                    onPageFinished = actions.pageFinished,
-                    onLoadFailed = actions.loadFailed,
-                    onReleased = actions.webViewReleased,
+                    navigate = state.navigate,
+                    events = LoginWebViewEvents(
+                        pageFinished = actions.pageFinished,
+                        loadFailed = actions.loadFailed,
+                        blocked = actions.blocked,
+                        released = actions.webViewReleased,
+                        navigated = actions.navigated
+                    ),
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
                 Button(
@@ -281,106 +305,41 @@ private fun LoginStatusLine(state: YoutubeAccountUiState) {
         else -> R.string.youtube_login_waiting
     }
     val waiting = message == R.string.youtube_login_waiting
-    Text(
-        text = stringResource(message),
-        style = MaterialTheme.typography.bodyMedium,
-        color = if (waiting) {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        } else {
-            MaterialTheme.colorScheme.error
-        },
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS)
-            .testTag(YOUTUBE_LOGIN_PROBLEM_TAG)
-    )
-}
-
-/**
- * A WebView on Google's sign-in, kept to Google and YouTube hosts ([isAllowedPage],
- * [isAllowedResource]). It reads nothing itself: the view model asks the cookie jar when a page
- * finishes at a YouTube host.
- */
-@SuppressLint("SetJavaScriptEnabled") // Google's sign-in does not work without JavaScript.
-@Composable
-private fun YoutubeLoginWebView(
-    onPageFinished: (String?) -> Unit,
-    onLoadFailed: () -> Unit,
-    onReleased: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val finished by rememberUpdatedState(onPageFinished)
-    val released by rememberUpdatedState(onReleased)
-    val failed by rememberUpdatedState(onLoadFailed)
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.allowFileAccess = false
-                settings.allowContentAccess = false
-                settings.javaScriptCanOpenWindowsAutomatically = false
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                settings.safeBrowsingEnabled = true
-                settings.userAgentString = loginUserAgent(settings.userAgentString)
-                CookieManager.getInstance().setAcceptCookie(true)
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webViewClient = LoginClient(
-                    pageSeen = { host -> finished(host) },
-                    loadFailed = { failed() }
-                )
-                loadUrl(YOUTUBE_LOGIN_URL)
-            }
-        },
-        onRelease = { webView ->
-            webView.stopLoading()
-            webView.destroy()
-            released()
-        }
-    )
-}
-
-private const val HTTP_FORBIDDEN = 403
-
-private class LoginClient(
-    private val pageSeen: (String?) -> Unit,
-    private val loadFailed: () -> Unit
-) : WebViewClient() {
-    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-        !isAllowedPage(request.url).also { allowed -> if (!allowed) loadFailed() }
-
-    override fun shouldInterceptRequest(
-        view: WebView,
-        request: WebResourceRequest
-    ): WebResourceResponse? = if (isAllowedResource(request.url)) {
-        null
-    } else {
-        WebResourceResponse(
-            "text/plain",
-            "utf-8",
-            HTTP_FORBIDDEN,
-            "Blocked",
-            emptyMap(),
-            ByteArrayInputStream(ByteArray(0))
+    ) {
+        Text(
+            text = stringResource(message),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (waiting) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.error
+            },
+            modifier = Modifier.testTag(YOUTUBE_LOGIN_PROBLEM_TAG)
+        )
+        Text(
+            text = diagnosticsText(state.diagnostics),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag(YOUTUBE_LOGIN_DIAGNOSTICS_TAG)
         )
     }
+}
 
-    override fun onReceivedError(
-        view: WebView,
-        request: WebResourceRequest,
-        error: WebResourceError
-    ) {
-        if (request.isForMainFrame) loadFailed()
-    }
-
-    // Any of these can be the moment the session cookies appear: look at the jar on each.
-    override fun onPageFinished(view: WebView, url: String?) = pageSeen(hostOf(url))
-
-    override fun onPageCommitVisible(view: WebView, url: String?) = pageSeen(hostOf(url))
-
-    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) =
-        pageSeen(hostOf(url))
-
-    private fun hostOf(url: String?): String? = url?.let(android.net.Uri::parse)?.host
+/** What the sign-in sees, with no secret: page host, session yes/no, blocked hosts. */
+@Composable
+private fun diagnosticsText(diagnostics: LoginDiagnostics): String {
+    val yes = stringResource(R.string.youtube_login_yes)
+    val no = stringResource(R.string.youtube_login_no)
+    val blocked = diagnostics.blockedHosts.joinToString(", ").takeIf { it.isNotEmpty() }
+    return stringResource(
+        R.string.youtube_login_diagnostics,
+        diagnostics.page ?: "-",
+        if (diagnostics.googleSession) yes else no,
+        if (diagnostics.youtubeSession) yes else no,
+        blocked ?: "-"
+    )
 }
