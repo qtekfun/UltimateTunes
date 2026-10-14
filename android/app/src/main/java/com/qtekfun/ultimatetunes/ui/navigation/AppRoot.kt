@@ -13,6 +13,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.ui.connect.ConnectLinkRoute
 import com.qtekfun.ultimatetunes.ui.connect.ConnectRoute
 import com.qtekfun.ultimatetunes.ui.designsystem.LocalReconnect
+import com.qtekfun.ultimatetunes.ui.localnet.LocalLocalNetworkHint
+import com.qtekfun.ultimatetunes.ui.localnet.LocalNetworkAccess
+import com.qtekfun.ultimatetunes.ui.localnet.LocalNetworkHint
+import com.qtekfun.ultimatetunes.ui.localnet.LocalNetworkViewModel
 
 /**
  * The app's root: the Connect screen while no working server is configured, else the tabs
@@ -20,11 +24,21 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LocalReconnect
  * A connect link (the admin panel's QR code) asks for confirmation over either of them.
  */
 @Composable
-fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
+fun AppRoot(
+    viewModel: AppViewModel = hiltViewModel(),
+    localNetwork: LocalNetworkViewModel = hiltViewModel()
+) {
     val showConnect by viewModel.showConnect.collectAsStateWithLifecycle()
+    val localNetworkState by localNetwork.state.collectAsStateWithLifecycle()
     val askNotifications by viewModel.askNotifications.collectAsStateWithLifecycle()
     Surface(color = MaterialTheme.colorScheme.background) {
-        CompositionLocalProvider(LocalReconnect provides viewModel::reconnect) {
+        CompositionLocalProvider(
+            LocalReconnect provides viewModel::reconnect,
+            LocalLocalNetworkHint provides LocalNetworkHint(
+                blocked = localNetworkState.blocked,
+                onFix = localNetwork::reopen
+            )
+        ) {
             if (showConnect) {
                 ConnectRoute()
             } else {
@@ -34,6 +48,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 )
             }
             ConnectLinkRoute()
+            LocalNetworkAccess(localNetwork, refreshKey = showConnect)
         }
     }
 }
