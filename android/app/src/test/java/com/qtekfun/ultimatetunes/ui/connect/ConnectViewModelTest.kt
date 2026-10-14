@@ -82,7 +82,8 @@ class ConnectViewModelTest {
 
         gate.disconnect()
 
-        assertEquals(ConnectUiState(), viewModel.state.value)
+        // The reset runs on the view model's own collector: wait for it, do not race it.
+        assertEquals(ConnectUiState(), viewModel.state.awaitFirst { it == ConnectUiState() })
     }
 
     @Test
