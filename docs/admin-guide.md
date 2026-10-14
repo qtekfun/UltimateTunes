@@ -251,6 +251,12 @@ What to do:
    ```
    Add `--truncated` to also re-fetch any archived song whose file on disk is shorter than it should be (a half song from an earlier version of this bug), and `--dry-run` to only count what would be requeued without changing anything. It only requeues; it replaces a broken file, never deleting a good one.
 
+### The app spins forever on your home network
+
+Android 17 (API 37) blocks an app that targets SDK 37 from opening connections to the **local network** until the user allows it (permission `ACCESS_LOCAL_NETWORK`, shown as **Nearby devices**). The check is on the destination **address**, not on the name, so it also hits a server host name that your DNS maps to a LAN address (split DNS: `music.example.com` answers `192.168.1.6` at home and a public address elsewhere). Without the permission every request times out: the screens spin, while the same server answers on mobile data and in the phone's browser (once the browser was allowed).
+
+The app now handles it. When the configured server resolves to a local address (RFC 1918, link-local, `100.64.0.0/10`, IPv6 unique-local, or a `.local` name) and the permission is missing, it explains why and asks. If the system prompt was already refused, the dialog opens the app's Settings page (**Permissions > Nearby devices**). A network error on a screen then says that Android is blocking the connection, with an **Allow** button, instead of a plain "can't reach your server". Allowing it in Settings takes effect when you come back to the app. Before Android 17, and on a public address, nothing changes.
+
 ## Audit log
 
 Every sign-in to the panel, every account and key change, and every action taken in the panel (retries, cancels, deletes, reviews, worker commands, notification settings), newest first, 50 per page. Each entry has the time (UTC), who did it, from which address, the action, its target and a short detail. Passwords, keys and notification URLs are never recorded.

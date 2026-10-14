@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.ui.localnet.LocalLocalNetworkHint
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 
@@ -103,11 +104,26 @@ val LocalReconnect = staticCompositionLocalOf<() -> Unit> { {} }
 fun ErrorState(error: LoadError, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val needsConnect = error == LoadError.UNAUTHORIZED || error == LoadError.NOT_CONFIGURED
     val reconnect = LocalReconnect.current
+    val localNetwork = LocalLocalNetworkHint.current
+    // A network error while Android blocks the local network is that block, not a flaky server.
+    val blockedByAndroid = error == LoadError.NETWORK && localNetwork.blocked
     MessageState(
-        message = stringResource(error.messageRes()),
+        message = stringResource(
+            if (blockedByAndroid) R.string.error_local_network else error.messageRes()
+        ),
         icon = R.drawable.ic_cloud,
-        actionLabel = stringResource(if (needsConnect) R.string.connect_again else R.string.retry),
-        onAction = if (needsConnect) reconnect else onRetry,
+        actionLabel = stringResource(
+            when {
+                blockedByAndroid -> R.string.local_network_allow
+                needsConnect -> R.string.connect_again
+                else -> R.string.retry
+            }
+        ),
+        onAction = when {
+            blockedByAndroid -> localNetwork.onFix
+            needsConnect -> reconnect
+            else -> onRetry
+        },
         modifier = modifier
     )
 }
