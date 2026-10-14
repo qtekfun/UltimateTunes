@@ -1,0 +1,1 @@
+Versión candidata a la 1.0. Arreglos: iniciar sesión en YouTube desde Ajustes ahora termina tras la aprobación en dos pasos de Google, y la app pide el permiso de Red local para llegar a un servidor en casa.
