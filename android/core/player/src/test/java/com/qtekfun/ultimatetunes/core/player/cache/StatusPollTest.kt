@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -133,6 +134,25 @@ class StatusPollerTest {
     fun `a library id needs no polling`() = runTest {
         val poller = StatusPoller(fetch = { error("no call expected") })
         assertEquals(PollStep.GiveUp, poller.pollUntilSettled(LIBRARY))
+    }
+
+    @Test
+    fun `archivedNow asks once and remembers an archived song`() = runTest {
+        val answers =
+            ArrayDeque(listOf(status(TrackState.DOWNLOADING), status(TrackState.READY, LIBRARY)))
+        val poller = StatusPoller(fetch = { answers.removeFirst() })
+
+        assertNull(poller.archivedNow(YT))
+        assertEquals(LIBRARY, poller.archivedNow(YT))
+        // Known now: no more calls (none left to answer).
+        assertEquals(LIBRARY, poller.archivedNow(YT))
+        assertEquals(mapOf(YT to LIBRARY), poller.archived)
+    }
+
+    @Test
+    fun `archivedNow never asks about a library id`() = runTest {
+        val poller = StatusPoller(fetch = { error("no call expected") })
+        assertNull(poller.archivedNow(LIBRARY))
     }
 
     @Test

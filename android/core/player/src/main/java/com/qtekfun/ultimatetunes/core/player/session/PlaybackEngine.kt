@@ -49,6 +49,8 @@ class PlaybackEngine(
 
     private var current: SongId? = null
     private var polling: Job? = null
+    private var polledNext: SongId? = null
+    private var nextPolling: Job? = null
     private var gainJob: Job? = null
     private var failuresInARow = 0
 
@@ -65,6 +67,7 @@ class PlaybackEngine(
         player.removeListener(this)
         prefetcher.cancel()
         polling?.cancel()
+        nextPolling?.cancel()
         gainJob?.cancel()
         // Entries left incomplete now are swept on the first queue move of the next session.
     }
@@ -106,6 +109,10 @@ class PlaybackEngine(
             startPolling(now)
             applyGain()
         }
+        if (nextId != polledNext) {
+            polledNext = nextId
+            startPollingNext(nextId.takeIf { it != now })
+        }
     }
 
     private fun sweep(inUse: Set<String>) {
@@ -117,9 +124,39 @@ class PlaybackEngine(
         polling?.cancel()
         if (id == null || !id.isExternal || offlineOnly) return
         polling = scope.launch {
+            val archived = poller.archivedNow(id)
+            if (archived != null) {
+                playFromLibrary(id, archived)
+                return@launch
+            }
             val step = poller.pollUntilSettled(id)
             if (step is PollStep.Archived) switchToLibrary(id, step.libraryId)
         }
+    }
+
+    /**
+     * Follows the next `yt:` song too: the prefetcher preloads its raw download, so once the
+     * server archives it the queue must play its library id, never the `yt:` id (whose cached
+     * start would be continued with the bytes of a different file).
+     */
+    private fun startPollingNext(id: SongId?) {
+        nextPolling?.cancel()
+        if (id == null || !id.isExternal || offlineOnly) return
+        nextPolling = scope.launch {
+            val step = poller.pollUntilSettled(id)
+            if (step is PollStep.Archived) switchToLibrary(id, step.libraryId)
+        }
+    }
+
+    /** The song playing now, [external], switches to [libraryId] where it is (and its copies). */
+    private fun playFromLibrary(external: SongId, libraryId: SongId) {
+        val index = player.currentMediaItemIndex
+        val item = player.currentMediaItem ?: return
+        if (MediaItems.songOf(item) != external) return
+        val position = player.currentPosition
+        switchToLibrary(external, libraryId)
+        player.replaceMediaItem(index, MediaItems.withId(item, libraryId, api))
+        player.seekTo(index, position)
     }
 
     /** Queue entries of [external] other than the one playing now become [libraryId]. */
