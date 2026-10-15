@@ -33,9 +33,11 @@ class ReplayGainPolicyTest {
     }
 
     @Test
-    fun `no gain plays at unity`() {
-        assertEquals(1f, ReplayGainPolicy.volume(null, albumMode = false))
-        assertEquals(1f, ReplayGainPolicy.volume(ReplayGain(), albumMode = true))
+    fun `no gain plays at the gain for unknown songs`() {
+        assertEquals(0.355f, ReplayGainPolicy.volume(null, albumMode = false), 0.001f)
+        assertEquals(0.355f, ReplayGainPolicy.volume(ReplayGain(), albumMode = true), 0.001f)
+        assertEquals(0.501f, ReplayGainPolicy.volume(null, false, unknownDb = -6.0), 0.001f)
+        assertEquals(1f, ReplayGainPolicy.volume(null, false, unknownDb = 3.0))
     }
 
     @Test
@@ -98,6 +100,27 @@ class ReplayGainSourceTest {
         assertEquals(gain, source.gainOf(id))
         assertEquals(gain, source.gainOf(id))
         coVerify(exactly = 1) { api.song(id) }
+    }
+
+    @Test
+    fun `unknown songs take the mean gain of the remembered ones`() = runTest {
+        val second = SongId("0190a5c8-0000-7000-8000-000000000002")
+        val third = SongId("0190a5c8-0000-7000-8000-000000000003")
+        coEvery { api.song(id) } returns
+            TunesResult.Success(Song(id, "T", replayGain = ReplayGain(trackGain = -4.0)))
+        coEvery { api.song(second) } returns
+            TunesResult.Success(Song(second, "T", replayGain = ReplayGain(albumGain = -8.0)))
+        coEvery { api.song(third) } returns TunesResult.Success(Song(third, "T"))
+        val source = ReplayGainSource(api)
+        assertEquals(ReplayGainPolicy.DEFAULT_UNKNOWN_DB, source.unknownDb())
+        assertEquals(false to null, source.remembered(id))
+
+        source.gainOf(id)
+        source.gainOf(second)
+        source.gainOf(third)
+
+        assertEquals(-6.0, source.unknownDb())
+        assertEquals(true to ReplayGain(trackGain = -4.0), source.remembered(id))
     }
 
     @Test
