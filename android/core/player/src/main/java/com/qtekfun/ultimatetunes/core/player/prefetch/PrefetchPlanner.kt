@@ -27,9 +27,12 @@ sealed interface PrefetchAction {
 }
 
 /**
- * The queue prefetch planner (RF-12): the next song is requested on the server, if it is not in
- * the library yet, and its first bytes are preloaded, unless they are already cached or
- * downloaded. Each action is planned once per song; [forget] lets a failed one be planned again.
+ * The queue prefetch planner (RF-12): the next [lookahead] songs are requested on the server, if
+ * they are not in the library yet, and their first bytes are preloaded, unless they are already
+ * cached or downloaded. Beyond the very next song only library songs are preloaded: a `yt:` song
+ * further ahead is still downloading on the server, and the queue switches it to its library id
+ * once archived (a raw start cached under its `yt:` key would be wasted). Each action is planned
+ * once per song; [forget] lets a failed one be planned again.
  *
  * Not thread-safe: call it from one thread (the player's).
  */
@@ -58,6 +61,7 @@ class PrefetchPlanner(
             .filter { it.isExternal && remember(requested, it) }
             .map { PrefetchAction.RequestOnServer(it) }
         val preloads = targets
+            .filterIndexed { index, id -> index == 0 || !id.isExternal }
             .filter { !isAvailable(it) && remember(preloaded, it) }
             .map { PrefetchAction.Preload(it, preloadBytes) }
         return requests + preloads
@@ -86,6 +90,9 @@ class PrefetchPlanner(
     }
 
     companion object {
+        /** Upcoming songs the player prefetches (its [lookahead]) and follows until archived. */
+        const val UPCOMING_SONGS = 3
+
         /** Songs remembered per action kind. */
         const val DEFAULT_MEMORY = 64
     }
