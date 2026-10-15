@@ -21,8 +21,23 @@ class ReplayGainSource(private val api: TunesApi, private val capacity: Int = DE
     /** The ReplayGain of [id], or null when it has none or the server could not be asked. */
     suspend fun gainOf(id: SongId): ReplayGain? {
         if (id.isExternal) return null
-        val remembered = synchronized(known) { known.containsKey(id) to known[id] }
+        val remembered = remembered(id)
         return if (remembered.first) remembered.second else fetch(id)
+    }
+
+    /** Whether the gain of [id] is already known without asking the server, and that gain. */
+    fun remembered(id: SongId): Pair<Boolean, ReplayGain?> =
+        synchronized(known) { known.containsKey(id) to known[id] }
+
+    /**
+     * The gain for a song without ReplayGain: the mean track gain of the remembered library songs,
+     * so it plays about as loud as the music around it, or [ReplayGainPolicy.DEFAULT_UNKNOWN_DB].
+     */
+    fun unknownDb(): Double {
+        val seen = synchronized(known) {
+            known.values.mapNotNull { it?.trackGain ?: it?.albumGain }
+        }
+        return if (seen.isEmpty()) ReplayGainPolicy.DEFAULT_UNKNOWN_DB else seen.average()
     }
 
     private suspend fun fetch(id: SongId): ReplayGain? {

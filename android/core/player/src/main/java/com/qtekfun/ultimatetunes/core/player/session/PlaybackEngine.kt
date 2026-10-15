@@ -142,10 +142,14 @@ class PlaybackEngine(
             next = albumAt(player.nextMediaItemIndex)
         )
         val id = MediaItems.songOf(item)
+        // Set at once, so the song never starts at the previous song's volume (or at unity).
+        val (known, remembered) = gains.remembered(id)
+        player.volume = ReplayGainPolicy.volume(remembered, albumMode, gains.unknownDb())
+        if (known || offlineOnly || id.isExternal) return
         gainJob = scope.launch {
-            val gain = if (offlineOnly) null else gains.gainOf(id)
+            val gain = gains.gainOf(id)
             if (player.currentMediaItemIndex == index) {
-                player.volume = ReplayGainPolicy.volume(gain, albumMode)
+                player.volume = ReplayGainPolicy.volume(gain, albumMode, gains.unknownDb())
             }
         }
     }
