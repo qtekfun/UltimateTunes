@@ -207,15 +207,16 @@ private fun MainLayout(
                 contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
                 onPlay = onPlay
             )
+            // After the NavHost in the same subcomposition, so it is registered after the
+            // NavHost's own handler (also on recreation) and wins over the tab's back stack: back
+            // closes the full player and shows the screen under it, it does not leave that screen.
+            BackHandler(enabled = hasTrack && expanded) { onExpandedChange(false) }
         }
         AnimatedVisibility(
             visible = hasTrack && expanded,
             enter = slideInVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it },
             exit = slideOutVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it }
         ) {
-            // Composed after the tabs' NavHost, so it wins over its back stack: back closes the
-            // full player and shows the screen under it, it does not leave that screen.
-            BackHandler(enabled = expanded) { onExpandedChange(false) }
             FullPlayer(
                 state = player,
                 actions = actions,
