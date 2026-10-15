@@ -6,6 +6,7 @@ package com.qtekfun.ultimatetunes.core.player.session
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.exoplayer.ExoPlayer
 import com.qtekfun.ultimatetunes.core.api.TunesApi
@@ -47,6 +48,7 @@ class PlayerAssemblyTest {
         val player = mockk<ExoPlayer>(relaxed = true) {
             every { currentMediaItem } returns null
             every { nextMediaItemIndex } returns C.INDEX_UNSET
+            every { currentTimeline } returns Timeline.EMPTY
         }
         val engine = assembly.newEngine(player, this)
         engine.start()
