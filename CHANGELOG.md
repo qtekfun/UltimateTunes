@@ -9,6 +9,18 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.10] - 2026-10-15
+
+Release candidate of 1.0: steadier volume, no more songs cutting out, three songs prefetched ahead and a back button that closes the player. Android only; the server is unchanged since 1.0.0-rc.7.
+
+### Changed
+- Android: the next three songs in the queue (in play order, with shuffle and repeat) that are not in your library yet are downloaded by your server ahead of time, so they are archived and ready when their turn comes. The very next song and any library song among them are also preloaded on the phone.
+
+### Fixed
+- Android: songs without ReplayGain (not in your library yet, played offline, or the first moment of each song) no longer play much louder than the rest. They now play at the average level of your library, and the volume is set as soon as the song changes.
+- Android: songs your server had already downloaded no longer cut out after a minute or so. The start preloaded from YouTube was being continued with the bytes of the archived file; the queue now switches to the library song before it plays.
+- Android: back from the full player closes it and shows the list under it, instead of leaving that list.
+
 ## [1.0.0-rc.9] - 2026-10-14
 
 Release candidate of 1.0: the Android app now finishes the YouTube sign-in after Google's 2-step approval and can reach a server on your home network. The server is unchanged since 1.0.0-rc.7.
