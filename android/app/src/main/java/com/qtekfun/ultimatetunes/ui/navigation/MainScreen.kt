@@ -131,7 +131,6 @@ fun MainScreen(
     val actions = remember(playerViewModel) { PlayerActions.of(playerViewModel) }
     val snackbar = remember { SnackbarHostState() }
     var menuTrack by remember { mutableStateOf<TrackTile?>(null) }
-    BackHandler(enabled = expanded) { expanded = false }
     MessageEffect(player.message, snackbar, playerViewModel::dismissMessage)
     NotificationPermission(askNotifications, onNotificationsAnswered)
 
@@ -208,6 +207,10 @@ private fun MainLayout(
                 contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
                 onPlay = onPlay
             )
+            // After the NavHost in the same subcomposition, so it is registered after the
+            // NavHost's own handler (also on recreation) and wins over the tab's back stack: back
+            // closes the full player and shows the screen under it, it does not leave that screen.
+            BackHandler(enabled = hasTrack && expanded) { onExpandedChange(false) }
         }
         AnimatedVisibility(
             visible = hasTrack && expanded,
