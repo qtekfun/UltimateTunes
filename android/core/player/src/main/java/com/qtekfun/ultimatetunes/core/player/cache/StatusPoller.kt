@@ -22,6 +22,25 @@ class StatusPoller(
     val archived: Map<SongId, SongId> get() = synchronized(archivedIds) { archivedIds.toMap() }
 
     /**
+     * Asks once whether [id] is archived already (known from an earlier poll, or the server says
+     * so now) and returns its library id, or null. A `yt:` song archived before it starts plays
+     * from the library file: the server streams that file for the `yt:` id too, so bytes cached
+     * from the raw download (a preload, an interrupted play) must not be continued with it.
+     */
+    suspend fun archivedNow(id: SongId): SongId? {
+        val known = synchronized(archivedIds) { archivedIds[id] }
+        return when {
+            !id.isExternal -> null
+
+            known != null -> known
+
+            else -> (StatusPollPolicy.next(id, fetch(id), 0) as? PollStep.Archived)
+                ?.libraryId
+                ?.also { synchronized(archivedIds) { archivedIds[id] = it } }
+        }
+    }
+
+    /**
      * Polls [id] until it is archived, fails or the policy gives up, and returns that last step
      * ([PollStep.Archived], [PollStep.Failed] or [PollStep.GiveUp]). Library ids settle at once.
      * Cancel the calling coroutine to stop early (the song is no longer playing).
