@@ -24,6 +24,7 @@ import com.qtekfun.ultimatetunes.core.player.prefetch.PrefetchPlanner
 import com.qtekfun.ultimatetunes.core.player.prefetch.PrefetchTarget
 import com.qtekfun.ultimatetunes.core.player.prefetch.Prefetcher
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -132,6 +133,8 @@ class PlaybackEngineTest {
         val engine = engine(this)
 
         engine.start()
+        // Before getSong answers, the song already plays at the level of unknown songs.
+        assertEquals(UNKNOWN, volume.captured, 0.001f)
         advanceUntilIdle()
 
         verify { player.addListener(engine) }
@@ -159,8 +162,8 @@ class PlaybackEngineTest {
         assertEquals(YT.value, queue.items[1].mediaId)
         assertEquals(LIB_NEW.value, queue.items[2].mediaId)
         assertEquals(LIB_NEW.value, queue.items[2].localConfiguration?.customCacheKey)
-        // No gain lookup for an external song.
-        assertEquals(1f, volume.captured)
+        // No gain lookup for an external song: it plays at the gain for unknown songs.
+        assertEquals(UNKNOWN, volume.captured, 0.001f)
     }
 
     @Test
@@ -173,8 +176,31 @@ class PlaybackEngineTest {
         advanceUntilIdle()
 
         assertTrue(target.calls.isEmpty())
-        assertEquals(1f, volume.captured)
+        assertEquals(UNKNOWN, volume.captured, 0.001f)
     }
+
+    @Test
+    fun `a known gain is applied at once, also offline, and sets the level of unknown songs`() =
+        runTest {
+            // Its peak lowers it to 0.4, below the -6 dB (0.501) that unknown songs then get.
+            val gain = ReplayGain(trackGain = -6.0, trackPeak = 2.5)
+            coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T", replayGain = gain))
+            val engine = engine(this)
+            engine.start()
+            advanceUntilIdle()
+            engine.offlineOnly = true
+
+            // The external song plays as loud as the library songs seen so far.
+            queue.index = 1
+            engine.onMediaItemTransition(queue.items[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+            assertEquals(0.501f, volume.captured, 0.001f)
+
+            // Back to the library song, offline: its remembered gain, without asking again.
+            queue.index = 0
+            engine.onMediaItemTransition(queue.items[0], Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+            assertEquals(0.4f, volume.captured, 0.001f)
+            coVerify(exactly = 1) { api.song(LIB) }
+        }
 
     @Test
     fun `queue moves and timeline changes are followed, the same song is not redone`() = runTest {
@@ -193,7 +219,7 @@ class PlaybackEngineTest {
 
         // Last song: nothing upcoming, and the failed poll left the queue alone.
         assertEquals(YT.value, queue.items[2].mediaId)
-        assertEquals(1f, volume.captured)
+        assertEquals(UNKNOWN, volume.captured, 0.001f)
         engine.release()
         verify { player.removeListener(engine) }
     }
@@ -247,6 +273,9 @@ class PlaybackEngineTest {
     }
 
     private companion object {
+        /** -9 dB, the volume of a song without ReplayGain when no library gain is known. */
+        const val UNKNOWN = 0.355f
+
         fun item(id: SongId): MediaItem = MediaItem.Builder().setMediaId(id.value).build()
     }
 }
