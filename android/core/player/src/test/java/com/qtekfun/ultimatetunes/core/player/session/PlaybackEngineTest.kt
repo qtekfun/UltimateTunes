@@ -133,6 +133,8 @@ class PlaybackEngineTest {
         val engine = engine(this)
 
         engine.start()
+        // Before getSong answers, the song already plays at the level of unknown songs.
+        assertEquals(UNKNOWN, volume.captured, 0.001f)
         advanceUntilIdle()
 
         verify { player.addListener(engine) }
@@ -180,8 +182,9 @@ class PlaybackEngineTest {
     @Test
     fun `a known gain is applied at once, also offline, and sets the level of unknown songs`() =
         runTest {
-            coEvery { api.song(LIB) } returns
-                TunesResult.Success(Song(LIB, "T", replayGain = ReplayGain(trackGain = -6.0)))
+            // Its peak lowers it to 0.4, below the -6 dB (0.501) that unknown songs then get.
+            val gain = ReplayGain(trackGain = -6.0, trackPeak = 2.5)
+            coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T", replayGain = gain))
             val engine = engine(this)
             engine.start()
             advanceUntilIdle()
@@ -195,7 +198,7 @@ class PlaybackEngineTest {
             // Back to the library song, offline: its remembered gain, without asking again.
             queue.index = 0
             engine.onMediaItemTransition(queue.items[0], Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
-            assertEquals(0.501f, volume.captured, 0.001f)
+            assertEquals(0.4f, volume.captured, 0.001f)
             coVerify(exactly = 1) { api.song(LIB) }
         }
 
