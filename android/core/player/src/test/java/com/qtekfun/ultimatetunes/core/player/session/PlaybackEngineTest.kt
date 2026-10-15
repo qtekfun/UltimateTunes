@@ -119,7 +119,15 @@ class PlaybackEngineTest {
         player = player,
         api = api,
         prefetcher = Prefetcher(PrefetchPlanner(preloadBytes = 10), target, scope),
-        poller = StatusPoller(fetch = { statuses.removeFirst() }, sleep = {}),
+        poller = StatusPoller(
+            // Past the scripted answers the download failed, which ends any polling.
+            fetch = { id ->
+                statuses.removeFirstOrNull() ?: TunesResult.Success(
+                    TrackStatus(id, null, TrackState.FAILED, 0.0, 3, 3, streamable = false)
+                )
+            },
+            sleep = {}
+        ),
         janitor = CacheJanitor(cache),
         gains = ReplayGainSource(api),
         scope = scope,
@@ -164,6 +172,46 @@ class PlaybackEngineTest {
         assertEquals(LIB_NEW.value, queue.items[2].localConfiguration?.customCacheKey)
         // No gain lookup for an external song: it plays at the gain for unknown songs.
         assertEquals(UNKNOWN, volume.captured, 0.001f)
+    }
+
+    @Test
+    fun `the next yt song is followed and plays as the library song once archived`() = runTest {
+        queue.items = mutableListOf(item(LIB), item(YT))
+        coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T"))
+        statuses += TunesResult.Success(
+            TrackStatus(YT, LIB_NEW, TrackState.READY, 1.0, 1, 3, streamable = true)
+        )
+        val engine = engine(this)
+
+        engine.start()
+        advanceUntilIdle()
+
+        // Its preloaded raw start is never continued with the archived file.
+        assertEquals(LIB_NEW.value, queue.items[1].mediaId)
+        assertEquals(LIB_NEW.value, queue.items[1].localConfiguration?.customCacheKey)
+        verify(exactly = 0) { player.seekTo(any(), any()) }
+    }
+
+    @Test
+    fun `a yt song archived before it starts switches to the library file where it is`() = runTest {
+        queue.items = mutableListOf(item(LIB), item(YT), item(YT))
+        queue.index = 1
+        every { player.currentPosition } returns 1_500L
+        statuses += TunesResult.Success(
+            TrackStatus(YT, LIB_NEW, TrackState.READY, 1.0, 1, 3, streamable = true)
+        )
+        val engine = engine(this)
+
+        engine.start()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(LIB, LIB_NEW, LIB_NEW).map {
+                it.value
+            },
+            queue.items.map { it.mediaId }
+        )
+        verify { player.seekTo(1, 1_500L) }
     }
 
     @Test
