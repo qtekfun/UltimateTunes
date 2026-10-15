@@ -28,7 +28,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Everything the player does around the songs it plays, on the player's thread ([scope] must run
- * there): prefetch of the next song, first-play status polling of `yt:` songs (switching the
+ * there): prefetch of the next songs, first-play status polling of `yt:` songs (switching the
  * queue to the library id once archived), cache upkeep and ReplayGain. It also skips a song that
  * fails to load, a few times in a row at most, so one broken download does not stop the queue.
  */
@@ -133,10 +133,13 @@ class PlaybackEngine(
     /** The next [PrefetchPlanner.UPCOMING_SONGS] songs, in play order (shuffle, repeat applied). */
     private fun upcoming(): List<SongId> {
         val timeline = player.currentTimeline
+        // As Media3 navigates: repeating one song still moves on to the next one in the queue.
+        val repeat =
+            player.repeatMode.takeIf { it != Player.REPEAT_MODE_ONE } ?: Player.REPEAT_MODE_OFF
         val songs = mutableListOf<SongId>()
         var index = if (timeline.isEmpty) C.INDEX_UNSET else player.currentMediaItemIndex
         while (index != C.INDEX_UNSET && songs.size < PrefetchPlanner.UPCOMING_SONGS) {
-            index = timeline.getNextWindowIndex(index, player.repeatMode, player.shuffleModeEnabled)
+            index = timeline.getNextWindowIndex(index, repeat, player.shuffleModeEnabled)
             if (index != C.INDEX_UNSET) songs += MediaItems.songOf(player.getMediaItemAt(index))
         }
         return songs

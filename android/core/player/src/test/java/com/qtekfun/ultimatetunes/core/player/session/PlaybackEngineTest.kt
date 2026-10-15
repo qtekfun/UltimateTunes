@@ -66,7 +66,12 @@ class PlaybackEngineTest {
                 every { isEmpty } answers { queue.items.isEmpty() }
                 every { getNextWindowIndex(any(), any(), any()) } answers {
                     val index = firstArg<Int>()
-                    if (index + 1 < queue.items.size) index + 1 else C.INDEX_UNSET
+                    when {
+                        secondArg<Int>() == Player.REPEAT_MODE_ONE -> index
+                        index + 1 < queue.items.size -> index + 1
+                        secondArg<Int>() == Player.REPEAT_MODE_ALL -> 0
+                        else -> C.INDEX_UNSET
+                    }
                 }
             }
         }
@@ -233,6 +238,25 @@ class PlaybackEngineTest {
         assertEquals(LIB_NEW.value, queue.items[3].mediaId)
         assertEquals(YT.value, queue.items[1].mediaId)
     }
+
+    @Test
+    fun `repeating one song still prefetches the next ones, repeating all wraps around`() =
+        runTest {
+            queue.items = mutableListOf(item(LIB), item(YT))
+            coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T"))
+            every { player.repeatMode } returns Player.REPEAT_MODE_ONE
+            engine(this).start()
+            advanceUntilIdle()
+            assertEquals(listOf("request $YT", "preload $YT"), target.calls)
+
+            target.calls.clear()
+            queue.index = 1
+            every { player.repeatMode } returns Player.REPEAT_MODE_ALL
+            engine(this).start()
+            advanceUntilIdle()
+            // From the last song the queue wraps to LIB, which is preloaded.
+            assertTrue("preload $LIB" in target.calls)
+        }
 
     @Test
     fun `a yt song archived before it starts switches to the library file where it is`() = runTest {
