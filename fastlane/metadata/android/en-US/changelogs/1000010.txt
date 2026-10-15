@@ -1,0 +1,1 @@
+Release candidate of 1.0. Steadier volume: songs not in your library no longer play much louder. Songs no longer cut out after a minute. Your server downloads the next three songs ahead. Back closes the player.
