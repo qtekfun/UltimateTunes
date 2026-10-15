@@ -131,7 +131,6 @@ fun MainScreen(
     val actions = remember(playerViewModel) { PlayerActions.of(playerViewModel) }
     val snackbar = remember { SnackbarHostState() }
     var menuTrack by remember { mutableStateOf<TrackTile?>(null) }
-    BackHandler(enabled = expanded) { expanded = false }
     MessageEffect(player.message, snackbar, playerViewModel::dismissMessage)
     NotificationPermission(askNotifications, onNotificationsAnswered)
 
@@ -214,6 +213,9 @@ private fun MainLayout(
             enter = slideInVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it },
             exit = slideOutVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it }
         ) {
+            // Composed after the tabs' NavHost, so it wins over its back stack: back closes the
+            // full player and shows the screen under it, it does not leave that screen.
+            BackHandler(enabled = expanded) { onExpandedChange(false) }
             FullPlayer(
                 state = player,
                 actions = actions,
