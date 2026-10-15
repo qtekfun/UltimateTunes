@@ -70,7 +70,10 @@ class PlayerAssembly @Inject constructor(
         player = player,
         api = api,
         prefetcher = Prefetcher(
-            PrefetchPlanner(preloadBytes = CachePolicy.PRELOAD_BYTES),
+            PrefetchPlanner(
+                lookahead = PrefetchPlanner.UPCOMING_SONGS,
+                preloadBytes = CachePolicy.PRELOAD_BYTES
+            ),
             MediaPrefetchTarget(api, caches, sources),
             scope
         ),

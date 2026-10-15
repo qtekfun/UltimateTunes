@@ -61,6 +61,20 @@ class PlaybackEngineTest {
         every { nextMediaItemIndex } answers {
             if (queue.index + 1 < queue.items.size) queue.index + 1 else C.INDEX_UNSET
         }
+        every { currentTimeline } answers {
+            mockk {
+                every { isEmpty } answers { queue.items.isEmpty() }
+                every { getNextWindowIndex(any(), any(), any()) } answers {
+                    val index = firstArg<Int>()
+                    when {
+                        secondArg<Int>() == Player.REPEAT_MODE_ONE -> index
+                        index + 1 < queue.items.size -> index + 1
+                        secondArg<Int>() == Player.REPEAT_MODE_ALL -> 0
+                        else -> C.INDEX_UNSET
+                    }
+                }
+            }
+        }
         every { previousMediaItemIndex } answers {
             if (queue.index > 0) queue.index - 1 else C.INDEX_UNSET
         }
@@ -118,7 +132,11 @@ class PlaybackEngineTest {
     private fun engine(scope: TestScope) = PlaybackEngine(
         player = player,
         api = api,
-        prefetcher = Prefetcher(PrefetchPlanner(preloadBytes = 10), target, scope),
+        prefetcher = Prefetcher(
+            PrefetchPlanner(lookahead = PrefetchPlanner.UPCOMING_SONGS, preloadBytes = 10),
+            target,
+            scope
+        ),
         poller = StatusPoller(
             // Past the scripted answers the download failed, which ends any polling.
             fetch = { id ->
@@ -191,6 +209,54 @@ class PlaybackEngineTest {
         assertEquals(LIB_NEW.value, queue.items[1].localConfiguration?.customCacheKey)
         verify(exactly = 0) { player.seekTo(any(), any()) }
     }
+
+    @Test
+    fun `the next three songs are prefetched and the yt ones followed until archived`() = runTest {
+        val yt2 = SongId("yt:BBBBBBBBBBB")
+        val lib2 = SongId("0190a5c8-0000-7000-8000-000000000002")
+        val lib3 = SongId("0190a5c8-0000-7000-8000-000000000003")
+        queue.items = mutableListOf(item(LIB), item(YT), item(lib2), item(yt2), item(lib3))
+        coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T"))
+        // Polled in queue order: YT failed on the server, yt2 is archived.
+        statuses += TunesResult.Success(
+            TrackStatus(YT, null, TrackState.FAILED, 0.0, 3, 3, streamable = false)
+        )
+        statuses += TunesResult.Success(
+            TrackStatus(yt2, LIB_NEW, TrackState.READY, 1.0, 1, 3, streamable = true)
+        )
+        val engine = engine(this)
+
+        engine.start()
+        advanceUntilIdle()
+
+        // Only the next song is preloaded while on yt:; songs past the third are left alone.
+        assertEquals(
+            listOf("request $YT", "request $yt2", "preload $YT", "preload $lib2"),
+            target.calls.take(4)
+        )
+        assertTrue(target.calls.none { lib3.value in it })
+        assertEquals(LIB_NEW.value, queue.items[3].mediaId)
+        assertEquals(YT.value, queue.items[1].mediaId)
+    }
+
+    @Test
+    fun `repeating one song still prefetches the next ones, repeating all wraps around`() =
+        runTest {
+            queue.items = mutableListOf(item(LIB), item(YT))
+            coEvery { api.song(LIB) } returns TunesResult.Success(Song(LIB, "T"))
+            every { player.repeatMode } returns Player.REPEAT_MODE_ONE
+            engine(this).start()
+            advanceUntilIdle()
+            assertEquals(listOf("request $YT", "preload $YT"), target.calls)
+
+            target.calls.clear()
+            queue.index = 1
+            every { player.repeatMode } returns Player.REPEAT_MODE_ALL
+            engine(this).start()
+            advanceUntilIdle()
+            // From the last song the queue wraps to LIB, which is preloaded.
+            assertTrue("preload $LIB" in target.calls)
+        }
 
     @Test
     fun `a yt song archived before it starts switches to the library file where it is`() = runTest {

@@ -84,10 +84,21 @@ class PrefetchPlannerTest {
             nothingCached
         )
         assertEquals(
+            listOf(PrefetchAction.RequestOnServer(YT_D), PrefetchAction.Preload(LIB_B, 10)),
+            actions
+        )
+    }
+
+    @Test
+    fun `past the next song only library songs are preloaded`() {
+        val wide = PrefetchPlanner(lookahead = 3, preloadBytes = 10)
+        val actions = wide.plan(QueueSnapshot(LIB_A, listOf(YT_C, YT_D, LIB_B)), nothingCached)
+        assertEquals(
             listOf(
+                PrefetchAction.RequestOnServer(YT_C),
                 PrefetchAction.RequestOnServer(YT_D),
-                PrefetchAction.Preload(LIB_B, 10),
-                PrefetchAction.Preload(YT_D, 10)
+                PrefetchAction.Preload(YT_C, 10),
+                PrefetchAction.Preload(LIB_B, 10)
             ),
             actions
         )

@@ -17,6 +17,7 @@ import com.qtekfun.ultimatetunes.core.player.cache.StatusPoller
 import com.qtekfun.ultimatetunes.core.player.gain.ReplayGainPolicy
 import com.qtekfun.ultimatetunes.core.player.gain.ReplayGainSource
 import com.qtekfun.ultimatetunes.core.player.media.MediaItems
+import com.qtekfun.ultimatetunes.core.player.prefetch.PrefetchPlanner
 import com.qtekfun.ultimatetunes.core.player.prefetch.Prefetcher
 import com.qtekfun.ultimatetunes.core.player.prefetch.QueueSnapshot
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,7 +28,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Everything the player does around the songs it plays, on the player's thread ([scope] must run
- * there): prefetch of the next song, first-play status polling of `yt:` songs (switching the
+ * there): prefetch of the next songs, first-play status polling of `yt:` songs (switching the
  * queue to the library id once archived), cache upkeep and ReplayGain. It also skips a song that
  * fails to load, a few times in a row at most, so one broken download does not stop the queue.
  */
@@ -49,8 +50,7 @@ class PlaybackEngine(
 
     private var current: SongId? = null
     private var polling: Job? = null
-    private var polledNext: SongId? = null
-    private var nextPolling: Job? = null
+    private val upcomingPolls = mutableMapOf<SongId, Job>()
     private var gainJob: Job? = null
     private var failuresInARow = 0
 
@@ -67,7 +67,8 @@ class PlaybackEngine(
         player.removeListener(this)
         prefetcher.cancel()
         polling?.cancel()
-        nextPolling?.cancel()
+        upcomingPolls.values.forEach(Job::cancel)
+        upcomingPolls.clear()
         gainJob?.cancel()
         // Entries left incomplete now are swept on the first queue move of the next session.
     }
@@ -97,22 +98,17 @@ class PlaybackEngine(
     /** The queue or the position in it changed. */
     private fun onQueueMoved() {
         val now = player.currentMediaItem?.let(MediaItems::songOf)
-        val nextIndex = player.nextMediaItemIndex
-        val next = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
-        val nextId = next?.let(MediaItems::songOf)
+        val upcoming = upcoming()
 
-        prefetcher.onQueueChanged(QueueSnapshot(now, listOfNotNull(nextId), offlineOnly))
-        sweep(inUse = setOfNotNull(now, nextId).mapTo(HashSet(), CachePolicy::cacheKey))
+        prefetcher.onQueueChanged(QueueSnapshot(now, upcoming, offlineOnly))
+        sweep(inUse = (upcoming + listOfNotNull(now)).mapTo(HashSet(), CachePolicy::cacheKey))
 
         if (now != current) {
             current = now
             startPolling(now)
             applyGain()
         }
-        if (nextId != polledNext) {
-            polledNext = nextId
-            startPollingNext(nextId.takeIf { it != now })
-        }
+        followUpcoming(upcoming.filter { it != now && it.isExternal && !offlineOnly }.toSet())
     }
 
     private fun sweep(inUse: Set<String>) {
@@ -134,17 +130,35 @@ class PlaybackEngine(
         }
     }
 
+    /** The next [PrefetchPlanner.UPCOMING_SONGS] songs, in play order (shuffle, repeat applied). */
+    private fun upcoming(): List<SongId> {
+        val timeline = player.currentTimeline
+        // As Media3 navigates: repeating one song still moves on to the next one in the queue.
+        val repeat =
+            player.repeatMode.takeIf { it != Player.REPEAT_MODE_ONE } ?: Player.REPEAT_MODE_OFF
+        val songs = mutableListOf<SongId>()
+        var index = if (timeline.isEmpty) C.INDEX_UNSET else player.currentMediaItemIndex
+        while (index != C.INDEX_UNSET && songs.size < PrefetchPlanner.UPCOMING_SONGS) {
+            index = timeline.getNextWindowIndex(index, repeat, player.shuffleModeEnabled)
+            if (index != C.INDEX_UNSET) songs += MediaItems.songOf(player.getMediaItemAt(index))
+        }
+        return songs
+    }
+
     /**
-     * Follows the next `yt:` song too: the prefetcher preloads its raw download, so once the
-     * server archives it the queue must play its library id, never the `yt:` id (whose cached
-     * start would be continued with the bytes of a different file).
+     * Follows the upcoming `yt:` songs [ids] too: the server downloads them ahead (prefetch) and
+     * the next one's raw start is preloaded, so once one is archived the queue must play its
+     * library id, never the `yt:` id (whose cached start would be continued with the bytes of a
+     * different file).
      */
-    private fun startPollingNext(id: SongId?) {
-        nextPolling?.cancel()
-        if (id == null || !id.isExternal || offlineOnly) return
-        nextPolling = scope.launch {
-            val step = poller.pollUntilSettled(id)
-            if (step is PollStep.Archived) switchToLibrary(id, step.libraryId)
+    private fun followUpcoming(ids: Set<SongId>) {
+        val gone = upcomingPolls.keys - ids
+        gone.forEach { upcomingPolls.remove(it)?.cancel() }
+        for (id in ids - upcomingPolls.keys) {
+            upcomingPolls[id] = scope.launch {
+                val step = poller.pollUntilSettled(id)
+                if (step is PollStep.Archived) switchToLibrary(id, step.libraryId)
+            }
         }
     }
 
