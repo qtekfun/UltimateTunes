@@ -187,19 +187,21 @@ services:
   # worker shares: nothing published, never on the api's networks. Through `egress` it reaches
   # www.youtube.com, www.google.com and jnn-pa.googleapis.com (BotGuard; docs/architecture.md).
   pot-provider:
-    # Upstream 2.0.2 (Node flavour), pinned by digest; bump together with BGUTIL_VERSION and
-    # BGUTIL_PLUGIN_SHA256 in server/Dockerfile (a test keeps them on one version).
-    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.2@sha256:d7d34108b76e52c7d3b575fe9e797e4bf41c1b2a08f80c5292eff6f851ce8472
+    # Upstream 2.0.2 (Deno flavour), pinned by digest; bump together with BGUTIL_VERSION and
+    # BGUTIL_PLUGIN_SHA256 in server/Dockerfile (a test keeps them on one version). Not the Node
+    # flavour: its Node 26.10.0 has the Brotli decoder RCE CVE-2026-111497 ("Node2Shell"), while
+    # Deno decodes Brotli with a Rust crate instead of the affected C library.
+    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.2-deno@sha256:addc137188b8f2be54b17bb0a919a3847cd417d143162e74d2fe9b410e586bcd
     profiles: [pot]
-    # The image's own non-root `node` user.
-    user: "1000:1000"
+    # The image's own non-root `deno` user.
+    user: "1993:1993"
     init: true
     command: ["--host", "${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}", "--port", "4416"]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
-    # Node, jsdom and the BotGuard VM: about 80 MiB idle, 115 MiB after minting (measured).
+    # Deno, jsdom and the BotGuard VM: about 95 MiB idle, 105 MiB after minting (measured).
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 128
@@ -212,7 +214,7 @@ services:
       driver: json-file
       options: {max-size: 1m, max-file: "2"}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}:4416/ping').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      test: ["CMD", "deno", "eval", "fetch('http://${UT_POT_PROVIDER_ADDRESS:-10.213.47.250}:4416/ping').then(r => Deno.exit(r.ok ? 0 : 1), () => Deno.exit(1))"]
       interval: 60s
       timeout: 5s
       retries: 3

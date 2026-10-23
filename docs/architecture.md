@@ -164,10 +164,11 @@ Notes:
   `/opt/ytdlp-plugins` (loaded only with `UT_YTDLP_POT_PROVIDER_URL`), Deno in
   `/usr/local/bin/deno` and Debian's `ffmpeg` and `gpgv`.
 - **`pot-provider`** (optional, Compose profile `pot`; not in the table because it is not our
-  image): `docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.0` pinned by digest, the image's
-  own user `1000:1000`, read-only root filesystem with a `noexec` 64 MiB `/tmp`, all
-  capabilities dropped, `no-new-privileges`, `init`, `mem_limit: 512m` (about 80 MiB idle and
-  115 MiB after minting, measured), `cpus: 1.0`, `pids_limit: 128`, `nofile` 1024, no port
+  image): `docker.io/brainicism/bgutil-ytdlp-pot-provider:2.0.2-deno` pinned by digest (the Deno
+  flavour; the Node one ships a Node.js with CVE-2026-111497), the image's own user `1993:1993`,
+  read-only root filesystem with a `noexec` 64 MiB `/tmp`, all capabilities dropped,
+  `no-new-privileges`, `init`, `mem_limit: 512m` (about 95 MiB idle and 105 MiB after minting,
+  measured), `cpus: 1.0`, `pids_limit: 128`, `nofile` 1024, no port
   published, healthcheck `GET /ping` every 60 s. It listens only on its pinned address on `pot`
   (`UT_POT_PROVIDER_ADDRESS`, default `10.213.47.250`, port 4416), so nothing on `egress` can
   connect to it; the worker reaches it as `http://bgutil:4416`, an alias that exists only on
