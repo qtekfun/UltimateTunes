@@ -74,6 +74,7 @@ from ultimatetunes.errors import (
 )
 from ultimatetunes.jobs.gate import LOW_DISK_KEY, window_start
 from ultimatetunes.jobs.queue import PRIORITY_KEEP
+from ultimatetunes.library import evict
 from ultimatetunes.search import guard
 from ultimatetunes.search import service as search_service
 from ultimatetunes.search.guard import GuardedCatalog
@@ -94,6 +95,10 @@ STATIC_FILES = {
 MAX_PAGE = 1000
 # A budget at or below this share of its burst is shown as under pressure.
 LOW_BUDGET = 0.2
+GIB = 1024**3
+# Largest library size limit the form accepts (1 PiB), and how many tracks the page lists.
+MAX_LIMIT_GIB = 1024 * 1024
+LIMIT_PREVIEW = 20
 MAX_SERVER_URL = 120
 # Same length and alphabet as a real key (contracts/ids.md): sizes the QR before a key exists.
 _SIZING_KEY = "utk_" + "A" * 43
@@ -111,6 +116,8 @@ DONE = {
     "track_deleted": "Track deleted.",
     "track_reviewed": "Marked as reviewed.",
     "album_deleted": "Album deleted.",
+    "limit_saved": "Size limit saved. It is checked every few minutes.",
+    "limit_off": "Size limit turned off.",
     "files_left": "Deleted, but some files could not be removed from disk (see the logs).",
     "command_queued": "Command queued: the next worker report picks it up.",
     "command_waiting": "That command is already waiting for a worker.",
@@ -1014,6 +1021,13 @@ def cancel_job(request: Request, job_id: str, post: PostedDep) -> Response:
 # ---------------------------------------------------------------------- library
 
 
+def gib_text(max_bytes: int | None) -> str:
+    """The limit as the form shows it: GiB with at most three decimals, empty when off."""
+    if not max_bytes:
+        return ""
+    return f"{max_bytes / GIB:.3f}".rstrip("0").rstrip(".")
+
+
 def _library_page(
     request: Request, admin: Admin, *, error: str | None = None, status: int = 200
 ) -> Response:
@@ -1022,6 +1036,7 @@ def _library_page(
     number = Pager.wanted(request)
     with services.db.read() as conn:
         repo = AdminRepository(conn)
+        policy = evict.read_policy(conn)
         review, pager = paged(
             repo.needs_review(PAGE_SIZE + 1, offset(number)),
             number,
@@ -1035,6 +1050,9 @@ def _library_page(
             "query": query,
             "albums": repo.find_albums(query) if query else [],
             "tracks": repo.find_tracks(query) if query else [],
+            "limit": evict.plan(conn, services.clock, policy, preview=LIMIT_PREVIEW),
+            "limit_gib": gib_text(policy.max_bytes),
+            "limit_last": evict.last_run(conn),
         }
     try:
         context["usage"] = services.library.usage()
@@ -1090,6 +1108,43 @@ def delete_library_item(request: Request, kind: str, item_id: str, post: PostedD
     if left:
         return back("/admin/library", "files_left")
     return back("/admin/library", "track_deleted" if kind == "tracks" else "album_deleted")
+
+
+def _limit_policy(post: Posted) -> evict.Policy:
+    """The form's maximum (GiB, decimals allowed; empty or 0 is off) and grace period (days)."""
+    raw_max = post.get("max_gib").strip().replace(",", ".")
+    raw_grace = post.get("grace_days").strip() or str(evict.DEFAULT_GRACE_DAYS)
+    try:
+        gib = float(raw_max) if raw_max else 0.0
+    except ValueError:
+        raise InvalidParameter("The maximum size must be a number of GiB") from None
+    if not 0 <= gib <= MAX_LIMIT_GIB:
+        raise InvalidParameter("The maximum size must be a number of GiB") from None
+    if not raw_grace.isdigit() or int(raw_grace) > evict.MAX_GRACE_DAYS:
+        raise InvalidParameter("The grace period must be 0 to 3650 days")
+    max_bytes = round(gib * GIB) or None
+    return evict.Policy(max_bytes, int(raw_grace))
+
+
+@router.post("/admin/library/limit", include_in_schema=False)
+def save_library_limit(request: Request, post: PostedDep) -> Response:
+    """Saves the library size limit; the periodic check (`library.evict`) applies it."""
+    services = state(request).services
+    try:
+        policy = _limit_policy(post)
+        with services.db.transaction() as conn:
+            evict.save_policy(conn, policy, format_ts(services.clock.now()))
+            audit(
+                conn,
+                services.clock,
+                actor_id=post.admin.user.id,
+                ip=post.admin.ip,
+                action="library.limit",
+                detail={"max_bytes": policy.max_bytes, "grace_days": policy.grace_days},
+            )
+    except TunesError as exc:
+        return _library_page(request, post.admin, error=exc.message, status=error_status(exc))
+    return back("/admin/library", "limit_saved" if policy.max_bytes else "limit_off")
 
 
 @router.post("/admin/library/tracks/{item_id}/reviewed", include_in_schema=False)

@@ -59,7 +59,7 @@ class RefetchResult:
 
 # Columns kept when a `ready` track goes back to `pending` (title, artist, album, ids) and the
 # ones cleared (everything about the archived file): a re-download re-matches and re-archives.
-_RESET_TRACK = (
+RESET_TRACK = (
     "UPDATE tracks SET status = 'pending', path = NULL, format = NULL, content_type = NULL,"
     " size_bytes = NULL, bit_rate_kbps = NULL, sample_rate_hz = NULL, channels = NULL,"
     " rg_track_gain_db = NULL, rg_track_peak = NULL, rg_album_gain_db = NULL,"
@@ -134,7 +134,7 @@ class Refetcher:
     def _requeue_truncated(self, item: _Truncated) -> None:
         now = format_ts(self._clock.now())
         with self._db.transaction() as conn:
-            changed = conn.execute(_RESET_TRACK, (now, item.track_id)).rowcount
+            changed = conn.execute(RESET_TRACK, (now, item.track_id)).rowcount
             if changed != 1:
                 # It was reset or re-requested between discovery and now: leave it to that run.
                 return

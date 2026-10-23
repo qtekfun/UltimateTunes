@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The library's app hook: the streaming seam default and the startup scan."""
+"""The library's app hook: the streaming seam default, the startup scan and the size limit
+check."""
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
 
@@ -11,6 +13,7 @@ from ultimatetunes.app import create_app
 from ultimatetunes.core.clock import FakeClock
 from ultimatetunes.core.services import build_services
 from ultimatetunes.db import Database, migrate
+from ultimatetunes.library.evict import Evictor
 from ultimatetunes.library.stream import NotStreamingYet
 from ultimatetunes.library.web import library_settings
 from ultimatetunes.settings import Settings
@@ -60,3 +63,29 @@ def test_startup_scan_failure_is_logged(
     finally:
         library_settings.cache_clear()
     assert "library scan" in caplog.text
+
+
+@pytest.mark.parametrize(("interval", "runs"), [("600", True), ("0", False)])
+def test_size_limit_check_runs_with_the_app(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch, interval: str, runs: bool
+) -> None:
+    monkeypatch.setenv("UT_LIBRARY_SCAN_ON_START", "false")
+    monkeypatch.setenv("UT_LIBRARY_EVICT_INTERVAL_S", interval)
+    library_settings.cache_clear()
+    seen: list[str] = []
+
+    async def run_forever(self: Evictor, interval_s: float) -> None:
+        seen.append(f"start {interval_s:g}")
+        try:
+            await anyio.sleep_forever()
+        finally:
+            seen.append("stop")
+
+    monkeypatch.setattr(Evictor, "run_forever", run_forever)
+    try:
+        app = create_app(services=build_services(migrated, FakeClock()))
+        with TestClient(app) as client:
+            assert client.get("/healthz").status_code == 200
+    finally:
+        library_settings.cache_clear()
+    assert seen == (["start 600", "stop"] if runs else [])
