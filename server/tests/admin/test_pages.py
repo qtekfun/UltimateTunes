@@ -14,16 +14,19 @@ from starlette.requests import Request
 from tests.admin.conftest import People, csrf_of
 from tests.auth.conftest import USER_PASSWORD
 from ultimatetunes.admin import qr
+from ultimatetunes.admin.repository import AdminRepository
 from ultimatetunes.admin.routes import (
     check_server_url,
     connect_uri,
     default_server_url,
+    gib_text,
     human_size,
 )
 from ultimatetunes.auth.service import AuthService
 from ultimatetunes.core.clock import FakeClock, format_ts
 from ultimatetunes.core.services import Services
 from ultimatetunes.errors import InvalidParameter
+from ultimatetunes.library import evict
 from ultimatetunes.search.guard import BreakerState
 
 XSS = "<script>alert(1)</script>"
@@ -556,6 +559,139 @@ def test_delete_refused_while_downloading(client: TestClient, admin_csrf: str) -
         r = client.post(path, data={"csrf": admin_csrf, "confirm": "yes"})
         assert r.status_code == 409
         assert "in progress" in r.text
+
+
+# ---------------------------------------------------------------------- library size limit
+
+MIB = 1024 * 1024
+
+
+def _save_limit(
+    client: TestClient, csrf: str, max_gib: str, grace: str = ""
+) -> tuple[int, str, str]:
+    """Posts the size limit form: (status, Location, body)."""
+    r = client.post(
+        "/admin/library/limit", data={"csrf": csrf, "max_gib": max_gib, "grace_days": grace}
+    )
+    return int(r.status_code), str(r.headers.get("location", "")), str(r.text)
+
+
+def test_library_limit_is_off_by_default(client: TestClient, admin_csrf: str) -> None:
+    page = client.get("/admin/library").text
+    assert "Size limit" in page
+    assert "No limit: nothing is freed automatically." in page
+    assert 'name="max_gib" inputmode="decimal" maxlength="12" value=""' in page
+    assert 'name="grace_days" inputmode="numeric" maxlength="4" value="30"' in page
+
+
+def test_save_and_turn_off_the_library_limit(
+    client: TestClient, admin_csrf: str, people: People
+) -> None:
+    services = services_of(client)
+    assert _save_limit(client, admin_csrf, "1,5", "7")[:2] == (
+        303,
+        "/admin/library?done=limit_saved",
+    )
+    page = client.get("/admin/library?done=limit_saved").text
+    assert "Size limit saved." in page
+    assert 'value="1.5"' in page
+    assert 'name="grace_days" inputmode="numeric" maxlength="4" value="7"' in page
+    assert "Music files: 0 B of 1.5 GiB." in page
+    with services.db.read() as conn:
+        entries = AdminRepository(conn).audit_entries("library.limit", None, 10)
+    assert len(entries) == 1
+    assert entries[0].actor_user_id == people.alice.id
+    assert entries[0].detail is not None
+    assert '"max_bytes": 1610612736' in entries[0].detail
+    assert _save_limit(client, admin_csrf, "", "7")[1] == "/admin/library?done=limit_off"
+    assert "No limit: nothing is freed automatically." in client.get("/admin/library").text
+
+
+@pytest.mark.parametrize(
+    ("max_gib", "grace", "message"),
+    [
+        ("lots", "", "The maximum size must be a number of GiB"),
+        ("-1", "", "The maximum size must be a number of GiB"),
+        ("nan", "", "The maximum size must be a number of GiB"),
+        ("9999999", "", "The maximum size must be a number of GiB"),
+        ("10", "-1", "The grace period must be 0 to 3650 days"),
+        ("10", "3651", "The grace period must be 0 to 3650 days"),
+        ("10", "soon", "The grace period must be 0 to 3650 days"),
+    ],
+)
+def test_invalid_library_limits_are_refused(
+    client: TestClient, admin_csrf: str, max_gib: str, grace: str, message: str
+) -> None:
+    status, _, body = _save_limit(client, admin_csrf, max_gib, grace)
+    assert status == 400
+    assert message in body
+    assert "No limit: nothing is freed automatically." in body
+
+
+def test_library_limit_preview_and_over_the_limit(
+    client: TestClient, admin_csrf: str, clock: FakeClock
+) -> None:
+    services = services_of(client)
+    for n in range(3):
+        add_track(
+            services,
+            f"t{n}",
+            title=f"Song {n}",
+            path=f"a/{n}.opus",
+            size=400 * MIB,
+            video=f"vid{n:08d}",
+        )
+    add_track(services, "t9", title="Mine", path="a/9.opus", size=400 * MIB)  # not YouTube
+    clock.advance(1)
+    assert _save_limit(client, admin_csrf, "10", "0")[0] == 303
+    under = client.get("/admin/library").text
+    assert "First in line when the library grows past the limit:" in under
+    assert "Someone \N{EN DASH} Song 0" in under
+    assert "Mine" not in under.split("First in line")[1]
+    assert "Never" in under
+    # 1.6 GiB against 0.3 GiB: the three YouTube songs go and the fourth (protected) is still
+    # above 90 % of the limit.
+    assert _save_limit(client, admin_csrf, "0.3", "0")[0] == 303
+    over = client.get("/admin/library").text
+    assert "Over the limit: the next check frees 3 songs (1.2 GiB)." in over
+    assert "That is not enough to get under the limit: the rest are protected." in over
+    with services.db.read() as conn:
+        assert evict.last_run(conn) is None
+    services_evictor = evict.Evictor(services.db, services.library, services.clock)
+    assert services_evictor.run_once().tracks == 3
+    done = client.get("/admin/library").text
+    assert "Last check that was over the limit:" in done
+    assert "3 songs freed (1.2 GiB)" in done
+    assert "Over the limit: the next check frees 0 songs" in done
+
+
+def test_library_limit_page_lists_at_most_twenty(
+    client: TestClient, admin_csrf: str, clock: FakeClock
+) -> None:
+    services = services_of(client)
+    for n in range(25):
+        add_track(
+            services,
+            f"t{n:02d}",
+            title=f"Song {n}",
+            path=f"a/{n}.opus",
+            size=MIB,
+            video=f"vid{n:08d}",
+        )
+    clock.advance(1)
+    _save_limit(client, admin_csrf, "0.001", "0")
+    page = client.get("/admin/library").text
+    assert "Over the limit: the next check frees 25 songs" in page
+    assert page.count('<td data-label="Plays">') == 20
+    assert "Only the first 20 are shown." in page
+
+
+def test_gib_text() -> None:
+    assert gib_text(None) == ""
+    assert gib_text(0) == ""
+    assert gib_text(3 * 1024**3) == "3"
+    assert gib_text(int(1.25 * 1024**3)) == "1.25"
+    assert gib_text(1024**4 * 1024) == "1048576"
 
 
 # ---------------------------------------------------------------------- yt-dlp

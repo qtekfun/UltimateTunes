@@ -157,6 +157,17 @@ Correcting tags is not possible from the panel; edit the file with your usual ta
 
 Search by title or album name under **Find tracks and albums to delete** (the first 200 matches are shown), tick **Sure** and press **Delete**, then confirm. The rows go first, then the files, best effort: if a file cannot be removed the page says so and the logs say which. A track that is downloading cannot be deleted; cancel it first. Playlists that contained it are renumbered.
 
+### Size limit
+
+Set **Maximum size** (GiB, decimals allowed) and press **Save** to cap the space the music files take. Leave it empty, or 0, for no limit (the default). Every `UT_LIBRARY_EVICT_INTERVAL_S` (10 minutes) the api compares the size of the music files with the limit. When it is above it, the api frees the least played songs until the files are back at 90 % of the limit, so a single new download does not free one song each time:
+
+- fewest plays first, counting every user's plays together; between equal songs, the one not played for longest (never played first), then the one archived first;
+- never freed: starred songs, songs on a starred album or by a starred artist (anyone's stars count), songs that do not come from YouTube (they could not be downloaded again), songs archived less than **Grace period** days ago (30 by default; a new song has no plays yet), and songs being downloaded.
+
+Freeing deletes the audio file but keeps the song: it stays in its playlists, keeps its plays, stars and lyrics, and leaves album, artist and library search lists until someone plays it again (from a playlist, a radio or a YouTube Music search), which downloads it again while it plays. An album or artist whose songs are all freed drops out of the lists the same way.
+
+The page shows the size against the limit and the songs the next check frees (the first 20), or, under the limit, the first ones in line. If only protected songs are left the page says the limit cannot be reached; the api frees what it can and logs a warning. Each check that freed songs adds a `library.evict` entry to the audit log and the page shows the last one. Changing the limit adds a `library.limit` entry.
+
 ## yt-dlp and the canary
 
 YouTube changes often and yt-dlp follows. The worker keeps yt-dlp current by itself: every `UT_YTDLP_UPDATE_INTERVAL_H` (24 h), and after an extractor error, it downloads the newest release from GitHub and installs it only if its signature verifies against the pinned yt-dlp key.

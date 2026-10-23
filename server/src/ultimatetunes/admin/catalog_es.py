@@ -493,4 +493,48 @@ ES: dict[str, str] = {
         "Elimina las cookies guardadas. El servidor descarga entonces sin una cuenta."
     ),
     "Clear the stored YouTube cookies?": "¿Borrar las cookies de YouTube guardadas?",
+    # Library size limit (D16)
+    "Size limit": "Límite de tamaño",
+    "Above this size, the server frees the audio of the least played songs (fewest plays first,"
+    " then the ones not played for longest) until the music files are back at 90 % of it. A freed"
+    " song stays in playlists, keeps its plays and is downloaded again the next time someone plays"
+    " it. Never freed: starred songs, albums and artists, songs that do not come from YouTube, and"
+    " songs added within the grace period.": (
+        "Por encima de este tamaño, el servidor libera el audio de las canciones menos escuchadas"
+        " (primero las que tienen menos reproducciones y luego las que llevan más tiempo sin"
+        " sonar) hasta que los ficheros de música vuelven al 90 % del límite. Una canción liberada"
+        " sigue en las playlists, conserva sus reproducciones y se vuelve a descargar la próxima"
+        " vez que alguien la ponga. Nunca se liberan: las canciones, álbumes y artistas con"
+        " estrella, las canciones que no vienen de YouTube y las añadidas dentro del periodo de"
+        " gracia."
+    ),
+    "Maximum size (GiB, empty or 0 for no limit)": (
+        "Tamaño máximo (GiB, vacío o 0 para no poner límite)"
+    ),
+    "Grace period for new songs (days)": "Periodo de gracia de las canciones nuevas (días)",
+    "Music files: %(used)s of %(limit)s.": "Ficheros de música: %(used)s de %(limit)s.",
+    "Over the limit: the next check frees %(count)s songs (%(size)s).": (
+        "Por encima del límite: la próxima comprobación libera %(count)s canciones (%(size)s)."
+    ),
+    "That is not enough to get under the limit: the rest are protected.": (
+        "No basta para bajar del límite: el resto están protegidas."
+    ),
+    "First in line when the library grows past the limit:": (
+        "Las primeras en liberarse cuando la biblioteca pase del límite:"
+    ),
+    "Plays": "Reproducciones",
+    "Last played": "Última reproducción",
+    "Never": "Nunca",
+    "Only the first 20 are shown.": "Solo se muestran las 20 primeras.",
+    "No limit: nothing is freed automatically.": "Sin límite: no se libera nada automáticamente.",
+    "Last check that was over the limit: %(at)s, %(count)s songs freed (%(size)s).": (
+        "Última comprobación por encima del límite: %(at)s, %(count)s canciones liberadas"
+        " (%(size)s)."
+    ),
+    "Size limit saved. It is checked every few minutes.": (
+        "Límite de tamaño guardado. Se comprueba cada pocos minutos."
+    ),
+    "Size limit turned off.": "Límite de tamaño desactivado.",
+    "The maximum size must be a number of GiB": "El tamaño máximo debe ser un número de GiB",
+    "The grace period must be 0 to 3650 days": "El periodo de gracia debe ser de 0 a 3650 días",
 }

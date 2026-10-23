@@ -33,6 +33,48 @@
   {% endif %}
 </div>
 
+<h2 id="limit">{{ _("Size limit") }}</h2>
+<p class="hint">{{ _("Above this size, the server frees the audio of the least played songs (fewest plays first, then the ones not played for longest) until the music files are back at 90 % of it. A freed song stays in playlists, keeps its plays and is downloaded again the next time someone plays it. Never freed: starred songs, albums and artists, songs that do not come from YouTube, and songs added within the grace period.") }}</p>
+<div class="card">
+<form class="stack" method="post" action="/admin/library/limit">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>{{ _("Maximum size (GiB, empty or 0 for no limit)") }}<input name="max_gib" inputmode="decimal" maxlength="12" value="{{ limit_gib }}" autocomplete="off"></label>
+  <label>{{ _("Grace period for new songs (days)") }}<input name="grace_days" inputmode="numeric" maxlength="4" value="{{ limit.policy.grace_days }}" autocomplete="off"></label>
+  <button type="submit">{{ _("Save") }}</button>
+</form>
+</div>
+{% if limit.policy.max_bytes %}
+<p>{{ _("Music files: %(used)s of %(limit)s.", used=limit.total_bytes | size, limit=limit.policy.max_bytes | size) }}</p>
+{% if limit.over %}
+<p class="error" role="status">{{ _("Over the limit: the next check frees %(count)s songs (%(size)s).", count=limit.candidates | length, size=limit.freed_bytes | size) }}{% if not limit.reachable %} {{ _("That is not enough to get under the limit: the rest are protected.") }}{% endif %}</p>
+{% elif limit.candidates %}
+<p class="hint">{{ _("First in line when the library grows past the limit:") }}</p>
+{% endif %}
+{% if limit.candidates %}
+<div class="card table-wrap">
+<table class="cards">
+  <thead><tr><th scope="col">{{ _("Song") }}</th><th scope="col">{{ _("Plays") }}</th><th scope="col">{{ _("Last played") }}</th><th scope="col">{{ _("Size") }}</th></tr></thead>
+  <tbody>
+  {% for track in limit.candidates[:20] %}
+  <tr>
+    <td data-label="{{ _("Song") }}">{{ track.artist }} – {{ track.title }}</td>
+    <td data-label="{{ _("Plays") }}">{{ track.plays }}</td>
+    <td data-label="{{ _("Last played") }}">{{ track.last_played or _("Never") }}</td>
+    <td data-label="{{ _("Size") }}">{{ track.size_bytes | size }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if limit.candidates | length > 20 %}<p class="hint">{{ _("Only the first 20 are shown.") }}</p>{% endif %}
+</div>
+{% endif %}
+{% else %}
+<p class="muted">{{ _("No limit: nothing is freed automatically.") }}</p>
+{% endif %}
+{% if limit_last %}
+<p class="muted">{{ _("Last check that was over the limit: %(at)s, %(count)s songs freed (%(size)s).", at=limit_last.at, count=limit_last.tracks, size=limit_last.bytes | size) }}</p>
+{% endif %}
+
 <h2 id="review">{{ _("Need review") }} ({{ stats.needs_review }})</h2>
 <p class="hint">{{ _("MusicBrainz had no strong match for these songs, so they keep the YouTube Music tags. Check them in a player: mark them reviewed to keep them as they are, or delete them (a new search fetches them again).") }}</p>
 <div class="card table-wrap">

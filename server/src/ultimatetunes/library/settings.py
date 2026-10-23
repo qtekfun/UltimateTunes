@@ -7,6 +7,8 @@
 - `UT_COVER_CACHE_TTL_S` / `UT_COVER_CACHE_MAX_BYTES`: the disk cache of external cover art
   under `/data` (contracts/ids.md: TTL 30 days, 512 MiB, oldest evicted first).
 - `UT_COVER_FETCH_TIMEOUT_S`: timeout of one fetch from the YouTube image hosts.
+- `UT_LIBRARY_EVICT_INTERVAL_S`: how often the library size limit set in the panel is checked
+  (`library.evict`; 0 turns the check off).
 """
 
 from pydantic import Field
@@ -19,3 +21,4 @@ class LibrarySettings(AreaSettings):
     cover_cache_ttl_s: int = Field(default=30 * 24 * 3600, ge=60)
     cover_cache_max_bytes: int = Field(default=512 * 1024 * 1024, ge=1024 * 1024)
     cover_fetch_timeout_s: float = Field(default=10.0, gt=0, le=60)
+    library_evict_interval_s: int = Field(default=600, ge=0)
