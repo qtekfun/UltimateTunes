@@ -1,0 +1,1 @@
+Versión candidata a la 1.0 con correcciones de seguridad en tu servidor y librerías actualizadas en la app. La app funciona igual.

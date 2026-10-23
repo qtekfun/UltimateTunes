@@ -1,0 +1,1 @@
+Release candidate of 1.0 with security fixes on your server and updated libraries in the app. Nothing changes in how the app works.
