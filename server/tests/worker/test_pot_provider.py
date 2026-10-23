@@ -328,9 +328,10 @@ def test_plugin_and_provider_image_are_pinned_to_one_version() -> None:
     compose = (REPO / "server" / "compose.yaml").read_text(encoding="utf-8")
     images = re.findall(r"image: (\S*bgutil-ytdlp-pot-provider\S*)", compose)
     assert len(images) == 1
-    # A version tag for humans, the digest for Docker: never a floating tag alone.
+    # A version tag for humans, the digest for Docker: never a floating tag alone. The Deno
+    # flavour: the Node one ships a Node.js with CVE-2026-111497 (Brotli decoder RCE).
     assert re.fullmatch(
-        rf"docker\.io/brainicism/bgutil-ytdlp-pot-provider:{re.escape(version)}@sha256:[0-9a-f]{{64}}",
+        rf"docker\.io/brainicism/bgutil-ytdlp-pot-provider:{re.escape(version)}-deno@sha256:[0-9a-f]{{64}}",
         images[0],
     )
 
@@ -345,7 +346,7 @@ def test_the_provider_is_opt_in_hardened_and_never_on_the_apis_networks() -> Non
     assert "profiles: [pot]" in block
     assert "ports" not in block
     for hardening in (
-        'user: "1000:1000"',
+        'user: "1993:1993"',
         "read_only: true",
         "cap_drop: [ALL]",
         "no-new-privileges:true",
