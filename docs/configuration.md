@@ -139,6 +139,7 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_COVER_CACHE_TTL_S` | `2592000` | api | How long external cover art stays in the disk cache under `/data` (30 days). |
 | `UT_COVER_CACHE_MAX_BYTES` | `536870912` | api | Size cap of that cover cache (512 MiB); the oldest go first. |
 | `UT_COVER_FETCH_TIMEOUT_S` | `10` | api | Timeout of one cover fetch from the YouTube image hosts. |
+| `UT_LIBRARY_EVICT_INTERVAL_S` | `600` | api | How often the library size limit is checked (10 min; 0 turns the check off). The limit itself is set in the admin panel, Library page, and is off until you set it. |
 | `UT_LYRICS_TIMEOUT_S` | `5` | api | Timeout of one LRCLIB request. |
 | `UT_LYRICS_RATE_PER_S` | `1` | api | Requests per second to LRCLIB from the whole server. |
 | `UT_LYRICS_BURST` | `2` | api | Burst of LRCLIB requests. |
