@@ -1119,7 +1119,7 @@ def _limit_policy(post: Posted) -> evict.Policy:
     except ValueError:
         raise InvalidParameter("The maximum size must be a number of GiB") from None
     if not 0 <= gib <= MAX_LIMIT_GIB:
-        raise InvalidParameter("The maximum size must be a number of GiB") from None
+        raise InvalidParameter("The maximum size must be a number of GiB")
     if not raw_grace.isdigit() or int(raw_grace) > evict.MAX_GRACE_DAYS:
         raise InvalidParameter("The grace period must be 0 to 3650 days")
     max_bytes = round(gib * GIB) or None
