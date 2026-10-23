@@ -9,6 +9,14 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.11] - 2026-10-23
+
+Release candidate of 1.0: security fixes on the server. The Android app is unchanged since 1.0.0-rc.10.
+
+### Security
+- Server: the optional PO token provider (Compose profile `pot`) now runs upstream's Deno build of bgutil 2.0.2 instead of the Node.js build, whose Node.js 26.10.0 is affected by CVE-2026-111497 ("Node2Shell", a Brotli decoder flaw that can allow remote code execution). Upstream has not rebuilt the Node.js image yet. The container runs as the image's own user `1993:1993`, with the same hardening and networks. Deno, which the worker also uses, is not affected. Nothing else in the stack ships Node.js. If you use the `pot` profile, take the new `compose.yaml` and run `docker compose --profile pot up -d`.
+- Server: `certifi` updated to 2026.10.19 for PYSEC-2026-4320.
+
 ## [1.0.0-rc.10] - 2026-10-15
 
 Release candidate of 1.0: steadier volume, no more songs cutting out, three songs prefetched ahead and a back button that closes the player. Android only; the server is unchanged since 1.0.0-rc.7.
