@@ -1,0 +1,1 @@
+Inicia sesión con tu usuario y contraseña (y tu código de verificación si lo usas), sin código QR. Reproductor nuevo: la portada ocupa la parte de arriba, el artista y el botón de play toman su color, y ves la línea de la letra que suena y la siguiente canción. Ajustes muestra solo tus claves activas.
