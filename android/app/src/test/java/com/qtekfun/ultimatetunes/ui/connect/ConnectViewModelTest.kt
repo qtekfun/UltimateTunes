@@ -312,7 +312,11 @@ class ConnectViewModelTest {
     @Test
     fun `the password never reaches an address that is not an UltimateTunes server`() = runTest {
         server.dispatcher.override("ut/v1/server") {
-            MockResponse(code = 404, headers = headersOf("Content-Type", "text/html"), body = "<html/>")
+            MockResponse(
+                code = 404,
+                headers = headersOf("Content-Type", "text/html"),
+                body = "<html/>"
+            )
         }
         signIn()
 
@@ -322,7 +326,11 @@ class ConnectViewModelTest {
 
     @Test
     fun `the state never shows the password, the code or the key`() {
-        val text = ConnectUiState(password = "hunter22", code = "123456", apiKey = "utk_x").toString()
+        val text = ConnectUiState(
+            password = "hunter22",
+            code = "123456",
+            apiKey = "utk_x"
+        ).toString()
 
         assertFalse(text.contains("hunter22"))
         assertFalse(text.contains("123456"))

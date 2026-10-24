@@ -112,6 +112,7 @@ fun interface DeviceName {
  * /ut/v1/me`) before [gate] keeps it. Keeping it across restarts (Keystore-encrypted) is PLAN T17.
  */
 @HiltViewModel
+@Suppress("TooManyFunctions") // One handler per field of the form, and the two ways in.
 class ConnectViewModel @Inject constructor(
     api: TunesApi,
     gate: ConnectionGate,
@@ -204,6 +205,7 @@ class ConnectViewModel @Inject constructor(
     private fun signIn(current: ConnectUiState) {
         val url = when (val checked = checkUrl(current.serverUrl)) {
             is UrlCheck.Valid -> checked.url
+
             is UrlCheck.Invalid -> {
                 mutableState.update { it.copy(error = checked.error) }
                 return

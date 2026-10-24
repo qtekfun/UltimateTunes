@@ -235,7 +235,11 @@ private fun ServerUrlField(state: ConnectUiState, onServerUrlChange: (String) ->
 @Composable
 private fun MethodChoice(state: ConnectUiState, onMethodChange: (ConnectMethod) -> Unit) {
     val methods = listOf(
-        Triple(ConnectMethod.PASSWORD, R.string.connect_method_password, CONNECT_METHOD_PASSWORD_TAG),
+        Triple(
+            ConnectMethod.PASSWORD,
+            R.string.connect_method_password,
+            CONNECT_METHOD_PASSWORD_TAG
+        ),
         Triple(ConnectMethod.API_KEY, R.string.connect_method_key, CONNECT_METHOD_KEY_TAG)
     )
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -250,86 +254,6 @@ private fun MethodChoice(state: ConnectUiState, onMethodChange: (ConnectMethod) 
                 Text(stringResource(label))
             }
         }
-    }
-}
-
-@Composable
-private fun PasswordFields(
-    state: ConnectUiState,
-    onUsernameChange: (String) -> Unit,
-    onPasswordChange: (String) -> Unit,
-    onCodeChange: (String) -> Unit,
-    onConnect: () -> Unit
-) {
-    var passwordVisible by rememberSaveable { mutableStateOf(false) }
-    val refused = state.error == ConnectError.WRONG_PASSWORD
-    OutlinedTextField(
-        value = state.username,
-        onValueChange = onUsernameChange,
-        label = { Text(stringResource(R.string.connect_username)) },
-        singleLine = true,
-        enabled = !state.checking,
-        isError = refused,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
-            imeAction = ImeAction.Next,
-            autoCorrectEnabled = false
-        ),
-        modifier = Modifier.fillMaxWidth().testTag(CONNECT_USERNAME_TAG)
-    )
-    OutlinedTextField(
-        value = state.password,
-        onValueChange = onPasswordChange,
-        label = { Text(stringResource(R.string.connect_password)) },
-        singleLine = true,
-        enabled = !state.checking,
-        isError = refused,
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        trailingIcon = {
-            TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                Text(
-                    stringResource(
-                        if (passwordVisible) {
-                            R.string.connect_hide_password
-                        } else {
-                            R.string.connect_show_password
-                        }
-                    )
-                )
-            }
-        },
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Password,
-            imeAction = if (state.needsCode) ImeAction.Next else ImeAction.Go,
-            autoCorrectEnabled = false
-        ),
-        keyboardActions = KeyboardActions(onGo = { if (state.canConnect) onConnect() }),
-        modifier = Modifier.fillMaxWidth().testTag(CONNECT_PASSWORD_TAG)
-    )
-    if (state.needsCode) {
-        OutlinedTextField(
-            value = state.code,
-            onValueChange = onCodeChange,
-            label = { Text(stringResource(R.string.connect_code)) },
-            supportingText = { Text(stringResource(R.string.connect_code_help)) },
-            singleLine = true,
-            enabled = !state.checking,
-            isError = state.error == ConnectError.WRONG_CODE,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Ascii,
-                imeAction = ImeAction.Go,
-                autoCorrectEnabled = false
-            ),
-            keyboardActions = KeyboardActions(onGo = { if (state.canConnect) onConnect() }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(CONNECT_CODE_TAG)
-                .semantics { liveRegion = LiveRegionMode.Polite }
-        )
     }
 }
 

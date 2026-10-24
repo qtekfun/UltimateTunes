@@ -51,41 +51,50 @@ class ConnectChecker(private val api: TunesApi, private val gate: ConnectionGate
      * of its own named [deviceName], then checks that key as [check] does. The password and the
      * code go only to [url], and only once it answered as an UltimateTunes server.
      */
-    suspend fun signIn(url: HttpUrl, credentials: Credentials, deviceName: String): SignInCheck {
-        val serverName = when (val info = api.serverInfo(url)) {
-            is TunesResult.Success -> info.value.name
-            is TunesResult.Failure -> return SignInCheck.Checked(serverFailure(info))
-        }
-        val created = api.createKey(
-            url,
-            credentials.username,
-            credentials.password,
-            deviceName,
-            credentials.code
-        )
-        val failure = when (created) {
-            is TunesResult.Success ->
-                return SignInCheck.Checked(checkKey(url, created.value.secret, serverName))
+    suspend fun signIn(url: HttpUrl, credentials: Credentials, deviceName: String): SignInCheck =
+        when (val info = api.serverInfo(url)) {
+            is TunesResult.Success -> {
+                val created = api.createKey(
+                    url,
+                    credentials.username,
+                    credentials.password,
+                    deviceName,
+                    credentials.code
+                )
+                if (created is TunesResult.Success) {
+                    SignInCheck.Checked(checkKey(url, created.value.secret, info.value.name))
+                } else {
+                    refusal(created as TunesResult.Failure, codeSent = credentials.code != null)
+                }
+            }
 
+            is TunesResult.Failure -> SignInCheck.Checked(serverFailure(info))
+        }
+
+    /** Why `POST /ut/v1/keys` did not give a key. */
+    private fun refusal(failure: TunesResult.Failure, codeSent: Boolean): SignInCheck {
+        val error = when (failure) {
             is TunesResult.Unauthorized -> when {
-                created.error.kind == ErrorKind.SECOND_FACTOR_REQUIRED -> return SignInCheck.NeedsCode
-                created.error.kind == ErrorKind.ACCOUNT_DISABLED -> ConnectError.ACCOUNT_DISABLED
-                credentials.code != null -> ConnectError.WRONG_CODE
+                failure.error.kind == ErrorKind.SECOND_FACTOR_REQUIRED -> null
+                failure.error.kind == ErrorKind.ACCOUNT_DISABLED -> ConnectError.ACCOUNT_DISABLED
+                codeSent -> ConnectError.WRONG_CODE
                 else -> ConnectError.WRONG_PASSWORD
             }
 
-            is TunesResult.ApiError -> when (created.error.kind) {
+            is TunesResult.ApiError -> when (failure.error.kind) {
                 ErrorKind.RATE_LIMITED -> ConnectError.TOO_MANY_TRIES
+
                 // The only 403 after a right password: the server wants 2FA set up first.
                 ErrorKind.FORBIDDEN -> ConnectError.TWO_FACTOR_SETUP_REQUIRED
+
                 else -> ConnectError.SERVER_ERROR
             }
 
             is TunesResult.NetworkError -> ConnectError.UNREACHABLE
 
-            is TunesResult.Failure -> ConnectError.SERVER_ERROR
+            else -> ConnectError.SERVER_ERROR
         }
-        return SignInCheck.Checked(ConnectCheck.Failed(failure))
+        return error?.let { SignInCheck.Checked(ConnectCheck.Failed(it)) } ?: SignInCheck.NeedsCode
     }
 
     private fun serverFailure(failure: TunesResult.Failure): ConnectCheck.Failed =
