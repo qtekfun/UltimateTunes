@@ -71,6 +71,10 @@ class FakeTunesServer : Closeable {
         const val USERNAME = "alice"
         const val PASSWORD = "correct horse battery staple"
 
+        /** A user with two-factor authentication: [PASSWORD] plus [TOTP_CODE]. */
+        const val TWO_FACTOR_USERNAME = "bob"
+        const val TOTP_CODE = "123456"
+
         private const val TIMEOUT_SECONDS = 5L
     }
 }

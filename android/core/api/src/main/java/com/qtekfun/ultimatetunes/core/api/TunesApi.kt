@@ -55,13 +55,16 @@ interface TunesApi {
 
     /**
      * `POST /ut/v1/keys` on [server] with username and password: a new key for this device,
-     * whose secret is returned only now.
+     * whose secret is returned only now. [totp] is the authenticator or recovery code of an
+     * account with two-factor authentication; without it such an account answers
+     * [ErrorKind.SECOND_FACTOR_REQUIRED].
      */
     suspend fun createKey(
         server: HttpUrl,
         username: String,
         password: String,
-        deviceName: String
+        deviceName: String,
+        totp: String? = null
     ): TunesResult<CreatedKey>
 
     /** `GET /ut/v1/me`: also the check that a key works. */

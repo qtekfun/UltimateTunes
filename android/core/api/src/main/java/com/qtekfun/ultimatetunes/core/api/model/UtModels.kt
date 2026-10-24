@@ -70,11 +70,17 @@ data class ApiKey(
 @Serializable
 data class ApiKeyList(val keys: List<ApiKey>)
 
-/** Body of `POST /ut/v1/keys`. Its [toString] hides the password. */
+/** Body of `POST /ut/v1/keys`. Its [toString] hides the password and the code. */
 @Serializable
-internal data class CreateKeyRequest(val username: String, val password: String, val name: String) {
+internal data class CreateKeyRequest(
+    val username: String,
+    val password: String,
+    val name: String,
+    val totp: String? = null
+) {
     override fun toString(): String =
-        "CreateKeyRequest(username=$username, password=redacted, name=$name)"
+        "CreateKeyRequest(username=$username, password=redacted, name=$name, " +
+            "totp=${if (totp == null) "null" else "redacted"})"
 }
 
 /** `POST /ut/v1/keys`: the new key, whose [secret] is shown only this once. */

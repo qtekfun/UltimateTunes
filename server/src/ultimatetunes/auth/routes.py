@@ -75,9 +75,8 @@ class CreateKeyRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: SecretStr = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=100)
-    # Optional TOTP second factor (a code or a recovery code). Not in the frozen ut-v1 contract
-    # yet (docs/2fa.md proposes the additive field): only consulted for 2FA-enabled accounts,
-    # so clients that omit it are unaffected.
+    # Optional TOTP second factor (a code or a recovery code): only consulted for 2FA-enabled
+    # accounts, so clients that omit it are unaffected.
     totp: SecretStr | None = Field(default=None, max_length=64)
 
 

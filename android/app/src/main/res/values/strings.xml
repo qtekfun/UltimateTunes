@@ -21,6 +21,8 @@
     <string name="connect_api_key_hint">utk_…</string>
     <string name="connect_show_key">Show key</string>
     <string name="connect_hide_key">Hide key</string>
+    <string name="connect_show_password">Show</string>
+    <string name="connect_hide_password">Hide</string>
     <string name="connect_button">Connect</string>
     <string name="connect_checking">Checking…</string>
     <string name="connect_scan_qr">Scan QR code</string>
@@ -42,6 +44,18 @@
     <string name="connect_error_not_a_server">Something answered, but it isn\'t an UltimateTunes server.</string>
     <string name="connect_error_key_refused">The server refused this key. It may have been revoked.</string>
     <string name="connect_error_server">The server had a problem. Try again in a moment.</string>
+    <string name="connect_method_password">Username and password</string>
+    <string name="connect_method_key">API key</string>
+    <string name="connect_username">Username</string>
+    <string name="connect_password">Password</string>
+    <string name="connect_code">Two-factor code</string>
+    <string name="connect_code_help">The 6-digit code from your authenticator app, or a recovery code.</string>
+    <string name="connect_help_password">Signing in creates a key for this phone. You can revoke it in Settings or in your server\'s admin panel.</string>
+    <string name="connect_error_wrong_password">Wrong username or password.</string>
+    <string name="connect_error_wrong_code">That code wasn\'t accepted. Wait for a new one and try again.</string>
+    <string name="connect_error_account_disabled">This account is disabled. Ask your server\'s admin.</string>
+    <string name="connect_error_too_many_tries">Too many failed tries. Wait a few minutes and try again.</string>
+    <string name="connect_error_2fa_setup">Your server requires two-factor authentication. Set it up in the web player first, then sign in here.</string>
 
     <!-- Listen Now -->
     <string name="listen_now_stations">Your Stations</string>
@@ -170,13 +184,12 @@
     <string name="settings_account_admin">%1$s (admin)</string>
     <string name="settings_disconnect">Disconnect</string>
     <string name="settings_disconnect_title">Disconnect this device?</string>
-    <string name="settings_disconnect_message">You\'ll need an API key to connect again. Your key stays valid until you revoke it.</string>
+    <string name="settings_disconnect_message">To connect again, sign in or use an API key. This device\'s key stays valid until you revoke it.</string>
     <string name="settings_keys">Devices and Keys</string>
     <string name="settings_key_this_device">This device</string>
     <string name="settings_key_created">created %1$s</string>
     <string name="settings_key_last_used">last used %1$s</string>
     <string name="settings_key_never_used">never used</string>
-    <string name="settings_key_revoked">revoked</string>
     <string name="settings_revoke">Revoke</string>
     <string name="settings_revoke_title">Revoke this key?</string>
     <string name="settings_revoke_message">“%1$s” will stop working at once and will have to connect with a new key.</string>

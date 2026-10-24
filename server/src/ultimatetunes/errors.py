@@ -59,6 +59,12 @@ class AuthenticationFailed(TunesError):
     default_message = "Wrong username or password"
 
 
+class SecondFactorRequired(AuthenticationFailed):
+    """`POST /ut/v1/keys`: the password is right, the account has 2FA and no code was sent."""
+
+    default_message = "Two-factor code required"
+
+
 class TokenAuthNotSupported(TunesError):
     default_message = "Token authentication is not supported, use an API key"
 
@@ -190,6 +196,7 @@ MAPPING: dict[type[TunesError], ErrorSpec] = {
         10, 401, "authentication_required", "Authentication required"
     ),
     AuthenticationFailed: ErrorSpec(40, 401, "authentication_failed", "Authentication failed"),
+    SecondFactorRequired: ErrorSpec(40, 401, "second_factor_required", "Second factor required"),
     TokenAuthNotSupported: ErrorSpec(42, None, None, "Token authentication not supported"),
     ConflictingAuth: ErrorSpec(43, 400, "conflicting_auth", "Conflicting authentication"),
     InvalidApiKey: ErrorSpec(44, 401, "invalid_api_key", "Invalid API key"),

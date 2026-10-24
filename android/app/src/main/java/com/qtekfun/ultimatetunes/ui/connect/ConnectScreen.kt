@@ -27,6 +27,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +66,11 @@ import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 /** Test tags of the Connect screen. */
 const val CONNECT_SERVER_URL_TAG = "connect.serverUrl"
 const val CONNECT_API_KEY_TAG = "connect.apiKey"
+const val CONNECT_USERNAME_TAG = "connect.username"
+const val CONNECT_PASSWORD_TAG = "connect.password"
+const val CONNECT_CODE_TAG = "connect.code"
+const val CONNECT_METHOD_PASSWORD_TAG = "connect.method.password"
+const val CONNECT_METHOD_KEY_TAG = "connect.method.key"
 const val CONNECT_BUTTON_TAG = "connect.button"
 const val CONNECT_DEMO_TAG = "connect.demo"
 
@@ -75,6 +83,10 @@ fun ConnectRoute(viewModel: ConnectViewModel = hiltViewModel()) {
         onServerUrlChange = viewModel::onServerUrlChange,
         onApiKeyChange = viewModel::onApiKeyChange,
         onConnect = viewModel::connect,
+        onMethodChange = viewModel::onMethodChange,
+        onUsernameChange = viewModel::onUsernameChange,
+        onPasswordChange = viewModel::onPasswordChange,
+        onCodeChange = viewModel::onCodeChange,
         demoLabelRes = viewModel.demoLabelRes,
         onTryDemo = viewModel::tryDemo
     )
@@ -90,18 +102,29 @@ internal fun ConnectError.messageRes(): Int = when (this) {
     ConnectError.NOT_A_SERVER -> R.string.connect_error_not_a_server
     ConnectError.KEY_REFUSED -> R.string.connect_error_key_refused
     ConnectError.SERVER_ERROR -> R.string.connect_error_server
+    ConnectError.WRONG_PASSWORD -> R.string.connect_error_wrong_password
+    ConnectError.WRONG_CODE -> R.string.connect_error_wrong_code
+    ConnectError.ACCOUNT_DISABLED -> R.string.connect_error_account_disabled
+    ConnectError.TOO_MANY_TRIES -> R.string.connect_error_too_many_tries
+    ConnectError.TWO_FACTOR_SETUP_REQUIRED -> R.string.connect_error_2fa_setup
 }
 
 /**
- * Server address and API key (RF-11), or how to use the admin panel's QR code with the camera app.
+ * Server address with username and password or with an API key (RF-11), or how to use the admin
+ * panel's QR code with the camera app.
  */
 @Composable
+@Suppress("LongParameterList") // One callback per field of the form.
 fun ConnectScreen(
     state: ConnectUiState,
     onServerUrlChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
+    onMethodChange: (ConnectMethod) -> Unit = {},
+    onUsernameChange: (String) -> Unit = {},
+    onPasswordChange: (String) -> Unit = {},
+    onCodeChange: (String) -> Unit = {},
     @StringRes demoLabelRes: Int? = null,
     onTryDemo: () -> Unit = {}
 ) {
@@ -120,7 +143,19 @@ fun ConnectScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ConnectHeader()
-            ConnectFields(state, onServerUrlChange, onApiKeyChange, onConnect)
+            ServerUrlField(state, onServerUrlChange)
+            MethodChoice(state, onMethodChange)
+            when (state.method) {
+                ConnectMethod.PASSWORD -> PasswordFields(
+                    state,
+                    onUsernameChange,
+                    onPasswordChange,
+                    onCodeChange,
+                    onConnect
+                )
+
+                ConnectMethod.API_KEY -> ApiKeyField(state, onApiKeyChange, onConnect)
+            }
             state.error?.let { error ->
                 Text(
                     text = stringResource(error.messageRes()),
@@ -178,13 +213,7 @@ private fun ConnectHeader() {
 }
 
 @Composable
-private fun ConnectFields(
-    state: ConnectUiState,
-    onServerUrlChange: (String) -> Unit,
-    onApiKeyChange: (String) -> Unit,
-    onConnect: () -> Unit
-) {
-    var keyVisible by rememberSaveable { mutableStateOf(false) }
+private fun ServerUrlField(state: ConnectUiState, onServerUrlChange: (String) -> Unit) {
     OutlinedTextField(
         value = state.serverUrl,
         onValueChange = onServerUrlChange,
@@ -201,6 +230,40 @@ private fun ConnectFields(
         ),
         modifier = Modifier.fillMaxWidth().testTag(CONNECT_SERVER_URL_TAG)
     )
+}
+
+@Composable
+private fun MethodChoice(state: ConnectUiState, onMethodChange: (ConnectMethod) -> Unit) {
+    val methods = listOf(
+        Triple(
+            ConnectMethod.PASSWORD,
+            R.string.connect_method_password,
+            CONNECT_METHOD_PASSWORD_TAG
+        ),
+        Triple(ConnectMethod.API_KEY, R.string.connect_method_key, CONNECT_METHOD_KEY_TAG)
+    )
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        methods.forEachIndexed { index, (method, label, tag) ->
+            SegmentedButton(
+                selected = state.method == method,
+                onClick = { onMethodChange(method) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = methods.size),
+                enabled = !state.checking,
+                modifier = Modifier.testTag(tag)
+            ) {
+                Text(stringResource(label))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApiKeyField(
+    state: ConnectUiState,
+    onApiKeyChange: (String) -> Unit,
+    onConnect: () -> Unit
+) {
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
         value = state.apiKey,
         onValueChange = onApiKeyChange,
@@ -283,7 +346,12 @@ private fun ConnectActions(state: ConnectUiState, onConnect: () -> Unit) {
         )
     }
     Text(
-        text = stringResource(R.string.connect_help),
+        text = stringResource(
+            when (state.method) {
+                ConnectMethod.PASSWORD -> R.string.connect_help_password
+                ConnectMethod.API_KEY -> R.string.connect_help
+            }
+        ),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
@@ -303,8 +371,10 @@ private fun ConnectScreenPreview() {
         ConnectScreen(
             state = ConnectUiState(
                 serverUrl = "music.example.net",
-                apiKey = "utk_EXAMPLE",
-                error = ConnectError.INVALID_KEY
+                username = "alice",
+                password = "example",
+                needsCode = true,
+                error = ConnectError.WRONG_CODE
             ),
             onServerUrlChange = {},
             onApiKeyChange = {},

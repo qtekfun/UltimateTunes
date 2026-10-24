@@ -97,11 +97,12 @@ internal class OkHttpTunesApi(
         server: HttpUrl,
         username: String,
         password: String,
-        deviceName: String
+        deviceName: String,
+        totp: String?
     ): TunesResult<CreatedKey> {
         val body = json.encodeToString(
             CreateKeyRequest.serializer(),
-            CreateKeyRequest(username, password, deviceName)
+            CreateKeyRequest(username, password, deviceName, totp)
         )
         return utCall(
             root = ServerConfig.rootOf(server),

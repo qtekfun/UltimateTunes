@@ -93,6 +93,30 @@ class TunesApiFakeServerTest {
             val body = request.body!!.utf8()
             assertTrue(body.contains("\"name\":\"Pixel 9\""), body)
             assertTrue(body.contains("\"username\":\"alice\""), body)
+            assertFalse(body.contains("totp"), body)
+        }
+
+        @Test
+        fun `createKey of a 2FA account asks for the code, then sends it`() = runTest {
+            val user = FakeTunesServer.TWO_FACTOR_USERNAME
+            val first = api.createKey(server.baseUrl, user, FakeTunesServer.PASSWORD, "Pixel 9")
+            assertEquals(
+                ErrorKind.SECOND_FACTOR_REQUIRED,
+                (first as TunesResult.Unauthorized).error.kind
+            )
+            server.takeRequest()
+
+            val created = api.createKey(
+                server.baseUrl,
+                user,
+                FakeTunesServer.PASSWORD,
+                "Pixel 9",
+                totp = FakeTunesServer.TOTP_CODE
+            ).value()
+
+            assertEquals(FakeTunesServer.API_KEY, created.secret.value)
+            val body = server.takeRequest().body!!.utf8()
+            assertTrue(body.contains("\"totp\":\"${FakeTunesServer.TOTP_CODE}\""), body)
         }
 
         @Test

@@ -129,8 +129,11 @@ second factor.
             two-factor authentication enabled.
 ```
 
-**Android follow-up:** the app should, on a `401` from `POST /ut/v1/keys` for an account with 2FA
-on, prompt for the authenticator code (or a recovery code) and resend the request with the `totp`
-field. Until then, a user with 2FA enabled can still enroll a new device from the admin panel or
-the web player (both support the second step), or temporarily from the app by appending the code if
-the client allows it. Existing device keys keep working regardless.
+Without `totp`, the right password of a 2FA account answers `401 second_factor_required`
+(`contracts/errors.md`); a wrong password still answers `authentication_failed`, so only someone
+who knows the password learns that a code is needed, as with the second step of the web login.
+Asking for the code this way does not count against the 2FA lockout; a wrong code does.
+
+**The app** signs in with username and password on its Connect screen. On
+`second_factor_required` it shows a field for the authenticator code (or a recovery code) and sends
+the request again with `totp`. Existing device keys keep working regardless.

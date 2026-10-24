@@ -41,6 +41,7 @@ An unknown endpoint (`/rest/<name>` that is not in contracts/openapi/opensubsoni
 | `ServerTooOld` | `v` has a higher major version than ours (`1.16.1`) | 30 | — | — |
 | `AuthenticationRequired` | No credentials at all | 10 | 401 | `authentication_required` |
 | `AuthenticationFailed` | Wrong username or password (incl. the key-as-password path and `POST /ut/v1/keys`) | 40 | 401 | `authentication_failed` |
+| `SecondFactorRequired` | `POST /ut/v1/keys`: right username and password of an account with two-factor authentication, sent without `totp`. A wrong code is `authentication_failed` | 40 | 401 | `second_factor_required` |
 | `TokenAuthNotSupported` | `t`/`s` token authentication (we keep only Argon2id hashes) | 42 (see note) | — | — |
 | `ConflictingAuth` | `apiKey` together with `u`, `p`, `t` or `s` (or `X-Api-Key` and `apiKey` with different values) | 43 | 400 | `conflicting_auth` |
 | `InvalidApiKey` | Unknown, malformed or revoked API key | 44 | 401 | `invalid_api_key` |

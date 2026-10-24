@@ -24,6 +24,7 @@ import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.ui.charts.CHARTS_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_API_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_BUTTON_TAG
+import com.qtekfun.ultimatetunes.ui.connect.CONNECT_METHOD_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_SERVER_URL_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.DIALOG_CONFIRM_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.DIALOG_FIELD_TAG
@@ -233,6 +234,7 @@ class ScreensTest {
 
         // Connect again by hand, then disconnect: the form must not keep what was typed.
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).performTextInput("music.example.net")
+        compose.onNodeWithTag(CONNECT_METHOD_KEY_TAG).performClick()
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput(FakeTunesApi.API_KEY)
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).performClick()
         assertTitle(text(R.string.tab_listen_now))
