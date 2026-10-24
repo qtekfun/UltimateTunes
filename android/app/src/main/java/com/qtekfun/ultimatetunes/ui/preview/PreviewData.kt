@@ -241,7 +241,6 @@ internal object PreviewData {
                     "utk_EXAMPLEe",
                     Instant.parse("2026-10-01T17:20:00Z"),
                     Instant.parse("2026-10-12T08:15:30Z"),
-                    revoked = false,
                     current = true
                 ),
                 KeyRow(
@@ -250,7 +249,6 @@ internal object PreviewData {
                     "utk_EXAMPLEf",
                     Instant.parse("2026-09-14T09:02:11Z"),
                     null,
-                    revoked = false,
                     current = false
                 )
             )

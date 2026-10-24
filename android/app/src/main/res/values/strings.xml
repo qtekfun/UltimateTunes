@@ -190,7 +190,6 @@
     <string name="settings_key_created">created %1$s</string>
     <string name="settings_key_last_used">last used %1$s</string>
     <string name="settings_key_never_used">never used</string>
-    <string name="settings_key_revoked">revoked</string>
     <string name="settings_revoke">Revoke</string>
     <string name="settings_revoke_title">Revoke this key?</string>
     <string name="settings_revoke_message">“%1$s” will stop working at once and will have to connect with a new key.</string>

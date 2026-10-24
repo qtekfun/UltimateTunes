@@ -192,7 +192,6 @@
     <string name="settings_key_created">creada el %1$s</string>
     <string name="settings_key_last_used">último uso el %1$s</string>
     <string name="settings_key_never_used">sin usar</string>
-    <string name="settings_key_revoked">revocada</string>
     <string name="settings_revoke">Revocar</string>
     <string name="settings_revoke_title">¿Revocar esta clave?</string>
     <string name="settings_revoke_message">«%1$s» dejará de funcionar al momento y tendrá que conectar con una clave nueva.</string>

@@ -48,11 +48,10 @@ data class KeyRow(
     val prefix: String,
     val createdAt: Instant,
     val lastUsedAt: Instant?,
-    val revoked: Boolean,
     /** The key this device uses: it cannot be revoked from here. */
     val current: Boolean
 ) {
-    val canRevoke: Boolean get() = !revoked && !current
+    val canRevoke: Boolean get() = !current
 }
 
 /** What Settings shows. */
@@ -130,7 +129,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     private suspend fun loadKeys(): LoadState<List<KeyRow>> =
-        loadStateOf(api.listKeys()) { list -> list.keys.map { it.toRow() } }
+        // Revoked keys stay on the server (audit log) but are of no use here: only live ones.
+        loadStateOf(api.listKeys()) { list ->
+            list.keys.filter { it.revokedAt == null }.map { it.toRow() }
+        }
 
     /** Revokes another device's key (never this device's own). */
     fun revoke(id: ApiKeyId) {
@@ -187,7 +189,6 @@ class SettingsViewModel @Inject constructor(
         prefix = prefix,
         createdAt = createdAt,
         lastUsedAt = lastUsedAt,
-        revoked = revokedAt != null,
         current = current
     )
 }

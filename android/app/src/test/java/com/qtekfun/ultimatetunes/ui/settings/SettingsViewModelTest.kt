@@ -106,13 +106,12 @@ class SettingsViewModelTest {
         assertEquals("alice", server.username)
         assertTrue(server.isAdmin)
         val keys = (state.keys as LoadState.Ready).value
-        assertEquals(listOf("Pixel 9", "Old tablet"), keys.map { it.name })
+        // The contract's revoked "Old tablet" is left out.
+        assertEquals(listOf("Pixel 9"), keys.map { it.name })
         val current = keys.first()
         assertTrue(current.current)
         assertFalse(current.canRevoke)
         assertEquals(Instant.parse("2026-10-12T08:15:30.123Z"), current.lastUsedAt)
-        assertTrue(keys[1].revoked)
-        assertFalse(keys[1].canRevoke)
         assertEquals(PlaybackSettings(), state.playback)
     }
 

@@ -259,11 +259,7 @@ private fun KeyItem(key: KeyRow, onRevoke: (ApiKeyId) -> Unit) {
             Text(
                 text = key.name,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (key.revoked) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onBackground
-                }
+                color = MaterialTheme.colorScheme.onBackground
             )
             Text(
                 text = keyDetails(key),
@@ -296,8 +292,6 @@ private fun KeyItem(key: KeyRow, onRevoke: (ApiKeyId) -> Unit) {
 private fun keyDetails(key: KeyRow): String {
     val created = stringResource(R.string.settings_key_created, formatDate(key.createdAt))
     val status = when {
-        key.revoked -> stringResource(R.string.settings_key_revoked)
-
         key.lastUsedAt != null ->
             stringResource(R.string.settings_key_last_used, formatDate(key.lastUsedAt))
 
