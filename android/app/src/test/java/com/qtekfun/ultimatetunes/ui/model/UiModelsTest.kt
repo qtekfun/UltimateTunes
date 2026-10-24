@@ -3,11 +3,14 @@
 
 package com.qtekfun.ultimatetunes.ui.model
 
+import androidx.compose.ui.graphics.Color
 import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesError
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.ui.player.DefaultPlayerColors
+import com.qtekfun.ultimatetunes.ui.player.contrast
 import com.qtekfun.ultimatetunes.ui.player.playerColorsFrom
+import com.qtekfun.ultimatetunes.ui.player.readableOn
 import java.io.IOException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -56,5 +59,19 @@ class UiModelsTest {
         // The bottom of the gradient follows the dark muted colour when there is one.
         val withMuted = playerColorsFrom(0xFFFF0000.toInt(), 0xFF0000FF.toInt())
         assertTrue(withMuted.bottom.blue > withMuted.bottom.red)
+    }
+
+    @Test
+    fun `the accent is the lively colour, lightened only as much as it needs to read`() {
+        // A dark navy accent on a near-black bottom is lightened to readable contrast.
+        val dark = playerColorsFrom(0xFF202040.toInt(), 0xFF101020.toInt(), 0xFF1A2A80.toInt())
+        assertTrue(contrast(dark.accent, dark.bottom) >= 4.5f)
+        assertTrue(dark.accent.blue > dark.accent.red)
+        // A light yellow already reads: kept as it is.
+        val yellow = Color(color = 0xFFF2CC8F)
+        assertEquals(yellow, readableOn(yellow, Color(color = 0xFF101012)))
+        // Without a lively colour the dominant one is used.
+        val noVibrant = playerColorsFrom(0xFFE07A5F.toInt(), 0xFF0F3B4A.toInt())
+        assertTrue(noVibrant.accent.red > noVibrant.accent.blue)
     }
 }

@@ -274,6 +274,9 @@
     <string name="player_position">Posición en la canción</string>
     <string name="player_position_state">%1$s de %2$s</string>
     <string name="player_remaining">-%1$s</string>
+    <string name="player_lyrics_label">Letra</string>
+    <string name="player_up_next">A continuación</string>
+    <string name="player_up_next_song">%1$s · %2$s</string>
 
     <!-- Permiso de red local de Android 17 -->
     <string name="local_network_title">¿Permitir el acceso a tu red local?</string>
