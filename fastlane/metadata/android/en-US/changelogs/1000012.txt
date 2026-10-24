@@ -1,0 +1,1 @@
+Sign in with your username and password (with your two-factor code if you use one), no QR code needed. A new full player: the artwork fills the top, the artist and play button take its colour, and you see the lyrics line being sung and the song that plays next. Settings shows only your live keys.

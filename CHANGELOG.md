@@ -9,6 +9,23 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.12] - 2026-10-24
+
+Release candidate of 1.0: sign in to the app with your username and password, a new full player, and an optional size limit for the library.
+
+### Added
+- Android: the Connect screen signs in with username and password (the default; an API key still works). The server creates a key for the phone, named after its model, and asks for the two-factor code when the account has one. No need for the admin panel's QR code. Your proxy must pass `POST /ut/v1/keys` for this to work away from home (docs/admin-guide.md).
+- Server: optional library size limit (admin panel, Library, "Size limit"; off by default). Above it, the audio of the least played songs is freed down to 90 % of the limit; starred songs, albums and artists, songs not from YouTube and songs added in the last 30 days (adjustable) are never freed. A freed song keeps its plays and playlist entries and is downloaded again when played.
+- API: `POST /ut/v1/keys` answers `second_factor_required` when the password is right and the account needs its two-factor code.
+
+### Changed
+- Android: new full player. The artwork fills the top and fades into its colours, a large title, the artist and a round play button in the artwork's accent colour, a bar scrubber, the lyrics line being sung and the song that plays next.
+- Android: Settings lists only your live API keys; revoked ones are no longer shown.
+
+### Security
+- Server: the image is built on a `python:3.13-slim` with the patched libexpat, and `filelock` (development only) is updated to 4.2.1.
+- If you ever scanned a connect QR code with Google Lens and it searched the web instead of opening the app, the key went to Google: revoke it and sign in with your password.
+
 ## [1.0.0-rc.11] - 2026-10-23
 
 Release candidate of 1.0: security fixes on the server. The Android app only updates its build tools and libraries; it works as in 1.0.0-rc.10.
