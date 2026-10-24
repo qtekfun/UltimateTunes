@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,9 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -59,6 +63,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,19 +90,23 @@ const val PLAYER_MORE_TAG = "player.more"
 const val PLAYER_NOTE_TAG = "player.note"
 const val PLAYER_SCRUBBER_TAG = "player.scrubber"
 
-private const val MILLIS_PER_SECOND = 1000L
+/** Opacity of the artwork behind the lyrics. */
+private const val DIMMED_ARTWORK_ALPHA = 0.25f
 
-/** How much of the blurred artwork shows through the colours. */
-private const val BLURRED_ARTWORK_ALPHA = 0.45f
+/** Where the artwork starts fading into the background, as a share of its height. */
+private const val ARTWORK_FADE_START = 0.45f
 
-/** The artwork shrinks a little while paused. */
-private const val PAUSED_ARTWORK_SCALE = 0.84f
+/** Ground of the buttons over the artwork, so they read on any cover. */
+private const val OVER_ARTWORK_ALPHA = 0.28f
+
+private val PlayButtonSize = 84.dp
 
 /**
- * The full player (SPEC §5): big artwork, colours from the artwork over its blurred copy,
- * scrubber, controls and the queue sheet. Dragging down moves it with the finger and, past a
- * threshold or with a fast flick, closes it, as [onCollapse] does. [shown] is false while it
- * slides away; showing it again puts it back in place.
+ * The full player (SPEC §5): the artwork edge to edge at the top, fading into its own colours,
+ * a large title, a bar scrubber, the controls, the line of the lyrics being sung and the song
+ * that plays next. Dragging down moves it with the finger and, past a threshold or with a fast
+ * flick, closes it, as [onCollapse] does. [shown] is false while it slides away; showing it again
+ * puts it back in place.
  */
 @Composable
 fun FullPlayer(
@@ -114,7 +123,8 @@ fun FullPlayer(
     var showQueue by rememberSaveable { mutableStateOf(false) }
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val onShowLyrics by rememberUpdatedState(lyrics.onShow)
-    LaunchedEffect(track.id, showLyrics) { if (showLyrics) onShowLyrics(track.id) }
+    // Loaded while the player is open, for the lyrics card as well as the full lyrics.
+    LaunchedEffect(track.id, shown) { if (shown) onShowLyrics(track.id) }
     val collapse by rememberUpdatedState(onCollapse)
     val drag = rememberCollapseDrag(shown)
 
@@ -122,16 +132,17 @@ fun FullPlayer(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer { translationY = drag.offset.value }
-            .background(Brush.verticalGradient(listOf(colors.top, colors.bottom)))
+            .background(colors.bottom)
             .collapseOnDrag(drag) { collapse() }
             .testTag(FULL_PLAYER_TAG)
     ) {
-        BlurredBackground(track.coverUrl, colors.bottom)
+        HeroArtwork(track, colors.bottom, dimmed = showLyrics)
         CompositionLocalProvider(LocalContentColor provides colors.content) {
             PlayerContent(
                 state = state,
                 actions = actions,
                 onCollapse = onCollapse,
+                colors = colors,
                 panels = PlayerPanels(
                     showLyrics = showLyrics,
                     lyrics = lyrics,
@@ -165,6 +176,7 @@ private fun PlayerContent(
     state: PlayerUiState,
     actions: PlayerActions,
     onCollapse: () -> Unit,
+    colors: PlayerColors,
     panels: PlayerPanels,
     modifier: Modifier = Modifier
 ) {
@@ -173,15 +185,13 @@ private fun PlayerContent(
         modifier = modifier
             .fillMaxSize()
             .safeDrawingPadding()
-            .padding(horizontal = Dimens.SpaceXL),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        IconButton(onClick = onCollapse) {
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_down),
-                contentDescription = stringResource(R.string.player_close)
-            )
-        }
+        TopBar(
+            track = track,
+            onCollapse = onCollapse,
+            onRadio = actions.startRadio,
+            onMore = { panels.onMore(track) }
+        )
         if (panels.showLyrics) {
             LyricsView(
                 state = panels.lyrics.state,
@@ -193,141 +203,153 @@ private fun PlayerContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .padding(horizontal = Dimens.SpaceXL)
             )
         } else {
-            BigArtwork(
-                state = state,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            )
+            Spacer(Modifier.weight(1f))
         }
-        TrackTitle(state)
-        PlaybackNote(state)
-        Scrubber(state, actions.seekTo)
-        Controls(state, actions)
-        PanelButtons(panels, onRadio = actions.startRadio, onMore = { panels.onMore(track) })
+        Column(modifier = Modifier.padding(horizontal = Dimens.SpaceXL)) {
+            TrackTitle(state, colors.accent)
+            PlaybackNote(state)
+            BarScrubber(
+                state,
+                seed = track.id.value,
+                accent = colors.accent,
+                onSeek = actions.seekTo
+            )
+            Controls(state, actions, colors, panels)
+            if (!panels.showLyrics) {
+                LyricsCard(
+                    lyrics = panels.lyrics.state,
+                    track = track,
+                    positionMillis = state.positionMs,
+                    onOpen = panels.onToggleLyrics
+                )
+            }
+            UpNextRow(state, panels.onShowQueue)
+        }
     }
 }
 
 /**
- * The artwork, blurred, behind everything (blur needs Android 12; older ones get the artwork
- * kept faint).
+ * The artwork across the whole width at the top, fading into [bottom]; faint behind the lyrics.
  */
 @Composable
-private fun BlurredBackground(coverUrl: String?, bottom: Color) {
-    if (coverUrl != null) {
-        AsyncImage(
-            model = coverUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .blur(72.dp)
-                .alpha(BLURRED_ARTWORK_ALPHA)
-        )
-    }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(listOf(Color.Transparent, bottom.copy(alpha = 0.8f)))
-            )
-    )
-}
-
-/** The big artwork, a little smaller while paused. */
-@Composable
-private fun BigArtwork(state: PlayerUiState, modifier: Modifier) {
-    val track = state.current ?: return
-    val scale by animateFloatAsState(
-        targetValue = if (state.isPlaying) 1f else PAUSED_ARTWORK_SCALE,
-        label = "artworkScale"
+private fun HeroArtwork(track: TrackTile, bottom: Color, dimmed: Boolean) {
+    val alpha by animateFloatAsState(
+        targetValue = if (dimmed) DIMMED_ARTWORK_ALPHA else 1f,
+        label = "artworkAlpha"
     )
     Box(
-        modifier = modifier.padding(vertical = Dimens.SpaceL),
-        contentAlignment = Alignment.Center
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .alpha(alpha)
     ) {
         Artwork(
             url = track.coverUrl,
             placeholderKey = track.id.value,
-            shape = Dimens.PlayerArtworkShape,
-            modifier = Modifier
-                .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-                .shadow(elevation = 24.dp, shape = Dimens.PlayerArtworkShape)
+            shape = RectangleShape,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        ARTWORK_FADE_START to Color.Transparent,
+                        1f to bottom
+                    )
+                )
         )
     }
 }
 
-/** Lyrics on the left; radio, the song's menu and the queue on the right. */
+/** Close, the album, and over the artwork the radio and the song's menu. */
 @Composable
-private fun PanelButtons(panels: PlayerPanels, onRadio: () -> Unit, onMore: () -> Unit) {
+private fun TopBar(
+    track: TrackTile,
+    onCollapse: () -> Unit,
+    onRadio: () -> Unit,
+    onMore: () -> Unit
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Dimens.SpaceL, vertical = Dimens.SpaceS),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS)
     ) {
-        IconButton(
-            onClick = panels.onToggleLyrics,
-            modifier = Modifier.testTag(LYRICS_BUTTON_TAG)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_lyrics),
-                contentDescription = stringResource(
-                    if (panels.showLyrics) {
-                        R.string.player_hide_lyrics
-                    } else {
-                        R.string.player_show_lyrics
-                    }
-                ),
-                tint = if (panels.showLyrics) {
-                    LocalContentColor.current
-                } else {
-                    LocalContentColor.current.copy(alpha = 0.6f)
-                }
-            )
-        }
-        Row {
-            IconButton(onClick = onRadio, modifier = Modifier.testTag(PLAYER_RADIO_TAG)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_radio),
-                    contentDescription = stringResource(R.string.player_start_radio)
-                )
-            }
-            IconButton(onClick = onMore, modifier = Modifier.testTag(PLAYER_MORE_TAG)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_more),
-                    contentDescription = stringResource(R.string.more_options)
-                )
-            }
-            IconButton(onClick = panels.onShowQueue) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_queue),
-                    contentDescription = stringResource(R.string.player_show_queue)
+        RoundIconButton(
+            icon = R.drawable.ic_chevron_down,
+            label = stringResource(R.string.player_close),
+            onClick = onCollapse
+        )
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            track.album?.let { album ->
+                Text(
+                    text = album,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .clip(Dimens.PillShape)
+                        .background(Color.Black.copy(alpha = OVER_ARTWORK_ALPHA))
+                        .padding(horizontal = Dimens.SpaceM, vertical = Dimens.SpaceS)
                 )
             }
         }
+        RoundIconButton(
+            icon = R.drawable.ic_radio,
+            label = stringResource(R.string.player_start_radio),
+            onClick = onRadio,
+            modifier = Modifier.testTag(PLAYER_RADIO_TAG)
+        )
+        RoundIconButton(
+            icon = R.drawable.ic_more,
+            label = stringResource(R.string.more_options),
+            onClick = onMore,
+            modifier = Modifier.testTag(PLAYER_MORE_TAG)
+        )
     }
 }
 
 @Composable
-private fun TrackTitle(state: PlayerUiState) {
+private fun RoundIconButton(
+    @DrawableRes icon: Int,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = OVER_ARTWORK_ALPHA))
+    ) {
+        Icon(painter = painterResource(icon), contentDescription = label)
+    }
+}
+
+@Composable
+private fun TrackTitle(state: PlayerUiState, accent: Color) {
     val track = state.current ?: return
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = track.title,
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.ExtraBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.semantics { heading() }
         )
         Text(
             text = track.artist,
-            style = MaterialTheme.typography.bodyLarge,
-            color = LocalContentColor.current.copy(alpha = 0.75f),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = accent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -342,91 +364,83 @@ private fun TrackTitle(state: PlayerUiState) {
     }
 }
 
+/** Lyrics, previous, play (round, in the accent), next and the queue. */
 @Composable
-private fun Scrubber(state: PlayerUiState, onSeek: (Long) -> Unit) {
+private fun Controls(
+    state: PlayerUiState,
+    actions: PlayerActions,
+    colors: PlayerColors,
+    panels: PlayerPanels
+) {
     val content = LocalContentColor.current
-    // While dragging, the thumb follows the finger; the seek happens once, on release.
-    var dragging by remember { mutableStateOf<Float?>(null) }
-    val positionMs = dragging?.toLong() ?: state.positionMs
-    val durationMs = state.durationMs.coerceAtLeast(0)
-    val elapsed = formatDuration((positionMs / MILLIS_PER_SECOND).toInt())
-    val total = formatDuration((durationMs / MILLIS_PER_SECOND).toInt())
-    val label = stringResource(R.string.player_position)
-    val position = stringResource(R.string.player_position_state, elapsed, total)
-    Column(modifier = Modifier.fillMaxWidth().padding(top = Dimens.SpaceL)) {
-        Slider(
-            value = positionMs.coerceIn(0, durationMs.coerceAtLeast(1)).toFloat(),
-            onValueChange = { dragging = it },
-            onValueChangeFinished = {
-                dragging?.let { onSeek(it.toLong()) }
-                dragging = null
-            },
-            enabled = state.canSeek,
-            valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = content,
-                activeTrackColor = content,
-                inactiveTrackColor = content.copy(alpha = 0.3f),
-                disabledThumbColor = content.copy(alpha = 0.6f),
-                disabledActiveTrackColor = content.copy(alpha = 0.6f),
-                disabledInactiveTrackColor = content.copy(alpha = 0.2f)
-            ),
-            modifier = Modifier
-                .testTag(PLAYER_SCRUBBER_TAG)
-                .semantics {
-                    contentDescription = label
-                    stateDescription = position
-                }
-        )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                text = elapsed,
-                style = MaterialTheme.typography.labelSmall,
-                color = content.copy(alpha = 0.7f)
-            )
-            Text(
-                text = stringResource(
-                    R.string.player_remaining,
-                    formatDuration(((durationMs - positionMs) / MILLIS_PER_SECOND).toInt())
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = Dimens.SpaceM),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = panels.onToggleLyrics,
+            modifier = Modifier.testTag(LYRICS_BUTTON_TAG)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_lyrics),
+                contentDescription = stringResource(
+                    if (panels.showLyrics) {
+                        R.string.player_hide_lyrics
+                    } else {
+                        R.string.player_show_lyrics
+                    }
                 ),
-                style = MaterialTheme.typography.labelSmall,
-                color = content.copy(alpha = 0.7f)
+                tint = if (panels.showLyrics) colors.accent else content.copy(alpha = 0.7f)
+            )
+        }
+        IconButton(onClick = actions.previous, modifier = Modifier.size(56.dp)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_skip_previous),
+                contentDescription = stringResource(R.string.player_previous),
+                modifier = Modifier.size(36.dp)
+            )
+        }
+        PlayButton(state.isPlaying, colors, actions.togglePlay)
+        IconButton(
+            onClick = actions.next,
+            enabled = state.hasNext,
+            modifier = Modifier.size(56.dp)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_skip_next),
+                contentDescription = stringResource(R.string.player_next),
+                modifier = Modifier.size(36.dp)
+            )
+        }
+        IconButton(onClick = panels.onShowQueue) {
+            Icon(
+                painter = painterResource(R.drawable.ic_queue),
+                contentDescription = stringResource(R.string.player_show_queue),
+                tint = content.copy(alpha = 0.7f)
             )
         }
     }
 }
 
+/** Play or pause: a round button in the accent, the icon in the background's colour. */
 @Composable
-private fun Controls(state: PlayerUiState, actions: PlayerActions) {
-    Row(
+private fun PlayButton(isPlaying: Boolean, colors: PlayerColors, onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = Dimens.SpaceL),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+            .size(PlayButtonSize)
+            .clip(CircleShape)
+            .background(colors.accent),
+        contentAlignment = Alignment.Center
     ) {
-        IconButton(onClick = actions.previous, modifier = Modifier.size(64.dp)) {
-            Icon(
-                painter = painterResource(R.drawable.ic_skip_previous),
-                contentDescription = stringResource(R.string.player_previous),
-                modifier = Modifier.size(40.dp)
-            )
-        }
-        PlayPauseButton(
-            isPlaying = state.isPlaying,
-            onClick = actions.togglePlay,
-            modifier = Modifier.size(80.dp),
-            iconModifier = Modifier.size(56.dp)
-        )
-        IconButton(
-            onClick = actions.next,
-            enabled = state.hasNext,
-            modifier = Modifier.size(64.dp)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_skip_next),
-                contentDescription = stringResource(R.string.player_next),
-                modifier = Modifier.size(40.dp)
+        CompositionLocalProvider(LocalContentColor provides colors.bottom) {
+            PlayPauseButton(
+                isPlaying = isPlaying,
+                onClick = onClick,
+                modifier = Modifier.fillMaxSize(),
+                iconModifier = Modifier.size(40.dp)
             )
         }
     }
