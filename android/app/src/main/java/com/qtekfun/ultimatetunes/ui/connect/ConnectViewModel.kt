@@ -40,40 +40,84 @@ enum class ConnectError {
     KEY_REFUSED,
 
     /** The server answered with an error. */
-    SERVER_ERROR
+    SERVER_ERROR,
+
+    /** Wrong username or password (the server never says which). */
+    WRONG_PASSWORD,
+
+    /** The two-factor code (or recovery code) was not accepted. */
+    WRONG_CODE,
+
+    /** The account is disabled. */
+    ACCOUNT_DISABLED,
+
+    /** Too many failed tries from here or for this user: wait and try again. */
+    TOO_MANY_TRIES,
+
+    /** The server requires two-factor authentication, and this account has not set it up. */
+    TWO_FACTOR_SETUP_REQUIRED
+}
+
+/** How the Connect screen signs in. */
+enum class ConnectMethod {
+    /** Username and password: the server creates a key for this device. */
+    PASSWORD,
+
+    /** An API key created in the admin panel or the web player. */
+    API_KEY
 }
 
 /** What the Connect screen shows. */
 data class ConnectUiState(
     val serverUrl: String = "",
+    val method: ConnectMethod = ConnectMethod.PASSWORD,
+    val username: String = "",
+    val password: String = "",
+    /** The server asked for the two-factor code: the screen shows [code]. */
+    val needsCode: Boolean = false,
+    val code: String = "",
     val apiKey: String = "",
     val checking: Boolean = false,
     val error: ConnectError? = null,
     /**
-     * Set once the key works: the name the server reported. The root then shows the tabs; the
-     * typed address and key are cleared at that moment, and everything on the next reconnect.
+     * Set once the key works: the name the server reported. The root then shows the tabs; what
+     * was typed is cleared at that moment, and everything on the next reconnect.
      */
     val connectedTo: String? = null
 ) {
-    val canConnect: Boolean get() = !checking && serverUrl.isNotBlank() && apiKey.isNotBlank()
+    val canConnect: Boolean
+        get() = !checking && serverUrl.isNotBlank() && when (method) {
+            ConnectMethod.PASSWORD ->
+                username.isNotBlank() && password.isNotEmpty() && (!needsCode || code.isNotBlank())
 
-    /** Never shows the key, which may be typed in full. */
+            ConnectMethod.API_KEY -> apiKey.isNotBlank()
+        }
+
+    /** Never shows the password, the code or the key, which may be typed in full. */
     override fun toString(): String =
-        "ConnectUiState(serverUrl=$serverUrl, apiKey=redacted, checking=$checking, " +
-            "error=$error, connectedTo=$connectedTo)"
+        "ConnectUiState(serverUrl=$serverUrl, method=$method, username=$username, " +
+            "password=redacted, needsCode=$needsCode, code=redacted, apiKey=redacted, " +
+            "checking=$checking, error=$error, connectedTo=$connectedTo)"
+}
+
+/** The name a new key gets on the server, so the user can tell their devices apart. */
+fun interface DeviceName {
+    fun get(): String
 }
 
 /**
- * The Connect screen (RF-11): server URL and API key, checked against the server (`GET
- * /ut/v1/server`, then `GET /ut/v1/me` with the key) before [gate] keeps them. Keeping them
- * across restarts (Keystore-encrypted) is PLAN T17.
+ * The Connect screen (RF-11): server URL with username and password (the server creates a key
+ * for this device, `POST /ut/v1/keys`, asking for the two-factor code when the account has one)
+ * or with an API key. Either key is checked against the server (`GET /ut/v1/server`, then `GET
+ * /ut/v1/me`) before [gate] keeps it. Keeping it across restarts (Keystore-encrypted) is PLAN T17.
  */
 @HiltViewModel
 class ConnectViewModel @Inject constructor(
     api: TunesApi,
     gate: ConnectionGate,
     private val cleartext: CleartextPolicy,
-    demo: Optional<DemoServer> = Optional.empty()
+    demo: Optional<DemoServer> = Optional.empty(),
+    private val deviceName: DeviceName = DeviceName { DEFAULT_DEVICE_NAME }
 ) : ViewModel() {
     private val checker = ConnectChecker(api, gate)
     private val mutableState = MutableStateFlow(ConnectUiState())
@@ -100,7 +144,11 @@ class ConnectViewModel @Inject constructor(
                 mutableState.update { it.copy(checking = false, error = ConnectError.UNREACHABLE) }
             } else {
                 mutableState.update {
-                    it.copy(serverUrl = config.root.toString(), apiKey = config.apiKey.value)
+                    it.copy(
+                        serverUrl = config.root.toString(),
+                        method = ConnectMethod.API_KEY,
+                        apiKey = config.apiKey.value
+                    )
                 }
                 finish(validate(config.root.toString(), config.apiKey.value))
             }
@@ -115,9 +163,35 @@ class ConnectViewModel @Inject constructor(
         mutableState.update { it.copy(apiKey = value, error = null) }
     }
 
+    fun onMethodChange(method: ConnectMethod) {
+        mutableState.update { if (it.checking) it else it.copy(method = method, error = null) }
+    }
+
+    /** Another user forgets that the previous one needed a code. */
+    fun onUsernameChange(value: String) {
+        mutableState.update {
+            it.copy(username = value, error = null, needsCode = false, code = "")
+        }
+    }
+
+    fun onPasswordChange(value: String) {
+        mutableState.update { it.copy(password = value, error = null) }
+    }
+
+    fun onCodeChange(value: String) {
+        mutableState.update { it.copy(code = value, error = null) }
+    }
+
     fun connect() {
         val current = mutableState.value
-        if (current.checking) return
+        if (!current.canConnect) return
+        when (current.method) {
+            ConnectMethod.API_KEY -> connectWithKey(current)
+            ConnectMethod.PASSWORD -> signIn(current)
+        }
+    }
+
+    private fun connectWithKey(current: ConnectUiState) {
         val validated = validate(current.serverUrl, current.apiKey)
         if (validated is Validated.Invalid) {
             mutableState.update { it.copy(error = validated.error) }
@@ -127,34 +201,88 @@ class ConnectViewModel @Inject constructor(
         viewModelScope.launch { finish(validated) }
     }
 
+    private fun signIn(current: ConnectUiState) {
+        val url = when (val checked = checkUrl(current.serverUrl)) {
+            is UrlCheck.Valid -> checked.url
+            is UrlCheck.Invalid -> {
+                mutableState.update { it.copy(error = checked.error) }
+                return
+            }
+        }
+        val credentials = Credentials(
+            username = current.username.trim(),
+            password = current.password,
+            code = current.code.trim().takeIf { current.needsCode && it.isNotEmpty() }
+        )
+        mutableState.update { it.copy(checking = true, error = null) }
+        viewModelScope.launch {
+            when (val result = checker.signIn(url, credentials, deviceName())) {
+                SignInCheck.NeedsCode -> mutableState.update {
+                    it.copy(checking = false, needsCode = true, code = "")
+                }
+
+                is SignInCheck.Checked -> settle(result.check)
+            }
+        }
+    }
+
+    /** The name of the new key: the phone's model, at most what the server accepts. */
+    private fun deviceName(): String = deviceName.get()
+        .filter { !it.isISOControl() }
+        .trim()
+        .take(MAX_DEVICE_NAME)
+        .ifBlank { DEFAULT_DEVICE_NAME }
+
     private sealed interface Validated {
         data class Valid(val url: HttpUrl, val key: ApiKeySecret) : Validated
 
         data class Invalid(val error: ConnectError) : Validated
     }
 
-    /** The local checks of the address and key, before asking the server. */
-    private fun validate(serverUrl: String, apiKey: String): Validated {
+    private sealed interface UrlCheck {
+        data class Valid(val url: HttpUrl) : UrlCheck
+
+        data class Invalid(val error: ConnectError) : UrlCheck
+    }
+
+    /** The local checks of the address, before anything is sent to it. */
+    private fun checkUrl(serverUrl: String): UrlCheck {
         val url = normalizeServerUrl(serverUrl)
-        val key = apiKey.trim()
         return when {
-            url == null -> Validated.Invalid(ConnectError.INVALID_URL)
+            url == null -> UrlCheck.Invalid(ConnectError.INVALID_URL)
 
             !url.isHttps && !cleartext.isPermitted(url.host) ->
-                Validated.Invalid(ConnectError.INSECURE_URL)
+                UrlCheck.Invalid(ConnectError.INSECURE_URL)
 
-            !ApiKeySecret.isWellFormed(key) -> Validated.Invalid(ConnectError.INVALID_KEY)
+            else -> UrlCheck.Valid(url)
+        }
+    }
 
-            else -> Validated.Valid(url, ApiKeySecret(key))
+    /** The local checks of the address and key, before asking the server. */
+    private fun validate(serverUrl: String, apiKey: String): Validated {
+        val key = apiKey.trim()
+        return when (val url = checkUrl(serverUrl)) {
+            is UrlCheck.Invalid -> Validated.Invalid(url.error)
+
+            is UrlCheck.Valid -> if (ApiKeySecret.isWellFormed(key)) {
+                Validated.Valid(url.url, ApiKeySecret(key))
+            } else {
+                Validated.Invalid(ConnectError.INVALID_KEY)
+            }
         }
     }
 
     /** Asks the server (when [validated] is valid) and ends the check. */
     private suspend fun finish(validated: Validated) {
-        val result = when (validated) {
-            is Validated.Invalid -> ConnectCheck.Failed(validated.error)
-            is Validated.Valid -> checker.check(validated.url, validated.key)
-        }
+        settle(
+            when (validated) {
+                is Validated.Invalid -> ConnectCheck.Failed(validated.error)
+                is Validated.Valid -> checker.check(validated.url, validated.key)
+            }
+        )
+    }
+
+    private fun settle(result: ConnectCheck) {
         mutableState.update {
             when (result) {
                 // The key is kept by the gate; the form forgets what was typed.
@@ -166,6 +294,12 @@ class ConnectViewModel @Inject constructor(
     }
 
     companion object {
+        /** The name of a key when the phone reports no model. */
+        const val DEFAULT_DEVICE_NAME = "Android"
+
+        /** The longest key name the server accepts (`POST /ut/v1/keys`). */
+        const val MAX_DEVICE_NAME = 100
+
         /**
          * The server root for what the user typed: trimmed, `https://` when no scheme is given,
          * only `http`/`https`, without query or fragment and with a trailing slash. Null when it

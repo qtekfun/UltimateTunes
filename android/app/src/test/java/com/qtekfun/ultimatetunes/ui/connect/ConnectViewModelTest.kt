@@ -49,7 +49,18 @@ class ConnectViewModelTest {
         key: String = FakeTunesServer.API_KEY
     ) {
         viewModel.onServerUrlChange(url)
+        viewModel.onMethodChange(ConnectMethod.API_KEY)
         viewModel.onApiKeyChange(key)
+    }
+
+    private fun signIn(
+        username: String = FakeTunesServer.USERNAME,
+        password: String = FakeTunesServer.PASSWORD,
+        vm: ConnectViewModel = viewModel
+    ) {
+        vm.onServerUrlChange(server.baseUrl.toString())
+        vm.onUsernameChange(username)
+        vm.onPasswordChange(password)
     }
 
     private suspend fun connectAndWait(): ConnectUiState {
@@ -191,6 +202,7 @@ class ConnectViewModelTest {
             cleartext = { host -> host == "10.0.2.2" }
         )
         strict.onServerUrlChange("http://music.example.net")
+        strict.onMethodChange(ConnectMethod.API_KEY)
         strict.onApiKeyChange(FakeTunesServer.API_KEY)
 
         strict.connect()
@@ -201,6 +213,120 @@ class ConnectViewModelTest {
         // The emulator's host may use http in debug builds; https is always fine.
         strict.onServerUrlChange("https://music.example.net")
         assertNull(strict.state.value.error)
+    }
+
+    @Test
+    fun `signing in creates a key named after the phone and connects with it`() = runTest {
+        val named = ConnectViewModel(
+            apiWith(source),
+            gate,
+            CleartextPolicy { true },
+            deviceName = { " Pixel\u0007 9 " }
+        )
+        signIn(username = " ${FakeTunesServer.USERNAME} ", vm = named)
+        assertEquals(ConnectMethod.PASSWORD, named.state.value.method)
+
+        named.connect()
+        val state = named.state.awaitFirst { !it.checking }
+
+        assertEquals("UltimateTunes", state.connectedTo)
+        assertEquals("", state.password)
+        assertEquals(FakeTunesServer.API_KEY, source.config.value?.apiKey?.value)
+        server.takeRequest() // GET /ut/v1/server
+        val body = server.takeRequest().body!!.utf8()
+        assertTrue(body.contains("\"name\":\"Pixel 9\""), body)
+        assertTrue(body.contains("\"username\":\"alice\""), body)
+    }
+
+    @Test
+    fun `a wrong password is reported and nothing is kept`() = runTest {
+        signIn(password = "wrong")
+
+        val state = connectAndWait()
+
+        assertEquals(ConnectError.WRONG_PASSWORD, state.error)
+        assertFalse(state.needsCode)
+        assertNull(source.config.value)
+    }
+
+    @Test
+    fun `a 2FA account is asked for its code, then connects`() = runTest {
+        signIn(username = FakeTunesServer.TWO_FACTOR_USERNAME)
+
+        val asked = connectAndWait()
+
+        assertTrue(asked.needsCode)
+        assertNull(asked.error)
+        assertFalse(asked.canConnect)
+        assertNull(source.config.value)
+
+        viewModel.onCodeChange("000000")
+        assertEquals(ConnectError.WRONG_CODE, connectAndWait().error)
+
+        viewModel.onCodeChange(" ${FakeTunesServer.TOTP_CODE} ")
+        val state = connectAndWait()
+
+        assertEquals("UltimateTunes", state.connectedTo)
+        assertEquals(FakeTunesServer.API_KEY, source.config.value?.apiKey?.value)
+    }
+
+    @Test
+    fun `another username forgets the code`() = runTest {
+        signIn(username = FakeTunesServer.TWO_FACTOR_USERNAME)
+        connectAndWait()
+        viewModel.onCodeChange("123")
+
+        viewModel.onUsernameChange("carol")
+
+        assertFalse(viewModel.state.value.needsCode)
+        assertEquals("", viewModel.state.value.code)
+    }
+
+    @Test
+    fun `sign-in refusals from the server have their own messages`() = runTest {
+        val cases = listOf(
+            Triple(403, "forbidden", ConnectError.TWO_FACTOR_SETUP_REQUIRED),
+            Triple(429, "rate_limited", ConnectError.TOO_MANY_TRIES),
+            Triple(403, "account_disabled", ConnectError.ACCOUNT_DISABLED),
+            Triple(500, "internal_error", ConnectError.SERVER_ERROR)
+        )
+        for ((status, code, expected) in cases) {
+            server.dispatcher.override("ut/v1/keys") {
+                MockResponse(
+                    code = status,
+                    headers = headersOf(
+                        "Content-Type",
+                        "application/problem+json",
+                        "Retry-After",
+                        "60"
+                    ),
+                    body = """{"type":"about:blank","title":"x","status":$status,"code":"$code"}"""
+                )
+            }
+            signIn()
+
+            assertEquals(expected, connectAndWait().error, code)
+        }
+    }
+
+    @Test
+    fun `the password never reaches an address that is not an UltimateTunes server`() = runTest {
+        server.dispatcher.override("ut/v1/server") {
+            MockResponse(code = 404, headers = headersOf("Content-Type", "text/html"), body = "<html/>")
+        }
+        signIn()
+
+        assertEquals(ConnectError.NOT_A_SERVER, connectAndWait().error)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `the state never shows the password, the code or the key`() {
+        val text = ConnectUiState(password = "hunter22", code = "123456", apiKey = "utk_x").toString()
+
+        assertFalse(text.contains("hunter22"))
+        assertFalse(text.contains("123456"))
+        assertFalse(text.contains("utk_x"))
     }
 
     @Test
@@ -292,10 +418,22 @@ class ConnectViewModelTest {
     fun `connect is offered only with both fields filled`() {
         assertFalse(viewModel.state.value.canConnect)
         viewModel.onServerUrlChange("music.example.net")
+        viewModel.onMethodChange(ConnectMethod.API_KEY)
         assertFalse(viewModel.state.value.canConnect)
         viewModel.onApiKeyChange("utk_x")
         assertTrue(viewModel.state.value.canConnect)
-        assertFalse(ConnectUiState(serverUrl = "a", apiKey = "b", checking = true).canConnect)
+        val keyed = ConnectUiState(serverUrl = "a", method = ConnectMethod.API_KEY, apiKey = "b")
+        assertFalse(keyed.copy(checking = true).canConnect)
+    }
+
+    @Test
+    fun `signing in is offered with username and password, and the code once asked`() {
+        val form = ConnectUiState(serverUrl = "a", username = "alice")
+        assertFalse(form.canConnect)
+        assertTrue(form.copy(password = "pw").canConnect)
+        assertFalse(form.copy(password = "pw", needsCode = true).canConnect)
+        assertTrue(form.copy(password = "pw", needsCode = true, code = "1").canConnect)
+        assertFalse(form.copy(username = " ", password = "pw").canConnect)
     }
 
     @Test

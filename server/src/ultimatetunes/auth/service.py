@@ -96,6 +96,7 @@ from ultimatetunes.errors import (
     InvalidParameter,
     NotFound,
     RateLimited,
+    SecondFactorRequired,
     TokenAuthNotSupported,
     TunesError,
 )
@@ -692,9 +693,9 @@ class AuthService:
         When the user has the optional TOTP second factor enabled (`auth/twofactor.py`), a
         valid `totp_code` (a TOTP code or a recovery code) is also required, so a stolen
         password alone cannot enroll a new device. `totp_code` is optional in the request and
-        is only consulted for enrolled users, so the frozen `ut-v1` contract and clients that
-        do not send it are unaffected (docs/2fa.md: the additive contract change is proposed,
-        not applied here)."""
+        is only consulted for enrolled users, so clients that do not send it are unaffected.
+        Without a code an enrolled user gets `SecondFactorRequired`, so the app knows to ask for
+        one; a wrong code gives `AuthenticationFailed`."""
         check_key_name(name)
         presenter = (
             None
@@ -707,6 +708,17 @@ class AuthService:
             raise ConflictingAuth()
         role = _role(user.role)
         if self.two_factor.is_enabled(user.id):
+            if not (totp_code or "").strip():
+                # The first try of a 2FA account: ask for the code. Only someone who knows the
+                # password gets here (as with the second step of the web login), and it does not
+                # count against the 2FA lockout.
+                _failure(
+                    "second_factor_missing",
+                    client_ip,
+                    user=user.username,
+                    credential=CREDENTIAL_ACCOUNT,
+                )
+                raise SecondFactorRequired()
             if not self.two_factor.verify_second_factor(user.id, totp_code or "", client_ip):
                 _failure(
                     "second_factor", client_ip, user=user.username, credential=CREDENTIAL_ACCOUNT

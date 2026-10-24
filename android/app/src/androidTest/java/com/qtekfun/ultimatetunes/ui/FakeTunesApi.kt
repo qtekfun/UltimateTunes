@@ -408,7 +408,8 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         server: HttpUrl,
         username: String,
         password: String,
-        deviceName: String
+        deviceName: String,
+        totp: String?
     ): TunesResult<CreatedKey> = notImplemented()
 
     override suspend fun requestTrack(id: SongId, reason: RequestReason): TunesResult<TrackStatus> =

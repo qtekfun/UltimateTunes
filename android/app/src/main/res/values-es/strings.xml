@@ -21,6 +21,8 @@
     <string name="connect_api_key_hint">utk_…</string>
     <string name="connect_show_key">Mostrar clave</string>
     <string name="connect_hide_key">Ocultar clave</string>
+    <string name="connect_show_password">Mostrar</string>
+    <string name="connect_hide_password">Ocultar</string>
     <string name="connect_button">Conectar</string>
     <string name="connect_checking">Comprobando…</string>
     <string name="connect_scan_qr">Escanear código QR</string>
@@ -42,6 +44,18 @@
     <string name="connect_error_not_a_server">Algo responde, pero no es un servidor de UltimateTunes.</string>
     <string name="connect_error_key_refused">El servidor ha rechazado esta clave. Puede que se haya revocado.</string>
     <string name="connect_error_server">El servidor ha tenido un problema. Inténtalo de nuevo en un momento.</string>
+    <string name="connect_method_password">Usuario y contraseña</string>
+    <string name="connect_method_key">Clave de API</string>
+    <string name="connect_username">Usuario</string>
+    <string name="connect_password">Contraseña</string>
+    <string name="connect_code">Código de verificación</string>
+    <string name="connect_code_help">El código de 6 cifras de tu app de autenticación, o un código de recuperación.</string>
+    <string name="connect_help_password">Al iniciar sesión se crea una clave para este móvil. Puedes revocarla en Ajustes o en el panel de administración del servidor.</string>
+    <string name="connect_error_wrong_password">Usuario o contraseña incorrectos.</string>
+    <string name="connect_error_wrong_code">No se ha aceptado ese código. Espera a que salga uno nuevo y vuelve a probar.</string>
+    <string name="connect_error_account_disabled">Esta cuenta está desactivada. Pregunta al administrador del servidor.</string>
+    <string name="connect_error_too_many_tries">Demasiados intentos fallidos. Espera unos minutos y vuelve a probar.</string>
+    <string name="connect_error_2fa_setup">Tu servidor exige verificación en dos pasos. Actívala primero en el reproductor web y luego inicia sesión aquí.</string>
 
     <!-- Escuchar -->
     <string name="listen_now_stations">Tus emisoras</string>
@@ -172,7 +186,7 @@
     <string name="settings_account_admin">%1$s (administrador)</string>
     <string name="settings_disconnect">Desconectar</string>
     <string name="settings_disconnect_title">¿Desconectar este dispositivo?</string>
-    <string name="settings_disconnect_message">Necesitarás una clave de API para volver a conectar. Tu clave sigue siendo válida hasta que la revoques.</string>
+    <string name="settings_disconnect_message">Para volver a conectar, inicia sesión o usa una clave de API. La clave de este dispositivo sigue siendo válida hasta que la revoques.</string>
     <string name="settings_keys">Dispositivos y claves</string>
     <string name="settings_key_this_device">Este dispositivo</string>
     <string name="settings_key_created">creada el %1$s</string>

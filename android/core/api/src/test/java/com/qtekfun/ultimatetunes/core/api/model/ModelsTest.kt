@@ -105,6 +105,8 @@ class SecretsTest {
         val request = CreateKeyRequest("alice", "correct horse battery staple", "Pixel 9")
         assertFalse(request.toString().contains("correct horse"))
         assertTrue(request.toString().contains("alice"))
+        val withCode = CreateKeyRequest("alice", "pw", "Pixel 9", "123456")
+        assertFalse(withCode.toString().contains("123456"))
     }
 
     @Test

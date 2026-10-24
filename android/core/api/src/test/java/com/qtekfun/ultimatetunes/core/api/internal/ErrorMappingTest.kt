@@ -47,6 +47,7 @@ class ErrorMappingTest {
         "invalid_id, INVALID_ID",
         "authentication_required, AUTHENTICATION_REQUIRED",
         "authentication_failed, AUTHENTICATION_FAILED",
+        "second_factor_required, SECOND_FACTOR_REQUIRED",
         "conflicting_auth, CONFLICTING_AUTH",
         "invalid_api_key, INVALID_API_KEY",
         "account_disabled, ACCOUNT_DISABLED",
@@ -85,6 +86,7 @@ class ErrorMappingTest {
             setOf(
                 ErrorKind.AUTHENTICATION_REQUIRED,
                 ErrorKind.AUTHENTICATION_FAILED,
+                ErrorKind.SECOND_FACTOR_REQUIRED,
                 ErrorKind.TOKEN_AUTH_NOT_SUPPORTED,
                 ErrorKind.CONFLICTING_AUTH,
                 ErrorKind.INVALID_API_KEY,

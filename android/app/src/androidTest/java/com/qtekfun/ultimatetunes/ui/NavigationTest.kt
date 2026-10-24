@@ -24,6 +24,7 @@ import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_API_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_BUTTON_TAG
+import com.qtekfun.ultimatetunes.ui.connect.CONNECT_METHOD_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_SERVER_URL_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.TITLE_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
@@ -87,6 +88,7 @@ class NavigationTest {
         waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
 
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).performTextInput("music.example.net")
+        compose.onNodeWithTag(CONNECT_METHOD_KEY_TAG).performClick()
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput(FakeTunesApi.API_KEY)
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).performClick()
 
@@ -100,6 +102,7 @@ class NavigationTest {
         waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
 
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).performTextInput("music.example.net")
+        compose.onNodeWithTag(CONNECT_METHOD_KEY_TAG).performClick()
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput("utk_" + "Z".repeat(43))
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).performClick()
 

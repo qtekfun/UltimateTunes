@@ -91,6 +91,9 @@ enum class ErrorKind(val isAuthentication: Boolean = false) {
     SERVER_TOO_OLD,
     AUTHENTICATION_REQUIRED(isAuthentication = true),
     AUTHENTICATION_FAILED(isAuthentication = true),
+
+    /** `POST /ut/v1/keys`: the password is right, and the account also needs its 2FA code. */
+    SECOND_FACTOR_REQUIRED(isAuthentication = true),
     TOKEN_AUTH_NOT_SUPPORTED(isAuthentication = true),
     CONFLICTING_AUTH(isAuthentication = true),
     INVALID_API_KEY(isAuthentication = true),

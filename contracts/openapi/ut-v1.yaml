@@ -154,6 +154,7 @@ paths:
       description: |-
         Creates a key for a new device (RF-01). Authenticates with **username and password** in the body, so a fresh install can get its first key. No API key is needed. If one is sent, it must belong to the same user (`conflicting_auth` otherwise).
         The full key is returned **once** in `secret`. Only its SHA-256 hash is stored. The response has `Cache-Control: no-store`. Failures count towards the per-IP and per-username lockout. A wrong password and an unknown user give the same `authentication_failed`.
+        For an account with two-factor authentication, the right password without `totp` gives `second_factor_required` (ask for the code and send it again); a wrong code gives `authentication_failed`.
       security:
       - {}
       - ApiKeyHeader: []
@@ -1375,7 +1376,7 @@ components:
             code: invalid_id
             instance: /ut/v1/…
     Unauthorized:
-      description: '`authentication_required`, `authentication_failed` or `invalid_api_key`.'
+      description: '`authentication_required`, `authentication_failed`, `second_factor_required` or `invalid_api_key`.'
       content:
         application/problem+json:
           schema:
@@ -1557,6 +1558,7 @@ components:
           - invalid_id
           - authentication_required
           - authentication_failed
+          - second_factor_required
           - conflicting_auth
           - invalid_api_key
           - account_disabled

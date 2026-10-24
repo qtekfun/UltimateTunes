@@ -42,6 +42,7 @@ internal object ErrorMapping {
         "invalid_id" to ErrorKind.INVALID_ID,
         "authentication_required" to ErrorKind.AUTHENTICATION_REQUIRED,
         "authentication_failed" to ErrorKind.AUTHENTICATION_FAILED,
+        "second_factor_required" to ErrorKind.SECOND_FACTOR_REQUIRED,
         "conflicting_auth" to ErrorKind.CONFLICTING_AUTH,
         "invalid_api_key" to ErrorKind.INVALID_API_KEY,
         "account_disabled" to ErrorKind.ACCOUNT_DISABLED,

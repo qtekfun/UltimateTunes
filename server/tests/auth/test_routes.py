@@ -365,6 +365,8 @@ def test_keys_require_the_totp_code_when_2fa_is_enabled(
         "/ut/v1/keys", json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel"}
     )
     assert without.status_code == 401
+    # The app learns it must ask for a code, not that the password was wrong.
+    assert without.json()["code"] == "second_factor_required"
     # A valid code lets it through.
     code = totp.code_at(secret, int(clock.now().timestamp()))
     with_code = client.post(
@@ -383,6 +385,28 @@ def test_keys_reject_a_wrong_totp_code(
         json={"username": "bob", "password": USER_PASSWORD, "name": "Pixel", "totp": "000000"},
     )
     assert r.status_code == 401
+    assert r.json()["code"] == "authentication_failed"
+
+
+def test_keys_with_a_wrong_password_never_ask_for_the_code(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    # `second_factor_required` only ever follows the right password.
+    _enable_2fa(auth, clock, "bob")
+    r = client.post("/ut/v1/keys", json={"username": "bob", "password": "wrong", "name": "Pixel"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "authentication_failed"
+
+
+def test_asking_for_the_code_does_not_count_against_the_2fa_lockout(
+    client: TestClient, auth: AuthService, clock: FakeClock
+) -> None:
+    secret = _enable_2fa(auth, clock, "bob")
+    body = {"username": "bob", "password": USER_PASSWORD, "name": "Pixel"}
+    for _ in range(3):  # more than the 2 failures the fixture allows per user
+        assert client.post("/ut/v1/keys", json=body).json()["code"] == "second_factor_required"
+    code = totp.code_at(secret, int(clock.now().timestamp()))
+    assert client.post("/ut/v1/keys", json={**body, "totp": code}).status_code == 201
 
 
 def test_keys_ignore_totp_for_accounts_without_2fa(client: TestClient, auth: AuthService) -> None:

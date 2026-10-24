@@ -345,14 +345,36 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
             val body = request.body?.utf8()?.let { Json.parseToJsonElement(it).jsonObject }
             val username = body?.get("username")?.jsonPrimitive?.content
             val password = body?.get("password")?.jsonPrimitive?.content
+            val totp = body?.get("totp")?.jsonPrimitive?.content
+            val created = MockResponse(
+                code = 201,
+                headers = headersOf("Content-Type", JSON, "Cache-Control", "no-store"),
+                body = ut("createKey.201")
+            )
             return if (username == FakeTunesServer.USERNAME &&
                 password == FakeTunesServer.PASSWORD
             ) {
-                MockResponse(
-                    code = 201,
-                    headers = headersOf("Content-Type", JSON, "Cache-Control", "no-store"),
-                    body = ut("createKey.201")
-                )
+                created
+            } else if (username == FakeTunesServer.TWO_FACTOR_USERNAME &&
+                password == FakeTunesServer.PASSWORD
+            ) {
+                when (totp) {
+                    FakeTunesServer.TOTP_CODE -> created
+
+                    null -> problem(
+                        401,
+                        "second_factor_required",
+                        "Second factor required",
+                        "Two-factor code required"
+                    )
+
+                    else -> problem(
+                        401,
+                        "authentication_failed",
+                        "Authentication failed",
+                        "Wrong username or password"
+                    )
+                }
             } else {
                 problem(
                     401,
