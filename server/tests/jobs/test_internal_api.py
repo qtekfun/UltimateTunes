@@ -320,3 +320,49 @@ def test_claim_survives_an_undecodable_sealed_blob(
             (SETTING_KEY, '{"sealed": "caf\u00e9"}', "2026-10-13T00:00:00.000Z"),
         )
     assert "youtubeCookies" not in claim(client)["job"]
+
+
+# ------------------------------------------------ YouTube cookies for the worker's canary
+
+
+def get_cookies(client: TestClient, headers: dict[str, str] | None = AUTH) -> Any:
+    return client.get("/internal/v1/youtube-cookies", headers=headers)
+
+
+def test_the_cookies_endpoint_serves_the_stored_cookies_uncached(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store_cookies(services, monkeypatch)
+    r = get_cookies(client)
+    assert r.status_code == 200
+    assert r.json() == {"youtubeCookies": COOKIES}
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_the_cookies_endpoint_answers_204_when_none_are_set(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    assert get_cookies(client).status_code == 204
+
+
+def test_the_cookies_endpoint_answers_204_when_the_key_changed(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    _store_cookies(services, monkeypatch)
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    assert get_cookies(client).status_code == 204
+
+
+def test_the_cookies_endpoint_needs_the_worker_token(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store_cookies(services, monkeypatch)
+    for headers in (None, {"Authorization": "Bearer wrong"}):
+        r = get_cookies(client, headers)
+        assert r.status_code == 401
+        assert "NOLEAK" not in r.text

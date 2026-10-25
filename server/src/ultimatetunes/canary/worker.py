@@ -111,7 +111,12 @@ class CanaryWorker(Worker):
 
     async def run_canary(self) -> Report:
         check = DownloadCanary(
-            self.downloader, self.staging, self.video_id, self.clock, self.canary.canary_timeout_s
+            self.downloader,
+            self.staging,
+            self.video_id,
+            self.clock,
+            self.canary.canary_timeout_s,
+            cookies=self.api.youtube_cookies,
         )
         report = await check.run()
         self.state.save(self.clock.now())

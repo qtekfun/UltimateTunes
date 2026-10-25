@@ -159,6 +159,9 @@ class FakeApi:
     async def report_status(self, worker_id: str, **fields: Any) -> list[str]:
         raise NotImplementedError
 
+    async def youtube_cookies(self) -> str | None:
+        raise NotImplementedError
+
 
 def conflict() -> Conflict:
     return Conflict("libraryPath is held by another track")
