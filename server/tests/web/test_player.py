@@ -5,6 +5,7 @@ stars and playlists, and that one user never reaches another user's private thin
 
 import hashlib
 import re
+import struct
 from importlib import resources
 from pathlib import Path
 
@@ -300,12 +301,76 @@ def test_a_public_playlist_is_read_only_for_others(
         ("htmx.min.js", "text/javascript"),
         ("icon.svg", "image/svg+xml"),
         ("blank.svg", "image/svg+xml"),
+        ("apple-touch-icon.png", "image/png"),
+        ("icon-192.png", "image/png"),
+        ("icon-512.png", "image/png"),
+        ("icon-maskable-512.png", "image/png"),
+        ("manifest.webmanifest", "application/manifest+json"),
     ],
 )
 def test_static_files(client: TestClient, name: str, kind: str) -> None:
     r = client.get(f"/web/static/{name}")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith(kind)
+
+
+def _png_header(data: bytes) -> tuple[int, int, int]:
+    """Width, height and colour type of a PNG (6 is RGBA: with an alpha channel)."""
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = struct.unpack(">II", data[16:24])
+    return width, height, data[25]
+
+
+@pytest.mark.parametrize(
+    ("name", "side", "opaque"),
+    [
+        ("apple-touch-icon.png", 180, True),
+        ("icon-192.png", 192, False),
+        ("icon-512.png", 512, False),
+        ("icon-maskable-512.png", 512, True),
+    ],
+)
+def test_the_home_screen_icons(client: TestClient, name: str, side: int, opaque: bool) -> None:
+    """iOS fills transparency with black, so the touch icon and the maskable one have no alpha."""
+    body = client.get(f"/web/static/{name}").content
+    width, height, colour = _png_header(body)
+    assert (width, height) == (side, side)
+    assert (colour == 2) is opaque
+    assert len(body) < 64 * 1024
+    assert b"/home/" not in body
+    assert b"tEXt" not in body
+    assert b"eXIf" not in body
+
+
+def test_the_manifest_lists_the_icons(client: TestClient) -> None:
+    manifest = client.get("/web/static/manifest.webmanifest").json()
+    assert manifest["name"] == "UltimateTunes"
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "/"
+    assert manifest["scope"] == "/"
+    assert {(i["sizes"], i["purpose"]) for i in manifest["icons"]} == {
+        ("192x192", "any"),
+        ("512x512", "any"),
+        ("512x512", "maskable"),
+    }
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/web/static/")
+        assert client.get(icon["src"]).headers["content-type"] == icon["type"] == "image/png"
+
+
+@pytest.mark.parametrize("name", ["base.html", "login.html", "login_2fa.html"])
+def test_pages_declare_the_home_screen_icon_and_manifest(name: str) -> None:
+    html = (TEMPLATES / name).read_text(encoding="utf-8")
+    assert '<link rel="apple-touch-icon" href="/web/static/apple-touch-icon.png">' in html
+    assert '<link rel="manifest" href="/web/static/manifest.webmanifest">' in html
+    assert '<meta name="apple-mobile-web-app-title" content="UltimateTunes">' in html
+    assert 'name="theme-color"' in html
+
+
+def test_the_sign_in_page_links_the_home_screen_icon(client: TestClient) -> None:
+    page = client.get("/web/login").text
+    assert 'rel="apple-touch-icon" href="/web/static/apple-touch-icon.png"' in page
+    assert 'rel="manifest" href="/web/static/manifest.webmanifest"' in page
 
 
 def test_the_logo_is_the_apps_launcher_icon() -> None:

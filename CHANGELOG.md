@@ -9,6 +9,9 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+### Fixed
+- Web player: adding it to the iOS home screen now shows the app icon (a PNG touch icon; iOS ignores SVG), and a web app manifest with 192, 512 and maskable icons lets Android and desktop browsers install it as an app. Remove and add the shortcut again to see the new icon.
+
 ## [1.0.0-rc.12] - 2026-10-24
 
 Release candidate of 1.0: sign in to the app with your username and password, a new full player, and an optional size limit for the library.
