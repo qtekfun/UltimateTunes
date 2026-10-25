@@ -43,6 +43,12 @@ class MemoryPlaybackSettings : PlaybackSettingsStore {
 
     override suspend fun setDownloadOnWifiOnly(value: Boolean) =
         settings.update { it.copy(downloadOnWifiOnly = value) }
+
+    override suspend fun setLibraryOffline(value: Boolean) =
+        settings.update { it.copy(libraryOffline = value) }
+
+    override suspend fun setLibraryOfflineLimitMb(value: Int) =
+        settings.update { it.copy(libraryOfflineLimitMb = value) }
 }
 
 class MemoryAppPrefs : AppPrefsStore {

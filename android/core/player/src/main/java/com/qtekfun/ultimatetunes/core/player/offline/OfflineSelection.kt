@@ -16,9 +16,21 @@ data class OfflineSelection(
      * `yt:` ids already archived by the server, with their library id: offline downloads are
      * always library files, so a `yt:` song is downloaded under the id it got.
      */
-    val aliases: Map<SongId, SongId> = emptyMap()
+    val aliases: Map<SongId, SongId> = emptyMap(),
+    /** The whole library kept because of the setting; null when it is off. */
+    val library: LibraryOffline? = null
 ) {
-    val isEmpty: Boolean get() = tracks.isEmpty() && collections.isEmpty()
+    val isEmpty: Boolean get() = tracks.isEmpty() && collections.isEmpty() && library == null
+
+    /**
+     * The library songs the user keeps on their own, as downloads know them: the single songs and
+     * the members of the kept albums and playlists (a `yt:` song by the library id it got). The
+     * library setting never evicts these and does not count them against its limit.
+     */
+    fun explicitIds(): Set<SongId> =
+        (tracks + collections.flatMap { it.members.orEmpty() }).mapTo(HashSet()) {
+            if (it.isExternal) aliases[it.id] ?: it.id else it.id
+        }
 
     /** True when the song [id] is kept on its own. */
     fun keepsTrack(id: SongId): Boolean = tracks.any { it.id == id }

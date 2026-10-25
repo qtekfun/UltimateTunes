@@ -226,7 +226,13 @@ class SettingsPlayerSourceTest {
     fun `the player follows the app's playback settings`() = runTest {
         val store = object : PlaybackSettingsStore {
             override val settings = MutableStateFlow(
-                PlaybackSettings(cacheSizeMb = 512, offlineOnly = true, downloadOnWifiOnly = false)
+                PlaybackSettings(
+                    cacheSizeMb = 512,
+                    offlineOnly = true,
+                    downloadOnWifiOnly = false,
+                    libraryOffline = true,
+                    libraryOfflineLimitMb = 20480
+                )
             )
 
             override suspend fun setCacheSizeMb(value: Int) = Unit
@@ -234,9 +240,19 @@ class SettingsPlayerSourceTest {
             override suspend fun setOfflineOnly(value: Boolean) = Unit
 
             override suspend fun setDownloadOnWifiOnly(value: Boolean) = Unit
+
+            override suspend fun setLibraryOffline(value: Boolean) = Unit
+
+            override suspend fun setLibraryOfflineLimitMb(value: Int) = Unit
         }
         assertEquals(
-            PlayerSettings(cacheSizeMb = 512, offlineOnly = true, downloadOnWifiOnly = false),
+            PlayerSettings(
+                cacheSizeMb = 512,
+                offlineOnly = true,
+                downloadOnWifiOnly = false,
+                libraryOffline = true,
+                libraryOfflineLimitMb = 20480
+            ),
             SettingsPlayerSource(store).settings.first()
         )
     }

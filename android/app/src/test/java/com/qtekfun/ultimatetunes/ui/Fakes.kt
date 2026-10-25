@@ -7,6 +7,9 @@ import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineCollection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
@@ -19,6 +22,7 @@ import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
 /*
@@ -134,6 +138,19 @@ class FakeOfflineControls : OfflineControls {
 
     override suspend fun syncSoon() {
         syncs++
+    }
+
+    var libraryScan: LibraryScan? = null
+    var libraryChanges = 0
+    override val library: Flow<LibraryOffline?> = mutableSelection.map { it.library }
+
+    override suspend fun scanLibrary(): LibraryScan? = libraryScan
+
+    override suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport =
+        scan.report(limitBytes, emptySet())
+
+    override suspend fun libraryOfflineChanged() {
+        libraryChanges++
     }
 }
 

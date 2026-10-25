@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.core.player.offline
 
 import com.qtekfun.ultimatetunes.core.api.TunesApi
+import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.PlayerSettings
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -56,7 +58,7 @@ class OfflineManagerTest {
     private val manager = OfflineManager(
         store,
         downloads,
-        OfflineSyncer(mockk<TunesApi>(), store, queue),
+        OfflineSyncer(mockk<TunesApi>(), store, queue, settings),
         scheduler,
         settings
     )
@@ -127,5 +129,88 @@ class OfflineManagerTest {
 
         assertEquals(listOf(songA), removed)
         assertEquals(1, store.state.value.collections.size)
+    }
+
+    @Test
+    fun `turning the library setting on keeps it pending and schedules a sync`() = runTest {
+        settings.settings.value = PlayerSettings(libraryOffline = true, downloadOnWifiOnly = false)
+
+        manager.libraryOfflineChanged()
+
+        val library = manager.library.first()
+        assertEquals(LibraryOffline(), library)
+        // The library was never read: the download nothing knows about stays.
+        assertTrue(removed.isEmpty())
+        verify { scheduler.schedule(false) }
+        // Turned on again (or the limit changed): what was read is kept until the next sync.
+        store.state.value = OfflineSelection(
+            library = LibraryOffline(songs = listOf(PlayableTrack(songA, "A", "Artist")))
+        )
+        manager.libraryOfflineChanged()
+        assertEquals(listOf(songA), manager.library.first()?.songs?.map { it.id })
+    }
+
+    @Test
+    fun `turning it off frees what only the library kept and stops the sync`() = runTest {
+        val explicit = PlayableTrack(songA, "A", "Artist")
+        val onlyLibrary = PlayableTrack(songB, "B", "Artist")
+        downloaded += songA
+        store.state.value = OfflineSelection(
+            tracks = listOf(explicit),
+            library = LibraryOffline(songs = listOf(explicit, onlyLibrary))
+        )
+        settings.settings.value = PlayerSettings(libraryOffline = false)
+
+        manager.libraryOfflineChanged()
+
+        assertEquals(listOf(songB), removed)
+        assertTrue(songA in downloaded)
+        assertNull(manager.library.first())
+        assertEquals(listOf(explicit), store.state.value.tracks)
+        // Something is still kept explicitly: the periodic sync goes on.
+        verify { scheduler.schedule(true) }
+    }
+
+    @Test
+    fun `turning it off with nothing else kept cancels the periodic sync`() = runTest {
+        store.state.value = OfflineSelection(
+            library = LibraryOffline(songs = listOf(PlayableTrack(songB, "B", "Artist")))
+        )
+        settings.settings.value = PlayerSettings(libraryOffline = false)
+
+        manager.libraryOfflineChanged()
+
+        assertEquals(listOf(songB), removed)
+        verify { scheduler.cancel() }
+    }
+
+    @Test
+    fun `turning it off frees its songs even while a playlist was never read`() = runTest {
+        store.state.value = OfflineSelection(
+            collections = listOf(OfflineCollection(CollectionKind.PLAYLIST, "pl", "List")),
+            library = LibraryOffline(songs = listOf(PlayableTrack(songB, "B", "Artist")))
+        )
+        settings.settings.value = PlayerSettings(libraryOffline = false)
+
+        manager.libraryOfflineChanged()
+
+        assertEquals(listOf(songB), removed)
+    }
+
+    @Test
+    fun `the library can be scanned and fitted to a limit without the setting`() = runTest {
+        store.state.value = OfflineSelection(tracks = listOf(PlayableTrack(songA, "A", "Artist")))
+        val scan = LibraryScan(
+            listOf(
+                Song(songA, "A", size = 10 * 1024 * 1024L),
+                Song(songB, "B", size = 10 * 1024 * 1024L)
+            )
+        )
+
+        val report = manager.libraryReport(scan, limitBytes = 5 * 1024 * 1024L)
+
+        // A is kept explicitly: only B counts, and it does not fit.
+        assertEquals(1, report.totalCount)
+        assertEquals(1, report.leftOutCount)
     }
 }

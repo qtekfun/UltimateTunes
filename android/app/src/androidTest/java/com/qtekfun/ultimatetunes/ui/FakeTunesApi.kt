@@ -421,6 +421,9 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
 
     override suspend fun song(id: SongId): TunesResult<Song> = notImplemented()
 
+    override suspend fun librarySongs(offset: Int, count: Int): TunesResult<List<Song>> =
+        notImplemented()
+
     override suspend fun randomSongs(size: Int?, genre: String?): TunesResult<List<Song>> =
         notImplemented()
 

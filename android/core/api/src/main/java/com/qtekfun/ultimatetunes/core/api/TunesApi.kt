@@ -188,6 +188,13 @@ interface TunesApi {
         genre: String? = null
     ): TunesResult<List<Album>>
 
+    /**
+     * `search3` with an empty query: a page of the whole library's songs, ordered by title, with
+     * their size, play count, star and creation date. It never reaches YouTube Music. [count] is
+     * capped by the server (500); a page shorter than [count] is the last one.
+     */
+    suspend fun librarySongs(offset: Int, count: Int): TunesResult<List<Song>>
+
     /** `getRandomSongs`. */
     suspend fun randomSongs(size: Int? = null, genre: String? = null): TunesResult<List<Song>>
 

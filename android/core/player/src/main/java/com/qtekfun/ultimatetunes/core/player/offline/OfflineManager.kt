@@ -11,6 +11,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 /**
  * What the app's screens use for offline music (RF-12): keep or drop a song, an album or a
@@ -59,6 +60,36 @@ class OfflineManager @Inject constructor(
         }
     ) { selection ->
         selection.copy(collections = selection.collections.filterNot { it.matches(kind, id) })
+    }
+
+    /** The whole library kept offline; null when the setting is off. */
+    val library: Flow<LibraryOffline?> = store.selection.map { it.library }
+
+    /** Reads the library from the server (for the size shown before the setting is on). */
+    suspend fun scanLibrary(): LibraryScan? = syncer.readLibrary()
+
+    /** How [scan] fits [limitBytes], not counting the songs the user keeps on their own. */
+    suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport =
+        scan.report(limitBytes, store.selection.first().explicitIds())
+
+    /**
+     * Applies "Keep my whole library offline" and its limit as the settings now are. Turned off,
+     * the songs kept only because of it are freed at once (explicit ones stay); turned on or with
+     * a new limit, a sync is scheduled.
+     */
+    suspend fun libraryOfflineChanged() {
+        val on = settings.settings.first().libraryOffline
+        var freed = emptySet<SongId>()
+        store.update { before ->
+            if (on) {
+                before.copy(library = before.library ?: LibraryOffline())
+            } else {
+                freed = before.library?.songs.orEmpty().mapTo(HashSet()) { it.id }
+                before.copy(library = null)
+            }
+        }
+        syncer.prune(freed)
+        syncSoon()
     }
 
     /** Syncs as soon as the network allows (and periodically), e.g. after a settings change. */

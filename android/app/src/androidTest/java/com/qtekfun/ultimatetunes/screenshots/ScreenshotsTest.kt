@@ -43,6 +43,7 @@ import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesApiFactory
 import com.qtekfun.ultimatetunes.core.api.di.TunesHttpClient
+import com.qtekfun.ultimatetunes.core.player.PlayerSettingsSource
 import com.qtekfun.ultimatetunes.core.player.cache.AdjustableLruEvictor
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 import com.qtekfun.ultimatetunes.core.player.di.PlayerModule
@@ -173,8 +174,9 @@ class ScreenshotsTest {
         fun offlineSyncer(
             api: TunesApi,
             store: OfflineSelectionStore,
-            downloads: OfflineDownloads
-        ): OfflineSyncer = OfflineSyncer(api, store, downloads)
+            downloads: OfflineDownloads,
+            settings: PlayerSettingsSource
+        ): OfflineSyncer = OfflineSyncer(api, store, downloads, settings)
     }
 
     @Before

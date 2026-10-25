@@ -202,6 +202,16 @@
     <string name="settings_offline_only_help">Show only music cached or downloaded on this device.</string>
     <string name="settings_wifi_only">Download over Wi-Fi only</string>
     <string name="settings_wifi_only_help">Offline downloads wait for a Wi-Fi connection.</string>
+    <string name="settings_library_offline">Keep my whole library offline</string>
+    <string name="settings_library_offline_help">Downloads your whole library and keeps it in sync: new songs download by themselves and songs removed from the library are freed. Songs you download yourself are never touched.</string>
+    <string name="settings_library_limit">Library storage limit</string>
+    <string name="settings_library_limit_help">If your library is bigger, favourites come first, then your most played songs, then the newest.</string>
+    <string name="settings_library_size">Your library: %1$s, %2$s.</string>
+    <string name="settings_library_size_estimated">Your library: %1$s, about %2$s (estimate).</string>
+    <string name="settings_library_kept">On this device: %1$s, %2$s.</string>
+    <string name="settings_library_left_out">Did not fit: %1$s, %2$s.</string>
+    <string name="settings_library_would_not_fit">Would not fit: %1$s, %2$s.</string>
+    <string name="settings_library_waiting">Waiting for the first sync.</string>
     <string name="settings_quality_info">Songs play in their original format (Opus or AAC), never re-encoded.</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>

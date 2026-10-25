@@ -6,6 +6,9 @@ package com.qtekfun.ultimatetunes.playback
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineManager
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
@@ -33,6 +36,18 @@ interface OfflineControls {
 
     /** Syncs again soon, e.g. after the Wi-Fi setting changed. */
     suspend fun syncSoon()
+
+    /** The whole library kept offline; null when "Keep my whole library offline" is off. */
+    val library: Flow<LibraryOffline?>
+
+    /** Reads the library from the server to size it; null when the server cannot be reached. */
+    suspend fun scanLibrary(): LibraryScan?
+
+    /** How [scan] fits [limitBytes], not counting what the user keeps explicitly. */
+    suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport
+
+    /** The library setting or its limit changed: free or sync accordingly. */
+    suspend fun libraryOfflineChanged()
 }
 
 /** [OfflineControls] of the player's [OfflineManager]. */
@@ -52,4 +67,13 @@ class ManagerOfflineControls @Inject constructor(private val manager: OfflineMan
         manager.dropCollection(kind, id)
 
     override suspend fun syncSoon() = manager.syncSoon()
+
+    override val library: Flow<LibraryOffline?> get() = manager.library
+
+    override suspend fun scanLibrary(): LibraryScan? = manager.scanLibrary()
+
+    override suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport =
+        manager.libraryReport(scan, limitBytes)
+
+    override suspend fun libraryOfflineChanged() = manager.libraryOfflineChanged()
 }

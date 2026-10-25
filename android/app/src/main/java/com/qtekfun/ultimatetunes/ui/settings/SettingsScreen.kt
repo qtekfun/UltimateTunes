@@ -72,6 +72,8 @@ data class SettingsActions(
     val setCacheSizeMb: (Int) -> Unit = {},
     val setOfflineOnly: (Boolean) -> Unit = {},
     val setDownloadOnWifiOnly: (Boolean) -> Unit = {},
+    val setLibraryOffline: (Boolean) -> Unit = {},
+    val setLibraryOfflineLimitMb: (Int) -> Unit = {},
     val disconnect: () -> Unit = {},
     val messageShown: () -> Unit = {},
     val exportFolderPicked: (String?) -> Unit = {}
@@ -96,6 +98,8 @@ fun SettingsRoute(
             setCacheSizeMb = viewModel::setCacheSizeMb,
             setOfflineOnly = viewModel::setOfflineOnly,
             setDownloadOnWifiOnly = viewModel::setDownloadOnWifiOnly,
+            setLibraryOffline = viewModel::setLibraryOffline,
+            setLibraryOfflineLimitMb = viewModel::setLibraryOfflineLimitMb,
             disconnect = viewModel::disconnect,
             messageShown = viewModel::dismissMessage,
             exportFolderPicked = viewModel::onExportFolderPicked
@@ -146,7 +150,7 @@ fun SettingsScreen(
             server(state.server, actions, onDisconnect = { disconnecting = true })
             keys(state.keys, actions, onRevoke = { revoking = it.value })
             item { YoutubeAccountSection(youtube, youtubeActions) }
-            item { PlaybackSection(state.playback, actions) }
+            item { PlaybackSection(state, actions) }
             item { ExportSection(state.exportFolder, actions.exportFolderPicked) }
             item { AboutSection() }
         }
