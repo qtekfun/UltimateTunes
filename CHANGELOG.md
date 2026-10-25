@@ -9,6 +9,9 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+### Fixed
+- Server: the worker's download canary now uses the YouTube cookies stored in the admin panel or the app, as real downloads do. Before, on a server address that YouTube asks to sign in ("confirm you're not a bot"), every download worked but the daily canary failed with `rate_limited_upstream` and sent a false alert. The worker reads the cookies from the api over the internal network (`GET /internal/v1/youtube-cookies`); they stay in memory and a private temporary file, and are never logged.
+
 ## [1.0.0-rc.12] - 2026-10-24
 
 Release candidate of 1.0: sign in to the app with your username and password, a new full player, and an optional size limit for the library.

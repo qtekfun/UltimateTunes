@@ -29,6 +29,7 @@ from ultimatetunes.core.storage import StagingStore
 from ultimatetunes.errors import TunesError
 from ultimatetunes.search.catalog import CatalogParseError, MusicCatalog
 from ultimatetunes.settings import Settings
+from ultimatetunes.worker.client import ApiUnavailableError
 from ultimatetunes.worker.downloader import Downloader, DownloadError, DownloadProgress
 
 log = logging.getLogger(__name__)
@@ -207,6 +208,7 @@ class DownloadCanary:
         timeout_s: float,
         *,
         token: Callable[[], str] = lambda: secrets.token_hex(8),
+        cookies: Callable[[], Awaitable[str | None]] | None = None,
     ) -> None:
         self._downloader = downloader
         self._staging = staging
@@ -214,6 +216,8 @@ class DownloadCanary:
         self._clock = clock
         self._timeout_s = timeout_s
         self._token = token
+        # The stored YouTube cookies, fetched per run like a job gets them in its claim.
+        self._cookies = cookies
 
     async def run(self) -> Report:
         check = await run_check("download", self._clock, self._timeout_s, self._download)
@@ -222,8 +226,11 @@ class DownloadCanary:
 
     async def _download(self) -> str:
         job_dir = f"{STAGING_ROOT}/{self._token()}"
+        cookies = await self._load_cookies()
         try:
-            result = await self._downloader.download(self._video_id, job_dir, _ignore)
+            result = await self._downloader.download(
+                self._video_id, job_dir, _ignore, cookies=cookies
+            )
             _expect(result.size_bytes > 0, "the download is empty")
             _expect(self._staging.exists(result.final_path), "the downloaded file is missing")
             size = self._staging.size(result.final_path)
@@ -233,6 +240,17 @@ class DownloadCanary:
             # Never kept, never archived: the staging directory goes, whatever happened.
             with anyio.CancelScope(shield=True):
                 await anyio.to_thread.run_sync(self._remove, job_dir)
+
+    async def _load_cookies(self) -> str | None:
+        """The cookies a real job would use; without them (or if the api cannot give them) the
+        canary runs as before. Never logs their content."""
+        if self._cookies is None:
+            return None
+        try:
+            return await self._cookies()
+        except (ApiUnavailableError, TunesError) as exc:
+            log.warning("canary: could not get the YouTube cookies (%s); running without", exc)
+            return None
 
     def _remove(self, job_dir: str) -> None:
         try:

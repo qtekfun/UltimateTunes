@@ -176,6 +176,9 @@ class Unreachable:
         self.reports += 1
         raise ApiUnavailableError("connection refused")
 
+    async def youtube_cookies(self) -> str | None:
+        raise ApiUnavailableError("connection refused")
+
 
 async def test_an_unreachable_api_only_logs(stack: Stack, caplog: pytest.LogCaptureFixture) -> None:
     api = Unreachable()
@@ -196,6 +199,9 @@ class Commands:
         self.canaries.append(fields["canary"])
         commands, self.commands = self.commands, []
         return commands
+
+    async def youtube_cookies(self) -> str | None:
+        return None
 
 
 async def test_other_commands_still_work(stack: Stack, caplog: pytest.LogCaptureFixture) -> None:
@@ -227,3 +233,31 @@ def test_the_production_factory_wraps_the_t08_worker(settings: Settings, tmp_pat
     assert isinstance(worker, Worker)
     assert isinstance(worker.downloader, FakeDownloader)
     assert worker.video_id == FAKE_VIDEO_ID
+
+
+async def test_the_canary_downloads_with_the_cookies_the_admin_stored(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    from ultimatetunes.youtube.cookies import YouTubeCookieStore  # noqa: PLC0415
+
+    stored = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\tinvented-NOLEAK\n"
+    )
+    monkeypatch.setenv("UT_YTDLP_COOKIES_KEY", Fernet.generate_key().decode("ascii"))
+    YouTubeCookieStore(stack.services.db, stack.clock).set(stored)
+    downloader = FakeDownloader(stack.services.staging, chunks=2, sleep=no_sleep)
+    worker = make_worker(stack, downloader=downloader)
+    report = await worker.run_canary()
+    assert report.ok
+    assert downloader.cookies_seen == [stored]
+    assert staged_files(stack) == []
+
+
+async def test_the_canary_downloads_without_cookies_when_none_are_stored(stack: Stack) -> None:
+    downloader = FakeDownloader(stack.services.staging, chunks=2, sleep=no_sleep)
+    report = await make_worker(stack, downloader=downloader).run_canary()
+    assert report.ok
+    assert downloader.cookies_seen == [None]

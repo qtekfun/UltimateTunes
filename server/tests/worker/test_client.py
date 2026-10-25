@@ -256,3 +256,16 @@ async def test_problems_become_typed_errors(
 def test_problem_detail_is_kept() -> None:
     assert problem_error(problem(409, "lease_lost")).message == "lease_lost detail"
     assert problem_error(httpx.Response(400)).message == "api answered 400"
+
+
+async def test_youtube_cookies_are_read_from_the_api_or_none() -> None:
+    cookies = "# Netscape HTTP Cookie File\n"
+    api = Api(
+        httpx.Response(200, json={"youtubeCookies": cookies}),
+        httpx.Response(204),
+    )
+    client = api.client()
+    assert await client.youtube_cookies() == cookies
+    assert api.requests[-1].method == "GET"
+    assert api.requests[-1].url.path == "/internal/v1/youtube-cookies"
+    assert await client.youtube_cookies() is None

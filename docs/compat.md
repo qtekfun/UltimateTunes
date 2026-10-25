@@ -105,6 +105,8 @@ The canary download is **never kept**: it goes to `/staging/canary/<random>/`, i
 checked, and the directory is deleted whatever happened. It is never tagged, registered or moved
 to `/music`.
 
+The download uses the YouTube cookies stored in the admin panel or the app, just as real downloads do (the worker asks the api for them before each run). Without that, a server address that YouTube asks to sign in would pass every real download and fail the canary. The file fallback (`UT_YTDLP_COOKIES_FILE`) applies to the canary too.
+
 If the track or the playlist disappears, or YouTube's own license field for the upload ever
 stops saying Creative Commons, point the canary at another CC track of the same author with
 `UT_CANARY_VIDEO_ID`, `UT_CANARY_QUERY` and `UT_CANARY_PLAYLIST_ID`, and update this table.

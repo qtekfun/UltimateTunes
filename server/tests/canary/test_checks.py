@@ -34,6 +34,7 @@ from ultimatetunes.search.catalog import (
 )
 from ultimatetunes.search.fake import FakeMusicCatalog
 from ultimatetunes.settings import Settings
+from ultimatetunes.worker.client import ApiUnavailableError
 from ultimatetunes.worker.downloader import DownloadResult, ProgressCallback
 from ultimatetunes.worker.fake import FakeDownloader
 
@@ -325,3 +326,59 @@ async def test_reports_are_stamped_when_the_run_ends(
     slow = SlowDownloader(staging, chunks=1, delay_s=0)
     report = await DownloadCanary(slow, staging, "Fk2Lp9QwXa1", clock, 5).run()
     assert report.ran_at == "2026-10-12T08:02:00.000Z"
+
+
+# ---------------------------------------------------------------- the stored YouTube cookies
+
+STORED = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\tinvented\n"
+
+
+async def test_the_download_uses_the_stored_cookies(
+    staging: LocalStagingStore, clock: FakeClock
+) -> None:
+    downloader = FakeDownloader(staging, chunks=1, delay_s=0)
+
+    async def stored() -> str | None:
+        return STORED
+
+    report = await DownloadCanary(
+        downloader, staging, "Fk2Lp9QwXa1", clock, 5, cookies=stored
+    ).run()
+    assert report.ok
+    assert downloader.cookies_seen == [STORED]
+    assert STORED not in json.dumps(report.as_status()) + report.detail_json()
+
+
+async def test_the_download_runs_without_cookies_when_none_are_stored(
+    staging: LocalStagingStore, clock: FakeClock
+) -> None:
+    downloader = FakeDownloader(staging, chunks=1, delay_s=0)
+
+    async def none() -> str | None:
+        return None
+
+    assert (
+        await DownloadCanary(downloader, staging, "Fk2Lp9QwXa1", clock, 5, cookies=none).run()
+    ).ok
+    assert (await DownloadCanary(downloader, staging, "Fk2Lp9QwXa1", clock, 5).run()).ok
+    assert downloader.cookies_seen == [None, None]
+
+
+@pytest.mark.parametrize("failure", [ApiUnavailableError("connection refused"), CatalogThrottled()])
+async def test_the_download_runs_without_cookies_when_the_api_cannot_give_them(
+    staging: LocalStagingStore,
+    clock: FakeClock,
+    caplog: pytest.LogCaptureFixture,
+    failure: Exception,
+) -> None:
+    downloader = FakeDownloader(staging, chunks=1, delay_s=0)
+
+    async def broken() -> str | None:
+        raise failure
+
+    report = await DownloadCanary(
+        downloader, staging, "Fk2Lp9QwXa1", clock, 5, cookies=broken
+    ).run()
+    assert report.ok
+    assert downloader.cookies_seen == [None]
+    assert "could not get the YouTube cookies" in caplog.text

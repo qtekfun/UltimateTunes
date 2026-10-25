@@ -301,6 +301,16 @@ async def fail_job(request: Request, job_id: JobId) -> Response:
     return JSONResponse(_result(result))
 
 
+@router.get("/internal/v1/youtube-cookies")
+async def get_youtube_cookies(request: Request) -> Response:
+    """The cookies a download job would get in its claim, for the worker's download canary.
+    204 when there are none; never logged, never cached."""
+    cookies = await run_in_threadpool(_youtube_cookies, request, "download")
+    if cookies is None:
+        return Response(status_code=204)
+    return JSONResponse({"youtubeCookies": cookies}, headers={"Cache-Control": "no-store"})
+
+
 @router.put("/internal/v1/workers/{workerId}/status")
 async def report_worker_status(request: Request, worker_id: WorkerId) -> Response:
     body = await _body(request, WorkerStatusBody)

@@ -134,6 +134,10 @@ class WorkerApi(Protocol):
         canary: dict[str, Any] | None = None,
     ) -> list[str]: ...
 
+    async def youtube_cookies(self) -> str | None:
+        """The stored YouTube cookies (what a claimed download job carries), for the canary."""
+        ...
+
 
 def _opt_str(value: Any) -> str | None:
     return str(value) if isinstance(value, str) and value else None
@@ -355,3 +359,9 @@ class HttpWorkerApi:
         )
         commands = response.json().get("commands", [])
         return [str(c) for c in commands]
+
+    async def youtube_cookies(self) -> str | None:
+        response = await self._call("GET", "/internal/v1/youtube-cookies")
+        if response.status_code == httpx.codes.NO_CONTENT:
+            return None
+        return _opt_str(response.json().get("youtubeCookies"))

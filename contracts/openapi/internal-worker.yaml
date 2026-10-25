@@ -571,6 +571,35 @@ paths:
           $ref: '#/components/responses/Internal'
         '501':
           $ref: '#/components/responses/NotImplemented'
+  /internal/v1/youtube-cookies:
+    get:
+      operationId: getYoutubeCookies
+      tags:
+      - workers
+      summary: Read the server-wide YouTube cookies
+      description: 'For the worker''s download canary, which has no job to carry the cookies a real download gets in `Job.youtubeCookies`: without them a datacenter IP is asked to sign in and the canary fails while every real download works. Same value, same rules as in the claim: the cookies an administrator stored (`PUT /ut/v1/youtube-cookies` in ut-v1), decrypted by the api. `204` when none are set, when the encryption key is missing or when the stored value cannot be decrypted (the worker then runs without them, as a job would). The worker keeps them in memory and in a private 0600 temporary file only for the run, like a job''s cookies. An account credential: never log it, never write it to a persistent or shared path. Not cacheable.'
+      responses:
+        '200':
+          description: The cookies.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YoutubeCookies'
+              example:
+                youtubeCookies: "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSID\tEXAMPLE-invented\n"
+        '204':
+          description: No cookies are set (or they cannot be read).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
 components:
   securitySchemes:
     workerToken:
@@ -840,6 +869,15 @@ components:
         youtubeCookies:
           type: string
           description: 'Optional. The server-wide YouTube account cookies (Netscape/Mozilla cookies.txt text), present only for a download job and only when an administrator has configured a YouTube session (`PUT /ut/v1/youtube-cookies` in ut-v1, stored encrypted; decrypted by the api for the claim). The worker writes it to a private 0600 temporary file, passes `yt-dlp --cookies <file>`, and deletes the file after the run. An account credential: never log it, never write it to a persistent or shared path.'
+    YoutubeCookies:
+      type: object
+      required:
+      - youtubeCookies
+      properties:
+        youtubeCookies:
+          type: string
+          minLength: 1
+          description: 'Netscape/Mozilla cookies.txt text. An account credential: never log it.'
     Claimed:
       type: object
       required:
