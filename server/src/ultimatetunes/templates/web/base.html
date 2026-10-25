@@ -13,6 +13,11 @@
 <meta name="ut-csrf" content="{{ csrf }}">
 <title>{% block title %}{% endblock %} · UltimateTunes</title>
 <link rel="icon" href="/web/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/web/static/apple-touch-icon.png">
+<link rel="manifest" href="/web/static/manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="UltimateTunes">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="/web/static/web.css?v={{ version }}">
 {# Before the first paint: the theme chosen in Settings (light, dark or the system's). #}
 <script src="/web/static/theme.js?v={{ version }}"></script>

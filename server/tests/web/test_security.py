@@ -280,6 +280,7 @@ def test_every_answer_carries_the_security_headers(client: TestClient, path: str
     assert r.headers["content-security-policy"] == CSP
     assert "'unsafe-inline'" not in CSP
     assert "frame-ancestors 'none'" in CSP
+    assert "manifest-src 'self'" in CSP
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["x-frame-options"] == "DENY"
     assert r.headers["referrer-policy"] == "no-referrer"

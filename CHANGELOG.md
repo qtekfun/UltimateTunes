@@ -10,6 +10,7 @@ All notable changes to UltimateTunes (server and app share one version). Written
 ## [Unreleased]
 
 ### Fixed
+- Web player: adding it to the iOS home screen now shows the app icon (a PNG touch icon; iOS ignores SVG), and a web app manifest with 192, 512 and maskable icons lets Android and desktop browsers install it as an app. Remove and add the shortcut again to see the new icon.
 - Server: the worker's download canary now uses the YouTube cookies stored in the admin panel or the app, as real downloads do. Before, on a server address that YouTube asks to sign in ("confirm you're not a bot"), every download worked but the daily canary failed with `rate_limited_upstream` and sent a false alert. The worker reads the cookies from the api over the internal network (`GET /internal/v1/youtube-cookies`); they stay in memory and a private temporary file, and are never logged.
 
 ## [1.0.0-rc.12] - 2026-10-24
