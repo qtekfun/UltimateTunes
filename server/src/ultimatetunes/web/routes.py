@@ -86,6 +86,12 @@ STATIC_FILES = {
     "player.js": ("web", "text/javascript"),
     "icon.svg": ("web", "image/svg+xml"),
     "blank.svg": ("web", "image/svg+xml"),
+    # Home-screen icons and the manifest; the PNGs come from icon.svg (tools/make-web-icons.py).
+    "apple-touch-icon.png": ("web", "image/png"),
+    "icon-192.png": ("web", "image/png"),
+    "icon-512.png": ("web", "image/png"),
+    "icon-maskable-512.png": ("web", "image/png"),
+    "manifest.webmanifest": ("web", "application/manifest+json"),
     # The panel's vendored copy (static/admin/htmx.min.js.license): one file, two users.
     "htmx.min.js": ("admin", "text/javascript"),
     "theme.js": ("web", "text/javascript"),

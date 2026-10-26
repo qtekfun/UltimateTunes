@@ -49,8 +49,8 @@ UPLOAD_PATH = PREFIX + "/imports/file"
 
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
-    " media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none';"
-    " base-uri 'none'"
+    " media-src 'self'; connect-src 'self'; manifest-src 'self'; form-action 'self';"
+    " frame-ancestors 'none'; base-uri 'none'"
 )
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,

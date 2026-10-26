@@ -13,6 +13,7 @@ All notable changes to UltimateTunes (server and app share one version). Written
 - Android: Settings, Playback and Offline, has "Keep my whole library offline" with a storage limit (2 to 100 GB, 10 GB by default). New songs download by themselves (over Wi-Fi only, if you chose so) and songs removed from the library are freed. If the library is bigger than the limit, starred songs come first, then the most played, then the newest, and Settings shows how many did not fit. Songs, albums and playlists you download yourself are never removed for it, and turning it off frees only what it had downloaded. Before turning it on, Settings shows the size of your library (an estimate when the server does not report sizes).
 
 ### Fixed
+- Web player: adding it to the iOS home screen now shows the app icon (a PNG touch icon; iOS ignores SVG), and a web app manifest with 192, 512 and maskable icons lets Android and desktop browsers install it as an app. Remove and add the shortcut again to see the new icon.
 - Server: the worker's download canary now uses the YouTube cookies stored in the admin panel or the app, as real downloads do. Before, on a server address that YouTube asks to sign in ("confirm you're not a bot"), every download worked but the daily canary failed with `rate_limited_upstream` and sent a false alert. The worker reads the cookies from the api over the internal network (`GET /internal/v1/youtube-cookies`); they stay in memory and a private temporary file, and are never logged.
 
 ## [1.0.0-rc.12] - 2026-10-24
