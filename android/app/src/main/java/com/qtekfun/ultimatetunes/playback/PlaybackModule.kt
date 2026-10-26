@@ -21,7 +21,9 @@ class SettingsPlayerSource @Inject constructor(store: PlaybackSettingsStore) :
         PlayerSettings(
             cacheSizeMb = it.cacheSizeMb,
             offlineOnly = it.offlineOnly,
-            downloadOnWifiOnly = it.downloadOnWifiOnly
+            downloadOnWifiOnly = it.downloadOnWifiOnly,
+            libraryOffline = it.libraryOffline,
+            libraryOfflineLimitMb = it.libraryOfflineLimitMb
         )
     }
 }

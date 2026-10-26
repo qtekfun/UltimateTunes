@@ -526,6 +526,20 @@ class TunesApiFakeServerTest {
         }
 
         @Test
+        fun `librarySongs lists the library with an empty search3 query`() = runTest {
+            val songs = api.librarySongs(offset = 500, count = 250).value()
+            assertTrue(songs.isNotEmpty())
+            assertTrue(songs.any { it.size != null })
+            val url = server.takeRequest().url
+            assertEquals("/rest/search3", url.encodedPath)
+            assertEquals("", url.queryParameter("query"))
+            assertEquals("250", url.queryParameter("songCount"))
+            assertEquals("500", url.queryParameter("songOffset"))
+            assertEquals("0", url.queryParameter("artistCount"))
+            assertEquals("0", url.queryParameter("albumCount"))
+        }
+
+        @Test
         fun `lyrics are synced with millisecond starts`() = runTest {
             val lyrics = api.lyrics(SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001")).value().single()
             assertTrue(lyrics.synced)

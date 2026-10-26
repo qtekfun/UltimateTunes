@@ -125,6 +125,10 @@ data class ArtistIndexes(
 @Serializable
 internal data class AlbumList2(val album: List<Album> = emptyList())
 
+/** `search3`: only the songs are read (the library listing of an empty query). */
+@Serializable
+internal data class SearchResult3(val song: List<Song> = emptyList())
+
 @Serializable
 internal data class SongList(val song: List<Song> = emptyList())
 

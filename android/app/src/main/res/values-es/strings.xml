@@ -204,6 +204,16 @@
     <string name="settings_offline_only_help">Mostrar solo la música guardada o descargada en este dispositivo.</string>
     <string name="settings_wifi_only">Descargar solo con wifi</string>
     <string name="settings_wifi_only_help">Las descargas sin conexión esperan a tener wifi.</string>
+    <string name="settings_library_offline">Mantener toda mi biblioteca sin conexión</string>
+    <string name="settings_library_offline_help">Descarga toda tu biblioteca y la mantiene al día: las canciones nuevas se descargan solas y las que quitas de la biblioteca se liberan. Las canciones que descargas tú nunca se tocan.</string>
+    <string name="settings_library_limit">Límite de espacio de la biblioteca</string>
+    <string name="settings_library_limit_help">Si tu biblioteca es más grande, primero van los favoritos, luego las más escuchadas y después las más recientes.</string>
+    <string name="settings_library_size">Tu biblioteca: %1$s, %2$s.</string>
+    <string name="settings_library_size_estimated">Tu biblioteca: %1$s, unos %2$s (estimación).</string>
+    <string name="settings_library_kept">En este dispositivo: %1$s, %2$s.</string>
+    <string name="settings_library_left_out">No caben: %1$s, %2$s.</string>
+    <string name="settings_library_would_not_fit">No cabrían: %1$s, %2$s.</string>
+    <string name="settings_library_waiting">Esperando a la primera sincronización.</string>
     <string name="settings_quality_info">Las canciones suenan en su formato original (Opus o AAC), sin recodificar.</string>
     <string name="settings_about">Acerca de</string>
     <string name="settings_version">Versión %1$s</string>

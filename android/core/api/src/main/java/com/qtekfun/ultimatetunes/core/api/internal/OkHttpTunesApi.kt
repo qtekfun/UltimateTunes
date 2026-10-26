@@ -44,6 +44,7 @@ import com.qtekfun.ultimatetunes.core.api.model.Recommendations
 import com.qtekfun.ultimatetunes.core.api.model.RequestReason
 import com.qtekfun.ultimatetunes.core.api.model.RequestTrackBody
 import com.qtekfun.ultimatetunes.core.api.model.SearchResult
+import com.qtekfun.ultimatetunes.core.api.model.SearchResult3
 import com.qtekfun.ultimatetunes.core.api.model.ServerInfo
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
@@ -245,6 +246,17 @@ internal class OkHttpTunesApi(
             it.field("albumList2", AlbumList2.serializer()).album
         }
     }
+
+    override suspend fun librarySongs(offset: Int, count: Int): TunesResult<List<Song>> = rest(
+        "search3",
+        params(
+            "query" to "",
+            "artistCount" to 0,
+            "albumCount" to 0,
+            "songCount" to count,
+            "songOffset" to offset
+        )
+    ) { it.optionalField("searchResult3", SearchResult3.serializer())?.song.orEmpty() }
 
     override suspend fun randomSongs(size: Int?, genre: String?): TunesResult<List<Song>> =
         rest("getRandomSongs", params("size" to size, "genre" to genre)) {

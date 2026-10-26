@@ -12,6 +12,9 @@ import com.qtekfun.ultimatetunes.core.api.getOrNull
 import com.qtekfun.ultimatetunes.core.api.model.ApiKey
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.Role
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
@@ -28,6 +31,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -59,6 +63,13 @@ data class SettingsUiState(
     val server: LoadState<ServerDetails> = LoadState.Loading,
     val keys: LoadState<List<KeyRow>> = LoadState.Loading,
     val playback: PlaybackSettings = PlaybackSettings(),
+    /** What "Keep my whole library offline" has done so far; null while it is off. */
+    val libraryKept: LibraryOffline? = null,
+    /**
+     * The library's size and how much of it the chosen limit would keep, from the server; null
+     * until read (and in offline mode, which does not use the network).
+     */
+    val libraryPreview: LibraryReport? = null,
     /** The folder exports go to (RF-14), a tree URI; null until one is picked. */
     val exportFolder: String? = null,
     /** A revoke that failed, shown once. */
@@ -84,12 +95,21 @@ class SettingsViewModel @Inject constructor(
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
 
     private var loading: Job? = null
+    private var scan: LibraryScan? = null
+    private var previewLimitMb: Int? = null
 
     init {
         viewModelScope.launch {
             store.settings.collect { settings ->
                 mutableState.update { it.copy(playback = settings) }
+                if (settings.libraryOfflineLimitMb != previewLimitMb) {
+                    previewLimitMb = settings.libraryOfflineLimitMb
+                    refreshPreview(settings.libraryOfflineLimitMb)
+                }
             }
+        }
+        viewModelScope.launch {
+            offline.library.collect { kept -> mutableState.update { it.copy(libraryKept = kept) } }
         }
         viewModelScope.launch {
             exports.folder.collect { folder ->
@@ -97,6 +117,22 @@ class SettingsViewModel @Inject constructor(
             }
         }
         load()
+        readLibrary()
+    }
+
+    /** Reads the library once, to show its size before the setting is on (never in offline mode). */
+    private fun readLibrary() {
+        viewModelScope.launch {
+            if (store.settings.first().offlineOnly) return@launch
+            scan = offline.scanLibrary()
+            refreshPreview(store.settings.first().libraryOfflineLimitMb)
+        }
+    }
+
+    private suspend fun refreshPreview(limitMb: Int) {
+        val read = scan ?: return
+        val report = offline.libraryReport(read, limitMb.toLong() * BYTES_PER_MB)
+        mutableState.update { it.copy(libraryPreview = report) }
     }
 
     fun load() {
@@ -172,6 +208,22 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** "Keep my whole library offline": downloads it, or frees what only it had downloaded. */
+    fun setLibraryOffline(value: Boolean) {
+        viewModelScope.launch {
+            store.setLibraryOffline(value)
+            offline.libraryOfflineChanged()
+        }
+    }
+
+    /** The limit of the whole library kept offline; a sync then re-fits the library to it. */
+    fun setLibraryOfflineLimitMb(value: Int) {
+        viewModelScope.launch {
+            store.setLibraryOfflineLimitMb(value)
+            if (state.value.playback.libraryOffline) offline.libraryOfflineChanged()
+        }
+    }
+
     /** A folder picked with the system picker for exports; null when the picker was cancelled. */
     fun onExportFolderPicked(uri: String?) {
         if (uri == null) return
@@ -192,3 +244,5 @@ class SettingsViewModel @Inject constructor(
         current = current
     )
 }
+
+private const val BYTES_PER_MB = 1024L * 1024

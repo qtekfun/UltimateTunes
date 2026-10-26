@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.ui.settings
 
 import android.net.Uri
+import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -38,8 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -66,43 +71,17 @@ import java.time.format.FormatStyle
 private const val MB_PER_GB = 1024
 
 @Composable
-internal fun PlaybackSection(playback: PlaybackSettings, actions: SettingsActions) {
+internal fun PlaybackSection(state: SettingsUiState, actions: SettingsActions) {
+    val playback = state.playback
     Column {
         SectionHeader(stringResource(R.string.settings_playback))
-        Text(
-            text = stringResource(R.string.settings_cache_size),
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(horizontal = Dimens.ScreenMargin)
+        SizeChoices(
+            title = stringResource(R.string.settings_cache_size),
+            help = stringResource(R.string.settings_cache_help),
+            sizesMb = PlaybackSettings.CACHE_SIZES_MB,
+            selectedMb = playback.cacheSizeMb,
+            onSelect = actions.setCacheSizeMb
         )
-        Text(
-            text = stringResource(R.string.settings_cache_help),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = Dimens.ScreenMargin)
-        )
-        Column(modifier = Modifier.selectableGroup()) {
-            PlaybackSettings.CACHE_SIZES_MB.forEach { mb ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .selectable(
-                            selected = playback.cacheSizeMb == mb,
-                            onClick = { actions.setCacheSizeMb(mb) },
-                            role = Role.RadioButton
-                        )
-                        .padding(horizontal = Dimens.ScreenMargin),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(selected = playback.cacheSizeMb == mb, onClick = null)
-                    Text(
-                        text = cacheLabel(mb),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(start = Dimens.SpaceM)
-                    )
-                }
-            }
-        }
         SwitchRow(
             title = stringResource(R.string.settings_offline_only),
             subtitle = stringResource(R.string.settings_offline_only_help),
@@ -116,6 +95,7 @@ internal fun PlaybackSection(playback: PlaybackSettings, actions: SettingsAction
             checked = playback.downloadOnWifiOnly,
             onChange = actions.setDownloadOnWifiOnly
         )
+        LibraryOfflineSection(state, actions)
         Text(
             text = stringResource(R.string.settings_quality_info),
             style = MaterialTheme.typography.bodySmall,
@@ -126,14 +106,14 @@ internal fun PlaybackSection(playback: PlaybackSettings, actions: SettingsAction
 }
 
 @Composable
-private fun cacheLabel(mb: Int): String = if (mb >= MB_PER_GB) {
+internal fun cacheLabel(mb: Int): String = if (mb >= MB_PER_GB) {
     stringResource(R.string.size_gb, mb / MB_PER_GB)
 } else {
     stringResource(R.string.size_mb, mb)
 }
 
 @Composable
-private fun SwitchRow(
+internal fun SwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,

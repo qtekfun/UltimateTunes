@@ -6,6 +6,9 @@ package com.qtekfun.ultimatetunes.ui
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineCollection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
@@ -16,7 +19,9 @@ import dagger.Provides
 import dagger.hilt.components.SingletonComponent
 import dagger.hilt.testing.TestInstallIn
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
 /**
@@ -51,4 +56,13 @@ class MemoryOfflineControls : OfflineControls {
     }
 
     override suspend fun syncSoon() = Unit
+
+    override val library: Flow<LibraryOffline?> = selection.map { it.library }
+
+    override suspend fun scanLibrary(): LibraryScan? = null
+
+    override suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport =
+        scan.report(limitBytes, emptySet())
+
+    override suspend fun libraryOfflineChanged() = Unit
 }

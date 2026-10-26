@@ -7,6 +7,12 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
+import com.qtekfun.ultimatetunes.core.api.model.Song
+import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
+import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
 import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
@@ -54,6 +60,14 @@ class FakePlaybackSettings : PlaybackSettingsStore {
 
     override suspend fun setDownloadOnWifiOnly(value: Boolean) =
         settings.update { it.copy(downloadOnWifiOnly = value) }
+
+    override suspend fun setLibraryOffline(value: Boolean) = settings.update {
+        it.copy(libraryOffline = value)
+    }
+
+    override suspend fun setLibraryOfflineLimitMb(value: Int) = settings.update {
+        it.copy(libraryOfflineLimitMb = value)
+    }
 }
 
 @ExtendWith(MainDispatcherExtension::class)
@@ -224,6 +238,77 @@ class SettingsViewModelTest {
         )
         // The offline sync is scheduled again with the new network rule.
         assertEquals(1, offline.syncs)
+    }
+
+    private val mb = 1024L * 1024
+
+    @Test
+    fun `the library setting is kept and applied`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.setLibraryOffline(true)
+        viewModel.state.awaitFirst { it.playback.libraryOffline }
+        assertEquals(1, offline.libraryChanges)
+
+        // The limit applies at once while the setting is on...
+        viewModel.setLibraryOfflineLimitMb(20480)
+        val playback = viewModel.state.awaitFirst { it.playback.libraryOfflineLimitMb == 20480 }
+        assertEquals(
+            PlaybackSettings(libraryOffline = true, libraryOfflineLimitMb = 20480),
+            playback.playback
+        )
+        assertEquals(2, offline.libraryChanges)
+
+        viewModel.setLibraryOffline(false)
+        viewModel.state.awaitFirst { !it.playback.libraryOffline }
+        assertEquals(3, offline.libraryChanges)
+    }
+
+    @Test
+    fun `a limit picked while the setting is off only changes the preview`() = runTest {
+        offline.libraryScan = LibraryScan(
+            listOf(
+                Song(SongId("a"), "A", size = 600 * mb),
+                Song(SongId("b"), "B", size = 600 * mb)
+            )
+        )
+        val viewModel = viewModel()
+        val first = viewModel.state.awaitFirst { it.libraryPreview != null }
+        // The default 10 GB holds both.
+        assertEquals(2, first.libraryPreview?.keptCount)
+
+        viewModel.setLibraryOfflineLimitMb(1024)
+        val smaller = viewModel.state.awaitFirst { it.libraryPreview?.keptCount == 1 }
+
+        assertEquals(1, smaller.libraryPreview?.leftOutCount)
+        assertEquals(0, offline.libraryChanges)
+        assertFalse(smaller.playback.libraryOffline)
+    }
+
+    @Test
+    fun `what the library setting kept is shown`() = runTest {
+        val viewModel = viewModel()
+        val kept = LibraryOffline(songs = emptyList(), report = LibraryReport(5, 50, 3, 30, false))
+
+        offline.mutableSelection.value = OfflineSelection(library = kept)
+
+        assertEquals(kept, viewModel.state.awaitFirst { it.libraryKept != null }.libraryKept)
+    }
+
+    @Test
+    fun `offline mode does not read the library`() = runTest {
+        store.setOfflineOnly(true)
+        offline.libraryScan = LibraryScan(listOf(Song(SongId("a"), "A", size = mb)))
+        val viewModel = viewModel()
+        viewModel.loaded()
+        assertNull(viewModel.state.value.libraryPreview)
+    }
+
+    @Test
+    fun `a library the server cannot list shows no size`() = runTest {
+        val viewModel = viewModel()
+        viewModel.loaded()
+        assertNull(viewModel.state.value.libraryPreview)
     }
 
     @Test

@@ -19,6 +19,8 @@ import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.api.model.TrackState
 import com.qtekfun.ultimatetunes.core.api.model.TrackStatus
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
+import com.qtekfun.ultimatetunes.core.player.PlayerSettings
+import com.qtekfun.ultimatetunes.core.player.PlayerSettingsSource
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -38,6 +40,17 @@ import org.junit.jupiter.api.io.TempDir
 private fun lib(n: Int) = SongId("0190a5c8-0000-7000-8000-%012d".format(n))
 private fun yt(c: Char) = SongId("yt:" + c.toString().repeat(11))
 private fun track(id: SongId) = PlayableTrack(id, "Song $id", "Artist")
+
+internal class MutableSettings(libraryOffline: Boolean, limitMb: Int) : PlayerSettingsSource {
+    override val settings = MutableStateFlow(
+        PlayerSettings(libraryOffline = libraryOffline, libraryOfflineLimitMb = limitMb)
+    )
+}
+
+internal fun playerSettings(
+    libraryOffline: Boolean = false,
+    limitMb: Int = PlayerSettings.DEFAULT_LIBRARY_OFFLINE_MB
+) = MutableSettings(libraryOffline, limitMb)
 
 class OfflineSyncPlannerTest {
     @Test
@@ -202,7 +215,7 @@ class OfflineSyncerTest {
         coEvery { api.requestTrack(yt('B'), RequestReason.KEEP) } returns
             status(yt('B'), TrackState.DOWNLOADING)
 
-        val plan = OfflineSyncer(api, store, queue).sync()
+        val plan = OfflineSyncer(api, store, queue, playerSettings()).sync()
 
         assertEquals(setOf(lib(1), lib(2), lib(3)), queue.added.map { it.id }.toSet())
         assertEquals(listOf(lib(9)), queue.removed)
@@ -229,7 +242,7 @@ class OfflineSyncerTest {
         coEvery { api.requestTrack(any(), any()) } returns
             TunesResult.NetworkError(IOException("off"))
 
-        val plan = OfflineSyncer(api, store, queue).sync()
+        val plan = OfflineSyncer(api, store, queue, playerSettings()).sync()
 
         assertTrue(plan.add.isEmpty())
         assertTrue(plan.remove.isEmpty())
@@ -249,7 +262,7 @@ class OfflineSyncerTest {
             status(yt('D'), TrackState.READY, yt('D'))
         val queue = MemoryQueue(mutableSetOf())
 
-        OfflineSyncer(api, store, queue).sync()
+        OfflineSyncer(api, store, queue, playerSettings()).sync()
 
         assertEquals(listOf(lib(4)), queue.added.map { it.id })
     }
@@ -267,7 +280,7 @@ class OfflineSyncerTest {
         }
         val queue = MemoryQueue(mutableSetOf())
 
-        OfflineSyncer(api, store, queue).sync()
+        OfflineSyncer(api, store, queue, playerSettings()).sync()
 
         assertTrue(store.state.value.collections.isEmpty())
         assertTrue(queue.added.isEmpty())
@@ -277,7 +290,7 @@ class OfflineSyncerTest {
     fun `a failed download that is still wanted is downloaded again`() = runTest {
         val store = MemoryStore(OfflineSelection(tracks = listOf(track(lib(1)))))
         val queue = MemoryQueue(mutableSetOf(lib(1))).apply { failed += lib(1) }
-        OfflineSyncer(api, store, queue).sync()
+        OfflineSyncer(api, store, queue, playerSettings()).sync()
         assertEquals(listOf(lib(1)), queue.added.map { it.id })
     }
 
@@ -285,7 +298,7 @@ class OfflineSyncerTest {
     fun `prune frees dropped songs without the network`() = runTest {
         val store = MemoryStore(OfflineSelection(tracks = listOf(track(lib(1)))))
         val queue = MemoryQueue(mutableSetOf(lib(1), lib(2)))
-        val removed = OfflineSyncer(api, store, queue).prune()
+        val removed = OfflineSyncer(api, store, queue, playerSettings()).prune()
         assertEquals(setOf(lib(2)), removed)
         assertEquals(setOf(lib(1)), queue.ids)
     }
@@ -307,10 +320,17 @@ class DataStoreOfflineSelectionTest {
             it.copy(
                 tracks = listOf(track(lib(1))),
                 collections = listOf(OfflineCollection(CollectionKind.ALBUM, "al", "A")),
-                aliases = mapOf(yt('A') to lib(2))
+                aliases = mapOf(yt('A') to lib(2)),
+                library = LibraryOffline(
+                    songs = listOf(track(lib(3))),
+                    report = LibraryReport(10, 100, 4, 40, estimated = true)
+                )
             )
         }
         val read = store.selection.first()
+        assertEquals(listOf(lib(3)), read.library?.songs?.map { it.id })
+        assertEquals(6, read.library?.report?.leftOutCount)
+        assertEquals(60L, read.library?.report?.leftOutBytes)
         assertEquals(listOf(lib(1)), read.tracks.map { it.id })
         assertEquals("A", read.collections.single().name)
         assertEquals(mapOf(yt('A') to lib(2)), read.aliases)

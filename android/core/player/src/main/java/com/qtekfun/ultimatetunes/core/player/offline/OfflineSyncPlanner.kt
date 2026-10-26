@@ -14,7 +14,10 @@ data class SyncPlan(
     val remove: Set<SongId>,
     /** `yt:` songs still downloading on the server; the next sync picks them up. */
     val awaitingServer: List<SongId>,
-    /** False while some album or playlist was never read: only dropped songs are removed then. */
+    /**
+     * False while some album, playlist or the library was never read: only dropped songs are
+     * removed then.
+     */
     val complete: Boolean
 )
 
@@ -35,8 +38,11 @@ object OfflineSyncPlanner {
         failed: Set<SongId> = emptySet(),
         dropped: Set<SongId> = emptySet()
     ): SyncPlan {
-        val wanted = (selection.tracks + selection.collections.flatMap { it.members.orEmpty() })
-            .distinctBy { it.id }
+        val wanted = (
+            selection.tracks +
+                selection.collections.flatMap { it.members.orEmpty() } +
+                selection.library?.songs.orEmpty()
+            ).distinctBy { it.id }
         val awaiting = mutableListOf<SongId>()
         val resolved = wanted.mapNotNull { track ->
             val libraryId = if (track.isExternal) selection.aliases[track.id] else track.id
@@ -44,7 +50,8 @@ object OfflineSyncPlanner {
             libraryId?.let { track.copy(id = it) }
         }.distinctBy { it.id }
         val keep = resolved.mapTo(HashSet()) { it.id }
-        val complete = selection.collections.all { it.members != null }
+        val complete = selection.collections.all { it.members != null } &&
+            (selection.library == null || selection.library.songs != null)
         val freeable = if (complete) downloaded else dropped.map { selection.aliases[it] ?: it }
         return SyncPlan(
             add = resolved.filter { it.id !in downloaded || it.id in failed },

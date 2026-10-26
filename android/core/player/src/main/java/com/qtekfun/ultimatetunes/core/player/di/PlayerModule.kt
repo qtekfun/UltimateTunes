@@ -16,6 +16,7 @@ import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.di.TunesHttpClient
+import com.qtekfun.ultimatetunes.core.player.PlayerSettingsSource
 import com.qtekfun.ultimatetunes.core.player.cache.AdjustableLruEvictor
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 import com.qtekfun.ultimatetunes.core.player.media.MediaCaches
@@ -100,6 +101,7 @@ object PlayerModule {
     fun offlineSyncer(
         api: TunesApi,
         store: OfflineSelectionStore,
-        downloads: OfflineDownloads
-    ): OfflineSyncer = OfflineSyncer(api, store, downloads)
+        downloads: OfflineDownloads,
+        settings: PlayerSettingsSource
+    ): OfflineSyncer = OfflineSyncer(api, store, downloads, settings)
 }
