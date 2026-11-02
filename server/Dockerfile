@@ -12,7 +12,7 @@
 # and SHA-256 and pruned to its HTTP provider; the worker loads it only when
 # UT_YTDLP_POT_PROVIDER_URL is set.
 
-FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39 AS build
 COPY --from=uv /uv /usr/local/bin/uv
