@@ -46,6 +46,12 @@ interface OfflineControls {
     /** How [scan] fits [limitBytes], not counting what the user keeps explicitly. */
     suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport
 
+    /** Syncs right now: reads the library again, downloads what is new or missing, retries failures. */
+    suspend fun syncNow()
+
+    /** The app started: finishes a sync the process death left half done. */
+    suspend fun resumeSync()
+
     /** The library setting or its limit changed: free or sync accordingly. */
     suspend fun libraryOfflineChanged()
 }
@@ -74,6 +80,10 @@ class ManagerOfflineControls @Inject constructor(private val manager: OfflineMan
 
     override suspend fun libraryReport(scan: LibraryScan, limitBytes: Long): LibraryReport =
         manager.libraryReport(scan, limitBytes)
+
+    override suspend fun syncNow() = manager.syncSoon()
+
+    override suspend fun resumeSync() = manager.syncSoon(restart = false)
 
     override suspend fun libraryOfflineChanged() = manager.libraryOfflineChanged()
 }

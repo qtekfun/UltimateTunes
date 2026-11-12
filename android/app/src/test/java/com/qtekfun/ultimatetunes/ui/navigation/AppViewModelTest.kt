@@ -8,12 +8,14 @@ import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.ui.FakeAppPrefs
+import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -27,13 +29,19 @@ class AppViewModelTest {
 
     @Test
     fun `a fresh process without a server starts on Connect`() {
-        assertTrue(AppViewModel(ConnectionGate(source), FakeAppPrefs()).showConnect.value)
+        assertTrue(
+            AppViewModel(
+                ConnectionGate(source),
+                FakeAppPrefs(),
+                FakeOfflineControls()
+            ).showConnect.value
+        )
     }
 
     @Test
     fun `the root follows the configuration, and reconnect goes back to Connect`() {
         source.set(config)
-        val viewModel = AppViewModel(ConnectionGate(source), FakeAppPrefs())
+        val viewModel = AppViewModel(ConnectionGate(source), FakeAppPrefs(), FakeOfflineControls())
         assertFalse(viewModel.showConnect.value)
 
         viewModel.reconnect()
@@ -44,9 +52,24 @@ class AppViewModelTest {
     }
 
     @Test
+    fun `a connected start finishes a sync the process death left half done`() = runTest {
+        source.set(config)
+        val offline = FakeOfflineControls()
+        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline)
+        assertEquals(1, offline.resumes)
+    }
+
+    @Test
+    fun `without a server nothing is resumed`() = runTest {
+        val offline = FakeOfflineControls()
+        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline)
+        assertEquals(0, offline.resumes)
+    }
+
+    @Test
     fun `the notification question is asked until answered once`() = runTest {
         val prefs = FakeAppPrefs()
-        val viewModel = AppViewModel(ConnectionGate(source), prefs)
+        val viewModel = AppViewModel(ConnectionGate(source), prefs, FakeOfflineControls())
         assertTrue(viewModel.askNotifications.value)
 
         viewModel.onNotificationsAsked()

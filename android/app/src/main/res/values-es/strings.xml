@@ -186,7 +186,7 @@
     <string name="settings_account_admin">%1$s (administrador)</string>
     <string name="settings_disconnect">Desconectar</string>
     <string name="settings_disconnect_title">¿Desconectar este dispositivo?</string>
-    <string name="settings_disconnect_message">Para volver a conectar, inicia sesión o usa una clave de API. La clave de este dispositivo sigue siendo válida hasta que la revoques.</string>
+    <string name="settings_disconnect_message">La clave de este dispositivo se revoca en el servidor. Para volver a conectar, inicia sesión o usa otra clave de API. Sin conexión con el servidor, la clave sigue siendo válida hasta que la revoques desde otro dispositivo o el panel de administración.</string>
     <string name="settings_keys">Dispositivos y claves</string>
     <string name="settings_key_this_device">Este dispositivo</string>
     <string name="settings_key_created">creada el %1$s</string>

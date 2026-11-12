@@ -184,7 +184,7 @@
     <string name="settings_account_admin">%1$s (admin)</string>
     <string name="settings_disconnect">Disconnect</string>
     <string name="settings_disconnect_title">Disconnect this device?</string>
-    <string name="settings_disconnect_message">To connect again, sign in or use an API key. This device\'s key stays valid until you revoke it.</string>
+    <string name="settings_disconnect_message">This device\'s key is revoked on the server. To connect again, sign in or use another API key. Without a connection to the server the key stays valid until you revoke it from another device or the admin panel.</string>
     <string name="settings_keys">Devices and Keys</string>
     <string name="settings_key_this_device">This device</string>
     <string name="settings_key_created">created %1$s</string>
