@@ -213,7 +213,7 @@ class StreamingWhileDownloading:
         with svc.db.transaction() as conn:
             if track is not None:
                 ref = materialize_song(conn, svc.clock, track)
-                video = track.video_id
+                video = track.download_video_id
             elif isinstance(target, TrackRef):
                 ref = target
             else:  # a virtual id always comes with its catalog record

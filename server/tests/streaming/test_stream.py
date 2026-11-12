@@ -3,6 +3,8 @@
 """`stream`/`download` of songs without an archived file, against a live api (RF-05, SPEC
 section 11, contracts/opensubsonic-subset.yaml): the bytes arrive as the worker reports them."""
 
+from dataclasses import replace
+
 import anyio
 import httpx
 import pytest
@@ -42,6 +44,21 @@ async def requested(live: Live) -> Download:
 
 def envelope_code(response: httpx.Response) -> int:
     return int(response.json()["subsonic-response"]["error"]["code"])
+
+
+async def test_a_video_is_downloaded_as_its_audio_track(live: Live) -> None:
+    """The song keeps the id the app asked for; the job downloads its audio track (ATV)."""
+    audio = "Fk2Lp9QwXa1"
+    fake = live.services.catalog
+    video = replace(await fake.track(VIDEO), video_type="OMV", audio_video_id=audio)
+    fake.tracks[VIDEO] = video  # type: ignore[attr-defined]
+    async with anyio.create_task_group() as group:
+        start(live, group)
+        await until(lambda: live.job(audio) is not None)
+        assert live.job(VIDEO) is None
+        assert live.one("SELECT status FROM tracks WHERE yt_video_id = ?", (VIDEO,)) == "pending"
+        assert live.one("SELECT COUNT(*) FROM track_aliases WHERE alias = ?", (f"yt:{VIDEO}",)) == 1
+        group.cancel_scope.cancel()
 
 
 async def test_first_play_requests_the_song_and_streams_it_as_it_grows(live: Live) -> None:

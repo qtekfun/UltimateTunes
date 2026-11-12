@@ -60,6 +60,7 @@ def _track(data: Obj) -> CatalogTrack:
         year=data["year"],
         track_number=data["track_number"],
         thumbnail=_thumb(data["thumbnail"]),
+        audio_video_id=data.get("audio_video_id"),
     )
 
 

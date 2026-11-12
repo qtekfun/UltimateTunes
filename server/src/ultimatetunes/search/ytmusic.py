@@ -20,6 +20,7 @@ import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any, Literal, override
 from urllib.parse import urlsplit
 
@@ -231,8 +232,32 @@ class YTMusicCatalog:
         )
         for item in found:
             if item.video_id == video_id:
-                return item
+                return await self._with_audio(item)
         raise CatalogNotFound()
+
+    async def _with_audio(self, item: CatalogTrack) -> CatalogTrack:
+        """A video (OMV, UGC) gets the video id of its audio track (ATV) to download, always
+        preferred to the video: the watch playlist's counterpart, else the best ATV song of a
+        search for it. None found: the video itself stays the source."""
+        if item.video_type not in ("OMV", "UGC") or item.audio_video_id is not None:
+            return item
+        from ultimatetunes.imports.files import SourceItem  # noqa: PLC0415 - avoids a cycle
+        from ultimatetunes.imports.matching import SEARCH_LIMIT, best_match, query_for  # noqa: PLC0415
+
+        source = SourceItem(
+            title=item.title,
+            artists=tuple(a.name for a in item.artists),
+            album=item.album.name if item.album else None,
+            duration_s=item.duration_s,
+        )
+        try:
+            candidates = await self.search_songs(query_for(source), SEARCH_LIMIT)
+        except CatalogUnavailable:
+            return item  # keep the video rather than fail the play
+        match = best_match(source, [c for c in candidates if c.video_type == "ATV"])
+        if match is None:
+            return item
+        return replace(item, audio_video_id=match.track.video_id)
 
     async def radio(self, video_id: str, limit: int) -> list[CatalogTrack]:
         if not is_video_id(video_id):

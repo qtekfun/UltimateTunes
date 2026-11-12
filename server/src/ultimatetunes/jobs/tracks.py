@@ -148,7 +148,7 @@ def request_in(
             video = None if stored is None else str(stored)
         elif track is not None:
             ref = materialize_song(conn, services.clock, track)
-            video = track.video_id
+            video = track.download_video_id
         else:  # a virtual id always comes with its catalog record
             raise NotFound("Song not found")
         if ref.status == "ready":

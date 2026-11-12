@@ -158,6 +158,8 @@ def _materialize_and_request(
             for raw, target in resolved.items()
         }
         pending = {ref.id for ref in refs.values() if ref.status == "pending"}
+        # A video downloads as its audio track when the catalog knows one.
+        audio = {t.video_id: t.download_video_id for t in records}
         for track_id in sorted(pending):
             video = conn.execute(
                 "SELECT yt_video_id FROM tracks WHERE id = ?", (track_id,)
@@ -166,7 +168,7 @@ def _materialize_and_request(
                 services.jobs.enqueue_in(
                     conn,
                     track_id=track_id,
-                    video_id=str(video),
+                    video_id=audio.get(str(video), str(video)),
                     priority=PRIORITY_KEEP,
                     requested_by=user_id,
                 )

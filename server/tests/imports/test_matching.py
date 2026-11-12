@@ -95,3 +95,25 @@ def test_best_match_keeps_the_best_above_the_threshold() -> None:
     weak = SourceItem("Night Ferry", ("Lanterns Paper Orchestra Big Band",), "Other Album")
     assert best_match(weak, [song(duration=None)]) is None
     assert best_match(SOURCE, []) is None
+
+
+def test_an_audio_track_always_beats_a_video_that_matches() -> None:
+    # The video matches better on paper (same album and duration), the audio track still wins.
+    video = song(video="aaaaaaaaaaa", kind="OMV", duration=240)
+    audio = song(video="bbbbbbbbbbb", kind="ATV", album=None, duration=242)
+    video_score, audio_score = score(SOURCE, video), score(SOURCE, audio)
+    assert video_score is not None
+    assert audio_score is not None
+    assert video_score > audio_score
+    for order in ([video, audio], [audio, video]):
+        found = best_match(SOURCE, order)
+        assert found is not None
+        assert found.track.video_id == "bbbbbbbbbbb"
+
+
+def test_a_video_is_still_chosen_when_no_audio_track_matches() -> None:
+    video = song(video="aaaaaaaaaaa", kind="OMV")
+    other = song(title="Other Song", video="bbbbbbbbbbb", kind="ATV")
+    found = best_match(SOURCE, [other, video])
+    assert found is not None
+    assert found.track.video_id == "aaaaaaaaaaa"
