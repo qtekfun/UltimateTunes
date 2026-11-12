@@ -92,12 +92,16 @@ class OfflineManager @Inject constructor(
         syncSoon()
     }
 
-    /** Syncs as soon as the network allows (and periodically), e.g. after a settings change. */
-    suspend fun syncSoon() {
+    /**
+     * Syncs as soon as the network allows (and periodically), e.g. after a settings change. With
+     * [restart] false a sync already queued or running is left alone (the app started: one the
+     * process death stopped goes on from here).
+     */
+    suspend fun syncSoon(restart: Boolean = true) {
         if (store.selection.first().isEmpty) {
             scheduler.cancel()
         } else {
-            scheduler.schedule(settings.settings.first().downloadOnWifiOnly)
+            scheduler.schedule(settings.settings.first().downloadOnWifiOnly, restart)
         }
     }
 

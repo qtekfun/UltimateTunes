@@ -9,10 +9,13 @@ import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
@@ -33,6 +36,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
@@ -326,10 +330,111 @@ class SettingsViewModelTest {
         )
     }
 
+    private fun download(id: String, state: OfflineState) =
+        OfflineItem(PlayableTrack(SongId(id), id, "Artist", "Album"), state, 1f)
+
     @Test
-    fun `disconnect forgets the server`() {
+    fun `sync now asks for a sync at once and says so`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.syncNow()
+
+        assertEquals(
+            SettingsNotice.SYNC_STARTED,
+            viewModel.state.awaitFirst {
+                it.notice != null
+            }.notice
+        )
+        assertEquals(1, offline.syncNows)
+        viewModel.dismissNotice()
+        assertNull(viewModel.state.value.notice)
+    }
+
+    @Test
+    fun `export again copies every finished download into the folder`() = runTest {
+        exports.mutableFolder.value = "content://tree/primary%3AMusic"
+        offline.mutableItems.value = listOf(
+            download("a", OfflineState.DONE),
+            download("b", OfflineState.DOWNLOADING),
+            download("c", OfflineState.DONE)
+        )
+        val viewModel = viewModel()
+
+        viewModel.exportAgain()
+
+        assertEquals(
+            SettingsNotice.EXPORT_STARTED,
+            viewModel.state.awaitFirst {
+                it.notice != null
+            }.notice
+        )
+        val (folder, tracks, _) = exports.started.single()
+        assertEquals("content://tree/primary%3AMusic", folder)
+        assertEquals(listOf("a", "c"), tracks.map { it.id.value })
+    }
+
+    @Test
+    fun `export again reports nothing to export or busy, and needs a folder`() = runTest {
+        val viewModel = viewModel()
+        viewModel.exportAgain() // no folder
+        assertNull(viewModel.state.value.notice)
+        assertTrue(exports.started.isEmpty())
+
+        exports.mutableFolder.value = "content://tree/primary%3AMusic"
+        viewModel.exportAgain()
+        assertEquals(
+            SettingsNotice.EXPORT_NOTHING,
+            viewModel.state.awaitFirst {
+                it.notice !=
+                    null
+            }.notice
+        )
+
+        viewModel.dismissNotice()
+        offline.mutableItems.value = listOf(download("a", OfflineState.DONE))
+        exports.busy = true
+        viewModel.exportAgain()
+        assertEquals(
+            SettingsNotice.EXPORT_BUSY,
+            viewModel.state.awaitFirst {
+                it.notice != null
+            }.notice
+        )
+    }
+
+    @Test
+    fun `disconnect revokes this device's key on the server, then forgets it`() = runTest {
+        var revokedWhileConnected: Boolean? = null
+        server.dispatcher.override("ut/v1/keys/${currentKey.value}") {
+            revokedWhileConnected = configSource.config.value != null
+            mockwebserver3.MockResponse(code = 204)
+        }
+
         viewModel().disconnect()
-        assertNull(configSource.config.value)
+
+        configSource.config.map { it == null }.awaitFirst { gone -> gone }
+        // The call went out with the key still in place (it is the key that authorises it).
+        assertEquals(true, revokedWhileConnected)
+    }
+
+    @Test
+    fun `disconnect still disconnects when the server cannot be reached`() = runTest {
+        server.dispatcher.override("ut/v1/me") { dropConnection() }
+
+        viewModel().disconnect()
+
+        configSource.config.map { it == null }.awaitFirst { gone -> gone }
+    }
+
+    @Test
+    fun `disconnect still disconnects when the server refuses the revoke`() = runTest {
+        server.dispatcher.override("ut/v1/keys/${currentKey.value}") {
+            mockwebserver3.MockResponse(code = 500)
+        }
+
+        viewModel().disconnect()
+
+        configSource.config.map { it == null }.awaitFirst { gone -> gone }
     }
 
     @Nested

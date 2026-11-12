@@ -75,6 +75,14 @@
     <string name="settings_export_folder">Carpeta</string>
     <string name="settings_export_folder_none">Aún no elegida</string>
     <string name="settings_export_folder_change">Elegir carpeta</string>
+    <string name="settings_export_again">Exportar de nuevo</string>
+    <string name="settings_export_again_help">Vuelve a copiar a esta carpeta todas las descargas terminadas. Lo que la carpeta ya tiene se deja como está; solo se escribe lo que falta.</string>
+    <string name="settings_sync_now">Sincronizar ahora</string>
+    <string name="settings_sync_now_help">Vuelve a leer la biblioteca y descarga las canciones nuevas o que falten, y reintenta las fallidas, sin esperar a la siguiente sincronización automática.</string>
+    <string name="settings_notice_sync_started">Sincronización iniciada. Se ejecuta cuando la red lo permita.</string>
+    <string name="settings_notice_export_started">Exportación iniciada.</string>
+    <string name="settings_notice_export_busy">Otra exportación sigue en curso.</string>
+    <string name="settings_notice_export_nothing">No hay descargas terminadas que exportar.</string>
 
     <!-- Importar -->
     <string name="import_all_disabled">Tu servidor tiene desactivada la importación de listas.</string>

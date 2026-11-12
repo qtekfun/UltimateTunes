@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,8 +24,14 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class AppViewModel @Inject constructor(
     private val gate: ConnectionGate,
-    private val prefs: AppPrefsStore
+    private val prefs: AppPrefsStore,
+    private val offline: OfflineControls
 ) : ViewModel() {
+    init {
+        // A sync the system stopped with the process (a big library, a killed app) goes on.
+        if (!gate.needsConnectNow) viewModelScope.launch { offline.resumeSync() }
+    }
+
     val showConnect: StateFlow<Boolean> =
         gate.needsConnect.stateIn(viewModelScope, SharingStarted.Eagerly, gate.needsConnectNow)
 

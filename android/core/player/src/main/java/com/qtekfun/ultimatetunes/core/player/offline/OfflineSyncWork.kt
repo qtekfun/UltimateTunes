@@ -34,13 +34,14 @@ class OfflineSyncScheduler @Inject constructor(
     private val work get() = WorkManager.getInstance(context)
 
     /** Syncs as soon as the network allows, and every [PERIOD_HOURS] hours after. */
-    fun schedule(wifiOnly: Boolean) {
+    fun schedule(wifiOnly: Boolean, restart: Boolean = true) {
+        val policy = if (restart) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
             .build()
         work.enqueueUniqueWork(
             NOW_WORK,
-            ExistingWorkPolicy.REPLACE,
+            policy,
             OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints).build()
         )
         work.enqueueUniquePeriodicWork(
@@ -78,13 +79,18 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         val deps = EntryPointAccessors.fromApplication(applicationContext, Dependencies::class.java)
-        deps.syncer().sync()
+        val plan = deps.syncer().sync()
         // Keep the process alive while downloads run, within a worker's time budget.
-        deps.downloads().awaitIdle(MAX_WAIT_MS)
-        return Result.success()
+        val finished = deps.downloads().awaitIdle(MAX_WAIT_MS)
+        // Unfinished (a big library, songs the server is still fetching): try again soon rather
+        // than at the next periodic sync, a few times at most.
+        val unfinished = !finished || plan.awaitingServer.isNotEmpty()
+        return if (unfinished && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
     }
 
     private companion object {
+        const val MAX_RETRIES = 5
+
         /** Below the ten minutes a worker may run. */
         val MAX_WAIT_MS = TimeUnit.MINUTES.toMillis(9)
     }

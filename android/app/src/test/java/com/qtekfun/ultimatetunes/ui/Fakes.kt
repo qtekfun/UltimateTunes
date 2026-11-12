@@ -152,13 +152,24 @@ class FakeOfflineControls : OfflineControls {
     override suspend fun libraryOfflineChanged() {
         libraryChanges++
     }
+
+    var syncNows = 0
+    var resumes = 0
+
+    override suspend fun syncNow() {
+        syncNows++
+    }
+
+    override suspend fun resumeSync() {
+        resumes++
+    }
 }
 
 /** Exports recorded instead of copied; the folder is granted when set. */
 class FakeExports(folder: String? = null) : Exports {
     val mutableStatus = MutableStateFlow<ExportStatus>(ExportStatus.Idle)
     override val status: StateFlow<ExportStatus> = mutableStatus
-    private val mutableFolder = MutableStateFlow(folder)
+    val mutableFolder = MutableStateFlow(folder)
     override val folder: Flow<String?> = mutableFolder
     val started = mutableListOf<Triple<String, List<PlayableTrack>, Map<SongId, SongId>>>()
 

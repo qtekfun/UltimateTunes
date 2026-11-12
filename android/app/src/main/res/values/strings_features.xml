@@ -75,6 +75,14 @@
     <string name="settings_export_folder">Folder</string>
     <string name="settings_export_folder_none">Not chosen yet</string>
     <string name="settings_export_folder_change">Choose Folder</string>
+    <string name="settings_export_again">Export Again</string>
+    <string name="settings_export_again_help">Copies every finished download to this folder again. What the folder already has is left as it is; only what is missing is written.</string>
+    <string name="settings_sync_now">Sync Now</string>
+    <string name="settings_sync_now_help">Reads the library again and downloads new or missing songs, and retries failed ones, without waiting for the next automatic sync.</string>
+    <string name="settings_notice_sync_started">Sync started. It runs when the network allows.</string>
+    <string name="settings_notice_export_started">Export started.</string>
+    <string name="settings_notice_export_busy">Another export is still running.</string>
+    <string name="settings_notice_export_nothing">There are no finished downloads to export.</string>
 
     <!-- Import -->
     <string name="import_all_disabled">Your server has playlist import turned off.</string>

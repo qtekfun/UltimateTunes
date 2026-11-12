@@ -65,4 +65,8 @@ class MemoryOfflineControls : OfflineControls {
         scan.report(limitBytes, emptySet())
 
     override suspend fun libraryOfflineChanged() = Unit
+
+    override suspend fun syncNow() = Unit
+
+    override suspend fun resumeSync() = Unit
 }
