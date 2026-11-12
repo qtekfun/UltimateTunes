@@ -5,9 +5,9 @@
 # No Retrofit: HTTP goes through OkHttp + kotlinx-serialization (CLAUDE.md).
 
 [versions]
-agp = "9.4.1"
+agp = "9.5.1"
 kotlin = "2.4.21"
-ksp = "2.3.12"
+ksp = "2.3.13"
 hilt = "2.60.1"
 androidxTestRunner = "1.7.0"
 androidxTestExtJunit = "1.3.0"
