@@ -789,6 +789,20 @@ class AuthService:
         log.info("user %s signed out everywhere (%d keys revoked)", user_id, revoked)
         return revoked
 
+    def purge_revoked_keys(self) -> int:
+        """Deletes the keys revoked more than `UT_AUTH_REVOKED_KEY_RETENTION_DAYS` days ago, so
+        they leave the lists too. Idempotent; returns how many (audited when any)."""
+        days = self._settings.auth_revoked_key_retention_days
+        cutoff = format_ts(self._clock.now() - timedelta(days=days))
+        with self._db.transaction() as conn:
+            purged = ApiKeyRepository(conn).delete_revoked_before(cutoff)
+            if purged:
+                event = AuditEvent("key.purge", "api_key", None, {"keys": purged})
+                self._audit_in(conn, None, None, event)
+        if purged:
+            log.info("%d revoked api keys older than %d days deleted", purged, days)
+        return purged
+
     # ------------------------------------------------------------------ audit
 
     def recent_audit(self, limit: int = 100) -> list[AuditEntry]:

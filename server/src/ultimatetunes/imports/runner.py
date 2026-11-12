@@ -334,7 +334,7 @@ class ImportRunner:
                     self._jobs.enqueue_in(
                         conn,
                         track_id=ref.id,
-                        video_id=track.video_id,
+                        video_id=track.download_video_id,
                         priority=PRIORITY_IMPORT,
                         requested_by=user_id,
                     )

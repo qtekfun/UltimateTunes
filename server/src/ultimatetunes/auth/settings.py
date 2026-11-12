@@ -17,6 +17,8 @@
   failures per minute from outside lock unknown keys, and outside password checks of
   usernames that failed recently, for `UT_AUTH_GLOBAL_LOCKOUT_S`. IPv6 clients are counted by
   their /64.
+- `UT_AUTH_REVOKED_KEY_RETENTION_DAYS` (30): a revoked API key disappears from the lists (admin
+  panel, web account) and from the database that many days after it was revoked.
 """
 
 from typing import Literal
@@ -72,3 +74,5 @@ class AuthSettings(AreaSettings):
     auth_argon2_wait_s: float = Field(default=2.0, ge=0, le=30)
     auth_max_failures_global_per_min: int = Field(default=100, ge=1)
     auth_global_lockout_s: int = Field(default=60, ge=1)
+    # Revoked API keys are listed for this many days, then deleted (auth/web.py runs the purge).
+    auth_revoked_key_retention_days: int = Field(default=30, ge=1)

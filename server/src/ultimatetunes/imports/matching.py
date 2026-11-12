@@ -12,8 +12,9 @@ title"); `best_match` scores each candidate and keeps the best one at or above `
 - **duration** (0.15): both known and more than `DURATION_TOLERANCE_S` (3 s) apart is no
   match; within it, 1; neutral 0.5 when either is unknown;
 - **album** (0.10): equal 1, one containing the other 0.8, else 0; neutral 0.5 when unknown;
-- the weighted sum is scaled to 0.98 and an official audio track (`ATV`) gets the last 0.02,
-  so it wins a tie against a video of the same song.
+- the weighted sum is scaled to 0.98 and an official audio track (`ATV`) gets the last 0.02;
+  any `ATV` that matches beats a video (`OMV`, `UGC`), whatever the scores: the audio track is
+  always preferred.
 
 An ISRC from the file is only recorded on the item for now (SPEC RF-08: an ISRC resolves the
 MusicBrainz recording once that lookup exists, PLAN T09).
@@ -131,6 +132,13 @@ def best_match(item: SourceItem, candidates: Sequence[CatalogTrack]) -> Match | 
         value = score(item, candidate)
         if value is None or value < THRESHOLD:
             continue
-        if best is None or value > best.score:
+        if best is None or _preferred(candidate, value, best):
             best = Match(candidate, value)
     return best
+
+
+def _preferred(candidate: CatalogTrack, value: float, best: Match) -> bool:
+    """An audio track (`ATV`) beats any video that matches; otherwise the higher score wins."""
+    if (candidate.video_type == "ATV") != (best.track.video_type == "ATV"):
+        return candidate.video_type == "ATV"
+    return value > best.score

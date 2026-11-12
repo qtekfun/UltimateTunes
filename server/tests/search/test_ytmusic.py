@@ -421,3 +421,91 @@ def test_one_client_per_thread() -> None:
 async def test_production_build_contacts_nothing() -> None:
     catalog = YTMusicCatalog.build(SearchSettings(ytm_threads=1))
     assert isinstance(catalog, YTMusicCatalog)
+
+
+# ------------------------------------------------------------------ audio track over video
+
+OMV_ID = "Vd0Mq4ZxLc7"
+ATV_ID = "Fk2Lp9QwXa1"
+
+
+def video_watch(video_type: str, counterpart: dict[str, Any] | None) -> dict[str, Any]:
+    """A watch playlist whose seed is the video `OMV_ID` (an ATV with the same words)."""
+    seed: dict[str, Any] = {
+        **load("watch_playlist.json")["tracks"][0],
+        "videoId": OMV_ID,
+        "videoType": video_type,
+    }
+    if counterpart is not None:
+        seed["counterpart"] = counterpart
+    return {**load("watch_playlist.json"), "tracks": [seed]}
+
+
+def audio_counterpart() -> dict[str, Any]:
+    return {**load("watch_playlist.json")["tracks"][0], "videoId": ATV_ID}
+
+
+async def test_a_video_with_a_counterpart_downloads_the_audio_track(
+    executor: ThreadPoolExecutor,
+) -> None:
+    answers = {
+        **ANSWERS,
+        "get_watch_playlist": video_watch("MUSIC_VIDEO_TYPE_OMV", audio_counterpart()),
+    }
+    yt = ScriptedYTMusic(answers)
+    found = await catalog_for(yt, executor).track(OMV_ID)
+    # The song keeps the id it was asked by; only the download changes.
+    assert (found.video_id, found.audio_video_id, found.download_video_id) == (
+        OMV_ID,
+        ATV_ID,
+        ATV_ID,
+    )
+    assert [c[0] for c in yt.calls] == ["get_watch_playlist"]  # no search needed
+
+
+async def test_a_video_without_counterpart_looks_for_its_audio_track(
+    executor: ThreadPoolExecutor,
+) -> None:
+    answers = {
+        **ANSWERS,
+        "get_watch_playlist": video_watch("MUSIC_VIDEO_TYPE_UGC", None),
+        "search:songs": load("search_songs.json"),
+    }
+    yt = ScriptedYTMusic(answers)
+    found = await catalog_for(yt, executor).track(OMV_ID)
+    assert found.video_id == OMV_ID
+    assert found.download_video_id == ATV_ID  # the "Low Tide Letters" song of the search
+    assert "search:songs" in [c[0] for c in yt.calls]
+
+
+async def test_a_video_with_no_audio_track_anywhere_stays_the_source(
+    executor: ThreadPoolExecutor,
+) -> None:
+    answers = {
+        **ANSWERS,
+        "get_watch_playlist": video_watch("MUSIC_VIDEO_TYPE_OMV", None),
+        "search:songs": [],
+    }
+    found = await catalog_for(ScriptedYTMusic(answers), executor).track(OMV_ID)
+    assert found.audio_video_id is None
+    assert found.download_video_id == OMV_ID
+
+
+async def test_a_failing_search_keeps_the_video_instead_of_failing_the_play(
+    executor: ThreadPoolExecutor,
+) -> None:
+    answers = {
+        **ANSWERS,
+        "get_watch_playlist": video_watch("MUSIC_VIDEO_TYPE_OMV", None),
+        "search:songs": YTMusicServerError("boom"),
+    }
+    found = await catalog_for(ScriptedYTMusic(answers), executor).track(OMV_ID)
+    assert found.download_video_id == OMV_ID
+
+
+async def test_an_audio_track_needs_no_lookup(executor: ThreadPoolExecutor) -> None:
+    yt = ScriptedYTMusic(dict(ANSWERS))
+    found = await catalog_for(yt, executor).track(ATV_ID)
+    assert found.audio_video_id is None
+    assert found.download_video_id == ATV_ID
+    assert [c[0] for c in yt.calls] == ["get_watch_playlist"]

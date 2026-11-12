@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Cache codec round trips and text normalisation."""
 
+import json
+from dataclasses import replace
+
 import pytest
 
 from ultimatetunes.search import codec
@@ -33,6 +36,12 @@ async def test_every_record_round_trips() -> None:
     assert codec.decode_artist_refs(codec.encode(artists)) == artists
     no_album = tracks[0].__class__(tracks[0].video_id, "x", (), None, None, False, None, None)
     assert codec.decode_track(codec.encode(no_album)) == no_album
+    audio = replace(tracks[0], video_type="OMV", audio_video_id="Fk2Lp9QwXa1")
+    assert codec.decode_track(codec.encode(audio)) == audio
+    # An entry cached before the field existed still decodes.
+    legacy = json.loads(codec.encode(tracks[0]))
+    del legacy["audio_video_id"]
+    assert codec.decode_track(json.dumps(legacy)).audio_video_id is None
     moods = await fake.moods()
     assert codec.decode_moods(codec.encode(moods)) == moods
 

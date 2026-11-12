@@ -164,6 +164,7 @@ def track(
         return None
     video_type = data.get("videoType")
     number = data.get("trackNumber")
+    kind = _VIDEO_TYPES.get(video_type) if isinstance(video_type, str) else None
     return CatalogTrack(
         video_id=video_id,
         title=title,
@@ -171,11 +172,21 @@ def track(
         album=_album_ref(data.get("album")) or album,
         duration_s=_duration(data),
         explicit=data.get("isExplicit") is True,
-        video_type=_VIDEO_TYPES.get(video_type) if isinstance(video_type, str) else None,
+        video_type=kind,
         year=_year(data.get("year")) or year,
         track_number=number if isinstance(number, int) and number > 0 else None,
         thumbnail=thumbnail(data.get("thumbnails") or data.get("thumbnail")),
+        audio_video_id=_audio_counterpart(data) if kind in ("OMV", "UGC") else None,
     )
+
+
+def _audio_counterpart(data: Json) -> str | None:
+    """The video id of the audio track (ATV) a video's `counterpart` points at, if any."""
+    other = _mapping(data.get("counterpart"))
+    if other is None or other.get("videoType") != "MUSIC_VIDEO_TYPE_ATV":
+        return None
+    found = _text(other, "videoId")
+    return found if found is not None and is_video_id(found) else None
 
 
 def _list(value: object) -> list[Json]:

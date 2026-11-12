@@ -78,6 +78,14 @@ class CatalogTrack:
     year: int | None = None
     track_number: int | None = None
     thumbnail: Thumbnail | None = None
+    # For a video (OMV, UGC): the video id of the same song's audio track (ATV), when the catalog
+    # knows it. Downloads use it (`download_video_id`); the song keeps its own id.
+    audio_video_id: str | None = None
+
+    @property
+    def download_video_id(self) -> str:
+        """The video to download: the song's audio track when there is one, never the video."""
+        return self.audio_video_id or self.video_id
 
 
 @dataclass(frozen=True)
