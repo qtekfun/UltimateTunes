@@ -75,7 +75,7 @@ def test_the_retention_must_be_at_least_a_day() -> None:
 
 
 @pytest.mark.anyio
-async def test_the_background_task_purges_and_survives_errors() -> None:
+async def test_the_background_task_waits_then_purges_and_survives_errors() -> None:
     calls: list[int] = []
 
     class Failing:
@@ -85,7 +85,7 @@ async def test_the_background_task_purges_and_survives_errors() -> None:
                 raise RuntimeError("database busy")
             return 0
 
-    task = asyncio.ensure_future(purge_forever(Failing(), 0.01))  # type: ignore[arg-type]
+    task = asyncio.ensure_future(purge_forever(Failing(), 0.01, 0))  # type: ignore[arg-type]
     for _ in range(100):
         if len(calls) >= 2:
             break
@@ -94,3 +94,20 @@ async def test_the_background_task_purges_and_survives_errors() -> None:
     with suppress(asyncio.CancelledError):
         await task
     assert len(calls) >= 2
+
+
+@pytest.mark.anyio
+async def test_a_short_lived_api_never_reaches_the_purge() -> None:
+    calls: list[int] = []
+
+    class Counting:
+        def purge_revoked_keys(self) -> int:
+            calls.append(1)
+            return 0
+
+    task = asyncio.ensure_future(purge_forever(Counting()))  # type: ignore[arg-type]
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+    assert calls == []

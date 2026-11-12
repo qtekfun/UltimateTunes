@@ -39,11 +39,19 @@ def install(app: FastAPI, services: Services) -> None:
 
 
 PURGE_INTERVAL_S = 24 * 3600
+# The first purge waits a minute, so an api that starts and stops quickly (every test app) never
+# touches the database from this task while it is being closed.
+PURGE_FIRST_DELAY_S = 60.0
 Lifespan = Callable[[Any], AbstractAsyncContextManager[Any]]
 
 
-async def purge_forever(service: AuthService, interval_s: float = PURGE_INTERVAL_S) -> None:
-    """Deletes the old revoked keys at start and then every `interval_s`."""
+async def purge_forever(
+    service: AuthService,
+    interval_s: float = PURGE_INTERVAL_S,
+    first_delay_s: float = PURGE_FIRST_DELAY_S,
+) -> None:
+    """Deletes the old revoked keys shortly after start and then every `interval_s`."""
+    await anyio.sleep(first_delay_s)
     while True:
         try:
             await run_in_threadpool(service.purge_revoked_keys)
