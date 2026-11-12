@@ -14,7 +14,7 @@
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
-FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39 AS build
+FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -33,7 +33,7 @@ RUN uv sync --locked --no-dev --no-editable
 # `yt-dlp` line of yt-dlp's signed SHA2-256SUMS. The bgutil plugin has no upstream checksum: its
 # SHA-256 was taken from the release zip, whose files were compared with the tag's sources
 # (D13). BGUTIL_VERSION must equal the pot-provider image tag in compose.yaml (a test checks it).
-FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39 AS tools
+FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS tools
 ARG TARGETARCH
 ARG DENO_VERSION=2.9.7
 ARG DENO_SHA256_AMD64=c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490
@@ -50,10 +50,12 @@ RUN apt-get update \
 COPY server/docker/fetch.py server/docker/check_plugin.py server/docker/tools.sh server/docker/yt-dlp-public.key /tools/
 RUN sh /tools/tools.sh
 
-FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39
+FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
 # ffmpeg: ReplayGain and the M4A faststart remux (T09). gpgv: yt-dlp update signatures (T08).
 # pip is not needed at runtime (the venv is complete) and carries its own vendored libraries.
+# `upgrade` takes the Debian security fixes published after the base image was built.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ffmpeg gpgv \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/local/lib/python3.13/site-packages/pip /usr/local/lib/python3.13/site-packages/pip-* \
