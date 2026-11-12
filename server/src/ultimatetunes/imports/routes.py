@@ -130,6 +130,8 @@ async def _store(request: Request, svc: Services, user_id: str) -> str:
     raise InvalidParameter("Send application/json (a URL) or multipart/form-data (a file)")
 
 
+# An offset past SQLite's integer range would be a 500; nobody lists this many imports.
+MAX_OFFSET = 100_000
 router = APIRouter()
 Caller = Annotated[Principal, Depends(current_principal)]
 
@@ -140,7 +142,7 @@ async def list_imports(
     background: BackgroundTasks,
     principal: Caller,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
 ) -> dict[str, object]:
     svc = services(request)
 
