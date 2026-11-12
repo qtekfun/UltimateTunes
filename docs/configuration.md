@@ -68,6 +68,7 @@ The admin's own guide is [admin-guide.md](admin-guide.md); deployment examples a
 | `UT_AUTH_MAX_FAILURES_PER_IP` | `10` | api | Failed sign-ins or key checks from one IP (IPv6: its /64) before that IP is locked for `UT_AUTH_LOCKOUT_S`. |
 | `UT_AUTH_MAX_FAILURES_PER_USER` | `5` | api | Failed password checks of one username **from the admin networks** (LAN/Tailscale) before it is locked there for `UT_AUTH_LOCKOUT_S`. From outside, a username is never locked: it gets a growing delay (below); this count only decides when the streak is logged and audited. |
 | `UT_AUTH_LOCKOUT_S` | `900` | api | How long a locked IP, or a username locked from the admin networks, stays locked. |
+| `UT_AUTH_REVOKED_KEY_RETENTION_DAYS` | `30` | api | Days a revoked API key stays listed (admin panel, web account); after that it is deleted. Checked at start and once a day. |
 | `UT_AUTH_OUTSIDE_BACKOFF_BASE_S` | `1` | api | Delay after one failed password check of a username from outside the admin networks (web sign-in, `POST /ut/v1/keys`); it doubles with each consecutive failure and a success resets it. |
 | `UT_AUTH_OUTSIDE_BACKOFF_MAX_S` | `300` | api | Longest such delay. A stranger sending one wrong password per window can keep a user's outside sign-in waiting; sessions, API keys and LAN/Tailscale sign-ins are not affected (SECURITY.md). |
 | `UT_AUTH_KEY_RATE_PER_S` | `50` | api | Requests per second each API key may make (token bucket refill). |

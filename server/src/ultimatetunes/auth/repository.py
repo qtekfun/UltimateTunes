@@ -192,6 +192,12 @@ class ApiKeyRepository(Repository):
             (now, user_id),
         )
 
+    def delete_revoked_before(self, cutoff: str) -> int:
+        """Deletes the keys revoked before `cutoff` (a timestamp); how many."""
+        return self.run(
+            "DELETE FROM api_keys WHERE revoked_at IS NOT NULL AND revoked_at < ?", (cutoff,)
+        )
+
     def touch(self, key_id: str, now: str, ip: str | None) -> None:
         self.run(
             "UPDATE api_keys SET last_used_at = ?, last_used_ip = ? WHERE id = ?",
