@@ -1,0 +1,1 @@
+Settings now has Export Again and Sync Now, and Disconnect ends the session on the server. Downloads always take a song's audio track, never its video, and a sync that stops halfway picks up again soon.
