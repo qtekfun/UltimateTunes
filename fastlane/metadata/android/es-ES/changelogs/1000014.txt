@@ -1,0 +1,1 @@
+Ajustes tiene Exportar de nuevo y Sincronizar ahora, y Desconectar cierra la sesión en el servidor. Las descargas usan siempre la pista de audio de una canción, nunca su vídeo, y una sincronización que se corta vuelve a continuar pronto.

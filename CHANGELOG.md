@@ -9,6 +9,25 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.14] - 2026-11-12
+
+Release candidate of 1.0: Disconnect ends the session on the server, export and sync again from Settings, and downloads always take the audio track, never the video.
+
+### Added
+- Android: Settings has "Export Again" (once an export folder is picked), which copies every finished download that is not yet in the folder, and "Sync Now" (while your whole library is kept offline), which reads the library again at once, downloads new or missing songs and retries failed ones.
+
+### Changed
+- Android: "Disconnect" now revokes this device's key on the server. Without a connection to the server it still disconnects, and the key stays valid until you revoke it from another device or the admin panel.
+- Android: a sync that could not finish (a big library, songs the server is still fetching) retries within minutes instead of waiting for the next 12-hour run, and the app resumes a stopped sync when it starts.
+- Server: revoked API keys disappear from the lists, and from the database, 30 days after they were revoked (`UT_AUTH_REVOKED_KEY_RETENTION_DAYS`).
+- Android build: AGP 9.5.1, Gradle 9.9.1, KSP 2.3.13, mockk 1.14.12 and kotlinx-serialization 1.13.0.
+
+### Fixed
+- Server: a song the catalog knows as a video (music video or user upload) is downloaded from its audio track when there is one, so the library no longer ends up with the audio of a video. The song keeps its id. If no audio track is found, the video is still used. Import matching also prefers an audio track over a video.
+
+### Security
+- Server image: newest `python:3.13-slim` base plus the Debian security fixes (apt and zlib).
+
 ## [1.0.0-rc.13] - 2026-10-26
 
 Release candidate of 1.0: keep your whole library offline for flights, home-screen icons for the web player and a canary that no longer sends false alerts.
