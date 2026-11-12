@@ -337,3 +337,9 @@ def test_every_route_needs_an_api_key(services: Services, method: str, path: str
         with services.db.read() as conn:
             assert conn.execute("SELECT COUNT(*) AS n FROM imports").scalar() == 0
     problem(r, 401, "invalid_api_key")
+
+
+def test_an_offset_past_the_limit_is_an_invalid_parameter_not_a_crash(client: TestClient) -> None:
+    problem(client.get("/ut/v1/imports", params={"offset": 2**63}), 400, "invalid_parameter")
+    assert client.get("/ut/v1/imports", params={"offset": 100_000}).status_code == 200
+    assert client.get("/ut/v1/imports", params={"offset": 100_001}).status_code == 400
