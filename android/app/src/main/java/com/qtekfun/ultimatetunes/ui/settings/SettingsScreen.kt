@@ -76,7 +76,10 @@ data class SettingsActions(
     val setLibraryOfflineLimitMb: (Int) -> Unit = {},
     val disconnect: () -> Unit = {},
     val messageShown: () -> Unit = {},
-    val exportFolderPicked: (String?) -> Unit = {}
+    val exportFolderPicked: (String?) -> Unit = {},
+    val syncNow: () -> Unit = {},
+    val exportAgain: () -> Unit = {},
+    val noticeShown: () -> Unit = {}
 )
 
 @Composable
@@ -102,7 +105,10 @@ fun SettingsRoute(
             setLibraryOfflineLimitMb = viewModel::setLibraryOfflineLimitMb,
             disconnect = viewModel::disconnect,
             messageShown = viewModel::dismissMessage,
-            exportFolderPicked = viewModel::onExportFolderPicked
+            exportFolderPicked = viewModel::onExportFolderPicked,
+            syncNow = viewModel::syncNow,
+            exportAgain = viewModel::exportAgain,
+            noticeShown = viewModel::dismissNotice
         ),
         youtube = youtube,
         youtubeActions = YoutubeActions(
@@ -135,6 +141,7 @@ fun SettingsScreen(
     var disconnecting by rememberSaveable { mutableStateOf(false) }
     val snackbar = rememberScreenSnackbar()
     MessageEffect(state.message, snackbar.state, actions.messageShown)
+    NoticeEffect(state.notice, snackbar.state, actions.noticeShown)
     LargeTitleScaffold(
         title = stringResource(R.string.settings_title),
         onBack = navigator.back,
@@ -151,7 +158,9 @@ fun SettingsScreen(
             keys(state.keys, actions, onRevoke = { revoking = it.value })
             item { YoutubeAccountSection(youtube, youtubeActions) }
             item { PlaybackSection(state, actions) }
-            item { ExportSection(state.exportFolder, actions.exportFolderPicked) }
+            item {
+                ExportSection(state.exportFolder, actions.exportFolderPicked, actions.exportAgain)
+            }
             item { AboutSection() }
         }
     }

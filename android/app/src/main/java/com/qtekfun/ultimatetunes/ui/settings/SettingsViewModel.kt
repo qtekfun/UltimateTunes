@@ -15,6 +15,7 @@ import com.qtekfun.ultimatetunes.core.api.model.Role
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
@@ -73,8 +74,13 @@ data class SettingsUiState(
     /** The folder exports go to (RF-14), a tree URI; null until one is picked. */
     val exportFolder: String? = null,
     /** A revoke that failed, shown once. */
-    val message: LoadError? = null
+    val message: LoadError? = null,
+    /** What the last "Sync now" or "Export again" did, shown once. */
+    val notice: SettingsNotice? = null
 )
+
+/** The outcome of Settings' "Sync now" and "Export again" buttons. */
+enum class SettingsNotice { SYNC_STARTED, EXPORT_STARTED, EXPORT_BUSY, EXPORT_NOTHING }
 
 /**
  * Settings (RF-11): the server and account, the user's API keys per device (`/ut/v1/keys`, with
@@ -224,15 +230,63 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** "Sync now": reads the library again and downloads what is new or missing, at once. */
+    fun syncNow() {
+        viewModelScope.launch {
+            offline.syncNow()
+            mutableState.update { it.copy(notice = SettingsNotice.SYNC_STARTED) }
+        }
+    }
+
+    /**
+     * "Export again": copies every finished download to the export folder; what the folder already
+     * has is left as it is, so only what is missing is written. Progress and the report show
+     * like any other export.
+     */
+    fun exportAgain() {
+        viewModelScope.launch {
+            val folder = exports.folder.first() ?: return@launch
+            val tracks = offline.items.first()
+                .filter { it.state == OfflineState.DONE }
+                .map { it.track }
+            val notice = when {
+                tracks.isEmpty() -> SettingsNotice.EXPORT_NOTHING
+
+                exports.start(folder, tracks, offline.selection.first().aliases) ->
+                    SettingsNotice.EXPORT_STARTED
+
+                else -> SettingsNotice.EXPORT_BUSY
+            }
+            mutableState.update { it.copy(notice = notice) }
+        }
+    }
+
+    fun dismissNotice() {
+        mutableState.update { it.copy(notice = null) }
+    }
+
     /** A folder picked with the system picker for exports; null when the picker was cancelled. */
     fun onExportFolderPicked(uri: String?) {
         if (uri == null) return
         viewModelScope.launch { exports.setFolder(uri) }
     }
 
-    /** Forgets the server and key on this device: back to the Connect screen. */
+    /**
+     * Ends this device's session: revokes its key on the server (best effort, bounded by the HTTP
+     * client's timeouts: without a network the device is still disconnected), then forgets the
+     * server and key on this device and goes back to the Connect screen.
+     */
     fun disconnect() {
-        gate.disconnect()
+        viewModelScope.launch {
+            revokeThisDevice()
+            gate.disconnect()
+        }
+    }
+
+    /** The key this device signed in with, from the server's `me` (the key may not be listed yet). */
+    private suspend fun revokeThisDevice() {
+        val id = api.me().getOrNull()?.apiKeyId ?: return
+        api.revokeKey(id)
     }
 
     private fun ApiKey.toRow() = KeyRow(

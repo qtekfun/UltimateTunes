@@ -74,10 +74,21 @@ class OfflineManagerTest {
         val selection = manager.selection.first()
         assertEquals(listOf(track), selection.tracks)
         assertEquals(1, selection.collections.size)
-        verify(exactly = 4) { scheduler.schedule(false) }
+        verify(exactly = 4) { scheduler.schedule(false, true) }
         // Not wanted any more: freed at once.
         assertEquals(listOf(songB), removed)
         assertSame(items, manager.items)
+    }
+
+    @Test
+    fun `starting the app resumes the sync without restarting one that runs`() = runTest {
+        manager.syncSoon(restart = false)
+        verify(exactly = 0) { scheduler.schedule(any(), any()) } // nothing kept: no sync
+
+        manager.keepTrack(PlayableTrack(songA, "A", "Artist"))
+        manager.syncSoon(restart = false)
+
+        verify { scheduler.schedule(false, false) }
     }
 
     @Test
@@ -141,7 +152,7 @@ class OfflineManagerTest {
         assertEquals(LibraryOffline(), library)
         // The library was never read: the download nothing knows about stays.
         assertTrue(removed.isEmpty())
-        verify { scheduler.schedule(false) }
+        verify { scheduler.schedule(false, true) }
         // Turned on again (or the limit changed): what was read is kept until the next sync.
         store.state.value = OfflineSelection(
             library = LibraryOffline(songs = listOf(PlayableTrack(songA, "A", "Artist")))

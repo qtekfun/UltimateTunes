@@ -30,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -145,7 +146,11 @@ const val SETTINGS_EXPORT_FOLDER_TAG = "settings.exportFolder"
 
 /** The export folder (RF-14): its name, and a button opening the system folder picker. */
 @Composable
-internal fun ExportSection(folder: String?, onPicked: (String?) -> Unit) {
+internal fun ExportSection(
+    folder: String?,
+    onPicked: (String?) -> Unit,
+    onExportAgain: () -> Unit
+) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
         onPicked(it?.toString())
     }
@@ -167,6 +172,48 @@ internal fun ExportSection(folder: String?, onPicked: (String?) -> Unit) {
                 .padding(horizontal = Dimens.SpaceS)
                 .testTag(SETTINGS_EXPORT_FOLDER_TAG)
         ) { Text(stringResource(R.string.settings_export_folder_change)) }
+        if (folder != null) {
+            Text(
+                text = stringResource(R.string.settings_export_again_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.ScreenMargin)
+            )
+            TextButton(
+                onClick = onExportAgain,
+                modifier = Modifier
+                    .padding(horizontal = Dimens.SpaceS)
+                    .testTag(SETTINGS_EXPORT_AGAIN_TAG)
+            ) { Text(stringResource(R.string.settings_export_again)) }
+        }
+    }
+}
+
+/** Test tag of the "Export Again" button (shown once a folder is picked). */
+const val SETTINGS_EXPORT_AGAIN_TAG = "settings.exportAgain"
+
+/** Shows what "Sync Now" or "Export Again" did as a snackbar, once. */
+@Composable
+internal fun NoticeEffect(
+    notice: SettingsNotice?,
+    hostState: SnackbarHostState,
+    onShown: () -> Unit
+) {
+    val message = notice?.let {
+        stringResource(
+            when (it) {
+                SettingsNotice.SYNC_STARTED -> R.string.settings_notice_sync_started
+                SettingsNotice.EXPORT_STARTED -> R.string.settings_notice_export_started
+                SettingsNotice.EXPORT_BUSY -> R.string.settings_notice_export_busy
+                SettingsNotice.EXPORT_NOTHING -> R.string.settings_notice_export_nothing
+            }
+        )
+    }
+    LaunchedEffect(message) {
+        if (message != null) {
+            hostState.showSnackbar(message)
+            onShown()
+        }
     }
 }
 
