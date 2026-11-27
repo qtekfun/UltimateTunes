@@ -1,0 +1,1 @@
+Arreglos en listas y descargas: borrar una lista descargada libera sus canciones, los cambios se sincronizan y ya no se deshacen, y las listas largas funcionan. El reproductor toma el color de la carátula, indica cuándo carga y confirma «Reproducir a continuación». Aún no hay búsqueda sin conexión.

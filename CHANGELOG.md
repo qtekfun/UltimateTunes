@@ -9,6 +9,28 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.15] - 2026-11-27
+
+Release candidate of 1.0: fixes in playlists, downloads and the player on Android, and reordering of large playlists on the server. Browsing and searching without a connection are not in this one yet.
+
+### Added
+- Android: a loading indicator on the player and the mini player, and a message after "Play Next" and "Play Last".
+
+### Changed
+- Android: the artist and the play button of the full player take the artwork's colour; secondary buttons use the app's accent instead of purple; long titles scroll; screens change faster.
+- Android: songs on the phone because of an album, a playlist or the whole library no longer offer "Download" in their menu.
+- Android: connecting to a new address of the same server keeps your downloads; they are freed only when the other server has none of those songs.
+- Android build: Gradle 9.9.2, AGP 9.5.3, KSP 2.3.14, Compose 2026.11.01 and lifecycle 2.11.1, compiled against Android 37.1.
+- Server: dependency updates.
+
+### Fixed
+- Android: deleting a playlist kept offline now frees its downloads, and changes to a kept playlist sync at once.
+- Android: playlist changes are sent in order and undone if they fail, the open playlist refreshes, and a late answer from the server no longer undoes a change.
+- Android: very long playlists and play queues are no longer cut off by request size limits; adding more than 50 songs that are not in the library yet says why it cannot.
+- Android: the sync no longer runs before the saved server is restored.
+- Android: cover size limits apply on wide screens, and status bar icons stay visible over the full player.
+- Server: a playlist with many songs still downloading can be reordered.
+
 ## [1.0.0-rc.14] - 2026-11-12
 
 Release candidate of 1.0: Disconnect ends the session on the server, export and sync again from Settings, and downloads always take the audio track, never the video.
