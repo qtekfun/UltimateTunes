@@ -106,9 +106,12 @@ class DownloadGate:
                 log.warning(
                     "downloads paused: less than UT_MIN_FREE_BYTES free on /music or /staging"
                 )
-        elif ok and since is not None:
-            if conn.execute("DELETE FROM settings WHERE key = ?", (LOW_DISK_KEY,)).rowcount:
-                log.warning("downloads resumed: free space is back above UT_MIN_FREE_BYTES")
+        elif (
+            ok
+            and since is not None
+            and conn.execute("DELETE FROM settings WHERE key = ?", (LOW_DISK_KEY,)).rowcount
+        ):
+            log.warning("downloads resumed: free space is back above UT_MIN_FREE_BYTES")
         return ok
 
     def check_space(self) -> None:
