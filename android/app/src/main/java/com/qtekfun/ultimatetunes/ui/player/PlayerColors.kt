@@ -136,5 +136,10 @@ fun rememberPlayerColors(url: String?): PlayerColors {
         tween(COLOR_ANIMATION_MS),
         label = "playerBottom"
     )
-    return PlayerColors(top = top, bottom = bottom, content = colors.content)
+    val accent by animateColorAsState(
+        colors.accent,
+        tween(COLOR_ANIMATION_MS),
+        label = "playerAccent"
+    )
+    return PlayerColors(top = top, bottom = bottom, content = colors.content, accent = accent)
 }

@@ -12,6 +12,11 @@ internal val Accent40 = Color(0xFFE0284F)
 internal val Accent80 = Color(0xFFFF5C7A)
 internal val OnAccentDark = Color(0xFF3D0010)
 
+internal val AccentContainerLight = Color(0xFFFFE3E8)
+internal val OnAccentContainerLight = Color(0xFF8A0F2C)
+internal val AccentContainerDark = Color(0xFF4A0F1E)
+internal val OnAccentContainerDark = Color(0xFFFFD9DF)
+
 internal val SurfaceLight = Color(0xFFFFFFFF)
 internal val SurfaceGroupedLight = Color(0xFFF2F2F5)
 internal val SurfaceRaisedLight = Color(0xFFF7F7F9)

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -90,6 +91,7 @@ const val PLAYER_RADIO_TAG = "player.radio"
 const val PLAYER_MORE_TAG = "player.more"
 const val PLAYER_NOTE_TAG = "player.note"
 const val PLAYER_SCRUBBER_TAG = "player.scrubber"
+const val PLAYER_BUFFERING_TAG = "player.buffering"
 
 /** Opacity of the artwork behind the lyrics. */
 private const val DIMMED_ARTWORK_ALPHA = 0.25f
@@ -121,6 +123,7 @@ fun FullPlayer(
     val track = state.current ?: return
     val trackMenu = LocalTrackMenu.current
     val colors = rememberPlayerColors(track.coverUrl)
+    LightStatusBarIcons(shown)
     var showQueue by rememberSaveable { mutableStateOf(false) }
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val onShowLyrics by rememberUpdatedState(lyrics.onShow)
@@ -404,7 +407,7 @@ private fun Controls(
                 modifier = Modifier.size(36.dp)
             )
         }
-        PlayButton(state.isPlaying, colors, actions.togglePlay)
+        PlayButton(state.isPlaying, state.isBuffering, colors, actions.togglePlay)
         IconButton(
             onClick = actions.next,
             enabled = state.hasNext,
@@ -428,7 +431,12 @@ private fun Controls(
 
 /** Play or pause: a round button in the accent, the icon in the background's colour. */
 @Composable
-private fun PlayButton(isPlaying: Boolean, colors: PlayerColors, onClick: () -> Unit) {
+private fun PlayButton(
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    colors: PlayerColors,
+    onClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .size(PlayButtonSize)
@@ -442,6 +450,17 @@ private fun PlayButton(isPlaying: Boolean, colors: PlayerColors, onClick: () -> 
                 onClick = onClick,
                 modifier = Modifier.fillMaxSize(),
                 iconModifier = Modifier.size(40.dp)
+            )
+        }
+        if (isBuffering) {
+            val label = stringResource(R.string.player_buffering)
+            CircularProgressIndicator(
+                color = colors.bottom,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(Dimens.SpaceXS)
+                    .testTag(PLAYER_BUFFERING_TAG)
+                    .semantics { contentDescription = label }
             )
         }
     }

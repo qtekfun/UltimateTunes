@@ -40,6 +40,9 @@ sealed interface ActionEvent {
 
     data object Downloading : ActionEvent
 
+    /** A song went into the queue: right after the current one ([next]) or at the end. */
+    data class Queued(val next: Boolean) : ActionEvent
+
     data object DownloadRemoved : ActionEvent
 
     /** A song was starred ([added]) or unstarred. */
@@ -110,6 +113,9 @@ class LibraryActionsViewModel @Inject constructor(
         }
         refreshFavourites()
     }
+
+    /** Says that a song went into the queue. */
+    fun queued(next: Boolean) = event(ActionEvent.Queued(next))
 
     /** Reads the favourites again (a menu is about to show them). */
     fun refreshFavourites() {
