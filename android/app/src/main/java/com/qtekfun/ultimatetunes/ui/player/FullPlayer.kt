@@ -254,7 +254,8 @@ private fun HeroArtwork(track: TrackTile, bottom: Color, dimmed: Boolean) {
             url = track.coverUrl,
             placeholderKey = track.id.value,
             shape = RectangleShape,
-            modifier = Modifier.fillMaxSize()
+            // Not behind the lyrics: a moving artwork is drawn over everything, at full opacity.
+            modifier = (if (dimmed) Modifier else LocalPlayerArtworkMotion.current).fillMaxSize()
         )
         Box(
             Modifier
