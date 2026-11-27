@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -26,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -51,8 +51,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -264,20 +262,14 @@ private fun ApiKeyField(
     onConnect: () -> Unit
 ) {
     var keyVisible by rememberSaveable { mutableStateOf(false) }
-    OutlinedTextField(
-        value = state.apiKey,
-        onValueChange = onApiKeyChange,
+    OutlinedSecureTextField(
+        state = rememberSecretFieldState(state.apiKey, onApiKeyChange),
         label = { Text(stringResource(R.string.connect_api_key)) },
         placeholder = { Text(stringResource(R.string.connect_api_key_hint)) },
-        singleLine = true,
         enabled = !state.checking,
         isError = state.error == ConnectError.INVALID_KEY ||
             state.error == ConnectError.KEY_REFUSED,
-        visualTransformation = if (keyVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
+        textObfuscationMode = obfuscation(keyVisible),
         trailingIcon = {
             TextButton(onClick = { keyVisible = !keyVisible }) {
                 Text(
@@ -292,7 +284,7 @@ private fun ApiKeyField(
             imeAction = ImeAction.Go,
             autoCorrectEnabled = false
         ),
-        keyboardActions = KeyboardActions(onGo = { if (state.canConnect) onConnect() }),
+        onKeyboardAction = { if (state.canConnect) onConnect() },
         modifier = Modifier.fillMaxWidth().testTag(CONNECT_API_KEY_TAG)
     )
 }

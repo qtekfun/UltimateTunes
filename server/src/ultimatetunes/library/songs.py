@@ -15,7 +15,9 @@
   by its library UUID. Every id is checked before anything is written. At most
   `keep_download_cap()` of the ids may need a download (a `yt:` id without a track, or a
   pending track): one request cannot queue (or look up) more than that, whatever `MAX_IDS`
-  allows for songs already in the library. The cap never exceeds the per-user catalog burst
+  allows for songs already in the library. Songs the playlist being rewritten already holds
+  are neither counted nor requested again, so it can be reordered. The cap never exceeds the
+  per-user catalog burst
   (`UT_CATALOG_USER_BURST`), so a full keep request fits in one budget. The download limits of
   jobs/gate.py apply too.
 """
@@ -147,6 +149,7 @@ def _materialize_and_request(
     resolved: dict[str, TrackRef | VirtualId],
     records: Sequence[CatalogTrack],
     user_id: str,
+    held: frozenset[str],
 ) -> dict[str, TrackRef]:
     """One transaction: the pending tracks of `records` (with their aliases), then a download
     job for every pending track that is kept, however it was named (`yt:` id or library
@@ -157,7 +160,7 @@ def _materialize_and_request(
             raw: new[target.payload] if isinstance(target, VirtualId) else target
             for raw, target in resolved.items()
         }
-        pending = {ref.id for ref in refs.values() if ref.status == "pending"}
+        pending = {ref.id for ref in refs.values() if ref.status == "pending"} - held
         # A video downloads as its audio track when the catalog knows one.
         audio = {t.video_id: t.download_video_id for t in records}
         for track_id in sorted(pending):
@@ -175,19 +178,28 @@ def _materialize_and_request(
     return refs
 
 
-async def keep(services: "Services", user_id: str, raw_ids: Sequence[str]) -> list[str]:
-    """The library track id of every song id, in order (materializing `yt:` ids)."""
+async def keep(
+    services: "Services",
+    user_id: str,
+    raw_ids: Sequence[str],
+    *,
+    held: frozenset[str] = frozenset(),
+) -> list[str]:
+    """The library track id of every song id, in order (materializing `yt:` ids). Tracks in
+    `held` are already kept where they are being written: not counted nor requested again."""
     check_count(raw_ids)
     _parse_songs(raw_ids)
     resolved = await run_in_threadpool(_resolve_keep, services, raw_ids)
     missing = list(dict.fromkeys(r.payload for r in resolved.values() if isinstance(r, VirtualId)))
-    pending = {r.id for r in resolved.values() if isinstance(r, TrackRef) and r.status == "pending"}
+    pending = {
+        r.id for r in resolved.values() if isinstance(r, TrackRef) and r.status == "pending"
+    } - held
     cap = keep_download_cap()
     if len(missing) + len(pending) > cap:
         raise PayloadTooLarge(f"At most {cap} songs that are not in the library yet per request")
     # Every external song must exist in the catalog before anything is written.
     records = await asyncio.gather(*(services.catalog.track(v) for v in missing))
     refs = await run_in_threadpool(
-        _materialize_and_request, services, resolved, list(records), user_id
+        _materialize_and_request, services, resolved, list(records), user_id, held
     )
     return [refs[raw].id for raw in raw_ids]

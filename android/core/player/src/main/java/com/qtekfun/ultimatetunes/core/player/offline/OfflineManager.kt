@@ -88,8 +88,35 @@ class OfflineManager @Inject constructor(
                 before.copy(library = null)
             }
         }
-        syncer.prune(freed)
         syncSoon()
+        syncer.prune(freed)
+    }
+
+    /**
+     * The app is connected to [server]. A new address may be the same library (LAN, VPN, a new
+     * domain), so the kept songs are only freed when the server says it has none of them; while
+     * that cannot be told, nothing changes. Then a sync the process death left half done goes on.
+     */
+    suspend fun serverConnected(server: String) {
+        val before = store.selection.first()
+        if (before.server != null && before.server != server) {
+            val kept = before.explicitIds() + before.library?.songs.orEmpty().map { it.id }
+            when (syncer.holds(kept)) {
+                null -> return
+
+                false -> {
+                    val on = settings.settings.first().libraryOffline
+                    val library = LibraryOffline().takeIf { on }
+                    return change(dropped = { kept }) {
+                        OfflineSelection(library = library, server = server)
+                    }
+                }
+
+                true -> Unit
+            }
+        }
+        if (before.server != server) store.update { it.copy(server = server) }
+        syncSoon(restart = false)
     }
 
     /**
@@ -114,11 +141,12 @@ class OfflineManager @Inject constructor(
             freed = dropped(before)
             transform(before)
         }
-        // Dropped songs are freed at once, without waiting for the network.
-        syncer.prune(freed)
+        // The running sync is cancelled or replaced first, so it cannot add them back; then
+        // dropped songs are freed at once, without waiting for the network.
         syncSoon()
+        syncer.prune(freed)
     }
-
-    private fun OfflineCollection.matches(kind: CollectionKind, id: String) =
-        this.kind == kind && this.id == id
 }
+
+private fun OfflineCollection.matches(kind: CollectionKind, id: String) =
+    this.kind == kind && this.id == id

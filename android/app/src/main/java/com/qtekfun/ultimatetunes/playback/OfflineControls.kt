@@ -34,6 +34,12 @@ interface OfflineControls {
 
     suspend fun dropCollection(kind: CollectionKind, id: String)
 
+    /**
+     * The app is connected to [server]: frees what another server's songs left behind, and
+     * finishes a sync the process death left half done.
+     */
+    suspend fun serverConnected(server: String)
+
     /** Syncs again soon, e.g. after the Wi-Fi setting changed. */
     suspend fun syncSoon()
 
@@ -48,9 +54,6 @@ interface OfflineControls {
 
     /** Syncs right now: reads the library again, downloads what is new or missing, retries failures. */
     suspend fun syncNow()
-
-    /** The app started: finishes a sync the process death left half done. */
-    suspend fun resumeSync()
 
     /** The library setting or its limit changed: free or sync accordingly. */
     suspend fun libraryOfflineChanged()
@@ -72,6 +75,8 @@ class ManagerOfflineControls @Inject constructor(private val manager: OfflineMan
     override suspend fun dropCollection(kind: CollectionKind, id: String) =
         manager.dropCollection(kind, id)
 
+    override suspend fun serverConnected(server: String) = manager.serverConnected(server)
+
     override suspend fun syncSoon() = manager.syncSoon()
 
     override val library: Flow<LibraryOffline?> get() = manager.library
@@ -82,8 +87,6 @@ class ManagerOfflineControls @Inject constructor(private val manager: OfflineMan
         manager.libraryReport(scan, limitBytes)
 
     override suspend fun syncNow() = manager.syncSoon()
-
-    override suspend fun resumeSync() = manager.syncSoon(restart = false)
 
     override suspend fun libraryOfflineChanged() = manager.libraryOfflineChanged()
 }

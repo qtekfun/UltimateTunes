@@ -84,7 +84,7 @@ From **LRCLIB** (by title, artist, album, duration), stored in the DB, served by
 `POST /ut/v1/imports` with a YouTube Music (or YouTube) playlist URL, or an **uploaded file** for Spotify playlists (generic CSV, Exportify CSV, Spotify data-export JSON; T03d); each track matched on YouTube Music by title, artists, album and duration (YouTube Music has no ISRC; an ISRC from the file resolves the MusicBrainz recording, whose title/artists refine the query and are passed on to tagging) and requested; progress per import; result becomes a user playlist. Importing by Spotify URL is not in v1 (T03d).
 
 ### RF-09 Favourites, playlists, history
-Per user: stars, playlists, play history (scrobble), play queue saved across devices. Files are shared between users (a track is downloaded once).
+Per user: stars, playlists, play history (scrobble), play queue saved across devices. The Android client also accepts playlist changes (create, rename, delete, add, remove, reorder), stars and scrobbles with no connection, and sends them when the server is reachable again. Files are shared between users (a track is downloaded once).
 
 ### RF-10 Admin panel
 `/admin`, admin role only: users (create, disable, role), API keys (list, last use, revoke), download queue (state, retry, cancel), library (space used/free, `needs_review`, delete track/album, size limit), yt-dlp (version, last canary result, update now), audit log, notifications (optional ntfy topic or webhook on failed download/canary). Jinja + vendored HTMX, en/es.
@@ -93,7 +93,7 @@ Per user: stars, playlists, play history (scrobble), play queue saved across dev
 Connect (server URL with username and password, which creates a key for the device and asks for the 2FA code when the account has one; or server URL + API key, or QR shown in the admin panel), Listen Now, Radio, Library (artists, albums, playlists, favourites, downloads), Search (one list, external items marked "not in library yet"), full player (queue, lyrics, radio), import, settings (keys, cache size, offline downloads, quality info), export to the phone (RF-14). Details in §5.
 
 ### RF-12 Client cache and offline
-Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next three tracks in the queue are requested on the server (so they are ready) and their first bytes preloaded (beyond the very next track, only tracks already in the library). Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). **Keep my whole library offline** (Settings, off by default, with a storage limit of 10 GB by default) keeps the whole library on the phone the same way: new library songs download on their own, songs that leave the library are freed. If the library exceeds the limit, starred songs come first, then the most played, then the newest; the rest is reported (how many songs and how much). Explicit downloads are never evicted for it and do not count against its limit, the play cache stays independent, and turning it off frees only what that setting had downloaded. Offline: only cached and downloaded content is browsable; search needs the server.
+Every play goes through Media3 `SimpleCache` (LRU, **2 GB** default, configurable). **Prefetch**: the next three tracks in the queue are requested on the server (so they are ready) and their first bytes preloaded (beyond the very next track, only tracks already in the library). Explicit **offline downloads** (track, album, playlist) live apart from the cache and are never evicted. A playlist or album marked offline **stays in sync**: tracks added later are downloaded automatically and removed ones are freed (WorkManager, Wi-Fi only by default, configurable). **Keep my whole library offline** (Settings, off by default, with a storage limit of 10 GB by default) keeps the whole library on the phone the same way: new library songs download on their own, songs that leave the library are freed. If the library exceeds the limit, starred songs come first, then the most played, then the newest; the rest is reported (how many songs and how much). Explicit downloads are never evicted for it and do not count against its limit, the play cache stays independent, and turning it off frees only what that setting had downloaded. Offline (amended 2026-11-27, Wave 4): the app keeps a **local catalog** of the whole library (artists, albums, songs, favourites, the user's playlists), synced from the server. The whole library is browsable and searchable with no connection; what is not on the phone is shown dimmed and cannot be played. Search of music outside the library needs the server. "Offline mode" in Settings shows only what can be played from the phone.
 
 ### RF-13 Notifications from the server
 Optional push of failed downloads/canary to an ntfy topic or webhook configured by the admin. The app shows no server-pushed notifications: only playback (MediaSession), download/sync and export progress notifications (POST_NOTIFICATIONS on Android 13+ is the one permission this adds).
@@ -115,14 +115,24 @@ The api serves a web player for browsers at `/` (the home page: the sign-in form
 
 The look follows §5 on desktop and phone. It talks only to its own server, through the same rules and per-user limits as every client: the OpenSubsonic and `/ut/v1` handlers are called as the signed-in user. Jinja + the vendored HTMX + small own scripts, no build step, en/es.
 
+### RF-16 Podcasts
+Follow shows from YouTube Music (and, in a second phase, any RSS address and OPML), with new episodes, resume across devices, played marks, speed, skips, sleep timer, chapters, automatic download, notices of new episodes made by the app, and episodes that expire on the server. Design and limits: `docs/podcasts.md`.
+
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
-- Bottom bar with 4 tabs: **Listen Now, Radio, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
+- Bottom bar with 3 tabs (amended 2026-11-27): **Home, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
+- **One layout for every tab**: the same header (title and a Settings button, no empty space above), the same section titles, artwork tile sizes, rows and overflow buttons.
+- **Home**: quick access to what was played last, then stations (radio lives here), recommendations and charts.
+- **Library** shows its content directly, with filters (Playlists, Albums, Artists, Songs) and an "On this phone" toggle, not a menu of pages; favourites and downloads are reached from it.
+- **Settings** is one tap from every tab and starts with the account, the space used on the phone and the state of the sync.
 - Large rounded artwork grids, bold titles, generous spacing; large-title headers that collapse on scroll.
 - Full player: the artwork **edge to edge** at the top fading into **colours from the artwork** (Palette), a large title with the artist in the artwork's accent colour, a bar scrubber, a round play button in the accent, a card with the lyrics line being sung, the song that plays next, queue sheet.
 - Lyrics full-screen, active line highlighted, auto-scroll, tap a line to seek (when the track is in the library).
 - Light and dark themes; English and Spanish; large fonts and TalkBack.
-- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, export, go to album/artist).
+- Gestures: swipe the mini player to skip, long-press for context menu (play next, add to playlist, download, export, go to album/artist); the same menu behind a visible overflow button on song rows.
+- Playlists: add songs from the playlist itself with search and multi-selection, drag to reorder, swipe to remove with undo, warning on duplicates.
+- Player: shuffle, repeat, favourite for the current song, an editable queue (move, remove, clear).
+- Lists show which song is playing and which are on the phone; pull to refresh. Landscape, large fonts and tablets are supported.
 
 ## 6. Non-functional requirements
 - First sound of an **external** track: target ≤ 5 s on the home connection (measured in T03 and T21). Library track: ≤ 1 s.
@@ -150,7 +160,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Coverage: ≥ 85 % server and Android core; 100 % in the critical areas listed in CLAUDE.md.
 
 ## 9. Out of scope (v1)
-Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/Last.fm scrobbling, OIDC/SSO, Chromecast, Play Store / F-Droid submission, public sharing links, podcasts. **Kubernetes deployment, PostgreSQL and Redis implementations** are designed for (§3) but delivered after 1.0 (PLAN phase 5).
+Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/Last.fm scrobbling, OIDC/SSO, Chromecast, Play Store / F-Droid submission, public sharing links (podcasts left this list on 2026-11-27, RF-16). **Kubernetes deployment, PostgreSQL and Redis implementations** are designed for (§3) but delivered after 1.0 (PLAN phase 5).
 
 ## 10. Known risks
 - **YouTube changes break yt-dlp or ytmusicapi** (PO tokens, JS challenges, IP blocks): worker isolated, yt-dlp auto-update, canary scheduled on the server with alert, `Downloader`/`MusicCatalog` interfaces to swap implementations. T03 measures the current state.
@@ -553,3 +563,26 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - **Export Again** (Settings, shown once an export folder is picked): copies every finished download to the folder; what is already there is left as it is (RF-14), so only what is missing is written. Progress and report are the usual export ones.
 - **Sync Now** (Settings, shown while "Keep my whole library offline" is on): schedules the offline sync at once, which reads the library again, downloads new or missing songs and retries failed ones. It still respects the Wi-Fi-only setting.
 - **Half-done work.** The sync worker retries soon (up to five times) when downloads did not finish within its budget or songs are still being fetched by the server, instead of waiting for the next 12-hour run; and the app, when it starts connected, makes sure a sync is queued without restarting one that runs. Exports already resume through their persisted request.
+
+### Taken — Android offline catalog, offline editing and UI completion (T28, 2026-11-27)
+- Asked by the owner: with no connection the app cannot search music that is on the phone, making playlists is awkward, and the interface needs work. All of it goes in **before 1.0.0** (PLAN Wave 4), with release candidates along the way.
+- **Whole library offline-browsable** (not only downloads): RF-12 amended; it replaces "search needs the server" for library content.
+- **New module `:core:library`**: the local catalog (Room, already approved), its sync, local search and the queue of pending changes. The UI reads library data from its repository. The sync pages the library with the existing empty `search3` the playlists with `getPlaylists`/`getPlaylist` and the favourites with `getStarred2`: **no contract change**. An extra `androidx.sqlite` artifact, if Room needs one, is asked for before adding it.
+- **Whose data**: the catalog and the pending changes belong to one user of one server. They are cleared on disconnect and when another user or library connects, so nothing is shown to, or replayed into, another account (downloads follow T30's rule).
+- **Offline changes** are replayed as intents on song ids (never on list indexes) over what the server holds then; a playlist deleted on the server drops its pending changes and says so.
+- **Playlist writes** use form POST (`formPost`), chunked to the server's limits; reorder uses `createPlaylist` with `playlistId`. Server: songs that a rewritten playlist already holds do not count against the per-request cap of new downloads (T31). Rewriting a playlist of more than 1,000 songs is still not possible in one request (T35 deals with it).
+- **Another server** (T30): disconnecting keeps the downloads. Connecting to a different address frees them only when that server answers that it has none of the kept songs, so reaching the same library by LAN, VPN or a new domain loses nothing.
+- **Android build** (2026-11-27): `compileSdk` is 37.1, which Compose 1.13 needs; the owner allowed bumping `lifecycle` to 2.11.1 by hand once, as Dependabot had not offered it and Lint failed on it.
+- **Interface**: the Apple Music-style design stays; it is fixed and completed, not redesigned. Drag to reorder is written in the app, with no new dependency.
+
+### Taken — three tabs and one layout (2026-11-27)
+- The owner found Listen Now and Radio inconsistent with Library and Settings too hidden, and chose proposal B of two mock-ups: **Home, Library, Search**; Radio moves into Home; Library shows content with filters instead of a menu; Settings from every tab. §5 amended; this replaces the four tabs of RF-11 and the "fix, do not redesign" line of T28.
+- The redesign is built on the local catalog (T32), so the new screens work offline from the start (PLAN T33).
+
+### Taken — local catalog (T32, 2026-11-27)
+- The automatic sync runs at most every 15 minutes (on start and on connect); it can also be asked for. The catalog's owner is the server user id: another user or library clears it. The database lives in `noBackupFilesDir`. The Hilt wiring is in `:app`, so `:core:library` depends only on Room.
+- Known limit: songs added or removed while the library is paged can be missed until the next sync.
+
+### Taken — podcasts (2026-11-27)
+- Asked by the owner. YouTube Music first, RSS later; episodes are kept and expire; they come right after the new main screens and the offline work they build on, before the playlist editor and the player tasks. Design: `docs/podcasts.md`.
+- RSS needs a change to the rules on outbound hosts and arbitrary addresses: **not approved yet**; it is asked for with T49.
