@@ -1,0 +1,1 @@
+New design: Home, Library and Search, with Settings on every tab. Your library, albums, artists and playlists now work without a connection, and what is on the phone plays. Search without a connection is not there yet.

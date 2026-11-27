@@ -9,6 +9,20 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.16] - 2026-11-27
+
+Release candidate of 1.0: new design of the Android app, and the library can be browsed without a connection. Searching without a connection is not in this one yet.
+
+### Added
+- Android: Library, albums, artists, playlists and favourites work without a connection; what is not on the phone is dimmed, and playback skips to the next song that is.
+- Android: "On this phone" filter in Library, sync state and "Sync now" in Settings, and pull to refresh.
+
+### Changed
+- Android: three tabs (Home, Library, Search) with one layout; radio is part of Home, and Settings opens from every tab.
+- Android: new permission to know whether there is a network.
+- Android build: Gradle 9.9.3.
+- Server: dependency updates, including ytmusicapi 1.12.4.
+
 ## [1.0.0-rc.15] - 2026-11-27
 
 Release candidate of 1.0: fixes in playlists, downloads and the player on Android, and reordering of large playlists on the server. Browsing and searching without a connection are not in this one yet.
