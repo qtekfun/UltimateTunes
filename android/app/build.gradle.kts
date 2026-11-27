@@ -155,9 +155,11 @@ tasks.named("check") {
 
 dependencies {
     implementation(project(":core:api"))
+    implementation(project(":core:library"))
     implementation(project(":core:player"))
     // Coverage of the :core modules is measured and verified here, together with the app's.
     kover(project(":core:api"))
+    kover(project(":core:library"))
     kover(project(":core:player"))
 
     implementation(libs.androidx.core.ktx)

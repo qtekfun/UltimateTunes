@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 rootProject.name = "UltimateTunes"
 include(":app")
 include(":core:api")
+include(":core:library")
 include(":core:player")
