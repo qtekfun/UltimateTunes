@@ -141,12 +141,18 @@ def test_reorder_does_not_count_the_songs_already_held(
     playlist = create(lib, name="Pending", songId="yt:Qx7Lm2pZ0aB")["id"]
     lib.ok("updatePlaylist", playlistId=playlist, songIdToAdd="yt:Rb8Tn3ZcYv0")
     reordered = ["yt:Rb8Tn3ZcYv0", "yt:Qx7Lm2pZ0aB"]
-    queued = jobs(lib)
+    # Without their jobs (the state eviction leaves), a re-request would show.
+    with lib.services.db.transaction() as conn:
+        conn.execute("DELETE FROM jobs")
     create(lib, playlistId=playlist, songId=reordered)
     assert entries(lib, playlist) == reordered
-    assert jobs(lib) == queued
-    # Songs it does not hold still count, in a new playlist all of them.
-    lib.error("createPlaylist", name="Copy", songId=reordered)
+    assert jobs(lib) == []
+    # Songs it does not hold still count: in another playlist, and added by a rewrite.
+    assert lib.error("createPlaylist", name="Copy", songId=reordered) == 0
+    other = create(lib, name="Other")["id"]
+    assert lib.error("createPlaylist", playlistId=other, songId=reordered) == 0
+    assert entries(lib, other) == []
+    assert jobs(lib) == []
 
 
 def test_delete(lib: Harness) -> None:
