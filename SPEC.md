@@ -586,3 +586,11 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken — podcasts (2026-11-27)
 - Asked by the owner. YouTube Music first, RSS later; episodes are kept and expire; they come right after the new main screens and the offline work they build on, before the playlist editor and the player tasks. Design: `docs/podcasts.md`.
 - RSS needs a change to the rules on outbound hosts and arbitrary addresses: **not approved yet**; it is asked for with T49.
+
+### Taken — new main screens (T33, 2026-11-27)
+- The local catalog is shown only to the connection it was checked against.
+- "Offline" means no network or Offline mode; covers of downloaded music are stored apart from the image cache.
+- The app declares `ACCESS_NETWORK_STATE` to know whether there is a network.
+
+### Taken — version bumps (2026-11-27)
+- When CI fails only because a version is no longer the latest, it is bumped in its own PR without waiting for Dependabot. New dependencies still need approval and no gate is relaxed.

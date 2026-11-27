@@ -1,0 +1,1 @@
+Nuevo diseño: Inicio, Biblioteca y Buscar, con Ajustes en todas las pestañas. La biblioteca, álbumes, artistas y listas funcionan ya sin conexión, y suena lo que está en el móvil. Aún no hay búsqueda sin conexión.
