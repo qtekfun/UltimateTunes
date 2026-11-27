@@ -17,16 +17,20 @@ import com.qtekfun.ultimatetunes.core.library.db.ArtistEntity
 import com.qtekfun.ultimatetunes.core.library.db.BrowseDao
 import com.qtekfun.ultimatetunes.core.library.db.SongEntity
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 
 /**
  * [LibraryRepository] over the catalog's database. It shows the catalog only to the connection
@@ -53,6 +57,46 @@ internal class DatabaseLibraryRepository(
                 error = now.error
             )
         }.distinctUntilChanged()
+
+    @Suppress("TooGenericExceptionCaught") // Whatever the storage throws, there are no matches.
+    override suspend fun search(query: String): CatalogMatches {
+        val words = SearchText.of(query).split(' ').filter { it.isNotEmpty() }
+        return try {
+            if (words.isEmpty() || !owned.first()) CatalogMatches() else matches(words)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            CatalogMatches()
+        }
+    }
+
+    private suspend fun matches(words: List<String>): CatalogMatches {
+        // The database takes the three longest, which narrow the most; an empty one matches
+        // everything. Any further word is checked here, before the list is cut to its size.
+        val longest = words.sortedByDescending { it.length }
+        val (first, second, third) = longest + List(2) { "" }
+        val rest = longest.drop(QUERIED_WORDS)
+
+        suspend fun <T> found(
+            max: Int,
+            text: (T) -> String,
+            query: suspend (limit: Int) -> List<T>
+        ): List<T> = query(if (rest.isEmpty()) max else NO_LIMIT)
+            .filter { row -> rest.all { it in text(row) } }
+            .take(max)
+
+        return CatalogMatches(
+            artists = found(MAX_ARTISTS, ArtistEntity::searchText) {
+                dao.searchArtists(first, second, third, it)
+            }.map { it.toArtist() },
+            albums = found(MAX_ALBUMS, AlbumEntity::searchText) {
+                dao.searchAlbums(first, second, third, it)
+            }.map { it.toAlbum() },
+            songs = found(MAX_SONGS, SongEntity::searchText) {
+                dao.searchSongs(first, second, third, it)
+            }.map { it.toSong() }
+        )
+    }
 
     override fun songs(): Flow<List<Song>> = list { dao.songs().asSongs() }
 
@@ -129,6 +173,15 @@ internal class DatabaseLibraryRepository(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun <T> whenOwned(hidden: T, rows: () -> Flow<T>): Flow<T> =
         owned.flatMapLatest { if (it) rows() else flowOf(hidden) }
+            // A database that cannot be read shows as empty and is tried again: it does not
+            // crash whoever collects, nor leave them without updates for good.
+            .retryWhen { cause, _ ->
+                if (cause is Exception) {
+                    emit(hidden)
+                    delay(RETRY_AFTER_MS)
+                }
+                cause is Exception
+            }
 
     private fun <T> list(rows: () -> Flow<List<T>>): Flow<List<T>> = whenOwned(emptyList(), rows)
 
@@ -144,4 +197,16 @@ internal class DatabaseLibraryRepository(
     /** [transform] off the collector's thread (lists can be long), without repeats. */
     private fun <T, R> Flow<T>.mapped(transform: (T) -> R): Flow<R> =
         map { transform(it) }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
+    private companion object {
+        // Generous, so that what is on the phone is not cut off before the screen picks it.
+        const val MAX_ARTISTS = 500
+        const val MAX_ALBUMS = 1_000
+        const val MAX_SONGS = 3_000
+        const val QUERIED_WORDS = 3
+
+        /** SQLite reads a negative limit as none. */
+        const val NO_LIMIT = -1
+        const val RETRY_AFTER_MS = 30_000L
+    }
 }

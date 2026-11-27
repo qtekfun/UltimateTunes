@@ -3,16 +3,18 @@
 
 package com.qtekfun.ultimatetunes.ui.search
 
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.ui.FakePhoneAvailability
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.jsonResponse
-import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
@@ -31,16 +33,19 @@ import org.junit.jupiter.api.extension.ExtendWith
 class SearchViewModelTest {
     private lateinit var server: FakeTunesServer
     private lateinit var viewModel: SearchViewModel
+    private val catalog = TestCatalog()
+    private val phone = FakePhoneAvailability()
 
     @BeforeEach
     fun setUp() {
         server = FakeTunesServer().start()
-        viewModel = SearchViewModel(connectedApi(server))
+        viewModel = SearchViewModel(connectedApi(server), catalog.repository, phone)
     }
 
     @AfterEach
     fun tearDown() {
         server.close()
+        catalog.close()
     }
 
     private suspend fun results(): SearchContent =
@@ -125,16 +130,64 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `a failure is shown and the search key retries`() = runTest {
+    fun `an unreachable server is said, and the search key asks again`() = runTest {
         server.dispatcher.override("ut/v1/search") { dropConnection() }
         viewModel.onQueryChange("lanterns")
 
-        val failed = viewModel.state.awaitFirst { it.results is LoadState.Failed }
-        assertEquals(LoadState.Failed(LoadError.NETWORK), failed.results)
+        viewModel.state.awaitFirst { it.notice == SearchNotice.SERVER_UNREACHABLE }
 
         server.dispatcher.clearOverrides()
         viewModel.search()
 
-        assertEquals(2, results().albums.size)
+        val answered = viewModel.state.awaitFirst { it.notice == null && !it.searching }
+        assertEquals(2, (answered.results as LoadState.Ready).value.albums.size)
+    }
+
+    @Test
+    fun `with no connection the phone's library is searched, ignoring case and accents`() =
+        runTest {
+            catalog.synced()
+            phone.availability.value = Availability(online = false)
+
+            viewModel.onQueryChange("LÍGHTHOUSE keeper")
+
+            val state = viewModel.state.awaitFirst { it.notice != null }
+            val content = (state.results as LoadState.Ready).value
+            assertEquals(listOf("Lighthouse Keeper"), content.tracks.map { it.title })
+            assertEquals(SearchNotice.NO_CONNECTION, state.notice)
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `every word has to match, past the third one too`() = runTest {
+        catalog.synced()
+        phone.availability.value = Availability(online = false)
+
+        viewModel.onQueryChange("lighthouse keeper lighthouse keeper zz")
+
+        val state = viewModel.state.awaitFirst { it.notice != null }
+        assertTrue((state.results as LoadState.Ready).value.tracks.isEmpty())
+    }
+
+    @Test
+    fun `offline mode searches the phone only, and says so`() = runTest {
+        catalog.synced()
+        phone.availability.value = Availability(offlineMode = true)
+
+        viewModel.onQueryChange("nothing like this")
+
+        val state = viewModel.state.awaitFirst { it.notice != null }
+        assertEquals(SearchNotice.OFFLINE_MODE, state.notice)
+        assertTrue((state.results as LoadState.Ready).value.isEmpty)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a refused key is still an error`() = runTest {
+        server.dispatcher.override("ut/v1/search") { jsonResponse("{}", 401) }
+        viewModel.onQueryChange("lanterns")
+
+        val failed = viewModel.state.awaitFirst { it.results is LoadState.Failed }
+        assertNull(failed.notice)
     }
 }

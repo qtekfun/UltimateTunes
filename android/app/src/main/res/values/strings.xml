@@ -317,4 +317,8 @@
         <item quantity="one">%d downloaded song</item>
         <item quantity="other">%d downloaded songs</item>
     </plurals>
+    <string name="search_notice_no_connection">No connection. Showing what is in your library on this phone.</string>
+    <string name="search_notice_unreachable">Cannot reach your server. Showing results from this phone.</string>
+    <string name="search_notice_offline_mode">Offline mode: only what is on this phone.</string>
+    <string name="search_retry">Retry</string>
 </resources>

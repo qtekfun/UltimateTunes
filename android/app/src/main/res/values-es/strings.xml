@@ -321,4 +321,8 @@
         <item quantity="many">%d canciones descargadas</item>
         <item quantity="other">%d canciones descargadas</item>
     </plurals>
+    <string name="search_notice_no_connection">Sin conexión. Se muestra lo que hay de tu biblioteca en este móvil.</string>
+    <string name="search_notice_unreachable">No se puede contactar con tu servidor. Resultados de este móvil.</string>
+    <string name="search_notice_offline_mode">Modo sin conexión: solo lo que está en este móvil.</string>
+    <string name="search_retry">Reintentar</string>
 </resources>
