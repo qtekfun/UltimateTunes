@@ -1,1 +1,1 @@
-Fixes for playlists and downloads: deleting a downloaded playlist frees its songs, changes sync and are no longer undone, and long playlists work. The player takes the cover's colour, shows when it is loading and confirms Play Next. Offline search is not in yet.
+Fixes for playlists and downloads: deleting a downloaded playlist frees its songs, changes sync and a late server reply no longer undoes them, and long playlists work. The player takes the cover's colour, shows when it is loading and confirms Play Next. Offline search is not in yet.
