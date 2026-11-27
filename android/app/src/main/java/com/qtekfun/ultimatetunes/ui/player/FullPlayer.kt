@@ -28,10 +28,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -450,7 +451,10 @@ private fun PlayButton(isPlaying: Boolean, colors: PlayerColors, onClick: () -> 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QueueSheet(state: PlayerUiState, onDismiss: () -> Unit, onPlayAt: (Int) -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.PartiallyExpanded, SheetValue.Expanded)
+    )
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Text(
             text = stringResource(R.string.player_queue),
