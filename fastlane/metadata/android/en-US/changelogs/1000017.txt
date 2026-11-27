@@ -1,0 +1,1 @@
+New animations: screens slide in, tabs switch at once, and the artwork grows from the mini player into the full player.

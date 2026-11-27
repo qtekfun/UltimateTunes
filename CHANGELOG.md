@@ -9,6 +9,14 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.17] - 2026-11-27
+
+Release candidate of 1.0: new animations in the Android app.
+
+### Changed
+- Android: a new screen slides in over the previous one, and switching tabs is almost instant.
+- Android: the full player opens and closes with a spring, and its artwork grows out of the mini player's.
+
 ## [1.0.0-rc.16] - 2026-11-27
 
 Release candidate of 1.0: new design of the Android app, and the library can be browsed without a connection. Searching without a connection is not in this one yet.

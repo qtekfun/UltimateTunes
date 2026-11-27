@@ -1,0 +1,1 @@
+Animaciones nuevas: las pantallas entran deslizando, las pestañas cambian al momento y la carátula crece del mini reproductor al reproductor.
