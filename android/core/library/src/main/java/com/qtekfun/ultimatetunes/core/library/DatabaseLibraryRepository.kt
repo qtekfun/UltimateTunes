@@ -17,12 +17,15 @@ import com.qtekfun.ultimatetunes.core.library.db.ArtistEntity
 import com.qtekfun.ultimatetunes.core.library.db.BrowseDao
 import com.qtekfun.ultimatetunes.core.library.db.SongEntity
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -53,6 +56,29 @@ internal class DatabaseLibraryRepository(
                 error = now.error
             )
         }.distinctUntilChanged()
+
+    @Suppress("TooGenericExceptionCaught") // Whatever the storage throws, there are no matches.
+    override suspend fun search(query: String): CatalogMatches {
+        val words = SearchText.of(query).split(' ').filter { it.isNotEmpty() }
+        return try {
+            if (words.isEmpty() || !owned.first()) CatalogMatches() else matches(words)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            CatalogMatches()
+        }
+    }
+
+    /** An empty word matches everything, so unused places are left empty. */
+    private suspend fun matches(words: List<String>): CatalogMatches {
+        // The longest words narrow the most.
+        val (first, second, third) = words.sortedByDescending { it.length } + List(2) { "" }
+        return CatalogMatches(
+            artists = dao.searchArtists(first, second, third, MAX_ARTISTS).map { it.toArtist() },
+            albums = dao.searchAlbums(first, second, third, MAX_ALBUMS).map { it.toAlbum() },
+            songs = dao.searchSongs(first, second, third, MAX_SONGS).map { it.toSong() }
+        )
+    }
 
     override fun songs(): Flow<List<Song>> = list { dao.songs().asSongs() }
 
@@ -129,6 +155,8 @@ internal class DatabaseLibraryRepository(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun <T> whenOwned(hidden: T, rows: () -> Flow<T>): Flow<T> =
         owned.flatMapLatest { if (it) rows() else flowOf(hidden) }
+            // A damaged database shows as empty, it does not crash whoever collects.
+            .catch { emit(hidden) }
 
     private fun <T> list(rows: () -> Flow<List<T>>): Flow<List<T>> = whenOwned(emptyList(), rows)
 
@@ -144,4 +172,10 @@ internal class DatabaseLibraryRepository(
     /** [transform] off the collector's thread (lists can be long), without repeats. */
     private fun <T, R> Flow<T>.mapped(transform: (T) -> R): Flow<R> =
         map { transform(it) }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
+    private companion object {
+        const val MAX_ARTISTS = 30
+        const val MAX_ALBUMS = 50
+        const val MAX_SONGS = 200
+    }
 }

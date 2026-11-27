@@ -81,7 +81,11 @@ class PlaybackEngine(
         // Entries left incomplete now are swept on the first queue move of the next session.
     }
 
-    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = onQueueMoved()
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // Another song is current now: a skip still looking would jump past what was chosen.
+        skipping?.cancel()
+        onQueueMoved()
+    }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (isPlaying) {

@@ -24,6 +24,13 @@ data class SongRef(
     val albumArtistId: ArtistId?
 )
 
+/** What a search of the catalog finds: library items only. */
+data class CatalogMatches(
+    val artists: List<Artist> = emptyList(),
+    val albums: List<Album> = emptyList(),
+    val songs: List<Song> = emptyList()
+)
+
 /**
  * The library as the phone knows it, readable with no connection. Every Flow emits what is stored
  * and again whenever it changes. The models are those of `:core:api`.
@@ -31,6 +38,12 @@ data class SongRef(
 @Suppress("TooManyFunctions") // One Flow per thing the screens show.
 interface LibraryRepository {
     val syncState: Flow<CatalogSyncState>
+
+    /**
+     * Library items matching every word of [query], whatever its case and accents. Empty for a
+     * blank query and when the catalog cannot be read.
+     */
+    suspend fun search(query: String): CatalogMatches
 
     /** Library songs by title. */
     fun songs(): Flow<List<Song>>

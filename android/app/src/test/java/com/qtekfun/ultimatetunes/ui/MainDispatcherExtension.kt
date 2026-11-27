@@ -13,6 +13,7 @@ import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
@@ -51,10 +52,13 @@ fun apiWith(source: InMemoryServerConfigSource): TunesApi =
 /** A real [TunesApi] connected to [server] with the valid key. */
 fun connectedApi(server: FakeTunesServer): TunesApi = server.createApi(testClock)
 
+private val AWAIT_TIMEOUT = 15.seconds
+
 /** The first value of this flow matching [predicate], skipping the others (Turbine). */
 suspend fun <T : Any> Flow<T>.awaitFirst(predicate: (T) -> Boolean): T {
     var found: T? = null
-    test {
+    // Longer than Turbine's default: a busy CI runner takes more than that for a request.
+    test(timeout = AWAIT_TIMEOUT) {
         while (found == null) {
             val item = awaitItem()
             if (predicate(item)) found = item

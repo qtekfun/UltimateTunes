@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.ui.search
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,9 +19,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -50,6 +54,7 @@ import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 /** Test tags of the Search tab. */
 const val SEARCH_FIELD_TAG = "search.field"
 const val SEARCH_LIST_TAG = "search.list"
+const val SEARCH_NOTICE_TAG = "search.notice"
 
 @Composable
 fun SearchRoute(
@@ -96,6 +101,7 @@ fun SearchScreen(
                     )
                 }
             }
+            state.notice?.let { item { SearchNoticeCard(it, onSearch) } }
             when (val results = state.results) {
                 null -> item {
                     MessageState(
@@ -115,12 +121,48 @@ fun SearchScreen(
     }
 }
 
-/** In offline mode, only what the phone can play. */
+/** In offline mode, only what the phone can play; with no connection, that comes first. */
 private fun SearchContent.shownWith(availability: Availability) = SearchContent(
-    artists = artists.filter { availability.showsArtist(it.id) },
-    albums = albums.filter { availability.showsAlbum(it.id) },
+    artists = artists.filter { availability.showsArtist(it.id) }
+        .sortedByDescending { availability.canPlayArtist(it.id) },
+    albums = albums.filter { availability.showsAlbum(it.id) }
+        .sortedByDescending { availability.canPlayAlbum(it.id) },
     tracks = tracks.filter { availability.shows(it.id) }
+        .sortedByDescending { availability.canPlay(it.id) }
 )
+
+/** Says that the results are the phone's alone, and offers to ask the server again. */
+@Composable
+private fun SearchNoticeCard(notice: SearchNotice, onRetry: () -> Unit) {
+    Surface(
+        shape = Dimens.CardShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS)
+            .testTag(SEARCH_NOTICE_TAG)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = Dimens.SpaceM, vertical = Dimens.SpaceS)
+        ) {
+            Text(
+                text = stringResource(
+                    when (notice) {
+                        SearchNotice.NO_CONNECTION -> R.string.search_notice_no_connection
+                        SearchNotice.SERVER_UNREACHABLE -> R.string.search_notice_unreachable
+                        SearchNotice.OFFLINE_MODE -> R.string.search_notice_offline_mode
+                    }
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            if (notice == SearchNotice.SERVER_UNREACHABLE) {
+                TextButton(onClick = onRetry) { Text(stringResource(R.string.search_retry)) }
+            }
+        }
+    }
+}
 
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit, onSearch: () -> Unit) {

@@ -22,6 +22,42 @@ internal data class SongRefRow(
 @Dao
 @Suppress("TooManyFunctions") // One query per list the screens show.
 internal interface BrowseDao {
+    @Query(
+        "SELECT * FROM songs WHERE inLibrary = 1 AND instr(searchText, :first) > 0 " +
+            "AND instr(searchText, :second) > 0 AND instr(searchText, :third) > 0 " +
+            "ORDER BY sortName, id LIMIT :limit"
+    )
+    suspend fun searchSongs(
+        first: String,
+        second: String,
+        third: String,
+        limit: Int
+    ): List<SongEntity>
+
+    @Query(
+        "SELECT * FROM albums WHERE inLibrary = 1 AND instr(searchText, :first) > 0 " +
+            "AND instr(searchText, :second) > 0 AND instr(searchText, :third) > 0 " +
+            "ORDER BY sortName, id LIMIT :limit"
+    )
+    suspend fun searchAlbums(
+        first: String,
+        second: String,
+        third: String,
+        limit: Int
+    ): List<AlbumEntity>
+
+    @Query(
+        "SELECT * FROM artists WHERE inLibrary = 1 AND instr(searchText, :first) > 0 " +
+            "AND instr(searchText, :second) > 0 AND instr(searchText, :third) > 0 " +
+            "ORDER BY sortName, id LIMIT :limit"
+    )
+    suspend fun searchArtists(
+        first: String,
+        second: String,
+        third: String,
+        limit: Int
+    ): List<ArtistEntity>
+
     @Query("SELECT * FROM songs WHERE inLibrary = 1 ORDER BY sortName, id")
     fun songs(): Flow<List<SongEntity>>
 
