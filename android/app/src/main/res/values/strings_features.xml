@@ -92,4 +92,7 @@
     <string name="notifications_rationale">UltimateTunes uses notifications only for what is playing and for the progress of downloads and exports to this phone.</string>
     <string name="notifications_allow">Allow</string>
     <string name="notifications_not_now">Not now</string>
+    <string name="event_play_next">Playing next</string>
+    <string name="event_play_last">Added to the end of the queue</string>
+    <string name="player_buffering">Loading</string>
 </resources>

@@ -106,8 +106,8 @@ private fun ArtistHeader(artist: ArtistContent) {
             placeholderKey = artist.artist.id.value,
             shape = CircleShape,
             modifier = Modifier
-                .fillMaxWidth(fraction = 0.5f)
                 .widthIn(max = 220.dp)
+                .fillMaxWidth(fraction = 0.5f)
                 .aspectRatio(1f)
         )
         if (artist.artist.isExternal) {

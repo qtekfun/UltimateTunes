@@ -106,6 +106,9 @@ import com.qtekfun.ultimatetunes.ui.theme.Dimens
 /** How long the full player takes to slide up or down. */
 private const val PLAYER_SLIDE_MS = 320
 
+/** How long one screen takes to fade into the next. */
+private const val SCREEN_FADE_MS = 200
+
 /** Over the full player, messages sit below its close button. */
 private val FULL_PLAYER_SNACKBAR_TOP = 48.dp
 
@@ -317,7 +320,11 @@ private fun TabsNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Tab.LISTEN_NOW.route
+        startDestination = Tab.LISTEN_NOW.route,
+        enterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
+        exitTransition = { fadeOut(tween(SCREEN_FADE_MS)) },
+        popEnterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
+        popExitTransition = { fadeOut(tween(SCREEN_FADE_MS)) }
     ) {
         Tab.entries.forEach { tab ->
             navigation(route = tab.route, startDestination = tab.home) {

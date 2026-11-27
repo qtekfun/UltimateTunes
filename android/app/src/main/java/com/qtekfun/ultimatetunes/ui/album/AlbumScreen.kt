@@ -184,8 +184,8 @@ private fun AlbumHeader(album: AlbumContent, navigator: Navigator, isOffline: Bo
             placeholderKey = album.album.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .fillMaxWidth(fraction = 0.72f)
                 .widthIn(max = 300.dp)
+                .fillMaxWidth(fraction = 0.72f)
                 .aspectRatio(1f)
         )
         val artistId = album.artistId

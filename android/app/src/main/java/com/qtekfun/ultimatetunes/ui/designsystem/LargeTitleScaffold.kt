@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.ui.designsystem
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -22,7 +23,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import com.qtekfun.ultimatetunes.R
 
 /**
@@ -59,8 +59,10 @@ fun LargeTitleScaffold(
                         Text(
                             text = title,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.semantics { heading() }.testTag(TITLE_TAG)
+                            modifier = Modifier
+                                .basicMarquee()
+                                .semantics { heading() }
+                                .testTag(TITLE_TAG)
                         )
                     },
                     navigationIcon = {

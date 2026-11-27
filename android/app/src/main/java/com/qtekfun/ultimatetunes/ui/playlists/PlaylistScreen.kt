@@ -293,8 +293,8 @@ private fun PlaylistHeader(playlist: PlaylistContent, isOffline: Boolean, naviga
             placeholderKey = playlist.playlist.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .fillMaxWidth(fraction = 0.66f)
                 .widthIn(max = 280.dp)
+                .fillMaxWidth(fraction = 0.66f)
                 .aspectRatio(1f)
         )
         playlist.comment?.takeIf { it.isNotBlank() }?.let {

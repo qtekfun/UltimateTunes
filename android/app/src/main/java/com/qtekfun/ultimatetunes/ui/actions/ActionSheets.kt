@@ -223,6 +223,10 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         ActionEvent.Downloading -> stringResource(R.string.event_downloading)
 
+        is ActionEvent.Queued -> stringResource(
+            if (event.next) R.string.event_play_next else R.string.event_play_last
+        )
+
         ActionEvent.DownloadRemoved -> stringResource(R.string.event_download_removed)
 
         is ActionEvent.FavouriteChanged -> stringResource(

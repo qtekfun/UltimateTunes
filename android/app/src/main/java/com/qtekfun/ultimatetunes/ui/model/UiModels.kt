@@ -122,6 +122,14 @@ inline fun <T, R> loadStateOf(result: TunesResult<T>, transform: (T) -> R): Load
         is TunesResult.Failure -> LoadState.Failed(result.toLoadError())
     }
 
+/** Size in pixels of the cover in the full player, which fills the screen's width. */
+const val PLAYER_ARTWORK_PX = 1200
+
+/** This cover URL asking for [size] pixels; other URLs are left as they are. */
+fun String.withCoverSize(size: Int): String = replace(COVER_SIZE) { "${it.groupValues[1]}$size" }
+
+private val COVER_SIZE = Regex("([?&]size=)\\d+")
+
 /** The cover URL of [id] at [size] pixels, or null when no server is configured. */
 fun TunesApi.coverUrl(id: CoverArtId, size: Int = TILE_ARTWORK_PX): String? =
     coverArtUrl(id, size)?.toString()
