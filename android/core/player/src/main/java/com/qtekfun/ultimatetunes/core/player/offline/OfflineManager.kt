@@ -88,27 +88,35 @@ class OfflineManager @Inject constructor(
                 before.copy(library = null)
             }
         }
-        syncer.prune(freed)
         syncSoon()
+        syncer.prune(freed)
     }
 
     /**
-     * The app is connected to [server]. Songs kept from another server mean nothing here: they
-     * are freed and the selection starts over. On the same server, a sync the process death left
-     * half done goes on.
+     * The app is connected to [server]. A new address may be the same library (LAN, VPN, a new
+     * domain), so the kept songs are only freed when the server says it has none of them; while
+     * that cannot be told, nothing changes. Then a sync the process death left half done goes on.
      */
     suspend fun serverConnected(server: String) {
         val before = store.selection.first()
-        if (before.server == null || before.server == server) {
-            if (before.server == null) store.update { it.copy(server = server) }
-            syncSoon(restart = false)
-            return
+        if (before.server != null && before.server != server) {
+            val kept = before.explicitIds() + before.library?.songs.orEmpty().map { it.id }
+            when (syncer.holds(kept)) {
+                null -> return
+
+                false -> {
+                    val on = settings.settings.first().libraryOffline
+                    val library = LibraryOffline().takeIf { on }
+                    return change(dropped = { kept }) {
+                        OfflineSelection(library = library, server = server)
+                    }
+                }
+
+                true -> Unit
+            }
         }
-        val library = LibraryOffline().takeIf { settings.settings.first().libraryOffline }
-        val freed = before.explicitIds() + before.library?.songs.orEmpty().map { it.id }
-        store.update { OfflineSelection(library = library, server = server) }
-        syncer.prune(freed)
-        syncSoon()
+        if (before.server != server) store.update { it.copy(server = server) }
+        syncSoon(restart = false)
     }
 
     /**
@@ -133,9 +141,10 @@ class OfflineManager @Inject constructor(
             freed = dropped(before)
             transform(before)
         }
-        // Dropped songs are freed at once, without waiting for the network.
-        syncer.prune(freed)
+        // The running sync is cancelled or replaced first, so it cannot add them back; then
+        // dropped songs are freed at once, without waiting for the network.
         syncSoon()
+        syncer.prune(freed)
     }
 }
 

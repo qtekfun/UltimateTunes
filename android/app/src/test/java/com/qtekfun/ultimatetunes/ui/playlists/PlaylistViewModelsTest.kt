@@ -17,6 +17,7 @@ import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.subsonicOk
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -30,6 +31,10 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(MainDispatcherExtension::class)
 class PlaylistViewModelsTest {
+    private companion object {
+        const val DELAY_MS = 500L
+    }
+
     private lateinit var server: FakeTunesServer
     private val playlistId = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001"
 
@@ -295,6 +300,25 @@ class PlaylistViewModelsTest {
                 "Sunday Morning",
                 (state.content as LoadState.Ready).value.playlist.name
             )
+        }
+
+        @Test
+        fun `an answer asked before a change does not undo it`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/getPlaylist") {
+                subsonicOk(
+                    "playlist",
+                    """{"id":"$playlistId","name":"Stale","songCount":0,"duration":0,
+                        "entry":[]}"""
+                ).newBuilder().headersDelay(DELAY_MS, TimeUnit.MILLISECONDS).build()
+            }
+
+            viewModel.refresh()
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.rename("Newer")
+            assertEquals("/rest/updatePlaylist", server.takeRequest().url.encodedPath)
+
+            assertEquals("Newer", viewModel.ready().playlist.name)
         }
 
         @Test

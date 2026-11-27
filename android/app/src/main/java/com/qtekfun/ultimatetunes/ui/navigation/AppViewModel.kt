@@ -39,8 +39,8 @@ class AppViewModel @Inject constructor(
             combine(gate.needsConnect, configSource.config) { needsConnect, config ->
                 config?.root?.toString().takeUnless { needsConnect }
             }
-                .filterNotNull()
                 .distinctUntilChanged()
+                .filterNotNull()
                 .collect { offline.serverConnected(it) }
         }
     }

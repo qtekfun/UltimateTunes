@@ -199,7 +199,11 @@ class LibraryActionsViewModel @Inject constructor(
                     if (kept) offline.syncSoon()
                 }
 
-                is TunesResult.Failure -> fail(result)
+                is TunesResult.Failure -> {
+                    // A long list goes in parts: some may have arrived.
+                    changes.changed(playlist.id)
+                    fail(result)
+                }
             }
         }
     }

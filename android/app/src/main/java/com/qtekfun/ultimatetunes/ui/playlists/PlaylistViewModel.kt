@@ -77,6 +77,9 @@ class PlaylistViewModel @Inject constructor(
     /** Grows when a change fails: the ones queued behind it were made on a state that is gone. */
     private var generation = 0
 
+    /** Grows with every change shown: an answer read before it is stale. */
+    private var revision = 0
+
     init {
         viewModelScope.launch { changes.changed.filter { it == id }.collect { refresh() } }
         viewModelScope.launch {
@@ -174,6 +177,7 @@ class PlaylistViewModel @Inject constructor(
     private fun change(after: PlaylistContent, call: suspend () -> TunesResult<Unit>) {
         val before = mutableState.value.content
         val made = generation
+        revision++
         mutableState.update { it.copy(content = LoadState.Ready(after)) }
         viewModelScope.launch {
             writes.withLock {
@@ -196,8 +200,9 @@ class PlaylistViewModel @Inject constructor(
     /** Reads the playlist again, keeping what is shown until the answer arrives. */
     private suspend fun reload() {
         loading?.join()
+        val asked = revision
         val result = api.playlist(id)
-        if (result is TunesResult.Success) {
+        if (result is TunesResult.Success && asked == revision) {
             mutableState.update { it.copy(content = LoadState.Ready(result.value.toContent(api))) }
         }
     }

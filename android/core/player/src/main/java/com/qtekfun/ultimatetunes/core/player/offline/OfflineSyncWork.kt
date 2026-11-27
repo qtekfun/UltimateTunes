@@ -57,6 +57,7 @@ class OfflineSyncScheduler @Inject constructor(
     /** Nothing is kept any more: no periodic sync. */
     fun cancel() {
         work.cancelUniqueWork(PERIODIC_WORK)
+        work.cancelUniqueWork(NOW_WORK)
     }
 
     companion object {
