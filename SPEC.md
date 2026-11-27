@@ -579,6 +579,10 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - The owner found Listen Now and Radio inconsistent with Library and Settings too hidden, and chose proposal B of two mock-ups: **Home, Library, Search**; Radio moves into Home; Library shows content with filters instead of a menu; Settings from every tab. §5 amended; this replaces the four tabs of RF-11 and the "fix, do not redesign" line of T28.
 - The redesign is built on the local catalog (T32), so the new screens work offline from the start (PLAN T33).
 
+### Taken — local catalog (T32, 2026-11-27)
+- The automatic sync runs at most every 15 minutes (on start and on connect); it can also be asked for. The catalog's owner is the server user id: another user or library clears it. The database lives in `noBackupFilesDir`. The Hilt wiring is in `:app`, so `:core:library` depends only on Room.
+- Known limit: songs added or removed while the library is paged can be missed until the next sync.
+
 ### Taken — podcasts (2026-11-27)
 - Asked by the owner. YouTube Music first, RSS later; episodes are kept and expire; they come right after the new main screens and the offline work they build on, before the playlist editor and the player tasks. Design: `docs/podcasts.md`.
 - RSS needs a change to the rules on outbound hosts and arbitrary addresses: **not approved yet**; it is asked for with T49.
