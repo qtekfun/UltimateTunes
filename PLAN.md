@@ -120,6 +120,23 @@ Asked by the owner (SPEC §11, T28). Order: T28; then T29, T30 and T31 in parall
 - [ ] **T38 Lists and downloads**: now-playing and downloaded marks; Downloads with progress, failures, size and bulk removal; menus for albums, artists and playlists; pull to refresh; lyrics auto-scroll yields to the user. Depends T36. *Verification:* view model and UI tests.
 - [ ] **T39 Adaptive layout and store assets**: landscape, large fonts, tablets, accessibility pass; new screenshots and store texts. Depends T37, T38. *Verification:* screenshot test; `tools/check-store-texts.sh` green.
 
+## Wave 5 — Podcasts (design: `docs/podcasts.md`)
+Order: T40 and T41 can start while T33 to T35 run; T42 to T48 after T35 (**rc**); then T36 to T39. Phase 2 (T49 to T52) after 1.0 unless the owner says otherwise.
+
+- [ ] **T40 Spike**: YouTube Music podcasts from the server: `ytmusicapi` calls without an account; `yt-dlp` on episodes (formats, size, time); streaming and seeking on a long episode not yet downloaded. *Verification:* report `docs/spikes/T40.md` and a decision in SPEC §11.
+- [ ] **T41 Contracts** (coordinator): OpenSubsonic podcast endpoints, `/ut/v1/podcasts`, ids, migrations, error codes, fake catalog and fake server examples. Depends T40. *Verification:* contracts validate; migrations apply on SQLite and PostgreSQL.
+- [ ] **T42 Server: shows**: search, follow, show and episode pages, scheduled refresh. Depends T41. *Verification:* tests with the fake catalog.
+- [ ] **T43 Server: episodes**: download, stream, expiry, size limit, admin panel. Depends T42. *Verification:* tests with the fake downloader; expiry with an injected clock (**100 %** on its rules).
+- [ ] **T44 Server: progress**: position, played, keep, speed and settings per user; newest wins. Depends T41. *Verification:* tests including out-of-order updates.
+- [ ] **T45 Android data**: shows, episodes and progress in the catalog (database migration); progress offline through the pending changes. Depends T35, T42, T44. *Verification:* unit tests.
+- [ ] **T46 Android screens**: Home shelves, Library and Search filters, show and episode pages, chapters. Depends T45. *Verification:* view model and UI tests.
+- [ ] **T47 Android player**: episode mode with resume, speed, skips, chapters; sleep timer (also for music). Depends T45. *Verification:* unit tests in `:core:player`; run on the phone.
+- [ ] **T48 Android automatic**: download of new episodes, removal of played ones, periodic check and notification. Depends T45. *Verification:* worker tests; run on the phone.
+- [ ] **T49 RSS rules** (coordinator): threat model, the new outbound rule and any dependency **approved by the owner**; contracts. *Verification:* decision in SPEC §11.
+- [ ] **T50 Server: feeds**: safe fetcher and parser (**100 %** on address and size rules), add by address, OPML import and export. Depends T49. *Verification:* tests for private addresses, redirects, oversized and hostile XML.
+- [ ] **T51 Worker: feed episodes**. Depends T50. *Verification:* tests with a local fake feed.
+- [ ] **T52 App and security review**: add by address and OPML in the app and the panel; independent review in security mode. Depends T51. *Verification:* review without blocking findings.
+
 ## Phase 5 — Kubernetes (after 1.0, when the author decides)
 - [ ] **T25 PostgreSQL driver**: repository layer on psycopg; full test suite on both databases in CI; SQLite → PostgreSQL data migration command. *Verification:* CI matrix green; a copy of the real library migrated and checked.
 - [ ] **T26 Shared state on Redis**: `TtlCache`, `RateLimiter`, `InFlight`, `JobQueue` implementations with the same contract tests as the in-process ones. *Verification:* two api replicas share rate limits and deduplicate downloads (integration test).

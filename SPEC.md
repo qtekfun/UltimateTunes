@@ -115,6 +115,9 @@ The api serves a web player for browsers at `/` (the home page: the sign-in form
 
 The look follows §5 on desktop and phone. It talks only to its own server, through the same rules and per-user limits as every client: the OpenSubsonic and `/ut/v1` handlers are called as the signed-in user. Jinja + the vendored HTMX + small own scripts, no build step, en/es.
 
+### RF-16 Podcasts
+Follow shows from YouTube Music (and, in a second phase, any RSS address and OPML), with new episodes, resume across devices, played marks, speed, skips, sleep timer, chapters, automatic download, notices of new episodes made by the app, and episodes that expire on the server. Design and limits: `docs/podcasts.md`.
+
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
 - Bottom bar with 3 tabs (amended 2026-11-27): **Home, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
@@ -157,7 +160,7 @@ Own design inspired by Apple Music, **without** Apple logos, icons, fonts or ass
 - Coverage: ≥ 85 % server and Android core; 100 % in the critical areas listed in CLAUDE.md.
 
 ## 9. Out of scope (v1)
-Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/Last.fm scrobbling, OIDC/SSO, Chromecast, Play Store / F-Droid submission, public sharing links, podcasts. **Kubernetes deployment, PostgreSQL and Redis implementations** are designed for (§3) but delivered after 1.0 (PLAN phase 5).
+Android Auto, iOS client, plain YouTube as a source, transcoding, ListenBrainz/Last.fm scrobbling, OIDC/SSO, Chromecast, Play Store / F-Droid submission, public sharing links (podcasts left this list on 2026-11-27, RF-16). **Kubernetes deployment, PostgreSQL and Redis implementations** are designed for (§3) but delivered after 1.0 (PLAN phase 5).
 
 ## 10. Known risks
 - **YouTube changes break yt-dlp or ytmusicapi** (PO tokens, JS challenges, IP blocks): worker isolated, yt-dlp auto-update, canary scheduled on the server with alert, `Downloader`/`MusicCatalog` interfaces to swap implementations. T03 measures the current state.
@@ -575,3 +578,7 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 ### Taken — three tabs and one layout (2026-11-27)
 - The owner found Listen Now and Radio inconsistent with Library and Settings too hidden, and chose proposal B of two mock-ups: **Home, Library, Search**; Radio moves into Home; Library shows content with filters instead of a menu; Settings from every tab. §5 amended; this replaces the four tabs of RF-11 and the "fix, do not redesign" line of T28.
 - The redesign is built on the local catalog (T32), so the new screens work offline from the start (PLAN T33).
+
+### Taken — podcasts (2026-11-27)
+- Asked by the owner. YouTube Music first, RSS later; episodes are kept and expire; they come right after the new main screens and the offline work they build on, before the playlist editor and the player tasks. Design: `docs/podcasts.md`.
+- RSS needs a change to the rules on outbound hosts and arbitrary addresses: **not approved yet**; it is asked for with T49.
