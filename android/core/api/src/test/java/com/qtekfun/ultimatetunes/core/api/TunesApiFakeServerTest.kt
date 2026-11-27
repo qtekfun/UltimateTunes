@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.core.api
 
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.AlbumListType
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
@@ -559,7 +560,7 @@ class TunesApiFakeServerTest {
             val ids =
                 listOf(SongId("yt:Qx7Lm2pZ0aB"), SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001"))
             assertNotNull(api.createPlaylist("Road", ids).value())
-            val create = server.takeRequest().url
+            val create = server.takeRequest().form()
             assertEquals("Road", create.queryParameter("name"))
             assertEquals(ids.map { it.value }, create.queryParameterValues("songId"))
 
@@ -571,7 +572,7 @@ class TunesApiFakeServerTest {
                 songIdsToAdd = ids,
                 songIndexesToRemove = listOf(0, 2)
             ).value()
-            val update = server.takeRequest().url
+            val update = server.takeRequest().form()
             assertEquals("p1", update.queryParameter("playlistId"))
             assertEquals("New", update.queryParameter("name"))
             assertEquals("c", update.queryParameter("comment"))
@@ -580,13 +581,49 @@ class TunesApiFakeServerTest {
             assertEquals(listOf("0", "2"), update.queryParameterValues("songIndexToRemove"))
 
             api.updatePlaylist(PlaylistId("p1")).value()
-            assertEquals(
-                setOf("playlistId", "apiKey", "v", "c", "f"),
-                server.takeRequest().url.queryParameterNames
-            )
+            val bare = server.takeRequest()
+            assertEquals("POST", bare.method)
+            assertEquals(setOf("playlistId"), bare.form().queryParameterNames)
+            assertEquals(setOf("apiKey", "v", "c", "f"), bare.url.queryParameterNames)
 
             api.deletePlaylist(PlaylistId("p1")).value()
             assertEquals("p1", server.takeRequest().url.queryParameter("id"))
+        }
+
+        @Test
+        fun `lists longer than one request takes are sent in parts`() = runTest {
+            val ids = (1..2500).map { SongId("s$it") }
+
+            api.updatePlaylist(PlaylistId("p1"), name = "Long", songIdsToAdd = ids).value()
+
+            val parts = List(3) { server.takeRequest().form() }
+            assertEquals(
+                listOf(1000, 1000, 500),
+                parts.map { it.queryParameterValues("songIdToAdd").size }
+            )
+            assertEquals(listOf("Long", null, null), parts.map { it.queryParameter("name") })
+            assertEquals("s1001", parts[1].queryParameter("songIdToAdd"))
+
+            api.createPlaylist("Long", ids.take(1200)).value()
+            val create = server.takeRequest().form()
+            assertEquals(1000, create.queryParameterValues("songId").size)
+            val appended = server.takeRequest().form()
+            assertEquals(200, appended.queryParameterValues("songIdToAdd").size)
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+        }
+
+        @Test
+        fun `a very long play queue keeps the part around the current song`() = runTest {
+            val ids = (0 until 3000).map { SongId("s$it") }
+
+            api.savePlayQueue(ids, SongId("s1500"), 0).value()
+            val middle = server.takeRequest().form().queryParameterValues("id")
+            assertEquals(1000, middle.size)
+            assertEquals("s1400", middle.first())
+
+            api.savePlayQueue(ids, SongId("s2999"), 0).value()
+            val end = server.takeRequest().form().queryParameterValues("id")
+            assertEquals("s2000" to "s2999", end.first() to end.last())
         }
 
         @Test
@@ -641,7 +678,7 @@ class TunesApiFakeServerTest {
                 SongId("a"),
                 1500
             ).value()
-            val save = server.takeRequest().url
+            val save = server.takeRequest().form()
             assertEquals(listOf("a", "yt:Qx7Lm2pZ0aB"), save.queryParameterValues("id"))
             assertEquals("a", save.queryParameter("current"))
             assertEquals("1500", save.queryParameter("position"))

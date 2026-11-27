@@ -4,6 +4,8 @@
 package com.qtekfun.ultimatetunes.ui
 
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.CatalogSync
+import com.qtekfun.ultimatetunes.core.library.CatalogSyncResult
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
@@ -109,6 +111,24 @@ class FakePlayerController(initial: PlaybackState = PlaybackState(connected = tr
 }
 
 /** Offline downloads kept in memory; nothing downloads. */
+class FakeCatalogSync : CatalogSync {
+    val calls = mutableListOf<String>()
+
+    override suspend fun syncIfStale(): CatalogSyncResult {
+        calls += "syncIfStale"
+        return CatalogSyncResult.Synced
+    }
+
+    override suspend fun sync(): CatalogSyncResult {
+        calls += "sync"
+        return CatalogSyncResult.Synced
+    }
+
+    override suspend fun clear() {
+        calls += "clear"
+    }
+}
+
 class FakeOfflineControls : OfflineControls {
     val mutableSelection = MutableStateFlow(OfflineSelection())
     val mutableItems = MutableStateFlow<List<OfflineItem>>(emptyList())
@@ -136,6 +156,12 @@ class FakeOfflineControls : OfflineControls {
             )
         }
 
+    val servers = mutableListOf<String>()
+
+    override suspend fun serverConnected(server: String) {
+        servers += server
+    }
+
     override suspend fun syncSoon() {
         syncs++
     }
@@ -154,14 +180,9 @@ class FakeOfflineControls : OfflineControls {
     }
 
     var syncNows = 0
-    var resumes = 0
 
     override suspend fun syncNow() {
         syncNows++
-    }
-
-    override suspend fun resumeSync() {
-        resumes++
     }
 }
 

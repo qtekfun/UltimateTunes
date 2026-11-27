@@ -18,10 +18,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,7 +64,10 @@ fun PlaylistPickerSheet(
     onDismiss: () -> Unit
 ) {
     var naming by rememberSaveable { mutableStateOf(false) }
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheet = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheet,
@@ -222,6 +226,13 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
         )
 
         ActionEvent.Downloading -> stringResource(R.string.event_downloading)
+
+        is ActionEvent.TooManyNew ->
+            pluralStringResource(R.plurals.event_too_many_new, event.max, event.max)
+
+        is ActionEvent.Queued -> stringResource(
+            if (event.next) R.string.event_play_next else R.string.event_play_last
+        )
 
         ActionEvent.DownloadRemoved -> stringResource(R.string.event_download_removed)
 

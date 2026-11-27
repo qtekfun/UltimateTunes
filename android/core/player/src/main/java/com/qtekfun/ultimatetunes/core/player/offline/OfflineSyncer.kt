@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.core.player.offline
 
+import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.map
@@ -125,6 +126,25 @@ class OfflineSyncer(
     }
 
     /**
+     * Whether the server has any of the library songs [ids]: false only when it answered for
+     * each that it does not, null when that could not be told.
+     */
+    suspend fun holds(ids: Collection<SongId>): Boolean? {
+        // Spread over the list: songs deleted together are often next to each other.
+        val library = ids.filterNot { it.isExternal }
+        val sample = library.chunked((library.size / SAMPLE_SIZE).coerceAtLeast(1))
+            .map { it.first() }
+            .take(SAMPLE_SIZE)
+        var told = true
+        for (id in sample) {
+            val result = api.song(id)
+            if (result is TunesResult.Success) return true
+            told = told && (result as? TunesResult.ApiError)?.error?.kind == ErrorKind.NOT_FOUND
+        }
+        return if (told) sample.isEmpty() else null
+    }
+
+    /**
      * Removes the downloads the stored selection no longer wants, without asking the server;
      * [dropped] are the songs the user just let go (freed even while some kept album or playlist
      * was never read).
@@ -156,6 +176,9 @@ class OfflineSyncer(
     private companion object {
         /** The most `search3` returns for one page. */
         const val PAGE_SIZE = 500
+
+        /** How many kept songs are asked for to recognise the server's library. */
+        const val SAMPLE_SIZE = 5
 
         /** A guard against a server that never ends a listing. */
         const val MAX_LIBRARY_SONGS = 200_000

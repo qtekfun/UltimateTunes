@@ -20,8 +20,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -99,9 +100,13 @@ fun TrackMenuSheet(
     isFavourite: Boolean,
     isKeptOffline: Boolean,
     actions: TrackMenuActions,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isKeptByGroup: Boolean = false
 ) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheet = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheet,
@@ -110,7 +115,11 @@ fun TrackMenuSheet(
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             MenuHeader(track)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            entries(track, isFavourite, isKeptOffline, actions).forEach { entry ->
+            // A song kept through an album, a playlist or the library cannot be let go alone.
+            val hidden = TrackMenuItem.DOWNLOAD.takeIf { isKeptByGroup && !isKeptOffline }
+            val shown = entries(track, isFavourite, isKeptOffline, actions)
+                .filterNot { it.item == hidden }
+            shown.forEach { entry ->
                 MenuEntryRow(entry) {
                     onDismiss()
                     entry.run()
