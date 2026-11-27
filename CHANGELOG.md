@@ -9,6 +9,16 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.18] - 2026-11-27
+
+Release candidate of 1.0: searching works without a connection on Android.
+
+### Added
+- Android: search shows what is in your library on the phone at once, ignoring case and accents. With no connection, in offline mode or when the server does not answer, it says so and shows the phone's results instead of an error.
+
+### Fixed
+- Android: a damaged local catalog no longer crashes the app, and choosing a song while unavailable ones are being skipped is respected.
+
 ## [1.0.0-rc.17] - 2026-11-27
 
 Release candidate of 1.0: new animations in the Android app.
