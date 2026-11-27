@@ -1,0 +1,1 @@
+La búsqueda funciona ya sin conexión: muestra lo que hay de tu biblioteca en este móvil y avisa de que no hay conexión.

@@ -1,0 +1,1 @@
+Search now works without a connection: it shows what is in your library on this phone and says that there is no connection.
