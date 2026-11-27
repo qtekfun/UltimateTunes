@@ -148,9 +148,11 @@ class Playlists:
         songs = await children(self._services, self._user, entries)
         return {**payload(row, self._user), "entry": songs}
 
-    def _require_owned(self, playlist_id: str) -> None:
+    def _require_owned(self, playlist_id: str) -> frozenset[str]:
+        """The tracks the playlist holds, once the caller is known to own it."""
         with self._services.db.read() as conn:
             self._owned_row(conn, playlist_id)
+            return frozenset(_Repo(conn).entries(playlist_id))
 
     # ------------------------------------------------------------------ writes
 
@@ -216,9 +218,10 @@ class Playlists:
         if target is None and not name:
             raise InvalidParameter("name is required to create a playlist")
         clean_name = check_name(name) if name else None
+        held: frozenset[str] = frozenset()
         if target is not None:
-            await run_in_threadpool(self._require_owned, target)
-        tracks = await keep(self._services, self._user, songs)
+            held = await run_in_threadpool(self._require_owned, target)
+        tracks = await keep(self._services, self._user, songs, held=held)
         playlist_id = await run_in_threadpool(
             lambda: self._write(target, name=clean_name, tracks=tracks)
         )
