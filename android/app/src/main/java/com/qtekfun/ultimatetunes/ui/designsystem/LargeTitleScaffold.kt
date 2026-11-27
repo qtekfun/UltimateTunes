@@ -60,7 +60,7 @@ fun LargeTitleScaffold(
                             text = title,
                             maxLines = 1,
                             modifier = Modifier
-                                .basicMarquee()
+                                .basicMarquee(iterations = Int.MAX_VALUE)
                                 .semantics { heading() }
                                 .testTag(TITLE_TAG)
                         )

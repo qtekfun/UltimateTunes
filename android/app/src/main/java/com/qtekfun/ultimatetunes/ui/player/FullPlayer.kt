@@ -75,10 +75,8 @@ import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsView
-import com.qtekfun.ultimatetunes.ui.model.PLAYER_ARTWORK_PX
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.model.formatDuration
-import com.qtekfun.ultimatetunes.ui.model.withCoverSize
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
@@ -252,7 +250,7 @@ private fun HeroArtwork(track: TrackTile, bottom: Color, dimmed: Boolean) {
             .alpha(alpha)
     ) {
         Artwork(
-            url = track.coverUrl?.withCoverSize(PLAYER_ARTWORK_PX),
+            url = track.coverUrl,
             placeholderKey = track.id.value,
             shape = RectangleShape,
             modifier = Modifier.fillMaxSize()

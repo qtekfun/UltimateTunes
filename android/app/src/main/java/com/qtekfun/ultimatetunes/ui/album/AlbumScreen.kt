@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -52,6 +51,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
+import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
 import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -184,9 +184,7 @@ private fun AlbumHeader(album: AlbumContent, navigator: Navigator, isOffline: Bo
             placeholderKey = album.album.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .widthIn(max = 300.dp)
-                .fillMaxWidth(fraction = 0.72f)
-                .aspectRatio(1f)
+                .coverSize(fraction = 0.72f, max = 300.dp)
         )
         val artistId = album.artistId
         Text(

@@ -6,11 +6,9 @@ package com.qtekfun.ultimatetunes.ui.artist
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +31,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.albumGrid
+import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
@@ -106,9 +105,7 @@ private fun ArtistHeader(artist: ArtistContent) {
             placeholderKey = artist.artist.id.value,
             shape = CircleShape,
             modifier = Modifier
-                .widthIn(max = 220.dp)
-                .fillMaxWidth(fraction = 0.5f)
-                .aspectRatio(1f)
+                .coverSize(fraction = 0.5f, max = 220.dp)
         )
         if (artist.artist.isExternal) {
             Text(
