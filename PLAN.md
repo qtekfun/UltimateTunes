@@ -100,6 +100,44 @@ Rules: one task per branch `feat/tNN-<slug>`, its gates green before the PR (`ma
   - *Status:* release candidate 1.0.0-rc.1 prepared by the coordinator (release PR); publishing needs the author (enable the `Release` workflow and push the tag; RELEASING.md). See `docs/decisions.md` D1 and D12.
 - *Wave 3 result (2026-10-12):* besides T20–T23, Wave 3 delivered: security audit fixes before exposure (#61 exposure hardening, #63 download limits, catalog budget and auth brakes, #65), performance fixes found by T21 (#58, #59), the web player at `/` (#66, RF-15), container architecture docs (#67), deployment examples (Caddy and Tailscale in #56, Traefik with Authelia in #61, Traefik behind Cloudflare Tunnel in #68), authenticated ntfy notifications (#69), and Android polish (#64 full player sheet, #70). Decisions in SPEC §11.
 
+## Wave 4 — Android: offline, playlists and interface (before 1.0.0)
+Asked by the owner (SPEC §11, T28). Order: T28; then T29, T30 and T31 in parallel (**rc after them**); T32; T33 (**rc**); T34; T35 (**rc**); T36; T37 and T38 in parallel; T39 (**rc**); then T24.
+
+- [x] **T28 Preparation** (coordinator): spec and plan, `:core:library` skeleton. *Verification:* `./gradlew check` green.
+  - *Result:* no path-ownership entries for T28 to T39: the wave is guarded by running its tasks one at a time, or in parallel only on separate paths, and by review.
+- [x] **T29 Visual fixes**: artwork accent reaches the player; theme container colours; artwork size caps; large cover in the full player; status bar icons over the player; buffering indicator; feedback for Play Next/Last; long titles; navigation transitions. *Verification:* tests for the accent and the new states; checked on the phone in light and dark.
+  - *Result:* the larger cover was dropped (the server ignores the requested size); no automated test for the accent or the buffering indicator; the check on the phone is pending.
+- [x] **T30 Data and playlist fixes**: deleting a playlist kept offline frees its downloads; edits sync at once; the open playlist refreshes and failed changes roll back; form POST and chunking; clear error messages; "Remove download" for songs kept through a collection; another server's downloads are freed (not on disconnect, SPEC §11); no sync before the server config is restored. *Verification:* a failing test for each before its fix, including the request-size limit.
+  - *Result:* the request-size limit was not reproduced against a server (the test checks form POSTs in parts); too many new songs is the only new error message.
+- [x] **T31 Server: reordering large playlists**: songs already in the playlist do not count against the cap of new downloads per request. *Verification:* `make -C server check`; test with more than 50 pending songs.
+  - *Result:* merged #164 (with #163, a lint fix); tested with the cap lowered to 1 rather than with 50 pending songs.
+- [x] **T32 Local catalog** (`:core:library`): Room database, full sync (a failed page changes nothing), repository, pending-change storage. Depends T28, T30. *Verification:* unit tests on the fake server and an in-memory database.
+  - *Result:* no screen uses it yet; not run on a device.
+- [ ] **T33 New main screens, offline**: three tabs (Home with radio, Library, Search) and one layout (SPEC §5); Library with filters and "On this phone"; Settings from every tab, reorganised; all library data from the catalog; unavailable songs dimmed; Offline mode filters; connectivity state; a failed refresh keeps what is shown; covers of downloaded songs; skip to the next available song; `yt:` aliases applied offline. Depends T32. *Verification:* view model and UI tests; airplane-mode run on the phone.
+- [ ] **T34 Local search**: search the catalog (case and accent insensitive), merged with the server's results when connected; recent searches. Depends T32. *Verification:* tests; airplane-mode run on the phone.
+- [ ] **T35 Offline changes**: queue for playlists, favourites and scrobbles, replayed on reconnect (**100 %** on its state machine). Depends T33. Rewriting playlists of more than 1,000 songs without losing any. *Verification:* tests for every operation and conflict; edits made in airplane mode appear in the web player.
+- [ ] **T36 Playlist editor**: add songs from the playlist with search and multi-selection; drag to reorder; swipe to remove with undo; duplicate warning; overflow button on song rows. Depends T34, T35. *Verification:* UI tests on the fake server.
+- [ ] **T37 Player**: shuffle, repeat, favourite, editable queue. Depends T36 (reuses drag to reorder). *Verification:* unit tests in `:core:player`; run on the phone.
+- [ ] **T38 Lists and downloads**: now-playing and downloaded marks; Downloads with progress, failures, size and bulk removal; menus for albums, artists and playlists; pull to refresh; lyrics auto-scroll yields to the user. Depends T36. *Verification:* view model and UI tests.
+- [ ] **T39 Adaptive layout and store assets**: landscape, large fonts, tablets, accessibility pass; new screenshots and store texts. Depends T37, T38. *Verification:* screenshot test; `tools/check-store-texts.sh` green.
+
+## Wave 5 — Podcasts (design: `docs/podcasts.md`)
+Order: T40 and T41 can start while T33 to T35 run; T42 to T48 after T35 (**rc**); then T36 to T39. Phase 2 (T49 to T52) after 1.0 unless the owner says otherwise.
+
+- [ ] **T40 Spike**: YouTube Music podcasts from the server: `ytmusicapi` calls without an account; `yt-dlp` on episodes (formats, size, time); streaming and seeking on a long episode not yet downloaded. *Verification:* report `docs/spikes/T40.md` and a decision in SPEC §11.
+- [ ] **T41 Contracts** (coordinator): OpenSubsonic podcast endpoints, `/ut/v1/podcasts`, ids, migrations, error codes, fake catalog and fake server examples. Depends T40. *Verification:* contracts validate; migrations apply on SQLite and PostgreSQL.
+- [ ] **T42 Server: shows**: search, follow, show and episode pages, scheduled refresh. Depends T41. *Verification:* tests with the fake catalog.
+- [ ] **T43 Server: episodes**: download, stream, expiry, size limit, admin panel. Depends T42. *Verification:* tests with the fake downloader; expiry with an injected clock (**100 %** on its rules).
+- [ ] **T44 Server: progress**: position, played, keep, speed and settings per user; newest wins. Depends T41. *Verification:* tests including out-of-order updates.
+- [ ] **T45 Android data**: shows, episodes and progress in the catalog (database migration); progress offline through the pending changes. Depends T35, T42, T44. *Verification:* unit tests.
+- [ ] **T46 Android screens**: Home shelves, Library and Search filters, show and episode pages, chapters. Depends T45. *Verification:* view model and UI tests.
+- [ ] **T47 Android player**: episode mode with resume, speed, skips, chapters; sleep timer (also for music). Depends T45. *Verification:* unit tests in `:core:player`; run on the phone.
+- [ ] **T48 Android automatic**: download of new episodes, removal of played ones, periodic check and notification. Depends T45. *Verification:* worker tests; run on the phone.
+- [ ] **T49 RSS rules** (coordinator): threat model, the new outbound rule and any dependency **approved by the owner**; contracts. *Verification:* decision in SPEC §11.
+- [ ] **T50 Server: feeds**: safe fetcher and parser (**100 %** on address and size rules), add by address, OPML import and export. Depends T49. *Verification:* tests for private addresses, redirects, oversized and hostile XML.
+- [ ] **T51 Worker: feed episodes**. Depends T50. *Verification:* tests with a local fake feed.
+- [ ] **T52 App and security review**: add by address and OPML in the app and the panel; independent review in security mode. Depends T51. *Verification:* review without blocking findings.
+
 ## Phase 5 — Kubernetes (after 1.0, when the author decides)
 - [ ] **T25 PostgreSQL driver**: repository layer on psycopg; full test suite on both databases in CI; SQLite → PostgreSQL data migration command. *Verification:* CI matrix green; a copy of the real library migrated and checked.
 - [ ] **T26 Shared state on Redis**: `TtlCache`, `RateLimiter`, `InFlight`, `JobQueue` implementations with the same contract tests as the in-process ones. *Verification:* two api replicas share rate limits and deduplicate downloads (integration test).

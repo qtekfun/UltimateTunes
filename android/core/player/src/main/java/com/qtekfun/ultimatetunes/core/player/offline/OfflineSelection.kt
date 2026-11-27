@@ -18,7 +18,9 @@ data class OfflineSelection(
      */
     val aliases: Map<SongId, SongId> = emptyMap(),
     /** The whole library kept because of the setting; null when it is off. */
-    val library: LibraryOffline? = null
+    val library: LibraryOffline? = null,
+    /** The server these songs came from; null until one is connected. */
+    val server: String? = null
 ) {
     val isEmpty: Boolean get() = tracks.isEmpty() && collections.isEmpty() && library == null
 

@@ -20,12 +20,16 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -34,10 +38,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,8 +59,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -62,6 +68,7 @@ import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.placeholderBrush
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
+import kotlinx.coroutines.flow.drop
 
 /** Username, password and, once the server asks for it, the two-factor code. */
 @Composable
@@ -73,6 +80,7 @@ internal fun PasswordFields(
     onConnect: () -> Unit
 ) {
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    val password = rememberSecretFieldState(state.password, onPasswordChange)
     val refused = state.error == ConnectError.WRONG_PASSWORD
     OutlinedTextField(
         value = state.username,
@@ -88,18 +96,12 @@ internal fun PasswordFields(
         ),
         modifier = Modifier.fillMaxWidth().testTag(CONNECT_USERNAME_TAG)
     )
-    OutlinedTextField(
-        value = state.password,
-        onValueChange = onPasswordChange,
+    OutlinedSecureTextField(
+        state = password,
         label = { Text(stringResource(R.string.connect_password)) },
-        singleLine = true,
         enabled = !state.checking,
         isError = refused,
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
+        textObfuscationMode = obfuscation(passwordVisible),
         trailingIcon = {
             TextButton(onClick = { passwordVisible = !passwordVisible }) {
                 Text(
@@ -118,7 +120,13 @@ internal fun PasswordFields(
             imeAction = if (state.needsCode) ImeAction.Next else ImeAction.Go,
             autoCorrectEnabled = false
         ),
-        keyboardActions = KeyboardActions(onGo = { if (state.canConnect) onConnect() }),
+        onKeyboardAction = { performDefaultAction ->
+            if (state.needsCode) {
+                performDefaultAction()
+            } else if (state.canConnect) {
+                onConnect()
+            }
+        },
         modifier = Modifier.fillMaxWidth().testTag(CONNECT_PASSWORD_TAG)
     )
     if (state.needsCode) CodeField(state, onCodeChange, onConnect)
@@ -149,4 +157,29 @@ private fun CodeField(
             .testTag(CONNECT_CODE_TAG)
             .semantics { liveRegion = LiveRegionMode.Polite }
     )
+}
+
+/** Shown in full or hidden: the secret is never revealed a character at a time. */
+internal fun obfuscation(visible: Boolean): TextObfuscationMode =
+    if (visible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden
+
+/**
+ * The state of a password or key field holding [value]. Typing is reported to [onChange]; the
+ * field only takes [value] back when it was emptied or filled from outside. Not saved with the
+ * instance state, so the secret stays out of it.
+ */
+@Composable
+internal fun rememberSecretFieldState(value: String, onChange: (String) -> Unit): TextFieldState {
+    val field = remember { TextFieldState(value) }
+    val report by rememberUpdatedState(onChange)
+    LaunchedEffect(value) {
+        val shown = field.text.toString()
+        if (shown != value && (shown.isEmpty() || value.isEmpty())) {
+            field.setTextAndPlaceCursorAtEnd(value)
+        }
+    }
+    LaunchedEffect(field) {
+        snapshotFlow { field.text.toString() }.drop(1).collect { report(it) }
+    }
+    return field
 }

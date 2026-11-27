@@ -11,6 +11,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
 
 internal const val COMPILE_SDK = 37
+
+/** Minor API level of [COMPILE_SDK]: Compose 1.13 needs 37.1. */
+internal const val COMPILE_SDK_MINOR = 1
 internal const val TARGET_SDK = 37
 internal const val MIN_SDK = 26
 internal val JVM_TARGET = JvmTarget.JVM_17
@@ -22,7 +25,9 @@ private val JAVA_VERSION = JavaVersion.VERSION_17
  */
 internal fun Project.configureAndroid(android: CommonExtension) {
     android.apply {
-        compileSdk = COMPILE_SDK
+        compileSdk {
+            version = release(COMPILE_SDK) { minorApiLevel = COMPILE_SDK_MINOR }
+        }
         defaultConfig.minSdk = MIN_SDK
 
         compileOptions.apply {
