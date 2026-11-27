@@ -30,15 +30,13 @@ internal sealed interface PlaylistSongs {
  * the library songs; a song only a playlist or the favourites hold is stored outside the library.
  */
 internal object SnapshotBuilder {
+    /** [library] holds the library songs by id; it is completed with the others and reused. */
     fun build(
-        library: Collection<Song>,
+        library: LinkedHashMap<String, SongEntity>,
         playlists: List<PlaylistSongs>,
         starred: Starred
     ): CatalogSnapshot {
-        val songs = LinkedHashMap<String, SongEntity>()
-        library.forEach {
-            songs[it.id.value] = it.toEntity(inLibrary = true).copy(starredAt = null)
-        }
+        val songs = library
         val albums = albumsOf(songs.values)
         val artists = artistsOf(songs.values, albums.values)
 

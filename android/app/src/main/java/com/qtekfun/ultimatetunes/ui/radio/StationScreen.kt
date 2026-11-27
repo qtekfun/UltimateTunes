@@ -32,8 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
@@ -74,7 +74,7 @@ fun StationScreen(
     modifier: Modifier = Modifier
 ) {
     val title = (state as? LoadState.Ready)?.value?.seed?.title.orEmpty()
-    LargeTitleScaffold(title = title, onBack = onBack, modifier = modifier) { inner ->
+    ScreenScaffold(title = title, onBack = onBack, modifier = modifier) { inner ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

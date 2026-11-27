@@ -8,8 +8,6 @@
     <string name="app_tagline">Tu música, desde tu propio servidor</string>
 
     <!-- Pestañas -->
-    <string name="tab_listen_now">Escuchar</string>
-    <string name="tab_radio">Radio</string>
     <string name="tab_library">Biblioteca</string>
     <string name="tab_search">Buscar</string>
 
@@ -58,14 +56,6 @@
     <string name="connect_error_2fa_setup">Tu servidor exige verificación en dos pasos. Actívala primero en el reproductor web y luego inicia sesión aquí.</string>
 
     <!-- Escuchar -->
-    <string name="listen_now_stations">Tus emisoras</string>
-    <string name="listen_now_recently_played">Escuchado recientemente</string>
-    <string name="listen_now_top_songs">Canciones más escuchadas</string>
-    <string name="listen_now_recently_added">Añadido recientemente</string>
-    <string name="listen_now_empty">Todavía no hay nada. Reproduce algo y aparecerá aquí.</string>
-    <string name="listen_now_recommended">Recomendado para ti</string>
-    <string name="listen_now_because_you_played">Porque escuchaste %1$s</string>
-    <string name="listen_now_charts">Listas de éxitos</string>
 
     <!-- Listas de éxitos -->
     <string name="charts_title">Listas de éxitos</string>
@@ -73,9 +63,7 @@
     <string name="charts_country">Lo más escuchado · %1$s</string>
     <string name="charts_empty">No hay listas disponibles ahora mismo.</string>
 
-    <!-- Radio -->
-    <string name="radio_from_songs">Emisoras de tus canciones favoritas</string>
-    <string name="radio_empty">Aún no hay emisoras. Reproduce unas cuantas canciones y aparecerán aquí.</string>
+    <!-- Stations -->
     <string name="station_label">Emisora</string>
     <string name="station_play">Reproducir</string>
     <string name="station_up_next">A continuación</string>
@@ -179,7 +167,6 @@
 
     <!-- Ajustes -->
     <string name="settings_title">Ajustes</string>
-    <string name="settings_server">Servidor</string>
     <string name="settings_address">Dirección</string>
     <string name="settings_server_name">Servidor</string>
     <string name="settings_account">Cuenta</string>
@@ -195,7 +182,7 @@
     <string name="settings_revoke">Revocar</string>
     <string name="settings_revoke_title">¿Revocar esta clave?</string>
     <string name="settings_revoke_message">«%1$s» dejará de funcionar al momento y tendrá que conectar con una clave nueva.</string>
-    <string name="settings_playback">Reproducción y sin conexión</string>
+    <string name="settings_playback">Reproducción y almacenamiento</string>
     <string name="settings_cache_size">Tamaño de la caché</string>
     <string name="settings_cache_help">Cada canción que escuchas se guarda en este dispositivo hasta este tamaño; las más antiguas se borran primero. Las descargas no cuentan.</string>
     <string name="size_mb">%1$d MB</string>
@@ -301,4 +288,37 @@
     <string name="youtube_login_yes">sí</string>
     <string name="youtube_login_no">no</string>
     <string name="youtube_login_diagnostics">Página: %1$s · Sesión de Google: %2$s · Sesión de YouTube: %3$s · Bloqueado: %4$s</string>
+
+    <!-- Home, Library and Settings (three tabs) -->
+    <string name="tab_home">Inicio</string>
+    <string name="home_stations">Emisoras para ti</string>
+    <string name="home_recently_added">Añadido recientemente</string>
+    <string name="home_top_songs">Tus canciones más escuchadas</string>
+    <string name="home_recommended">Recomendado para ti</string>
+    <string name="home_because_you_played">Porque escuchaste %1$s</string>
+    <string name="home_charts">Listas de éxitos</string>
+    <string name="home_empty">Aquí aún no hay nada. Reproduce algo y aparecerá aquí.</string>
+    <string name="library_songs">Canciones</string>
+    <string name="library_on_phone">Solo en el móvil</string>
+    <string name="library_new_or_import">Nueva lista o importar</string>
+    <string name="library_nothing_on_phone">Todavía no hay nada de esta lista en el móvil.</string>
+    <string name="not_on_phone">No está en el móvil</string>
+    <string name="player_not_on_phone">Eso no está en el móvil. Conéctate a tu servidor para escucharlo.</string>
+    <string name="settings_status_connected">conectado</string>
+    <string name="settings_status_offline">sin conexión</string>
+    <string name="settings_status_offline_mode">modo sin conexión</string>
+    <string name="settings_status_unreachable">no se llega al servidor</string>
+    <string name="settings_connection">%1$s · %2$s</string>
+    <string name="settings_on_phone">En este móvil: %1$s</string>
+    <string name="settings_syncing">sincronizando…</string>
+    <string name="settings_never_synced">sin sincronizar todavía</string>
+    <string name="settings_synced">sincronizado %1$s</string>
+    <string name="settings_offline_section">Sin conexión</string>
+    <string name="settings_import">Listas</string>
+    <string name="settings_account_devices">Cuenta y servidor</string>
+    <plurals name="settings_downloaded_songs">
+        <item quantity="one">%d canción descargada</item>
+        <item quantity="many">%d canciones descargadas</item>
+        <item quantity="other">%d canciones descargadas</item>
+    </plurals>
 </resources>

@@ -14,9 +14,11 @@ import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.playback.toPlayable
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
@@ -40,30 +42,35 @@ import org.junit.jupiter.api.extension.ExtendWith
 class LibraryActionsViewModelTest {
     private lateinit var server: FakeTunesServer
     private val offline = FakeOfflineControls()
+    private val catalog = TestCatalog()
+    private val refresh = FakeCatalogRefresh()
     private val starredSong = SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001")
     private val created = mutableListOf<LibraryActionsViewModel>()
 
     @BeforeEach
     fun setUp() {
         server = FakeTunesServer().start()
+        catalog.synced()
     }
 
     @AfterEach
     fun tearDown() {
         created.forEach { it.closeForTest() }
         server.close()
+        catalog.close()
     }
 
-    /** A view model whose favourites have loaded (one request). */
+    /** A view model whose favourites have come from the catalog. */
     private suspend fun viewModel(exports: Exports = FakeExports()) = LibraryActionsViewModel(
         connectedApi(server),
         offline,
         exports,
-        PlaylistChanges()
+        PlaylistChanges(),
+        catalog.repository,
+        refresh
     ).also { vm ->
         created += vm
         vm.state.awaitFirst { it.favourites.isNotEmpty() }
-        server.takeRequest()
     }
 
     @Test
@@ -117,14 +124,16 @@ class LibraryActionsViewModelTest {
     }
 
     @Test
-    fun `refreshing favourites keeps them when the server cannot answer`() = runTest {
+    fun `favourites made here stay until the catalog has them`() = runTest {
         val viewModel = viewModel()
-        server.dispatcher.override("rest/getStarred2") { dropConnection() }
+        viewModel.toggleFavourite(tile(3))
+        viewModel.state.awaitFirst { it.event != null }
+        assertEquals(1, refresh.requests)
 
-        viewModel.refreshFavourites()
-        server.takeRequest()
+        // A sync that does not have it yet does not undo it.
+        catalog.synced()
 
-        assertEquals(setOf(starredSong), viewModel.state.value.favourites)
+        assertEquals(setOf(starredSong, SongId("song-3")), viewModel.state.value.favourites)
     }
 
     @Test
@@ -139,7 +148,6 @@ class LibraryActionsViewModelTest {
         assertEquals(songs, picker.tracks)
         val playlist = (picker.playlists as LoadState.Ready).value.single()
         assertEquals("Sunday Morning", playlist.name)
-        server.takeRequest()
 
         viewModel.addToPlaylist(playlist)
 
@@ -160,7 +168,6 @@ class LibraryActionsViewModelTest {
         val viewModel = viewModel()
         viewModel.pickPlaylist(listOf(tile(4)))
         viewModel.state.awaitFirst { it.picker?.playlists is LoadState.Ready }
-        server.takeRequest()
 
         viewModel.createPlaylist("  ")
         assertTrue(viewModel.state.value.picker != null)
@@ -208,7 +215,6 @@ class LibraryActionsViewModelTest {
         val viewModel = viewModel()
         viewModel.pickPlaylist((1..51).map { tile(it).copy(isExternal = true) })
         viewModel.state.awaitFirst { it.picker?.playlists is LoadState.Ready }
-        server.takeRequest()
         val sent = server.requestCount
 
         viewModel.createPlaylist("Too much")

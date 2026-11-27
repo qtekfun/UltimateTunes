@@ -3,19 +3,32 @@
 
 package com.qtekfun.ultimatetunes.ui.library
 
+import androidx.lifecycle.SavedStateHandle
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.fake.form
+import com.qtekfun.ultimatetunes.core.api.model.AlbumId
+import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
+import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
+import com.qtekfun.ultimatetunes.ui.FakePhoneAvailability
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
-import com.qtekfun.ultimatetunes.ui.awaitLoaded
 import com.qtekfun.ultimatetunes.ui.awaitReady
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import com.qtekfun.ultimatetunes.ui.subsonicOk
+import com.qtekfun.ultimatetunes.ui.subsonicFailure
+import com.qtekfun.ultimatetunes.ui.tile
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,9 +40,17 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 
+private const val PLAYLIST = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001"
+private val KEEPER = SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001")
+
 @ExtendWith(MainDispatcherExtension::class)
 class LibraryViewModelsTest {
     private lateinit var server: FakeTunesServer
+    private val catalog = TestCatalog()
+    private val refresh = FakeCatalogRefresh()
+    private val phone = FakePhoneAvailability()
+    private val offline = FakeOfflineControls()
+    private val created = mutableListOf<androidx.lifecycle.ViewModel>()
 
     @BeforeEach
     fun setUp() {
@@ -38,174 +59,206 @@ class LibraryViewModelsTest {
 
     @AfterEach
     fun tearDown() {
+        created.forEach { it.closeForTest() }
         server.close()
+        catalog.close()
     }
 
-    /** `count` invented albums for getAlbumList2, named from [first]. */
-    private fun albums(count: Int, first: Int = 0): String = (first until first + count)
-        .joinToString(",", prefix = "{\"album\":[", postfix = "]}") {
-            """{"id":"album-$it","name":"Album $it","artist":"Invented"}"""
+    private fun library(saved: SavedStateHandle = SavedStateHandle()) = LibraryViewModel(
+        saved,
+        connectedApi(server),
+        catalog.repository,
+        catalog.sync,
+        refresh,
+        phone,
+        NoOfflineDownloads,
+        offline
+    ).also { created += it }
+
+    private suspend fun LibraryViewModel.items(
+        filter: LibraryFilter,
+        predicate: (LibraryItems) -> Boolean = { true }
+    ): LibraryItems {
+        val state = state.awaitFirst {
+            val items = (it.items as? LoadState.Ready)?.value
+            it.filter == filter && items != null && predicate(items)
         }
+        return (state.items as LoadState.Ready).value
+    }
 
     @Nested
     inner class Library {
         @Test
-        fun `recently added asks for the newest albums`() = runTest {
-            val albums = LibraryViewModel(connectedApi(server)).recentlyAdded.awaitReady()
+        fun `each filter lists the catalog, with no request of its own`() = runBlocking {
+            catalog.synced()
+            val viewModel = library()
 
+            val playlists = viewModel.items(LibraryFilter.PLAYLISTS) as LibraryItems.Playlists
+            assertEquals(listOf("Sunday Morning"), playlists.playlists.map { it.name })
+            assertEquals(1, viewModel.state.value.favouriteCount)
+
+            viewModel.select(LibraryFilter.ALBUMS)
+            val albums = viewModel.items(LibraryFilter.ALBUMS) as LibraryItems.Albums
+            assertEquals(listOf("Harbour Lights"), albums.albums.map { it.title })
+
+            viewModel.select(LibraryFilter.ARTISTS)
+            val artists = viewModel.items(LibraryFilter.ARTISTS) as LibraryItems.Artists
+            assertEquals(listOf("The Paper Lanterns"), artists.artists.map { it.name })
+
+            viewModel.select(LibraryFilter.SONGS)
+            val songs = viewModel.items(LibraryFilter.SONGS) as LibraryItems.Songs
+            assertEquals(listOf("Lighthouse Keeper"), songs.songs.map { it.title })
+
+            assertEquals(3, viewModel.playlistTracks(PlaylistId(PLAYLIST)).size)
+            val artist = artists.artists.single().id
+            assertEquals(1, viewModel.artistTracks(artist).size)
+            assertEquals(0, server.requestCount)
+        }
+
+        @Test
+        fun `on this phone keeps what the phone holds, and offline mode forces it`() = runBlocking {
+            catalog.synced()
+            val viewModel = library()
+            viewModel.select(LibraryFilter.SONGS)
+            viewModel.items(LibraryFilter.SONGS) { !it.isEmpty }
+
+            viewModel.setOnPhoneOnly(true)
+            viewModel.items(LibraryFilter.SONGS) { it.isEmpty }
+
+            phone.availability.value = Availability(
+                songs = setOf(KEEPER),
+                albums = setOf(AlbumId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001")),
+                artists = setOf(ArtistId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001")),
+                playlists = setOf(PlaylistId(PLAYLIST))
+            )
+            viewModel.items(LibraryFilter.SONGS) { !it.isEmpty }
+            for (filter in listOf(
+                LibraryFilter.ALBUMS,
+                LibraryFilter.ARTISTS,
+                LibraryFilter.PLAYLISTS
+            )) {
+                viewModel.select(filter)
+                viewModel.items(filter) { !it.isEmpty }
+            }
+
+            viewModel.setOnPhoneOnly(false)
+            phone.availability.value = Availability(offlineMode = true)
+            viewModel.items(LibraryFilter.PLAYLISTS) { it.isEmpty }
+            assertTrue(viewModel.state.value.onPhoneOnly)
+            assertTrue(viewModel.state.value.offlineMode)
+        }
+
+        @Test
+        fun `the filter chosen is restored`() = runBlocking {
+            catalog.synced()
+            val saved = SavedStateHandle()
+            library(saved).select(LibraryFilter.ARTISTS)
+
+            library(saved).items(LibraryFilter.ARTISTS)
+            Unit
+        }
+
+        @Test
+        fun `a catalog never read says why`() = runBlocking {
+            catalog.server.dispatcher.override("ut/v1/me") { dropConnection() }
+            catalog.sync.sync()
+
+            val state = library().state.awaitFirst { it.items !is LoadState.Loading }
+
+            assertEquals(LoadState.Failed(LoadError.NETWORK), state.items)
+        }
+
+        @Test
+        fun `a playlist is kept offline from its row and dropped again`() = runBlocking {
+            catalog.synced()
+            val viewModel = library()
+            val playlist = (
+                viewModel.items(LibraryFilter.PLAYLISTS) as LibraryItems.Playlists
+                ).playlists.single()
+
+            viewModel.toggleOffline(playlist)
+            viewModel.state.awaitFirst { playlist.id in it.keptPlaylists }
+            assertEquals(
+                CollectionKind.PLAYLIST,
+                offline.mutableSelection.value.collections.single().kind
+            )
+
+            viewModel.toggleOffline(playlist)
+            viewModel.state.awaitFirst { it.keptPlaylists.isEmpty() }
+            Unit
+        }
+
+        @Test
+        fun `a new playlist is created, opened once and synced`() = runBlocking {
+            val viewModel = library()
+
+            viewModel.create("  ")
+            viewModel.create("  Morning Run ")
+
+            val state = viewModel.state.awaitFirst { it.newPlaylist.created != null }
+            assertEquals(PlaylistId(PLAYLIST), state.newPlaylist.created)
             val request = server.takeRequest()
-            assertEquals("newest", request.url.queryParameter("type"))
-            assertEquals(
-                LibraryViewModel.RECENT_COUNT.toString(),
-                request.url.queryParameter("size")
-            )
-            assertEquals(
-                listOf("Low Orbit", "Salt & Ember", "Harbour Lights"),
-                albums.map {
-                    it.title
-                }
-            )
+            assertEquals("/rest/createPlaylist", request.url.encodedPath)
+            assertEquals("Morning Run", request.form().queryParameter("name"))
+            assertEquals(1, server.requestCount)
+            assertEquals(1, refresh.requests)
+
+            viewModel.onCreatedOpened()
+            viewModel.state.awaitFirst { it.newPlaylist.created == null }
+            Unit
         }
 
         @Test
-        fun `a failure keeps the menu usable and can be retried`() = runTest {
-            server.dispatcher.override("rest/getAlbumList2") { dropConnection() }
-            val viewModel = LibraryViewModel(connectedApi(server))
-            assertEquals(LoadState.Failed(LoadError.NETWORK), viewModel.recentlyAdded.awaitLoaded())
+        fun `a failed create is explained once`() = runBlocking {
+            server.dispatcher.override("rest/createPlaylist") { subsonicFailure(50) }
+            val viewModel = library()
 
-            server.dispatcher.clearOverrides()
-            viewModel.load()
-            assertEquals(3, viewModel.recentlyAdded.awaitReady().size)
-        }
-    }
+            viewModel.create("Nope")
 
-    @Nested
-    inner class Artists {
-        @Test
-        fun `artists come under their index letters`() = runTest {
-            val sections = ArtistsViewModel(connectedApi(server)).state.awaitReady()
-
-            assertEquals(listOf("M", "N", "P"), sections.map { it.letter })
-            assertEquals("The Paper Lanterns", sections.last().artists.single().name)
-            assertTrue(sections.all { s -> s.artists.all { it.coverUrl != null } })
+            val failed = viewModel.state.awaitFirst { it.newPlaylist.message != null }
+            assertEquals(LoadError.SERVER, failed.newPlaylist.message)
+            assertNull(failed.newPlaylist.created)
+            viewModel.dismissMessage()
+            viewModel.state.awaitFirst { it.newPlaylist.message == null }
+            Unit
         }
 
         @Test
-        fun `empty letters are dropped`() = runTest {
-            server.dispatcher.override("rest/getArtists") {
-                subsonicOk(
-                    "artists",
-                    """{"index":[{"name":"A","artist":[]},{"name":"B","artist":[{"id":"b","name":"Bee"}]}]}"""
-                )
-            }
-            val sections = ArtistsViewModel(connectedApi(server)).state.awaitReady()
+        fun `a long list is queued as a stretch around the song tapped`() {
+            val songs = (0 until 2_000).map { tile(it) }
 
-            assertEquals(listOf("B"), sections.map { it.letter })
-            assertNull(sections.single().artists.single().coverUrl)
-        }
+            val (queue, at) = queueWindow(songs, 1_000)
+            assertEquals(500, queue.size)
+            assertEquals(songs[1_000], queue[at])
 
-        @Test
-        fun `a failure can be retried`() = runTest {
-            server.dispatcher.override("rest/getArtists") { dropConnection() }
-            val viewModel = ArtistsViewModel(connectedApi(server))
-            assertEquals(LoadState.Failed(LoadError.NETWORK), viewModel.state.awaitLoaded())
-
-            server.dispatcher.clearOverrides()
-            viewModel.load()
-            viewModel.load()
-            assertEquals(3, viewModel.state.awaitReady().size)
-        }
-    }
-
-    @Nested
-    inner class Albums {
-        @Test
-        fun `albums load a page at a time until a short page`() = runTest {
-            server.dispatcher.override("rest/getAlbumList2") { request ->
-                val offset = request.url.queryParameter("offset")!!.toInt()
-                val count = if (offset == 0) AlbumsViewModel.PAGE_SIZE else 5
-                subsonicOk("albumList2", albums(count, first = offset))
-            }
-            val viewModel = AlbumsViewModel(connectedApi(server))
-
-            val first = viewModel.state.awaitFirst { !it.loading }
-            assertEquals(AlbumsViewModel.PAGE_SIZE, first.albums.size)
-            assertTrue(first.hasMore)
-            val request = server.takeRequest()
-            assertEquals("alphabeticalByName", request.url.queryParameter("type"))
-            assertEquals("0", request.url.queryParameter("offset"))
-
-            viewModel.loadMore()
-            val second = viewModel.state.awaitFirst {
-                !it.loading &&
-                    it.albums.size > first.albums.size
-            }
-            assertEquals(AlbumsViewModel.PAGE_SIZE + 5, second.albums.size)
-            assertFalse(second.hasMore)
-            assertEquals(
-                AlbumsViewModel.PAGE_SIZE.toString(),
-                server.takeRequest().url.queryParameter("offset")
-            )
-
-            viewModel.loadMore()
-            assertEquals(2, server.requestCount)
-        }
-
-        @Test
-        fun `a failed page shows an error and the same page is asked again`() = runTest {
-            server.dispatcher.override("rest/getAlbumList2") { dropConnection() }
-            val viewModel = AlbumsViewModel(connectedApi(server))
-
-            val failed = viewModel.state.awaitFirst { it.error != null }
-            assertEquals(LoadError.NETWORK, failed.error)
-            assertFalse(failed.loading)
-
-            server.dispatcher.override("rest/getAlbumList2") { subsonicOk("albumList2", albums(2)) }
-            viewModel.loadMore()
-            val loaded = viewModel.state.awaitFirst { it.albums.isNotEmpty() }
-            assertNull(loaded.error)
-            assertEquals(listOf("Album 0", "Album 1"), loaded.albums.map { it.title })
+            val (first, start) = queueWindow(songs.take(3), 1)
+            assertEquals(3, first.size)
+            assertEquals(1, start)
         }
     }
 
     @Nested
     inner class Favourites {
+        private fun viewModel() =
+            FavouritesViewModel(connectedApi(server), catalog.repository, catalog.sync)
+                .also { created += it }
+
         @Test
-        fun `favourites list starred songs, albums and artists`() = runTest {
-            val viewModel = FavouritesViewModel(connectedApi(server))
-            assertEquals(LoadState.Loading, viewModel.state.value)
-            viewModel.load()
+        fun `favourites come from the catalog, with no connection too`() = runBlocking {
+            catalog.synced()
+            catalog.server.dispatcher.override("ut/v1/me") { dropConnection() }
+            val viewModel = viewModel()
 
             val content = viewModel.state.awaitReady()
-            assertEquals("/rest/getStarred2", server.takeRequest().url.encodedPath)
             assertEquals(listOf("Lighthouse Keeper"), content.songs.map { it.title })
             assertEquals(listOf("Salt & Ember"), content.albums.map { it.title })
             assertTrue(content.artists.isEmpty())
             assertFalse(content.isEmpty)
-        }
 
-        @Test
-        fun `showing again reloads without a spinner, and nothing starred is empty`() = runTest {
-            val viewModel = FavouritesViewModel(connectedApi(server))
-            viewModel.load()
-            viewModel.state.awaitReady()
-
-            server.dispatcher.override("rest/getStarred2") { subsonicOk("starred2", "{}") }
-            viewModel.load()
-
-            assertTrue(
-                viewModel.state.awaitFirst {
-                    (it as? LoadState.Ready)?.value?.isEmpty == true
-                } is LoadState.Ready
-            )
-        }
-
-        @Test
-        fun `a failure can be retried`() = runTest {
-            server.dispatcher.override("rest/getStarred2") { dropConnection() }
-            val viewModel = FavouritesViewModel(connectedApi(server))
-            viewModel.load()
-            assertEquals(LoadState.Failed(LoadError.NETWORK), viewModel.state.awaitLoaded())
+            viewModel.refresher.refresh()
+            viewModel.refresher.state.awaitFirst { it.error == LoadError.NETWORK }
+            assertEquals(content, viewModel.state.awaitReady())
+            assertEquals(0, server.requestCount)
         }
     }
 

@@ -3,10 +3,12 @@
 
 package com.qtekfun.ultimatetunes.ui.player
 
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.api.model.TrackState
 import com.qtekfun.ultimatetunes.playback.PlaybackState
+import com.qtekfun.ultimatetunes.ui.FakePhoneAvailability
 import com.qtekfun.ultimatetunes.ui.FakePlayerController
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
@@ -34,11 +36,13 @@ class PlayerViewModelTest {
     private val state get() = viewModel.state.value
     private val queue = listOf(tile(0), tile(1), tile(2))
 
+    private val phone = FakePhoneAvailability()
+
     @BeforeEach
     fun setUp() {
         server = FakeTunesServer().start()
         player = FakePlayerController()
-        viewModel = PlayerViewModel(player, connectedApi(server))
+        viewModel = PlayerViewModel(player, connectedApi(server), phone)
     }
 
     @AfterEach
@@ -185,5 +189,40 @@ class PlayerViewModelTest {
     fun `no radio without a song`() {
         viewModel.startRadio()
         assertNull(state.current)
+    }
+
+    @Test
+    fun `with no connection only what is on the phone is queued, under the ids it has`() {
+        val external = tile(2, external = true)
+        val songs = listOf(tile(1), external, tile(3), tile(4))
+        phone.availability.value = Availability(
+            online = false,
+            songs = setOf(SongId("song-1"), SongId("kept-2"), SongId("song-4")),
+            aliases = mapOf(external.id to SongId("kept-2"))
+        )
+
+        viewModel.play(songs, 3)
+
+        assertEquals(
+            listOf("song-1", "kept-2", "song-4"),
+            player.state.value.queue.map { it.id.value }
+        )
+        assertEquals(2, player.state.value.index)
+        assertFalse(viewModel.state.value.notOnPhone)
+    }
+
+    @Test
+    fun `a song that is not on the phone does not start or queue, and says so`() {
+        phone.availability.value = Availability(offlineMode = true)
+
+        viewModel.play(listOf(tile(1)))
+        assertTrue(player.state.value.queue.isEmpty())
+        assertTrue(viewModel.state.value.notOnPhone)
+
+        viewModel.dismissNotOnPhone()
+        assertFalse(viewModel.playNext(listOf(tile(1))))
+        assertFalse(viewModel.enqueue(listOf(tile(2))))
+        assertTrue(viewModel.state.value.notOnPhone)
+        assertTrue(player.state.value.queue.isEmpty())
     }
 }

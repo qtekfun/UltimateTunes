@@ -15,12 +15,12 @@ import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.ui.album.AlbumContent
 import com.qtekfun.ultimatetunes.ui.artist.ArtistContent
 import com.qtekfun.ultimatetunes.ui.charts.ChartsContent
+import com.qtekfun.ultimatetunes.ui.homescreen.HomeContent
+import com.qtekfun.ultimatetunes.ui.homescreen.RecommendationsContent
+import com.qtekfun.ultimatetunes.ui.homescreen.SeedShelf
+import com.qtekfun.ultimatetunes.ui.homescreen.SourceShelf
 import com.qtekfun.ultimatetunes.ui.imports.ImportProgress
 import com.qtekfun.ultimatetunes.ui.imports.ImportRow
-import com.qtekfun.ultimatetunes.ui.listennow.ListenNowContent
-import com.qtekfun.ultimatetunes.ui.listennow.RecommendationsContent
-import com.qtekfun.ultimatetunes.ui.listennow.SeedShelf
-import com.qtekfun.ultimatetunes.ui.listennow.SourceShelf
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.ArtistTile
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -28,7 +28,6 @@ import com.qtekfun.ultimatetunes.ui.model.PlaylistTile
 import com.qtekfun.ultimatetunes.ui.model.StationTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.playlists.PlaylistContent
-import com.qtekfun.ultimatetunes.ui.radio.RadioContent
 import com.qtekfun.ultimatetunes.ui.radio.StationContent
 import com.qtekfun.ultimatetunes.ui.search.SearchContent
 import com.qtekfun.ultimatetunes.ui.settings.KeyRow
@@ -103,8 +102,8 @@ internal object PreviewData {
         StationTile(SongId("preview-song-3"), "Brasas Radio", "Marisol Vega", null)
     )
 
-    val listenNow = ListenNowContent(
-        recentlyPlayed = albums.take(n = 3),
+    val home = HomeContent(
+        quickAccess = albums.take(n = 3),
         recentlyAdded = albums,
         mostPlayed = tracks.take(n = 3),
         stations = stations
@@ -119,11 +118,6 @@ internal object PreviewData {
     )
 
     val charts = ChartsContent(country = "ES", tracks = tracks)
-
-    val radio = RadioContent(
-        featured = stations.take(1),
-        fromSongs = tracks.take(n = 3).map { StationTile(it.id, it.title, it.artist, null) }
-    )
 
     val station = StationContent(seed = tracks.first(), upNext = tracks.drop(1))
 

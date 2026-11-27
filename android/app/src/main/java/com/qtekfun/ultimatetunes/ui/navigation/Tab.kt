@@ -15,10 +15,9 @@ import com.qtekfun.ultimatetunes.ui.artist.ArtistViewModel
 import com.qtekfun.ultimatetunes.ui.playlists.PlaylistViewModel
 import com.qtekfun.ultimatetunes.ui.radio.StationViewModel
 
-/** The four tabs of the bottom bar (SPEC §5), each a nested navigation graph. */
+/** The three tabs of the bottom bar (SPEC §5), each a nested navigation graph. */
 enum class Tab(val route: String, @StringRes val label: Int, @DrawableRes val icon: Int) {
-    LISTEN_NOW("listenNow", R.string.tab_listen_now, R.drawable.ic_listen_now),
-    RADIO("radio", R.string.tab_radio, R.drawable.ic_radio),
+    HOME("home", R.string.tab_home, R.drawable.ic_listen_now),
     LIBRARY("library", R.string.tab_library, R.drawable.ic_library),
     SEARCH("search", R.string.tab_search, R.drawable.ic_search);
 
@@ -30,7 +29,7 @@ enum class Tab(val route: String, @StringRes val label: Int, @DrawableRes val ic
 
     fun station(seed: SongId): String = "$route/station/${encode(seed.value)}"
 
-    /** The Charts list inside this tab (opened from Listen Now). */
+    /** The Charts list inside this tab (opened from Home). */
     val chartsPattern: String get() = "$route/charts"
 
     val charts: String get() = "$route/charts"
@@ -46,7 +45,7 @@ enum class Tab(val route: String, @StringRes val label: Int, @DrawableRes val ic
 
     fun playlist(id: PlaylistId): String = "$route/playlist/${encode(id.value)}"
 
-    /** A Library page inside this tab. */
+    /** Favourites, Downloads, Import or Settings inside this tab. */
     fun page(page: LibraryPage): String = "$route/${page.route}"
 
     /** Test tag of the tab's bar item. */

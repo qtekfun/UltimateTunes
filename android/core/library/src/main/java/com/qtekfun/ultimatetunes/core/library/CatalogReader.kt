@@ -7,8 +7,8 @@ import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
-import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.library.db.CatalogSnapshot
+import com.qtekfun.ultimatetunes.core.library.db.SongEntity
 import com.qtekfun.ultimatetunes.core.library.db.SyncDao
 
 /** Ends a sync early; caught by [CatalogSyncer] and turned into its result. */
@@ -32,18 +32,27 @@ internal class CatalogReader(
         val library = readLibrary()
         val playlists = readPlaylists(library.keys)
         val starred = api.starred().orStop()
-        return SnapshotBuilder.build(library.values, playlists, starred)
+        return SnapshotBuilder.build(library, playlists, starred)
     }
 
-    /** Every library song by id, a page of an empty `search3` at a time. */
-    private suspend fun readLibrary(): Map<String, Song> {
-        val songs = LinkedHashMap<String, Song>()
+    /**
+     * Every library song by id, a page of an empty `search3` at a time, each turned into its row
+     * at once so a large library is not held twice. Pages overlap a little: a song removed while
+     * the library is read shifts the offsets, and without the overlap another one would be missed.
+     */
+    private suspend fun readLibrary(): LinkedHashMap<String, SongEntity> {
+        val songs = LinkedHashMap<String, SongEntity>()
+        val step = pageSize - pageSize / OVERLAP_DIVISOR
         var offset = 0
         while (offset < MAX_LIBRARY_SONGS) {
             val page = api.librarySongs(offset, pageSize).orStop()
-            page.filterNot { it.isExternal }.forEach { songs.putIfAbsent(it.id.value, it) }
+            page.filterNot { it.isExternal }.forEach { song ->
+                songs.getOrPut(song.id.value) {
+                    song.toEntity(inLibrary = true).copy(starredAt = null)
+                }
+            }
             if (page.size < pageSize) break
-            offset += pageSize
+            offset += step
         }
         return songs
     }
@@ -79,5 +88,8 @@ internal class CatalogReader(
     private companion object {
         /** A guard against a server that never ends a listing. */
         const val MAX_LIBRARY_SONGS = 200_000
+
+        /** A tenth of each page is asked for again with the next one. */
+        const val OVERLAP_DIVISOR = 10
     }
 }

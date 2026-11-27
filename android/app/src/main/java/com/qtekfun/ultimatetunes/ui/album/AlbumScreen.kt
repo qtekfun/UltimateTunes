@@ -47,10 +47,16 @@ import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
 import com.qtekfun.ultimatetunes.ui.actions.OfflineNote
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
+import com.qtekfun.ultimatetunes.ui.designsystem.OverflowButton
+import com.qtekfun.ultimatetunes.ui.designsystem.PageRefresh
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
+import com.qtekfun.ultimatetunes.ui.designsystem.RefreshBox
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
+import com.qtekfun.ultimatetunes.ui.designsystem.availabilityDescription
+import com.qtekfun.ultimatetunes.ui.designsystem.availableOrDimmed
 import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
 import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -73,6 +79,7 @@ fun AlbumRoute(
     viewModel: AlbumViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val refresh by viewModel.refresher.state.collectAsStateWithLifecycle()
     AlbumScreen(
         state = state,
         contentPadding = contentPadding,
@@ -80,7 +87,12 @@ fun AlbumRoute(
         onRetry = viewModel::load,
         onToggleFavourite = viewModel::toggleFavourite,
         onMessageShown = viewModel::dismissMessage,
-        onToggleOffline = viewModel::toggleOffline
+        onToggleOffline = viewModel::toggleOffline,
+        pull = PageRefresh(
+            refresh,
+            viewModel.refresher::refresh,
+            viewModel.refresher::messageShown
+        )
     )
 }
 
@@ -94,12 +106,13 @@ fun AlbumScreen(
     onToggleFavourite: () -> Unit,
     modifier: Modifier = Modifier,
     onMessageShown: () -> Unit = {},
-    onToggleOffline: () -> Unit = {}
+    onToggleOffline: () -> Unit = {},
+    pull: PageRefresh = PageRefresh()
 ) {
     val content = (state.content as? LoadState.Ready)?.value
     val snackbar = rememberScreenSnackbar()
     MessageEffect(state.message, snackbar.state, onMessageShown)
-    LargeTitleScaffold(
+    ScreenScaffold(
         title = content?.album?.title.orEmpty(),
         onBack = navigator.back,
         modifier = modifier,
@@ -111,29 +124,36 @@ fun AlbumScreen(
             if (content != null) AlbumMenu(content.tracks, state.isOffline, onToggleOffline)
         }
     ) { inner ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().testTag(ALBUM_LIST_TAG),
-            contentPadding = PaddingValues(
-                top = inner.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
-            )
-        ) {
-            when (val load = state.content) {
-                LoadState.Loading -> item { LoadingState() }
+        RefreshBox(pull, inner, snackbar) {
+            val availability = LocalAvailability.current
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().testTag(ALBUM_LIST_TAG),
+                contentPadding = PaddingValues(
+                    bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
+                )
+            ) {
+                when (val load = state.content) {
+                    LoadState.Loading -> item { LoadingState() }
 
-                is LoadState.Failed -> item { ErrorState(load.error, onRetry) }
+                    is LoadState.Failed -> item { ErrorState(load.error, onRetry) }
 
-                is LoadState.Ready -> {
-                    val album = load.value
-                    item { AlbumHeader(album, navigator, state.isOffline) }
-                    itemsIndexed(album.tracks, key = { i, t -> "$i-${t.id.value}" }) { i, track ->
-                        AlbumTrackRow(
-                            track = track,
-                            number = track.trackNumber ?: (i + 1),
-                            onClick = { navigator.play(album.tracks, i) }
-                        )
+                    is LoadState.Ready -> {
+                        val album = load.value
+                        item { AlbumHeader(album, navigator, state.isOffline) }
+                        itemsIndexed(
+                            album.tracks,
+                            key = { i, t -> "$i-${t.id.value}" }
+                        ) { i, track ->
+                            if (availability.shows(track.id)) {
+                                AlbumTrackRow(
+                                    track = track,
+                                    number = track.trackNumber ?: (i + 1),
+                                    onClick = { navigator.play(album.tracks, i) }
+                                )
+                            }
+                        }
+                        item { AlbumFooter(album) }
                     }
-                    item { AlbumFooter(album) }
                 }
             }
         }
@@ -209,9 +229,10 @@ private fun AlbumHeader(album: AlbumContent, navigator: Navigator, isOffline: Bo
         AlbumDetails(album)
         OfflineNote(isOffline)
         if (album.tracks.isNotEmpty()) {
+            val availability = LocalAvailability.current
             PlayShuffleButtons(
-                onPlay = { navigator.play(album.tracks, 0) },
-                onShuffle = { navigator.play(album.tracks.shuffled(), 0) }
+                onPlay = { navigator.play(availability.playable(album.tracks), 0) },
+                onShuffle = { navigator.play(availability.playable(album.tracks).shuffled(), 0) }
             )
         }
     }
@@ -242,56 +263,71 @@ private fun AlbumDetails(album: AlbumContent) {
 /** A song of an album: its number, title (with the cloud when external) and duration. */
 @Composable
 fun AlbumTrackRow(track: TrackTile, number: Int, onClick: () -> Unit) {
-    val description = stringResource(R.string.track_description, track.title, track.artist) +
-        if (track.isExternal) ", " + stringResource(R.string.not_in_library) else ""
+    val available = LocalAvailability.current.canPlay(track.id)
+    val description = availabilityDescription(
+        stringResource(R.string.track_description, track.title, track.artist) +
+            if (track.isExternal) ", " + stringResource(R.string.not_in_library) else "",
+        available
+    )
     val menu = LocalTrackMenu.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = Dimens.MinRowHeight)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
-                onLongClick = { menu(track) }
-            )
-            .semantics(mergeDescendants = true) { contentDescription = description }
-            .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = number.toString(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            modifier = Modifier.widthIn(min = 28.dp)
-        )
-        Text(
-            text = track.title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = Dimens.SpaceM)
-        )
-        if (track.isExternal) {
-            Icon(
-                painter = painterResource(R.drawable.ic_cloud),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(end = Dimens.SpaceS)
-                    .size(16.dp)
-            )
-        }
-        track.durationSec?.let {
+                .heightIn(min = Dimens.MinRowHeight)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
+                    onLongClick = { menu(track) }
+                )
+                .semantics(mergeDescendants = true) { contentDescription = description }
+                .availableOrDimmed(available)
+                .padding(start = Dimens.ScreenMargin)
+                .padding(vertical = Dimens.SpaceS),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = formatDuration(it),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = number.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = 28.dp)
             )
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = Dimens.SpaceM)
+            )
+            AlbumTrackEnd(track)
         }
+        OverflowButton(track.title, onClick = { menu(track) })
+    }
+}
+
+/** The cloud of a song not in the library yet, and its duration. */
+@Composable
+private fun AlbumTrackEnd(track: TrackTile) {
+    if (track.isExternal) {
+        Icon(
+            painter = painterResource(R.drawable.ic_cloud),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(end = Dimens.SpaceS)
+                .size(16.dp)
+        )
+    }
+    track.durationSec?.let {
+        Text(
+            text = formatDuration(it),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

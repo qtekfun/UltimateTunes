@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package com.qtekfun.ultimatetunes.ui.listennow
+package com.qtekfun.ultimatetunes.ui.homescreen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,10 +35,11 @@ data class RecommendationsContent(
 }
 
 /**
- * The "Recommended for you" section of Listen Now (RF-11), from `GET /ut/v1/recommendations`. It is
+ * The "Recommended for you" section of Home (RF-11), from `GET /ut/v1/recommendations`. It is
  * loaded apart from the cheap `GET /ut/v1/listen-now` because recommendations reach YouTube Music
- * (and are charged to the caller's bucket). It fails **gracefully**: an empty history or any error
- * leaves [state] null, so the section simply does not appear and never blocks Listen Now.
+ * (and are charged to the caller's bucket). It fails **gracefully**: an empty history, or an error
+ * before anything showed, leaves [state] null, so the section simply does not appear and never
+ * blocks Home.
  */
 @HiltViewModel
 class RecommendationsViewModel @Inject constructor(private val api: TunesApi) : ViewModel() {
@@ -53,15 +54,14 @@ class RecommendationsViewModel @Inject constructor(private val api: TunesApi) : 
         load()
     }
 
-    /** Loads the recommendations again (with Listen Now's retry or refresh). */
+    /** Loads the recommendations again (retry, pull to refresh). A failure keeps what shows. */
     fun load() {
         if (loading?.isActive == true) return
         loading = viewModelScope.launch {
-            val content = when (val result = api.recommendations(SHELF_LIMIT)) {
-                is TunesResult.Success -> result.value.toContent()
-                is TunesResult.Failure -> null
+            val result = api.recommendations(SHELF_LIMIT)
+            if (result is TunesResult.Success) {
+                mutableState.value = result.value.toContent().takeUnless { it.isEmpty }
             }
-            mutableState.value = content?.takeUnless { it.isEmpty }
         }
     }
 

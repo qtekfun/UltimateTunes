@@ -37,7 +37,7 @@ done
 
 # A few for the README, smaller.
 mkdir -p "$root/docs/images"
-for shot in 01_listen_now_light 05_album_light 13_player_dark 14_lyrics_dark; do
+for shot in 01_home_light 04_album_light 11_player_dark 12_lyrics_dark; do
   magick "$tmp/screenshots/en-US/$shot.png" -resize 540x -background white -alpha remove \
     -alpha off -strip -define png:color-type=2 "$root/docs/images/${shot#*_}.png"
 done

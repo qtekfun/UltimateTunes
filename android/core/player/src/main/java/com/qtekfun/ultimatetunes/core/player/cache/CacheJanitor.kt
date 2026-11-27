@@ -20,6 +20,18 @@ interface CacheView {
     fun remove(key: String)
 }
 
+/**
+ * The library songs cached whole. `yt:` entries do not count: their bytes predate the tagged
+ * library file and are dropped once it exists.
+ */
+fun CacheView.completeLibrarySongs(): Set<SongId> = keys()
+    .filterNot { CachePolicy.songOf(it).isExternal }
+    .filter { key ->
+        val length = contentLength(key)
+        CachePolicy.isComplete(length, cachedBytes(key, length ?: Long.MAX_VALUE))
+    }
+    .mapTo(HashSet(), CachePolicy::songOf)
+
 /** Applies [CachePolicy] to what the cache holds. */
 class CacheJanitor(private val cache: CacheView) {
     /**

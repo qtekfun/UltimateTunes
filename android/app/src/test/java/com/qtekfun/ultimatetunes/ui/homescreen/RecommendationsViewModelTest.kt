@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 UltimateTunes contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package com.qtekfun.ultimatetunes.ui.listennow
+package com.qtekfun.ultimatetunes.ui.homescreen
 
 import app.cash.turbine.test
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
@@ -95,16 +95,18 @@ class RecommendationsViewModelTest {
     }
 
     @Test
-    fun `a failure hides the section instead of surfacing an error`() = runTest {
+    fun `a refresh that fails keeps what is shown`() = runTest {
         val viewModel = RecommendationsViewModel(connectedApi(server))
-        viewModel.awaitContent()
+        val shown = viewModel.awaitContent()
+        server.takeRequest()
 
         server.dispatcher.override("ut/v1/recommendations") {
             MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
         }
         viewModel.load()
+        server.takeRequest()
 
-        viewModel.awaitHidden()
+        assertEquals(shown, viewModel.state.value)
     }
 
     @Test

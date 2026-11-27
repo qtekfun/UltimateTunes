@@ -3,6 +3,7 @@
 
 package com.qtekfun.ultimatetunes.core.library.db
 
+import androidx.room3.AutoMigration
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
 
@@ -17,7 +18,8 @@ import androidx.room3.RoomDatabase
         MetaEntity::class,
         PendingChangeEntity::class
     ],
-    version = 1
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)]
 )
 internal abstract class CatalogDatabase : RoomDatabase() {
     abstract fun browse(): BrowseDao

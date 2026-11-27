@@ -59,8 +59,8 @@ import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.ItemRow
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.navigation.Navigator
@@ -130,7 +130,7 @@ fun ImportScreen(
     navigator: Navigator,
     actions: ImportActions
 ) {
-    LargeTitleScaffold(
+    ScreenScaffold(
         title = stringResource(R.string.import_title),
         onBack = navigator.back
     ) { inner ->

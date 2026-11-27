@@ -16,6 +16,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ImportItemState
 import com.qtekfun.ultimatetunes.core.api.model.ImportSource
 import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
+import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.model.loadStateOf
@@ -118,7 +119,8 @@ data class ImportUiState(
 @HiltViewModel
 class ImportViewModel @Inject constructor(
     private val api: TunesApi,
-    private val configSource: ServerConfigSource
+    private val configSource: ServerConfigSource,
+    private val catalog: CatalogRefresh
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = mutableState.asStateFlow()
@@ -241,6 +243,7 @@ class ImportViewModel @Inject constructor(
                         )
                     }
                     loadHistory()
+                    if (!result.value.toProgress(api).inProgress) catalog.request()
                     if (result.value.toProgress(api).inProgress) {
                         watch(
                             result.value.id,
@@ -266,6 +269,8 @@ class ImportViewModel @Inject constructor(
                         val progress = result.value.toProgress(api)
                         mutableState.update { it.copy(current = progress) }
                         if (!progress.inProgress) {
+                            // Its playlist and songs are new on the server.
+                            catalog.request()
                             loadHistory()
                             return@launch
                         }

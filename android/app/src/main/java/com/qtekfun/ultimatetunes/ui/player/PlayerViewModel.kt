@@ -5,6 +5,8 @@ package com.qtekfun.ultimatetunes.ui.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.availability.Availability
+import com.qtekfun.ultimatetunes.availability.PhoneAvailability
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.SongId
@@ -51,7 +53,9 @@ data class PlayerUiState(
     /** The current song's first play on the server, while it is being fetched. */
     val firstPlay: FirstPlay? = null,
     /** A radio that could not start, shown once. */
-    val message: LoadError? = null
+    val message: LoadError? = null,
+    /** What was asked to play is not on the phone, and only the phone can play; shown once. */
+    val notOnPhone: Boolean = false
 ) {
     val current: TrackTile? get() = queue.getOrNull(index)
     val hasNext: Boolean get() = index < queue.lastIndex
@@ -69,21 +73,30 @@ data class PlayerUiState(
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val player: PlayerController,
-    private val api: TunesApi
+    private val api: TunesApi,
+    private val phone: PhoneAvailability
 ) : ViewModel() {
     private val firstPlay = MutableStateFlow<Pair<SongId, FirstPlay>?>(null)
     private val message = MutableStateFlow<LoadError?>(null)
+    private val notOnPhone = MutableStateFlow(false)
+
+    /** What can play now, for the screens to dim or leave out the rest. */
+    val availability: StateFlow<Availability> = phone.availability
 
     val state: StateFlow<PlayerUiState> =
-        combine(player.state, firstPlay, message) { playback, first, message ->
+        combine(player.state, firstPlay, message, notOnPhone) { playback, first, message, gone ->
             playback.toUi(
                 firstPlay = first?.takeIf { it.first == playback.current?.id }?.second,
                 message = message
-            )
+            ).copy(notOnPhone = gone)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, player.state.value.toUi(null, null))
 
     init {
         player.connect()
+        // The play cache holds more after each song: look again when the song changes.
+        viewModelScope.launch {
+            player.state.map { it.current?.id }.distinctUntilChanged().collect { phone.refresh() }
+        }
         viewModelScope.launch {
             player.state
                 .map { it.current?.id?.takeIf(SongId::isExternal) }
@@ -95,20 +108,41 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /** Replaces the queue with [queue] and starts at [startIndex]. */
+    /**
+     * Replaces the queue with [queue] and starts at [startIndex]. When only the phone can play,
+     * the queue holds what is on it, under the ids it is kept as, and a song that is not there
+     * does not start.
+     */
     fun play(queue: List<TrackTile>, startIndex: Int = 0) {
         if (queue.isEmpty()) return
-        player.play(queue, startIndex.coerceIn(0, queue.lastIndex))
+        val now = phone.availability.value
+        val index = startIndex.coerceIn(0, queue.lastIndex)
+        if (!now.canPlay(queue[index].id)) {
+            notOnPhone.value = true
+            return
+        }
+        val before = if (now.onlyPhone) now.playable(queue.take(index)).size else index
+        player.play(now.playable(queue), before)
     }
 
-    /** Puts [tracks] right after the current song. */
-    fun playNext(tracks: List<TrackTile>) {
-        if (tracks.isNotEmpty()) player.playNext(tracks)
+    /** Puts [tracks] right after the current song; false when none of them can play now. */
+    fun playNext(tracks: List<TrackTile>): Boolean = queue(tracks, player::playNext)
+
+    /** Puts [tracks] at the end of the queue; false when none of them can play now. */
+    fun enqueue(tracks: List<TrackTile>): Boolean = queue(tracks, player::enqueue)
+
+    private fun queue(tracks: List<TrackTile>, add: (List<TrackTile>) -> Unit): Boolean {
+        val playable = phone.availability.value.playable(tracks)
+        if (playable.isEmpty()) {
+            notOnPhone.value = tracks.isNotEmpty()
+            return false
+        }
+        add(playable)
+        return true
     }
 
-    /** Puts [tracks] at the end of the queue. */
-    fun enqueue(tracks: List<TrackTile>) {
-        if (tracks.isNotEmpty()) player.enqueue(tracks)
+    fun dismissNotOnPhone() {
+        notOnPhone.value = false
     }
 
     fun togglePlayPause() = player.togglePlayPause()

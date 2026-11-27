@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes
 
 import android.app.Application
+import com.qtekfun.ultimatetunes.availability.OfflineCoverSync
 import com.qtekfun.ultimatetunes.playback.ListeningSync
 import com.qtekfun.ultimatetunes.playback.PlaybackStartup
 import dagger.hilt.android.HiltAndroidApp
@@ -19,9 +20,14 @@ class UltimateTunesApp : Application() {
     @Inject
     lateinit var listeningSync: ListeningSync
 
+    /** Keeps the covers of the downloaded songs on the phone. */
+    @Inject
+    lateinit var offlineCovers: OfflineCoverSync
+
     override fun onCreate() {
         super.onCreate()
         playbackStartup.onAppCreate()
         listeningSync.start()
+        offlineCovers.start()
     }
 }

@@ -13,9 +13,11 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.cache.AdjustableLruEvictor
 import com.qtekfun.ultimatetunes.core.player.cache.CachePolicy
 import com.qtekfun.ultimatetunes.core.player.cache.CacheView
+import com.qtekfun.ultimatetunes.core.player.cache.completeLibrarySongs
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 
@@ -32,6 +34,12 @@ class MediaCaches(val play: Cache, val evictor: AdjustableLruEvictor, val downlo
     /** True when the first [bytes] of [key] (or all of it, if shorter) are on the phone. */
     fun hasStart(key: String, bytes: Long): Boolean =
         startCached(play, key, bytes) || startCached(downloads, key, bytes)
+
+    /** Bytes the play cache and the offline downloads take on the phone. */
+    fun usedBytes(): Long = play.cacheSpace + downloads.cacheSpace
+
+    /** The library songs the play cache holds whole: they play with no connection. */
+    fun completeLibrarySongs(): Set<SongId> = MediaCacheView(play).completeLibrarySongs()
 
     private fun startCached(cache: Cache, key: String, bytes: Long): Boolean {
         val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))

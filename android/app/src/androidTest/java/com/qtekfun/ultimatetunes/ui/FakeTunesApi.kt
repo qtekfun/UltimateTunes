@@ -22,6 +22,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndex
 import com.qtekfun.ultimatetunes.core.api.model.ArtistIndexes
 import com.qtekfun.ultimatetunes.core.api.model.ArtistItem
+import com.qtekfun.ultimatetunes.core.api.model.ArtistRef
 import com.qtekfun.ultimatetunes.core.api.model.Capabilities
 import com.qtekfun.ultimatetunes.core.api.model.Charts
 import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
@@ -281,6 +282,27 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         )
     }
 
+    /** The library the app's catalog reads: some of it played, so Home has its shelves. */
+    override suspend fun librarySongs(offset: Int, count: Int): TunesResult<List<Song>> =
+        configured {
+            listOf(KEEPER, TIDEWATER, BRASAS).mapIndexed { i, item ->
+                val artist = if (item == BRASAS) {
+                    ArtistRef(ArtistId("artist-2"), "Marisol Vega")
+                } else {
+                    ArtistRef(LANTERNS_ID, "The Paper Lanterns")
+                }
+                item.toSong(track = i + 1).copy(
+                    artistId = artist.id,
+                    artists = listOf(artist),
+                    albumArtists = listOf(artist),
+                    displayAlbumArtist = artist.name,
+                    created = Instant.EPOCH,
+                    played = Instant.EPOCH.plusSeconds(i.toLong()),
+                    playCount = (3 - i).toLong()
+                )
+            }.drop(offset).take(count)
+        }
+
     override suspend fun listKeys(): TunesResult<ApiKeyList> = configured {
         ApiKeyList(
             listOf(
@@ -420,9 +442,6 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
     override suspend fun ping(): TunesResult<Unit> = notImplemented()
 
     override suspend fun song(id: SongId): TunesResult<Song> = notImplemented()
-
-    override suspend fun librarySongs(offset: Int, count: Int): TunesResult<List<Song>> =
-        notImplemented()
 
     override suspend fun randomSongs(size: Int?, genre: String?): TunesResult<List<Song>> =
         notImplemented()

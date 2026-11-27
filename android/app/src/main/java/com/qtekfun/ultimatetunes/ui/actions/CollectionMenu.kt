@@ -30,26 +30,30 @@ const val COLLECTION_EXPORT_TAG = "collection.export"
 fun CollectionMenuItems(
     tracks: List<TrackTile>,
     isOffline: Boolean,
-    onToggleOffline: () -> Unit,
+    onToggleOffline: (() -> Unit)?,
     close: () -> Unit
 ) {
     val actions = LocalCollectionActions.current
     val offlineLabel =
         if (isOffline) R.string.collection_stop_offline else R.string.collection_keep_offline
-    DropdownMenuItem(
-        text = { Text(stringResource(offlineLabel)) },
-        leadingIcon = {
-            Icon(
-                painterResource(if (isOffline) R.drawable.ic_delete else R.drawable.ic_download),
-                contentDescription = null
-            )
-        },
-        onClick = {
-            close()
-            onToggleOffline()
-        },
-        modifier = Modifier.testTag(COLLECTION_OFFLINE_TAG)
-    )
+    if (onToggleOffline != null) {
+        DropdownMenuItem(
+            text = { Text(stringResource(offlineLabel)) },
+            leadingIcon = {
+                Icon(
+                    painterResource(
+                        if (isOffline) R.drawable.ic_delete else R.drawable.ic_download
+                    ),
+                    contentDescription = null
+                )
+            },
+            onClick = {
+                close()
+                onToggleOffline()
+            },
+            modifier = Modifier.testTag(COLLECTION_OFFLINE_TAG)
+        )
+    }
     if (tracks.isNotEmpty()) {
         DropdownMenuItem(
             text = { Text(stringResource(R.string.menu_add_to_playlist)) },

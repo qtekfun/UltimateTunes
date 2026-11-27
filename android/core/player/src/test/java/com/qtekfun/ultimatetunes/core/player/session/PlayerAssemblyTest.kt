@@ -37,6 +37,7 @@ class PlayerAssemblyTest {
         api = api,
         caches = caches,
         sources = MediaDataSources(OkHttpClient(), caches),
+        phone = mockk(),
         settings = settings
     )
 

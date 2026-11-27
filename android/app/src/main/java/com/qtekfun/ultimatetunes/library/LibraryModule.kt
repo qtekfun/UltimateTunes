@@ -9,6 +9,7 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.library.LocalCatalog
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -35,4 +36,12 @@ object LibraryModule {
 
     @Provides
     fun catalogSync(catalog: LocalCatalog): CatalogSync = catalog.sync
+}
+
+/** How screens ask the catalog to catch up. */
+@Module
+@InstallIn(SingletonComponent::class)
+interface CatalogRefreshModule {
+    @Binds
+    fun catalogRefresh(refresh: CoalescedCatalogRefresh): CatalogRefresh
 }

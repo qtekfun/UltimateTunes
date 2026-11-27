@@ -10,6 +10,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -32,6 +33,8 @@ import com.qtekfun.ultimatetunes.ui.actions.LocalTrackMenu
 import com.qtekfun.ultimatetunes.ui.actions.PlaylistPickerSheet
 import com.qtekfun.ultimatetunes.ui.actions.TrackMenuActions
 import com.qtekfun.ultimatetunes.ui.actions.TrackMenuSheet
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
+import com.qtekfun.ultimatetunes.ui.lyrics.LyricsViewModel
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.player.PlayerViewModel
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
@@ -42,8 +45,8 @@ import com.qtekfun.ultimatetunes.ui.theme.Dimens
  */
 
 /**
- * Gives [content] the song menu (opened through [onOpenMenu], with fresh favourites) and the
- * album and playlist actions of [viewModel].
+ * Gives [content] the song menu (opened through [onOpenMenu]) and the album and playlist actions
+ * of [viewModel].
  */
 @Composable
 internal fun ProvideLibraryActions(
@@ -51,17 +54,11 @@ internal fun ProvideLibraryActions(
     onOpenMenu: (TrackTile) -> Unit,
     content: @Composable () -> Unit
 ) {
-    val openMenu: (TrackTile) -> Unit = remember(viewModel, onOpenMenu) {
-        { track ->
-            viewModel.refreshFavourites()
-            onOpenMenu(track)
-        }
-    }
     val collectionActions = remember(viewModel) {
         CollectionActions(addToPlaylist = viewModel::pickPlaylist, export = viewModel::export)
     }
     CompositionLocalProvider(
-        LocalTrackMenu provides openMenu,
+        LocalTrackMenu provides onOpenMenu,
         LocalCollectionActions provides collectionActions,
         content = content
     )
@@ -83,12 +80,10 @@ internal fun trackMenuActions(
     }
     return TrackMenuActions(
         playNext = {
-            player.playNext(listOf(it))
-            actions.queued(next = true)
+            if (player.playNext(listOf(it))) actions.queued(next = true)
         },
         playLast = {
-            player.enqueue(listOf(it))
-            actions.queued(next = false)
+            if (player.enqueue(listOf(it))) actions.queued(next = false)
         },
         addToPlaylist = { actions.pickPlaylist(listOf(it)) },
         toggleFavourite = actions::toggleFavourite,
@@ -105,7 +100,7 @@ private fun currentTab(navController: NavHostController): Tab {
     val destination = navController.currentDestination
     return Tab.entries.firstOrNull { tab ->
         destination?.hierarchy?.any { it.route == tab.route } == true
-    } ?: Tab.LISTEN_NOW
+    } ?: Tab.HOME
 }
 
 /**
@@ -161,4 +156,23 @@ internal fun ExportBanner(viewModel: LibraryActionsViewModel) {
             .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceXS)
             .semantics { liveRegion = LiveRegionMode.Polite }
     )
+}
+
+/** Says once that what was asked to play is not on the phone. */
+@Composable
+internal fun NotOnPhoneEffect(show: Boolean, snackbar: SnackbarHostState, onShown: () -> Unit) {
+    val message = stringResource(R.string.player_not_on_phone)
+    LaunchedEffect(show) {
+        if (show) {
+            snackbar.showSnackbar(message)
+            onShown()
+        }
+    }
+}
+
+/** The lyrics of the full player, from the activity-wide [LyricsViewModel]. */
+@Composable
+internal fun lyricsHooks(viewModel: LyricsViewModel): LyricsHooks {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    return LyricsHooks(state = state, onShow = viewModel::show, onRetry = viewModel::retry)
 }

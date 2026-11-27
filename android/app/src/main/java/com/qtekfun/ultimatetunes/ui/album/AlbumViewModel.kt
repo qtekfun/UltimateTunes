@@ -8,15 +8,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
+import com.qtekfun.ultimatetunes.core.api.model.Album
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.library.CatalogSync
+import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
+import com.qtekfun.ultimatetunes.ui.model.Refresher
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import com.qtekfun.ultimatetunes.ui.model.loadStateOf
 import com.qtekfun.ultimatetunes.ui.model.toLoadError
 import com.qtekfun.ultimatetunes.ui.model.toTile
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -52,15 +56,19 @@ data class AlbumUiState(
 )
 
 /**
- * An album (`getAlbum`), from the library or from YouTube Music (`ytalbum:` ids, whose songs are
- * "not in library yet"). Opened from Listen Now, Search, an artist or the Library. It can be kept
- * offline (RF-12): its songs download and stay in sync.
+ * An album, from the library or from YouTube Music (`ytalbum:` ids, whose songs are "not in
+ * library yet"). A library album shows from the local catalog, with no connection too; the server
+ * (`getAlbum`) refreshes it, and a refresh that fails keeps what shows. It can be kept offline
+ * (RF-12): its songs download and stay in sync.
  */
 @HiltViewModel
 class AlbumViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val api: TunesApi,
-    private val offline: OfflineControls
+    private val offline: OfflineControls,
+    repository: LibraryRepository,
+    sync: CatalogSync,
+    private val refresh: CatalogRefresh
 ) : ViewModel() {
     private val id = AlbumId(checkNotNull(savedStateHandle.get<String>(ARG_ID)))
 
@@ -69,7 +77,23 @@ class AlbumViewModel @Inject constructor(
 
     private var loading: Job? = null
 
+    /** The server's answer shows: the catalog, which may be older, no longer replaces it. */
+    private var answered = false
+
+    val refresher = Refresher(viewModelScope) {
+        sync.sync()
+        read()
+    }
+
     init {
+        viewModelScope.launch {
+            repository.album(id).collect { album ->
+                // A favourite album outside the library has no songs here: only the server has.
+                if (!answered && album != null && album.song.isNotEmpty()) {
+                    mutableState.update { it.copy(content = LoadState.Ready(album.toContent())) }
+                }
+            }
+        }
         viewModelScope.launch {
             offline.selection.collect { selection ->
                 val kept = selection.keepsCollection(CollectionKind.ALBUM, id.value)
@@ -81,26 +105,51 @@ class AlbumViewModel @Inject constructor(
 
     fun load() {
         if (loading?.isActive == true) return
-        mutableState.update { it.copy(content = LoadState.Loading, message = null) }
-        loading = viewModelScope.launch {
-            val content = loadStateOf(api.album(id)) { album ->
-                val artist = album.displayArtist ?: album.artist.orEmpty()
-                AlbumContent(
-                    album = album.toTile(api),
-                    artistId = album.artistId,
-                    year = album.year,
-                    genre = album.genre,
-                    durationSec = album.duration,
-                    tracks = album.song.map { song ->
-                        song.toTile(api, fallbackArtist = artist).let { tile ->
-                            tile.copy(albumArtist = tile.albumArtist ?: artist.ifEmpty { null })
-                        }
-                    },
-                    isFavourite = album.starred != null
-                )
-            }
-            mutableState.update { it.copy(content = content) }
+        mutableState.update {
+            val kept = it.content as? LoadState.Ready
+            it.copy(content = kept ?: LoadState.Loading, message = null)
         }
+        loading = viewModelScope.launch { read() }
+    }
+
+    /** Asks the server for the album; why that failed, or null. */
+    private suspend fun read(): LoadError? = when (val result = api.album(id)) {
+        is TunesResult.Success -> {
+            answered = true
+            mutableState.update {
+                it.copy(content = LoadState.Ready(result.value.toContent()))
+            }
+            null
+        }
+
+        is TunesResult.Failure -> {
+            val error = result.toLoadError()
+            mutableState.update {
+                if (it.content is LoadState.Ready) {
+                    it
+                } else {
+                    it.copy(content = LoadState.Failed(error))
+                }
+            }
+            error
+        }
+    }
+
+    private fun Album.toContent(): AlbumContent {
+        val albumArtist = displayArtist ?: artist.orEmpty()
+        return AlbumContent(
+            album = toTile(api),
+            artistId = artistId,
+            year = year,
+            genre = genre,
+            durationSec = duration,
+            tracks = song.map { song ->
+                song.toTile(api, fallbackArtist = albumArtist).let { tile ->
+                    tile.copy(albumArtist = tile.albumArtist ?: albumArtist.ifEmpty { null })
+                }
+            },
+            isFavourite = starred != null
+        )
     }
 
     /** Keeps the album on the phone, or stops keeping it. */
@@ -131,6 +180,8 @@ class AlbumViewModel @Inject constructor(
             if (result is TunesResult.Failure) {
                 setFavourite(!favourite)
                 mutableState.value = mutableState.value.copy(message = result.toLoadError())
+            } else {
+                refresh.request()
             }
         }
     }

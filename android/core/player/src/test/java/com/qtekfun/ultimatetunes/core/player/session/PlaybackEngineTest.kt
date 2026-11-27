@@ -117,6 +117,15 @@ class PlaybackEngineTest {
     }
     private val statuses = ArrayDeque<TunesResult<TrackStatus>>()
 
+    /** What the phone holds: the id each song plays under from it. */
+    private val onPhone = mutableMapOf<SongId, SongId>()
+    private var noConnection = false
+    private val phone = object : PhonePlayback {
+        override fun onlyPhone() = noConnection
+
+        override suspend fun songs() = PhoneLookup { onPhone[it] }
+    }
+
     @BeforeEach
     fun mockUri() {
         every { player.volume = capture(volume) } answers { }
@@ -148,6 +157,7 @@ class PlaybackEngineTest {
         ),
         janitor = CacheJanitor(cache),
         gains = ReplayGainSource(api),
+        phone = phone,
         scope = scope,
         io = StandardTestDispatcher(scope.testScheduler)
     )
@@ -371,6 +381,81 @@ class PlaybackEngineTest {
 
         verify(exactly = 0) { player.seekToNextMediaItem() }
         assertEquals(50, engine.failed.size)
+    }
+
+    private fun library(n: Int) = SongId("0190a5c8-0000-7000-8000-00000000001$n")
+
+    @Test
+    fun `with no connection it goes straight to the next song on the phone`() = runTest {
+        queue.items = MutableList(9) { item(library(it)) }
+        coEvery { api.song(any()) } returns TunesResult.Success(Song(LIB, "T"))
+        every { player.seekTo(any<Int>(), any()) } answers { queue.index = firstArg() }
+        noConnection = true
+        onPhone[library(6)] = library(6)
+        onPhone[library(8)] = library(8)
+        val engine = engine(this)
+        engine.start()
+
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(6, queue.index)
+
+        // That one fails too: on to the following one, past the three skips of before.
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(8, queue.index)
+
+        // Nothing left on the phone: it stops where it is.
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(8, queue.index)
+        verify(exactly = 2) { player.prepare() }
+        verify(exactly = 0) { player.seekToNextMediaItem() }
+        engine.release()
+    }
+
+    @Test
+    fun `a yt song kept as a library file plays under that id when the stream fails`() = runTest {
+        queue.items = mutableListOf(item(YT), item(LIB))
+        noConnection = true
+        onPhone[YT] = LIB_NEW
+        val engine = engine(this)
+        engine.offlineOnly = true
+        engine.start()
+
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+
+        assertEquals(LIB_NEW.value, queue.items[0].mediaId)
+        assertEquals(LIB_NEW.value, queue.items[0].localConfiguration?.customCacheKey)
+        verify { player.seekTo(0, 0) }
+        engine.release()
+    }
+
+    @Test
+    fun `an unreachable server counts as no connection, else the next song is tried`() = runTest {
+        queue.items = MutableList(6) { item(library(it)) }
+        coEvery { api.song(any()) } returns TunesResult.Success(Song(LIB, "T"))
+        every { player.hasNextMediaItem() } returns true
+        every { player.seekTo(any<Int>(), any()) } answers { queue.index = firstArg() }
+        val unreachable = mockk<PlaybackException>()
+        PlaybackException::class.java.getField("errorCode").apply { isAccessible = true }
+            .set(unreachable, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        onPhone[library(5)] = library(5)
+        val engine = engine(this)
+        engine.start()
+
+        engine.onPlayerError(unreachable)
+        advanceUntilIdle()
+        assertEquals(5, queue.index)
+
+        onPhone.clear()
+        queue.index = 0
+        engine.onIsPlayingChanged(true)
+        engine.onPlayerError(unreachable)
+        advanceUntilIdle()
+        verify(exactly = 1) { player.seekToNextMediaItem() }
+        engine.release()
     }
 
     @Test

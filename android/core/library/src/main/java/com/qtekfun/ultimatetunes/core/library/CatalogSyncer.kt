@@ -61,9 +61,20 @@ internal class CatalogSyncer(
     override suspend fun clear() {
         writing.withLock {
             generation++
-            dao.clearAll()
+            try {
+                dao.clearAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (
+                // A full or damaged disk must not crash a disconnect. What stays is not shown to
+                // any other connection (see MetaEntity.verifiedFor), and the next owner clears it.
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") e: RuntimeException
+            ) {
+                state.update { it.copy(error = CatalogSyncError.Storage) }
+                return@withLock
+            }
+            state.update { it.copy(error = null) }
         }
-        state.update { it.copy(error = null) }
     }
 
     /** Off the caller's thread: a large library takes a while to decode and sort out. */
@@ -128,17 +139,28 @@ internal class CatalogSyncer(
         suspend fun sync(onlyIfStale: Boolean): CatalogSyncResult {
             // User ids are unique to one server's library, whatever address reaches it.
             val owner = api.me().orStop().id.value
+            val connection = fingerprintOf(config)
             var meta = dao.meta()
             if (meta?.ownerId != owner) {
-                write { dao.startOver(owner) }
+                write { dao.startOver(owner, connection) }
                 meta = null
+            } else if (meta.verifiedFor != connection) {
+                // The same user over a new address or key: its catalog shows again.
+                val verified = meta.copy(verifiedFor = connection)
+                write { dao.putMeta(verified) }
+                meta = verified
             }
             if (onlyIfStale && isFresh(meta?.lastSyncAt)) return CatalogSyncResult.Fresh
 
             state.update { it.copy(syncing = true) }
             val snapshot = reader.read()
             write {
-                dao.replace(snapshot, MetaEntity(ownerId = owner, lastSyncAt = clock.millis()))
+                val done = MetaEntity(
+                    ownerId = owner,
+                    lastSyncAt = clock.millis(),
+                    verifiedFor = connection
+                )
+                dao.replace(snapshot, done)
             }
             return CatalogSyncResult.Synced
         }

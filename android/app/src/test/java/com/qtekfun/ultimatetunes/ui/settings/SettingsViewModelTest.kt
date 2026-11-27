@@ -16,9 +16,14 @@ import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
+import com.qtekfun.ultimatetunes.playback.toPlayable
+import com.qtekfun.ultimatetunes.ui.FakeCachedSongs
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
+import com.qtekfun.ultimatetunes.ui.FakeConnectivity
 import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
@@ -28,6 +33,8 @@ import com.qtekfun.ultimatetunes.ui.jsonResponse
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.problem
+import com.qtekfun.ultimatetunes.ui.testClock
+import com.qtekfun.ultimatetunes.ui.tile
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
@@ -96,10 +103,15 @@ class SettingsViewModelTest {
         // fails the next test (UncaughtExceptionsBeforeTest).
         created.forEach { it.closeForTest() }
         server.close()
+        catalog.close()
     }
 
     private val offline = FakeOfflineControls()
     private val exports = FakeExports()
+    private val catalog = TestCatalog()
+    private val refresh = FakeCatalogRefresh()
+    private val connectivity = FakeConnectivity()
+    private val cached = FakeCachedSongs(bytes = 3_000)
 
     private fun viewModel() = SettingsViewModel(
         connectedApi(server),
@@ -107,7 +119,11 @@ class SettingsViewModelTest {
         ConnectionGate(configSource),
         store,
         offline,
-        exports
+        exports,
+        catalog.repository,
+        refresh,
+        connectivity,
+        cached
     ).also { created += it }
 
     private suspend fun SettingsViewModel.loaded(): SettingsUiState =
@@ -346,8 +362,28 @@ class SettingsViewModelTest {
             }.notice
         )
         assertEquals(1, offline.syncNows)
+        assertEquals(1, refresh.requests)
         viewModel.dismissNotice()
         assertNull(viewModel.state.value.notice)
+    }
+
+    @Test
+    fun `the connection, the space used and the last sync are shown`() = runTest {
+        catalog.synced()
+        offline.mutableItems.value =
+            listOf(OfflineItem(tile(1).toPlayable(), OfflineState.DONE, 100f))
+        val viewModel = viewModel()
+
+        val state = viewModel.state.awaitFirst { it.usedBytes != null && it.lastSync != null }
+        assertEquals(configSource.config.value?.root.toString(), state.address)
+        assertEquals(3_000L, state.usedBytes)
+        assertEquals(1, state.downloadedCount)
+        assertEquals(testClock.instant(), state.lastSync)
+        assertNull(state.syncError)
+        assertTrue(state.online)
+
+        connectivity.online.value = false
+        assertFalse(viewModel.state.awaitFirst { !it.online }.online)
     }
 
     @Test

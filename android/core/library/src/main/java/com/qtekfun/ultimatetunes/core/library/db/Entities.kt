@@ -140,7 +140,12 @@ internal data class PlaylistEntryEntity(
 internal data class MetaEntity(
     @PrimaryKey val id: Int = ID,
     val ownerId: String,
-    val lastSyncAt: Long?
+    val lastSyncAt: Long?,
+    /**
+     * Fingerprint of the connection (address and key) whose server last said it belongs to
+     * [ownerId]; null until one did. The catalog is only shown to that connection.
+     */
+    val verifiedFor: String? = null
 ) {
     companion object {
         const val ID = 0

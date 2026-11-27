@@ -18,10 +18,12 @@ import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.connect.ConnectScreen
 import com.qtekfun.ultimatetunes.ui.connect.ConnectUiState
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.listennow.ListenNowScreen
+import com.qtekfun.ultimatetunes.ui.homescreen.HomeActions
+import com.qtekfun.ultimatetunes.ui.homescreen.HomeScreen
+import com.qtekfun.ultimatetunes.ui.homescreen.HomeUiState
 import com.qtekfun.ultimatetunes.ui.model.LoadError
-import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.navigation.AppRoot
+import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
@@ -79,15 +81,12 @@ class ThemeContrastTest {
 
     @Test
     fun largeTitleIsReadableInDarkTheme() {
-        check(dark = true, text(R.string.tab_listen_now)) {
-            ListenNowScreen(
-                state = LoadState.Loading,
-                recommendations = null,
+        check(dark = true, text(R.string.tab_home)) {
+            HomeScreen(
+                state = HomeUiState(),
                 contentPadding = PaddingValues(),
-                onRetry = {},
-                onPlay = { _, _ -> },
-                onOpenStation = {},
-                onOpenCharts = {}
+                navigator = Navigator(),
+                actions = HomeActions()
             )
         }
     }
