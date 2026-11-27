@@ -322,6 +322,54 @@ class PlaylistViewModelsTest {
         }
 
         @Test
+        fun `a refresh queued between two changes does not undo the second`() = runTest {
+            val viewModel = loaded()
+            var reads = 0
+            server.dispatcher.override("rest/updatePlaylist") {
+                subsonicOk("ignored", "{}").newBuilder()
+                    .headersDelay(DELAY_MS, TimeUnit.MILLISECONDS)
+                    .build()
+            }
+            server.dispatcher.override("rest/getPlaylist") {
+                val name = if (reads++ == 0) "One" else "Two"
+                subsonicOk(
+                    "playlist",
+                    """{"id":"$playlistId","name":"$name","songCount":0,"duration":0,
+                        "entry":[]}"""
+                )
+            }
+
+            viewModel.rename("One")
+            viewModel.refresh()
+            viewModel.rename("Two")
+
+            val paths = List(4) { server.takeRequest().url.encodedPath.substringAfterLast('/') }
+            assertEquals(
+                listOf("updatePlaylist", "getPlaylist", "updatePlaylist", "getPlaylist"),
+                paths
+            )
+            viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.tracks?.isEmpty() == true
+            }
+            assertEquals("Two", viewModel.ready().playlist.name)
+        }
+
+        @Test
+        fun `after a failure that could not be checked, removing reads the list first`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(0) }
+            server.dispatcher.override("rest/getPlaylist") { subsonicFailure(0) }
+            viewModel.removeAt(0)
+            viewModel.state.awaitFirst { it.message != null }
+            server.takeRequest()
+            server.takeRequest()
+
+            viewModel.removeAt(0)
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+        }
+
+        @Test
         fun `songs added elsewhere show in the open playlist`() = runTest {
             val viewModel = loaded()
 

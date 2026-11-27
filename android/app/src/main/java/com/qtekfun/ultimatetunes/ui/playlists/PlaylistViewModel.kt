@@ -77,8 +77,14 @@ class PlaylistViewModel @Inject constructor(
     /** Grows when a change fails: the ones queued behind it were made on a state that is gone. */
     private var generation = 0
 
-    /** Grows with every change shown: an answer read before it is stale. */
-    private var revision = 0
+    /** Changes shown but not answered yet: the server's list does not have them all. */
+    private var pending = 0
+
+    /** An answer was set aside because of [pending] changes: read again after the last one. */
+    private var outdated = false
+
+    /** A change failed and the list was not read since: its positions cannot be trusted. */
+    private var unverified = false
 
     init {
         viewModelScope.launch { changes.changed.filter { it == id }.collect { refresh() } }
@@ -134,7 +140,9 @@ class PlaylistViewModel @Inject constructor(
     /** Removes the song at [index] of the playlist. */
     fun removeAt(index: Int) {
         val before = editable() ?: return
-        if (index !in before.tracks.indices) return
+        // Unverified positions: read the list instead of removing the wrong song.
+        if (unverified) refresh()
+        if (unverified || index !in before.tracks.indices) return
         val removed = before.tracks[index]
         val after = before.copy(
             tracks = before.tracks.filterIndexed { i, _ -> i != index },
@@ -177,22 +185,23 @@ class PlaylistViewModel @Inject constructor(
     private fun change(after: PlaylistContent, call: suspend () -> TunesResult<Unit>) {
         val before = mutableState.value.content
         val made = generation
-        revision++
+        pending++
         mutableState.update { it.copy(content = LoadState.Ready(after)) }
         viewModelScope.launch {
             writes.withLock {
-                if (made != generation) return@withLock
-                when (val result = call()) {
-                    is TunesResult.Failure -> {
-                        generation++
-                        mutableState.update {
-                            it.copy(content = before, message = result.toLoadError())
-                        }
-                        reload()
+                val result = if (made == generation) call() else null
+                pending--
+                if (result is TunesResult.Failure) {
+                    generation++
+                    unverified = true
+                    outdated = true
+                    mutableState.update {
+                        it.copy(content = before, message = result.toLoadError())
                     }
-
-                    is TunesResult.Success -> if (mutableState.value.isOffline) offline.syncSoon()
+                } else if (result != null && mutableState.value.isOffline) {
+                    offline.syncSoon()
                 }
+                if (outdated && pending == 0) reload()
             }
         }
     }
@@ -200,9 +209,10 @@ class PlaylistViewModel @Inject constructor(
     /** Reads the playlist again, keeping what is shown until the answer arrives. */
     private suspend fun reload() {
         loading?.join()
-        val asked = revision
         val result = api.playlist(id)
-        if (result is TunesResult.Success && asked == revision) {
+        outdated = pending > 0
+        if (result is TunesResult.Success && !outdated) {
+            unverified = false
             mutableState.update { it.copy(content = LoadState.Ready(result.value.toContent(api))) }
         }
     }

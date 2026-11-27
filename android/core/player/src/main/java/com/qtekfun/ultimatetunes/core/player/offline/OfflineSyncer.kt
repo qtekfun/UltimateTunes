@@ -130,7 +130,11 @@ class OfflineSyncer(
      * each that it does not, null when that could not be told.
      */
     suspend fun holds(ids: Collection<SongId>): Boolean? {
-        val sample = ids.filterNot { it.isExternal }.take(SAMPLE_SIZE)
+        // Spread over the list: songs deleted together are often next to each other.
+        val library = ids.filterNot { it.isExternal }
+        val sample = library.chunked((library.size / SAMPLE_SIZE).coerceAtLeast(1))
+            .map { it.first() }
+            .take(SAMPLE_SIZE)
         var told = true
         for (id in sample) {
             val result = api.song(id)
