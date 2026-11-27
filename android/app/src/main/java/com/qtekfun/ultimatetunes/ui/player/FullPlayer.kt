@@ -254,7 +254,7 @@ private fun HeroArtwork(track: TrackTile, bottom: Color, dimmed: Boolean) {
             url = track.coverUrl,
             placeholderKey = track.id.value,
             shape = RectangleShape,
-            modifier = Modifier.fillMaxSize()
+            modifier = LocalPlayerArtworkMotion.current.fillMaxSize()
         )
         Box(
             Modifier

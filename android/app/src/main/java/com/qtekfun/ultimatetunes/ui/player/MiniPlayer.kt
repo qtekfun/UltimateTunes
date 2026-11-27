@@ -88,7 +88,7 @@ fun MiniPlayer(
                     url = track.coverUrl,
                     placeholderKey = track.id.value,
                     shape = Dimens.SmallArtworkShape,
-                    modifier = Modifier.size(Dimens.MiniArtwork)
+                    modifier = LocalPlayerArtworkMotion.current.size(Dimens.MiniArtwork)
                 )
                 MiniPlayerTitles(
                     track = track,

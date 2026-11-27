@@ -5,15 +5,11 @@ package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -91,7 +87,6 @@ import com.qtekfun.ultimatetunes.ui.library.LibraryRoute
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsViewModel
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import com.qtekfun.ultimatetunes.ui.player.FullPlayer
 import com.qtekfun.ultimatetunes.ui.player.MiniPlayer
 import com.qtekfun.ultimatetunes.ui.player.PlayerActions
 import com.qtekfun.ultimatetunes.ui.player.PlayerUiState
@@ -101,12 +96,6 @@ import com.qtekfun.ultimatetunes.ui.radio.StationRoute
 import com.qtekfun.ultimatetunes.ui.search.SearchRoute
 import com.qtekfun.ultimatetunes.ui.settings.SettingsRoute
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
-
-/** How long the full player takes to slide up or down. */
-private const val PLAYER_SLIDE_MS = 320
-
-/** How long one screen takes to fade into the next. */
-private const val SCREEN_FADE_MS = 200
 
 /** Over the full player, messages sit below its close button. */
 private val FULL_PLAYER_SNACKBAR_TOP = 48.dp
@@ -190,67 +179,65 @@ private fun MainLayout(
 ) {
     val hasTrack = player.current != null
     var bottomBarHeight by remember { mutableIntStateOf(0) }
-    Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            // Under the open full player, TalkBack must not reach the hidden tabs and mini player.
-            modifier = if (hasTrack && expanded) Modifier.clearAndSetSemantics {} else Modifier,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentWindowInsets = WindowInsets(0),
-            bottomBar = {
-                Column(Modifier.onSizeChanged { bottomBarHeight = it.height }) {
-                    banner()
-                    MiniPlayerBar(
-                        visible = hasTrack,
-                        player = player,
-                        actions = actions,
-                        onOpen = { onExpandedChange(true) }
-                    )
-                    TabBar(navController)
-                }
-            }
-        ) { padding ->
-            TabsNavHost(
-                navController = navController,
-                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
-                onPlay = onPlay
-            )
-            // After the NavHost in the same subcomposition, so it is registered after the
-            // NavHost's own handler (also on recreation) and wins over the tab's back stack: back
-            // closes the full player and shows the screen under it, it does not leave that screen.
-            BackHandler(enabled = hasTrack && expanded) { onExpandedChange(false) }
-        }
-        AnimatedVisibility(
-            visible = hasTrack && expanded,
-            enter = slideInVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it },
-            exit = slideOutVertically(tween(PLAYER_SLIDE_MS, easing = FastOutSlowInEasing)) { it }
-        ) {
-            FullPlayer(
-                state = player,
-                actions = actions,
-                onCollapse = { onExpandedChange(false) },
-                shown = transition.targetState == EnterExitState.Visible,
-                lyrics = lyrics
-            )
-        }
-        // Over everything, so a message after an action in the full player shows too: there at
-        // the top, over the artwork and clear of the controls; otherwise above the mini player and
-        // the tab bar.
-        val overPlayer = hasTrack && expanded
-        SnackbarHost(
-            hostState = snackbar,
-            modifier = Modifier
-                .align(if (overPlayer) Alignment.TopCenter else Alignment.BottomCenter)
-                .then(
-                    if (overPlayer) {
-                        Modifier.statusBarsPadding().padding(top = FULL_PLAYER_SNACKBAR_TOP)
-                    } else {
-                        Modifier.padding(
-                            bottom = with(LocalDensity.current) { bottomBarHeight.toDp() }
-                        )
+    SharedTransitionLayout {
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                // Under the open full player, TalkBack must not reach the hidden tabs and mini player.
+                modifier = if (hasTrack && expanded) Modifier.clearAndSetSemantics {} else Modifier,
+                containerColor = MaterialTheme.colorScheme.background,
+                contentWindowInsets = WindowInsets(0),
+                bottomBar = {
+                    Column(Modifier.onSizeChanged { bottomBarHeight = it.height }) {
+                        banner()
+                        MiniArtworkMotion(expanded) {
+                            MiniPlayerBar(
+                                visible = hasTrack,
+                                player = player,
+                                actions = actions,
+                                onOpen = { onExpandedChange(true) }
+                            )
+                        }
+                        TabBar(navController)
                     }
+                }
+            ) { padding ->
+                TabsNavHost(
+                    navController = navController,
+                    contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
+                    onPlay = onPlay
                 )
-                .testTag(APP_SNACKBAR_TAG)
-        )
+                // After the NavHost in the same subcomposition, so it is registered after the
+                // NavHost's own handler (also on recreation) and wins over the tab's back stack: back
+                // closes the full player and shows the screen under it, it does not leave that screen.
+                BackHandler(enabled = hasTrack && expanded) { onExpandedChange(false) }
+            }
+            FullPlayerOverlay(
+                visible = hasTrack && expanded,
+                player = player,
+                actions = actions,
+                lyrics = lyrics,
+                onCollapse = { onExpandedChange(false) }
+            )
+            // Over everything, so a message after an action in the full player shows too: there at
+            // the top, over the artwork and clear of the controls; otherwise above the mini player and
+            // the tab bar.
+            val overPlayer = hasTrack && expanded
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier
+                    .align(if (overPlayer) Alignment.TopCenter else Alignment.BottomCenter)
+                    .then(
+                        if (overPlayer) {
+                            Modifier.statusBarsPadding().padding(top = FULL_PLAYER_SNACKBAR_TOP)
+                        } else {
+                            Modifier.padding(
+                                bottom = with(LocalDensity.current) { bottomBarHeight.toDp() }
+                            )
+                        }
+                    )
+                    .testTag(APP_SNACKBAR_TAG)
+            )
+        }
     }
 }
 
@@ -318,10 +305,10 @@ private fun TabsNavHost(
     NavHost(
         navController = navController,
         startDestination = Tab.HOME.route,
-        enterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
-        exitTransition = { fadeOut(tween(SCREEN_FADE_MS)) },
-        popEnterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
-        popExitTransition = { fadeOut(tween(SCREEN_FADE_MS)) }
+        enterTransition = { screenEnter() },
+        exitTransition = { screenExit() },
+        popEnterTransition = { screenPopEnter() },
+        popExitTransition = { screenPopExit() }
     ) {
         Tab.entries.forEach { tab ->
             navigation(route = tab.route, startDestination = tab.home) {
