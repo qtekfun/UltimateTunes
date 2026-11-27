@@ -11,7 +11,10 @@ import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.apiWith
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import java.util.Optional
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mockwebserver3.MockResponse
 import okhttp3.Headers.Companion.headersOf
 import org.junit.jupiter.api.AfterEach
@@ -23,6 +26,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+
+private const val SETTLE_MS = 500L
 
 @ExtendWith(MainDispatcherExtension::class)
 class ConnectViewModelTest {
@@ -91,6 +96,9 @@ class ConnectViewModelTest {
         assertEquals("", connected.apiKey)
         assertEquals("UltimateTunes", connected.connectedTo)
 
+        // The view model's collector must have seen the connection before it is dropped: the
+        // state flows behind it conflate, so a disconnect that overtakes it goes unnoticed.
+        withContext(Dispatchers.Default) { delay(SETTLE_MS) }
         gate.disconnect()
 
         // The reset runs on the view model's own collector: wait for it, do not race it.

@@ -18,7 +18,10 @@ import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.subsonicOk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -27,6 +30,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+
+private const val RETRY_MS = 10L
 
 @ExtendWith(MainDispatcherExtension::class)
 class AlbumViewModelTest {
@@ -128,9 +133,11 @@ class AlbumViewModelTest {
 
         assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
 
-        viewModel.load()
-        server.takeRequest()
-        server.takeRequest()
+        // A load asked for while the first one runs is ignored: ask until a second one goes out.
+        while (server.requestCount < 2) {
+            viewModel.load()
+            withContext(Dispatchers.Default) { delay(RETRY_MS) }
+        }
         assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
     }
 
