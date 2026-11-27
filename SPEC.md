@@ -117,7 +117,11 @@ The look follows §5 on desktop and phone. It talks only to its own server, thro
 
 ## 5. Android client: interface (Apple Music style)
 Own design inspired by Apple Music, **without** Apple logos, icons, fonts or assets.
-- Bottom bar with 4 tabs: **Listen Now, Radio, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
+- Bottom bar with 3 tabs (amended 2026-11-27): **Home, Library, Search**; a **mini player** pinned above it; the full player slides up over everything like a sheet and follows the finger when dragged down to close.
+- **One layout for every tab**: the same header (title and a Settings button, no empty space above), the same section titles, artwork tile sizes, rows and overflow buttons.
+- **Home**: quick access to what was played last, then stations (radio lives here), recommendations and charts.
+- **Library** shows its content directly, with filters (Playlists, Albums, Artists, Songs) and an "On this phone" toggle, not a menu of pages; favourites and downloads are reached from it.
+- **Settings** is one tap from every tab and starts with the account, the space used on the phone and the state of the sync.
 - Large rounded artwork grids, bold titles, generous spacing; large-title headers that collapse on scroll.
 - Full player: the artwork **edge to edge** at the top fading into **colours from the artwork** (Palette), a large title with the artist in the artwork's accent colour, a bar scrubber, a round play button in the accent, a card with the lyrics line being sung, the song that plays next, queue sheet.
 - Lyrics full-screen, active line highlighted, auto-scroll, tap a line to seek (when the track is in the library).
@@ -568,3 +572,6 @@ Reports in `docs/spikes/`. Where two reports disagreed, the text below is the de
 - **Android build** (2026-11-27): `compileSdk` is 37.1, which Compose 1.13 needs; the owner allowed bumping `lifecycle` to 2.11.1 by hand once, as Dependabot had not offered it and Lint failed on it.
 - **Interface**: the Apple Music-style design stays; it is fixed and completed, not redesigned. Drag to reorder is written in the app, with no new dependency.
 
+### Taken — three tabs and one layout (2026-11-27)
+- The owner found Listen Now and Radio inconsistent with Library and Settings too hidden, and chose proposal B of two mock-ups: **Home, Library, Search**; Radio moves into Home; Library shows content with filters instead of a menu; Settings from every tab. §5 amended; this replaces the four tabs of RF-11 and the "fix, do not redesign" line of T28.
+- The redesign is built on the local catalog (T32), so the new screens work offline from the start (PLAN T33).
