@@ -82,8 +82,14 @@ internal fun trackMenuActions(
         navController.navigate(route(currentTab(navController)))
     }
     return TrackMenuActions(
-        playNext = { player.playNext(listOf(it)) },
-        playLast = { player.enqueue(listOf(it)) },
+        playNext = {
+            player.playNext(listOf(it))
+            actions.queued(next = true)
+        },
+        playLast = {
+            player.enqueue(listOf(it))
+            actions.queued(next = false)
+        },
         addToPlaylist = { actions.pickPlaylist(listOf(it)) },
         toggleFavourite = actions::toggleFavourite,
         toggleDownload = actions::toggleDownload,

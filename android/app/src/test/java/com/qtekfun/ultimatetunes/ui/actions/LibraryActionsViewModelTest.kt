@@ -92,6 +92,17 @@ class LibraryActionsViewModelTest {
     }
 
     @Test
+    fun `queueing a song is announced`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.queued(next = true)
+        assertEquals(ActionEvent.Queued(next = true), viewModel.state.value.event)
+
+        viewModel.queued(next = false)
+        assertEquals(ActionEvent.Queued(next = false), viewModel.state.value.event)
+    }
+
+    @Test
     fun `a refused favourite is undone and explained`() = runTest {
         server.dispatcher.override("rest/star") { subsonicFailure(50) }
         val viewModel = viewModel()

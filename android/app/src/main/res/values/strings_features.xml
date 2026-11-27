@@ -92,5 +92,11 @@
     <string name="notifications_rationale">UltimateTunes uses notifications only for what is playing and for the progress of downloads and exports to this phone.</string>
     <string name="notifications_allow">Allow</string>
     <string name="notifications_not_now">Not now</string>
-    <string name="event_too_many_new">Add at most %1$d songs that are not in the library yet at a time</string>
+    <plurals name="event_too_many_new">
+        <item quantity="one">Add at most %1$d song that is not in the library yet at a time</item>
+        <item quantity="other">Add at most %1$d songs that are not in the library yet at a time</item>
+    </plurals>
+    <string name="event_play_next">Playing next</string>
+    <string name="event_play_last">Added to the end of the queue</string>
+    <string name="player_buffering">Loading</string>
 </resources>

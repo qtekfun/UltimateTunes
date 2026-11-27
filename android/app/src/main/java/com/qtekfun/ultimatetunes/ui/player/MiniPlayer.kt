@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.player
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 
 /** Test tag of the mini player. */
 const val MINI_PLAYER_TAG = "player.mini"
+const val MINI_PLAYER_BUFFERING_TAG = "player.mini.buffering"
 const val MINI_PLAYER_SUBTITLE_TAG = "player.mini.subtitle"
 
 /** Horizontal drag that skips (SPEC §5: swipe the mini player to skip). */
@@ -68,33 +71,45 @@ fun MiniPlayer(
             .padding(horizontal = Dimens.SpaceS, vertical = Dimens.SpaceXS)
             .testTag(MINI_PLAYER_TAG)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = Dimens.MiniPlayerHeight)
-                .clickable(onClickLabel = stringResource(R.string.player_open), onClick = onOpen)
-                .swipeToSkip(actions)
-                .padding(horizontal = Dimens.SpaceS, vertical = Dimens.SpaceS),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Artwork(
-                url = track.coverUrl,
-                placeholderKey = track.id.value,
-                shape = Dimens.SmallArtworkShape,
-                modifier = Modifier.size(Dimens.MiniArtwork)
-            )
-            MiniPlayerTitles(
-                track = track,
-                issue = state.issue,
+        Box(contentAlignment = Alignment.BottomCenter) {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = Dimens.SpaceM)
-            )
-            PlayPauseButton(isPlaying = state.isPlaying, onClick = actions.togglePlay)
-            IconButton(onClick = actions.next, enabled = state.hasNext) {
-                Icon(
-                    painterResource(R.drawable.ic_skip_next),
-                    contentDescription = stringResource(R.string.player_next)
+                    .fillMaxWidth()
+                    .heightIn(min = Dimens.MiniPlayerHeight)
+                    .clickable(
+                        onClickLabel = stringResource(R.string.player_open),
+                        onClick = onOpen
+                    )
+                    .swipeToSkip(actions)
+                    .padding(horizontal = Dimens.SpaceS, vertical = Dimens.SpaceS),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Artwork(
+                    url = track.coverUrl,
+                    placeholderKey = track.id.value,
+                    shape = Dimens.SmallArtworkShape,
+                    modifier = Modifier.size(Dimens.MiniArtwork)
+                )
+                MiniPlayerTitles(
+                    track = track,
+                    issue = state.issue,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = Dimens.SpaceM)
+                )
+                PlayPauseButton(isPlaying = state.isPlaying, onClick = actions.togglePlay)
+                IconButton(onClick = actions.next, enabled = state.hasNext) {
+                    Icon(
+                        painterResource(R.drawable.ic_skip_next),
+                        contentDescription = stringResource(R.string.player_next)
+                    )
+                }
+            }
+            if (state.isBuffering) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MINI_PLAYER_BUFFERING_TAG)
                 )
             }
         }

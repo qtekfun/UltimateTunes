@@ -6,7 +6,6 @@ package com.qtekfun.ultimatetunes.ui.radio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -37,6 +36,7 @@ import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
+import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
@@ -123,9 +123,7 @@ private fun StationHeader(station: StationContent, onPlay: () -> Unit) {
             placeholderKey = station.seed.id.value,
             shape = Dimens.CardShape,
             modifier = Modifier
-                .widthIn(max = 280.dp)
-                .fillMaxWidth(fraction = 0.7f)
-                .aspectRatio(1f)
+                .coverSize(fraction = 0.7f, max = 280.dp)
         )
         Text(
             text = stringResource(R.string.station_label),
