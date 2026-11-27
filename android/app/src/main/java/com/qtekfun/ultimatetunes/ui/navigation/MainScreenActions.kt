@@ -122,6 +122,7 @@ internal fun LibraryActionsHost(
             track = track,
             isFavourite = track.id in state.favourites,
             isKeptOffline = track.id in state.keptOffline,
+            isKeptByGroup = track.id in state.keptByGroup,
             actions = menuActions,
             onDismiss = onMenuDismiss
         )

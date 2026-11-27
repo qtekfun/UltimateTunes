@@ -37,6 +37,8 @@ object TestOfflineModule {
 }
 
 class MemoryOfflineControls : OfflineControls {
+    override suspend fun serverConnected(server: String) = Unit
+
     override val selection = MutableStateFlow(OfflineSelection())
     override val items = MutableStateFlow<List<OfflineItem>>(emptyList())
 
@@ -67,6 +69,4 @@ class MemoryOfflineControls : OfflineControls {
     override suspend fun libraryOfflineChanged() = Unit
 
     override suspend fun syncNow() = Unit
-
-    override suspend fun resumeSync() = Unit
 }

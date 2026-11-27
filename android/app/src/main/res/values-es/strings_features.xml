@@ -92,4 +92,5 @@
     <string name="notifications_rationale">UltimateTunes usa las notificaciones solo para lo que está sonando y para el progreso de las descargas y de las exportaciones a este teléfono.</string>
     <string name="notifications_allow">Permitir</string>
     <string name="notifications_not_now">Ahora no</string>
+    <string name="event_too_many_new">Añade como máximo %1$d canciones que aún no estén en la biblioteca cada vez</string>
 </resources>

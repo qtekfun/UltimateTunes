@@ -62,6 +62,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -284,10 +285,18 @@ internal class OkHttpTunesApi(
     override suspend fun createPlaylist(
         name: String,
         songIds: List<SongId>
-    ): TunesResult<Playlist> =
-        rest("createPlaylist", params("name" to name) + songIds.map { "songId" to it.value }) {
-            it.field("playlist", Playlist.serializer())
-        }
+    ): TunesResult<Playlist> {
+        val first = songIds.take(MAX_IDS_PER_REQUEST)
+        val created = rest(
+            "createPlaylist",
+            params("name" to name) + first.map { "songId" to it.value },
+            form = true
+        ) { it.field("playlist", Playlist.serializer()) }
+        if (created !is TunesResult.Success || first.size == songIds.size) return created
+        val id = PlaylistId(created.value.id.value)
+        val rest = updatePlaylist(id, songIdsToAdd = songIds.drop(first.size))
+        return if (rest is TunesResult.Failure) rest else playlist(id)
+    }
 
     override suspend fun updatePlaylist(
         id: PlaylistId,
@@ -296,12 +305,31 @@ internal class OkHttpTunesApi(
         public: Boolean?,
         songIdsToAdd: List<SongId>,
         songIndexesToRemove: List<Int>
-    ): TunesResult<Unit> = restUnit(
-        "updatePlaylist",
-        params("playlistId" to id.value, "name" to name, "comment" to comment, "public" to public) +
-            songIdsToAdd.map { "songIdToAdd" to it.value } +
-            songIndexesToRemove.map { "songIndexToRemove" to it.toString() }
-    )
+    ): TunesResult<Unit> {
+        // The server counts additions and removals of one request together.
+        val room = (MAX_IDS_PER_REQUEST - songIndexesToRemove.size).coerceAtLeast(0)
+        var result = restUnit(
+            "updatePlaylist",
+            params(
+                "playlistId" to id.value,
+                "name" to name,
+                "comment" to comment,
+                "public" to public
+            ) +
+                songIdsToAdd.take(room).map { "songIdToAdd" to it.value } +
+                songIndexesToRemove.map { "songIndexToRemove" to it.toString() },
+            form = true
+        )
+        for (chunk in songIdsToAdd.drop(room).chunked(MAX_IDS_PER_REQUEST)) {
+            if (result is TunesResult.Failure) break
+            result = restUnit(
+                "updatePlaylist",
+                params("playlistId" to id.value) + chunk.map { "songIdToAdd" to it.value },
+                form = true
+            )
+        }
+        return result
+    }
 
     override suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit> =
         restUnit("deletePlaylist", params("id" to id.value))
@@ -346,11 +374,19 @@ internal class OkHttpTunesApi(
         ids: List<SongId>,
         current: SongId?,
         positionMillis: Long?
-    ): TunesResult<Unit> = restUnit(
-        "savePlayQueue",
-        ids.map { "id" to it.value } +
-            params("current" to current?.value, "position" to positionMillis)
-    )
+    ): TunesResult<Unit> {
+        // A longer queue than one request takes keeps the part around the current song.
+        val from = (ids.indexOf(current) - QUEUE_BEFORE_CURRENT)
+            .coerceAtMost(ids.size - MAX_IDS_PER_REQUEST)
+            .coerceAtLeast(0)
+        val kept = ids.drop(from).take(MAX_IDS_PER_REQUEST)
+        return restUnit(
+            "savePlayQueue",
+            kept.map { "id" to it.value } +
+                params("current" to current?.value, "position" to positionMillis),
+            form = true
+        )
+    }
 
     // ---- URLs ----
 
@@ -368,20 +404,30 @@ internal class OkHttpTunesApi(
 
     private suspend fun restUnit(
         endpoint: String,
-        query: List<Param> = emptyList()
-    ): TunesResult<Unit> = rest(endpoint, query) { }
+        query: List<Param> = emptyList(),
+        form: Boolean = false
+    ): TunesResult<Unit> = rest(endpoint, query, form) { }
 
     /**
      * `GET /rest/<endpoint>` and the `subsonic-response` it returns: [decode] reads the payload of
-     * an `ok` answer; a `failed` one, or HTTP 429/501, becomes the mapped error.
+     * an `ok` answer; a `failed` one, or HTTP 429/501, becomes the mapped error. With [form] it
+     * is a form POST, for lists of ids too long for a URL.
      */
     private suspend fun <T> rest(
         endpoint: String,
         query: List<Param>,
+        form: Boolean = false,
         decode: (JsonObject) -> T
     ): TunesResult<T> {
-        val url = restUrl(endpoint, query) ?: return TunesResult.NotConfigured
-        return exchange(Request.Builder().url(url).get().build()) { answer ->
+        val url = restUrl(endpoint, if (form) emptyList() else query)
+            ?: return TunesResult.NotConfigured
+        val request = Request.Builder().url(url)
+        if (form) {
+            val body = FormBody.Builder()
+            query.forEach { (name, value) -> body.add(name, value) }
+            request.post(body.build())
+        }
+        return exchange(request.build()) { answer ->
             val envelope = envelopeOf(answer.body)
             if (envelope == null) {
                 withoutDocument(answer, "rest/$endpoint", "subsonic-response")
@@ -585,6 +631,12 @@ internal class OkHttpTunesApi(
 
     private companion object {
         const val REST = "rest"
+
+        /** Most ids the server takes in one request. */
+        const val MAX_IDS_PER_REQUEST = 1000
+
+        /** How many songs before the current one a trimmed play queue keeps. */
+        const val QUEUE_BEFORE_CURRENT = 100
         const val ENVELOPE = "subsonic-response"
         const val STATUS_OK = "ok"
         val UT_PATH = listOf("ut", "v1")

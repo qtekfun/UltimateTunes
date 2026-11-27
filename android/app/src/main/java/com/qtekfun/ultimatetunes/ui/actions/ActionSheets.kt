@@ -223,6 +223,8 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         ActionEvent.Downloading -> stringResource(R.string.event_downloading)
 
+        is ActionEvent.TooManyNew -> stringResource(R.string.event_too_many_new, event.max)
+
         ActionEvent.DownloadRemoved -> stringResource(R.string.event_download_removed)
 
         is ActionEvent.FavouriteChanged -> stringResource(

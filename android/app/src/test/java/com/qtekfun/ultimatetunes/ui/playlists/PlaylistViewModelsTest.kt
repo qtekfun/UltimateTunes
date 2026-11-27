@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.playlists
 
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
@@ -74,7 +75,7 @@ class PlaylistViewModelsTest {
             assertEquals(2, (created.playlists as LoadState.Ready).value.size)
             val request = server.takeRequest()
             assertEquals("/rest/createPlaylist", request.url.encodedPath)
-            assertEquals("Morning Run", request.url.queryParameter("name"))
+            assertEquals("Morning Run", request.form().queryParameter("name"))
             assertEquals(2, server.requestCount)
 
             viewModel.onCreatedOpened()
@@ -124,11 +125,13 @@ class PlaylistViewModelsTest {
     @Nested
     inner class Detail {
         private val offline = FakeOfflineControls()
+        private val changes = PlaylistChanges()
 
         private fun viewModel() = PlaylistViewModel(
             SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to playlistId)),
             connectedApi(server),
-            offline
+            offline,
+            changes
         )
 
         private suspend fun PlaylistViewModel.ready(): PlaylistContent =
@@ -164,8 +167,8 @@ class PlaylistViewModelsTest {
             assertEquals("Sunday Evening", viewModel.ready().playlist.name)
             val request = server.takeRequest()
             assertEquals("/rest/updatePlaylist", request.url.encodedPath)
-            assertEquals(playlistId, request.url.queryParameter("playlistId"))
-            assertEquals("Sunday Evening", request.url.queryParameter("name"))
+            assertEquals(playlistId, request.form().queryParameter("playlistId"))
+            assertEquals("Sunday Evening", request.form().queryParameter("name"))
         }
 
         @Test
@@ -194,7 +197,7 @@ class PlaylistViewModelsTest {
             )
             assertEquals(2, after.playlist.songCount)
             assertEquals(663 - 201, after.playlist.durationSec)
-            assertEquals("1", server.takeRequest().url.queryParameter("songIndexToRemove"))
+            assertEquals("1", server.takeRequest().form().queryParameter("songIndexToRemove"))
             assertEquals(2, server.requestCount)
         }
 
@@ -251,6 +254,57 @@ class PlaylistViewModelsTest {
             viewModel.toggleOffline()
             assertFalse(viewModel.state.awaitFirst { !it.isOffline }.isOffline)
             assertTrue(offline.mutableSelection.value.collections.isEmpty())
+        }
+
+        @Test
+        fun `deleting a playlist kept offline stops keeping it`() = runTest {
+            val viewModel = loaded()
+            viewModel.toggleOffline()
+            viewModel.state.awaitFirst { it.isOffline }
+
+            viewModel.delete()
+
+            viewModel.state.awaitFirst { it.deleted && !it.isOffline }
+            assertTrue(offline.mutableSelection.value.collections.isEmpty())
+        }
+
+        @Test
+        fun `a change to a kept playlist syncs at once`() = runTest {
+            val viewModel = loaded()
+            viewModel.toggleOffline()
+            viewModel.state.awaitFirst { it.isOffline }
+
+            viewModel.rename("Synced")
+            server.takeRequest()
+            viewModel.refresh()
+            server.takeRequest()
+
+            assertEquals(1, offline.syncs)
+        }
+
+        @Test
+        fun `a change that cannot be sent is undone even with no connection`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/updatePlaylist") { dropConnection() }
+            server.dispatcher.override("rest/getPlaylist") { dropConnection() }
+
+            viewModel.rename("Lost")
+
+            val state = viewModel.state.awaitFirst { it.message != null }
+            assertEquals(
+                "Sunday Morning",
+                (state.content as LoadState.Ready).value.playlist.name
+            )
+        }
+
+        @Test
+        fun `songs added elsewhere show in the open playlist`() = runTest {
+            val viewModel = loaded()
+
+            changes.changed(PlaylistId(playlistId))
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.ready()
         }
 
         @Test

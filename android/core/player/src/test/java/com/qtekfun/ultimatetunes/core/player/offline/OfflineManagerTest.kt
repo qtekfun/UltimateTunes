@@ -224,4 +224,19 @@ class OfflineManagerTest {
         assertEquals(1, report.totalCount)
         assertEquals(1, report.leftOutCount)
     }
+
+    @Test
+    fun `songs kept from another server are freed, and the same server keeps them`() = runTest {
+        val track = PlayableTrack(songB, "B", "Artist")
+        manager.keepTrack(track)
+        manager.serverConnected("https://one.example/")
+        manager.serverConnected("https://one.example/")
+        assertEquals(listOf(track), store.state.value.tracks)
+        assertTrue(removed.isEmpty())
+
+        manager.serverConnected("https://two.example/")
+
+        assertEquals(OfflineSelection(server = "https://two.example/"), store.state.value)
+        assertEquals(listOf(songB), removed)
+    }
 }

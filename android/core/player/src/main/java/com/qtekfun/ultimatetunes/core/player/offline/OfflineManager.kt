@@ -93,6 +93,25 @@ class OfflineManager @Inject constructor(
     }
 
     /**
+     * The app is connected to [server]. Songs kept from another server mean nothing here: they
+     * are freed and the selection starts over. On the same server, a sync the process death left
+     * half done goes on.
+     */
+    suspend fun serverConnected(server: String) {
+        val before = store.selection.first()
+        if (before.server == null || before.server == server) {
+            if (before.server == null) store.update { it.copy(server = server) }
+            syncSoon(restart = false)
+            return
+        }
+        val library = LibraryOffline().takeIf { settings.settings.first().libraryOffline }
+        val freed = before.explicitIds() + before.library?.songs.orEmpty().map { it.id }
+        store.update { OfflineSelection(library = library, server = server) }
+        syncer.prune(freed)
+        syncSoon()
+    }
+
+    /**
      * Syncs as soon as the network allows (and periodically), e.g. after a settings change. With
      * [restart] false a sync already queued or running is left alone (the app started: one the
      * process death stopped goes on from here).
@@ -118,7 +137,7 @@ class OfflineManager @Inject constructor(
         syncer.prune(freed)
         syncSoon()
     }
-
-    private fun OfflineCollection.matches(kind: CollectionKind, id: String) =
-        this.kind == kind && this.id == id
 }
+
+private fun OfflineCollection.matches(kind: CollectionKind, id: String) =
+    this.kind == kind && this.id == id
