@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.playlists
 
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
@@ -16,6 +17,7 @@ import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.subsonicOk
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,6 +31,10 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(MainDispatcherExtension::class)
 class PlaylistViewModelsTest {
+    private companion object {
+        const val DELAY_MS = 500L
+    }
+
     private lateinit var server: FakeTunesServer
     private val playlistId = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001"
 
@@ -74,7 +80,7 @@ class PlaylistViewModelsTest {
             assertEquals(2, (created.playlists as LoadState.Ready).value.size)
             val request = server.takeRequest()
             assertEquals("/rest/createPlaylist", request.url.encodedPath)
-            assertEquals("Morning Run", request.url.queryParameter("name"))
+            assertEquals("Morning Run", request.form().queryParameter("name"))
             assertEquals(2, server.requestCount)
 
             viewModel.onCreatedOpened()
@@ -124,11 +130,13 @@ class PlaylistViewModelsTest {
     @Nested
     inner class Detail {
         private val offline = FakeOfflineControls()
+        private val changes = PlaylistChanges()
 
         private fun viewModel() = PlaylistViewModel(
             SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to playlistId)),
             connectedApi(server),
-            offline
+            offline,
+            changes
         )
 
         private suspend fun PlaylistViewModel.ready(): PlaylistContent =
@@ -164,8 +172,8 @@ class PlaylistViewModelsTest {
             assertEquals("Sunday Evening", viewModel.ready().playlist.name)
             val request = server.takeRequest()
             assertEquals("/rest/updatePlaylist", request.url.encodedPath)
-            assertEquals(playlistId, request.url.queryParameter("playlistId"))
-            assertEquals("Sunday Evening", request.url.queryParameter("name"))
+            assertEquals(playlistId, request.form().queryParameter("playlistId"))
+            assertEquals("Sunday Evening", request.form().queryParameter("name"))
         }
 
         @Test
@@ -194,7 +202,7 @@ class PlaylistViewModelsTest {
             )
             assertEquals(2, after.playlist.songCount)
             assertEquals(663 - 201, after.playlist.durationSec)
-            assertEquals("1", server.takeRequest().url.queryParameter("songIndexToRemove"))
+            assertEquals("1", server.takeRequest().form().queryParameter("songIndexToRemove"))
             assertEquals(2, server.requestCount)
         }
 
@@ -251,6 +259,124 @@ class PlaylistViewModelsTest {
             viewModel.toggleOffline()
             assertFalse(viewModel.state.awaitFirst { !it.isOffline }.isOffline)
             assertTrue(offline.mutableSelection.value.collections.isEmpty())
+        }
+
+        @Test
+        fun `deleting a playlist kept offline stops keeping it`() = runTest {
+            val viewModel = loaded()
+            viewModel.toggleOffline()
+            viewModel.state.awaitFirst { it.isOffline }
+
+            viewModel.delete()
+
+            viewModel.state.awaitFirst { it.deleted && !it.isOffline }
+            assertTrue(offline.mutableSelection.value.collections.isEmpty())
+        }
+
+        @Test
+        fun `a change to a kept playlist syncs at once`() = runTest {
+            val viewModel = loaded()
+            viewModel.toggleOffline()
+            viewModel.state.awaitFirst { it.isOffline }
+
+            viewModel.rename("Synced")
+            server.takeRequest()
+            viewModel.refresh()
+            server.takeRequest()
+
+            assertEquals(1, offline.syncs)
+        }
+
+        @Test
+        fun `a change that cannot be sent is undone even with no connection`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/updatePlaylist") { dropConnection() }
+            server.dispatcher.override("rest/getPlaylist") { dropConnection() }
+
+            viewModel.rename("Lost")
+
+            val state = viewModel.state.awaitFirst { it.message != null }
+            assertEquals(
+                "Sunday Morning",
+                (state.content as LoadState.Ready).value.playlist.name
+            )
+        }
+
+        @Test
+        fun `an answer asked before a change does not undo it`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/getPlaylist") {
+                subsonicOk(
+                    "playlist",
+                    """{"id":"$playlistId","name":"Stale","songCount":0,"duration":0,
+                        "entry":[]}"""
+                ).newBuilder().headersDelay(DELAY_MS, TimeUnit.MILLISECONDS).build()
+            }
+
+            viewModel.refresh()
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.rename("Newer")
+            assertEquals("/rest/updatePlaylist", server.takeRequest().url.encodedPath)
+
+            assertEquals("Newer", viewModel.ready().playlist.name)
+        }
+
+        @Test
+        fun `a refresh queued between two changes does not undo the second`() = runTest {
+            val viewModel = loaded()
+            var reads = 0
+            server.dispatcher.override("rest/updatePlaylist") {
+                subsonicOk("ignored", "{}").newBuilder()
+                    .headersDelay(DELAY_MS, TimeUnit.MILLISECONDS)
+                    .build()
+            }
+            server.dispatcher.override("rest/getPlaylist") {
+                val name = if (reads++ == 0) "One" else "Two"
+                subsonicOk(
+                    "playlist",
+                    """{"id":"$playlistId","name":"$name","songCount":0,"duration":0,
+                        "entry":[]}"""
+                )
+            }
+
+            viewModel.rename("One")
+            viewModel.refresh()
+            viewModel.rename("Two")
+
+            val paths = List(4) { server.takeRequest().url.encodedPath.substringAfterLast('/') }
+            assertEquals(
+                listOf("updatePlaylist", "getPlaylist", "updatePlaylist", "getPlaylist"),
+                paths
+            )
+            viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.tracks?.isEmpty() == true
+            }
+            assertEquals("Two", viewModel.ready().playlist.name)
+        }
+
+        @Test
+        fun `after a failure that could not be checked, removing reads the list first`() = runTest {
+            val viewModel = loaded()
+            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(0) }
+            server.dispatcher.override("rest/getPlaylist") { subsonicFailure(0) }
+            viewModel.removeAt(0)
+            viewModel.state.awaitFirst { it.message != null }
+            server.takeRequest()
+            server.takeRequest()
+
+            viewModel.removeAt(0)
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+        }
+
+        @Test
+        fun `songs added elsewhere show in the open playlist`() = runTest {
+            val viewModel = loaded()
+
+            changes.changed(PlaylistId(playlistId))
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.ready()
         }
 
         @Test

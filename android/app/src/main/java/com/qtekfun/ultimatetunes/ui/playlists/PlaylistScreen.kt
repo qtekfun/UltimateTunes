@@ -69,6 +69,7 @@ fun PlaylistRoute(
     viewModel: PlaylistViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(state.deleted) { if (state.deleted) navigator.back() }
     PlaylistScreen(
         state = state,

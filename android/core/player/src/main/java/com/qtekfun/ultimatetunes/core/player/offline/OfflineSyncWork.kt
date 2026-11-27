@@ -13,6 +13,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -56,6 +57,7 @@ class OfflineSyncScheduler @Inject constructor(
     /** Nothing is kept any more: no periodic sync. */
     fun cancel() {
         work.cancelUniqueWork(PERIODIC_WORK)
+        work.cancelUniqueWork(NOW_WORK)
     }
 
     companion object {
@@ -75,18 +77,25 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) :
         fun syncer(): OfflineSyncer
 
         fun downloads(): OfflineDownloads
+
+        fun config(): ServerConfigSource
     }
 
     override suspend fun doWork(): Result {
         val deps = EntryPointAccessors.fromApplication(applicationContext, Dependencies::class.java)
+        // Started before the saved server was restored: nothing could be read or downloaded.
+        if (deps.config().config.value == null) return retryOrGiveUp()
         val plan = deps.syncer().sync()
         // Keep the process alive while downloads run, within a worker's time budget.
         val finished = deps.downloads().awaitIdle(MAX_WAIT_MS)
         // Unfinished (a big library, songs the server is still fetching): try again soon rather
         // than at the next periodic sync, a few times at most.
         val unfinished = !finished || plan.awaitingServer.isNotEmpty()
-        return if (unfinished && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
+        return if (unfinished) retryOrGiveUp() else Result.success()
     }
+
+    private fun retryOrGiveUp(): Result =
+        if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
 
     private companion object {
         const val MAX_RETRIES = 5

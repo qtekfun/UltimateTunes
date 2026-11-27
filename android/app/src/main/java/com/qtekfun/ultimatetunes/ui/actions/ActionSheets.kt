@@ -227,6 +227,9 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         ActionEvent.Downloading -> stringResource(R.string.event_downloading)
 
+        is ActionEvent.TooManyNew ->
+            pluralStringResource(R.plurals.event_too_many_new, event.max, event.max)
+
         is ActionEvent.Queued -> stringResource(
             if (event.next) R.string.event_play_next else R.string.event_play_last
         )

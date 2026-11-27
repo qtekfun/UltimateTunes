@@ -4,10 +4,14 @@
 package com.qtekfun.ultimatetunes.ui.actions
 
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.export.ExportReport
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
+import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineCollection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
+import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.playback.toPlayable
 import com.qtekfun.ultimatetunes.ui.FakeExports
@@ -19,6 +23,7 @@ import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
+import com.qtekfun.ultimatetunes.ui.playlists.PlaylistChanges
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.tile
 import kotlinx.coroutines.test.runTest
@@ -50,12 +55,16 @@ class LibraryActionsViewModelTest {
     }
 
     /** A view model whose favourites have loaded (one request). */
-    private suspend fun viewModel(exports: Exports = FakeExports()) =
-        LibraryActionsViewModel(connectedApi(server), offline, exports).also { vm ->
-            created += vm
-            vm.state.awaitFirst { it.favourites.isNotEmpty() }
-            server.takeRequest()
-        }
+    private suspend fun viewModel(exports: Exports = FakeExports()) = LibraryActionsViewModel(
+        connectedApi(server),
+        offline,
+        exports,
+        PlaylistChanges()
+    ).also { vm ->
+        created += vm
+        vm.state.awaitFirst { it.favourites.isNotEmpty() }
+        server.takeRequest()
+    }
 
     @Test
     fun `favourites load at start and toggle with star and unstar`() = runTest {
@@ -140,9 +149,10 @@ class LibraryActionsViewModelTest {
             viewModel.state.awaitFirst { it.event != null }.event
         )
         val update = server.takeRequest()
+        val updateForm = update.form()
         assertEquals("/rest/updatePlaylist", update.url.encodedPath)
-        assertEquals(playlist.id.value, update.url.queryParameter("playlistId"))
-        assertEquals(listOf("song-1", "song-2"), update.url.queryParameterValues("songIdToAdd"))
+        assertEquals(playlist.id.value, updateForm.queryParameter("playlistId"))
+        assertEquals(listOf("song-1", "song-2"), updateForm.queryParameterValues("songIdToAdd"))
     }
 
     @Test
@@ -161,9 +171,10 @@ class LibraryActionsViewModelTest {
             viewModel.state.awaitFirst { it.event != null }.event
         )
         val create = server.takeRequest()
+        val createForm = create.form()
         assertEquals("/rest/createPlaylist", create.url.encodedPath)
-        assertEquals("Road Songs", create.url.queryParameter("name"))
-        assertEquals(listOf("song-4"), create.url.queryParameterValues("songId"))
+        assertEquals("Road Songs", createForm.queryParameter("name"))
+        assertEquals(listOf("song-4"), createForm.queryParameterValues("songId"))
     }
 
     @Test
@@ -190,6 +201,34 @@ class LibraryActionsViewModelTest {
         assertNull(viewModel.state.value.picker)
         viewModel.addToPlaylist(playlist)
         viewModel.createPlaylist("Ignored")
+    }
+
+    @Test
+    fun `too many songs outside the library are refused before sending`() = runTest {
+        val viewModel = viewModel()
+        viewModel.pickPlaylist((1..51).map { tile(it).copy(isExternal = true) })
+        viewModel.state.awaitFirst { it.picker?.playlists is LoadState.Ready }
+        server.takeRequest()
+        val sent = server.requestCount
+
+        viewModel.createPlaylist("Too much")
+
+        assertEquals(ActionEvent.TooManyNew(50), viewModel.state.value.event)
+        assertEquals(sent, server.requestCount)
+    }
+
+    @Test
+    fun `songs of a kept album are known as kept by it`() = runTest {
+        val viewModel = viewModel()
+        offline.mutableSelection.value = OfflineSelection(
+            collections = listOf(
+                OfflineCollection(CollectionKind.ALBUM, "al-1", "A", listOf(tile(7).toPlayable()))
+            )
+        )
+
+        val state = viewModel.state.awaitFirst { it.keptByGroup.isNotEmpty() }
+        assertEquals(setOf(SongId("song-7")), state.keptByGroup)
+        assertTrue(state.keptOffline.isEmpty())
     }
 
     @Test

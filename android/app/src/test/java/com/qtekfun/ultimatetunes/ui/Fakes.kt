@@ -136,6 +136,12 @@ class FakeOfflineControls : OfflineControls {
             )
         }
 
+    val servers = mutableListOf<String>()
+
+    override suspend fun serverConnected(server: String) {
+        servers += server
+    }
+
     override suspend fun syncSoon() {
         syncs++
     }
@@ -154,14 +160,9 @@ class FakeOfflineControls : OfflineControls {
     }
 
     var syncNows = 0
-    var resumes = 0
 
     override suspend fun syncNow() {
         syncNows++
-    }
-
-    override suspend fun resumeSync() {
-        resumes++
     }
 }
 

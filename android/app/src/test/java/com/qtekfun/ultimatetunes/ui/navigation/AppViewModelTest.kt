@@ -33,7 +33,8 @@ class AppViewModelTest {
             AppViewModel(
                 ConnectionGate(source),
                 FakeAppPrefs(),
-                FakeOfflineControls()
+                FakeOfflineControls(),
+                source
             ).showConnect.value
         )
     }
@@ -41,7 +42,8 @@ class AppViewModelTest {
     @Test
     fun `the root follows the configuration, and reconnect goes back to Connect`() {
         source.set(config)
-        val viewModel = AppViewModel(ConnectionGate(source), FakeAppPrefs(), FakeOfflineControls())
+        val viewModel =
+            AppViewModel(ConnectionGate(source), FakeAppPrefs(), FakeOfflineControls(), source)
         assertFalse(viewModel.showConnect.value)
 
         viewModel.reconnect()
@@ -55,21 +57,31 @@ class AppViewModelTest {
     fun `a connected start finishes a sync the process death left half done`() = runTest {
         source.set(config)
         val offline = FakeOfflineControls()
-        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline)
-        assertEquals(1, offline.resumes)
+        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, source)
+        assertEquals(listOf("https://music.example.net/"), offline.servers)
+    }
+
+    @Test
+    fun `a server restored after the start still resumes the sync`() = runTest {
+        val offline = FakeOfflineControls()
+        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, source)
+
+        source.set(config)
+
+        assertEquals(listOf("https://music.example.net/"), offline.servers)
     }
 
     @Test
     fun `without a server nothing is resumed`() = runTest {
         val offline = FakeOfflineControls()
-        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline)
-        assertEquals(0, offline.resumes)
+        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, source)
+        assertTrue(offline.servers.isEmpty())
     }
 
     @Test
     fun `the notification question is asked until answered once`() = runTest {
         val prefs = FakeAppPrefs()
-        val viewModel = AppViewModel(ConnectionGate(source), prefs, FakeOfflineControls())
+        val viewModel = AppViewModel(ConnectionGate(source), prefs, FakeOfflineControls(), source)
         assertTrue(viewModel.askNotifications.value)
 
         viewModel.onNotificationsAsked()

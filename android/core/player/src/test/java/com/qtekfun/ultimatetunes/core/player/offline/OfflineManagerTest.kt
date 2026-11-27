@@ -3,15 +3,20 @@
 
 package com.qtekfun.ultimatetunes.core.player.offline
 
+import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesApi
+import com.qtekfun.ultimatetunes.core.api.TunesError
+import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.PlayableTrack
 import com.qtekfun.ultimatetunes.core.player.PlayerSettings
 import com.qtekfun.ultimatetunes.core.player.PlayerSettingsSource
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -55,10 +60,11 @@ class OfflineManagerTest {
     private val settings = object : PlayerSettingsSource {
         override val settings = MutableStateFlow(PlayerSettings(downloadOnWifiOnly = false))
     }
+    private val api = mockk<TunesApi>()
     private val manager = OfflineManager(
         store,
         downloads,
-        OfflineSyncer(mockk<TunesApi>(), store, queue, settings),
+        OfflineSyncer(api, store, queue, settings),
         scheduler,
         settings
     )
@@ -223,5 +229,38 @@ class OfflineManagerTest {
         // A is kept explicitly: only B counts, and it does not fit.
         assertEquals(1, report.totalCount)
         assertEquals(1, report.leftOutCount)
+    }
+
+    @Test
+    fun `a new address of the same library keeps the songs`() = runTest {
+        coEvery { api.song(songB) } returns TunesResult.Success(Song(songB, "B"))
+        val track = PlayableTrack(songB, "B", "Artist")
+        manager.keepTrack(track)
+        manager.serverConnected("http://lan.example/")
+
+        manager.serverConnected("https://vpn.example/")
+
+        assertEquals(listOf(track), store.state.value.tracks)
+        assertEquals("https://vpn.example/", store.state.value.server)
+        assertTrue(removed.isEmpty())
+    }
+
+    @Test
+    fun `another library frees the songs, only once it says so`() = runTest {
+        coEvery { api.song(songB) } returns TunesResult.NetworkError(IOException())
+        val track = PlayableTrack(songB, "B", "Artist")
+        manager.keepTrack(track)
+        manager.serverConnected("https://one.example/")
+
+        manager.serverConnected("https://two.example/")
+        assertEquals(listOf(track), store.state.value.tracks)
+        assertTrue(removed.isEmpty())
+
+        coEvery { api.song(songB) } returns
+            TunesResult.ApiError(TunesError(ErrorKind.NOT_FOUND), 200)
+        manager.serverConnected("https://two.example/")
+
+        assertEquals(OfflineSelection(server = "https://two.example/"), store.state.value)
+        assertEquals(listOf(songB), removed)
     }
 }
