@@ -121,19 +121,29 @@ class SearchViewModel @Inject constructor(
                 tracks = found.tracks.map { it.toTile(api) }
             )
         }
-        if (server is LoadState.Failed && server.error == LoadError.NETWORK) {
+        // No answer at all, or an error (a proxy with the server down) while the phone has some.
+        val failed = (server as? LoadState.Failed)?.error
+        if (failed == LoadError.NETWORK || (failed == LoadError.SERVER && !local.isEmpty)) {
             show(LoadState.Ready(local), SearchNotice.SERVER_UNREACHABLE)
         } else {
             show(server, null)
         }
     }
 
+    /** The phone's matches, what can play now first, cut to what a list is worth showing. */
     private suspend fun searchPhone(query: String): SearchContent {
         val found = library.search(query)
+        val now = phone.availability.value
         return SearchContent(
-            artists = found.artists.map { it.toTile(api) },
-            albums = found.albums.map { it.toTile(api) },
-            tracks = found.songs.map { it.toTile(api) }
+            artists = found.artists.sortedByDescending { now.canPlayArtist(it.id) }
+                .take(MAX_PHONE_ARTISTS)
+                .map { it.toTile(api) },
+            albums = found.albums.sortedByDescending { now.canPlayAlbum(it.id) }
+                .take(MAX_PHONE_ALBUMS)
+                .map { it.toTile(api) },
+            tracks = found.songs.sortedByDescending { now.canPlay(it.id) }
+                .take(MAX_PHONE_SONGS)
+                .map { it.toTile(api) }
         )
     }
 
@@ -144,5 +154,9 @@ class SearchViewModel @Inject constructor(
     companion object {
         /** Pause after the last keystroke before searching. */
         const val DEBOUNCE_MS = 350L
+
+        private const val MAX_PHONE_ARTISTS = 30
+        private const val MAX_PHONE_ALBUMS = 50
+        private const val MAX_PHONE_SONGS = 200
     }
 }

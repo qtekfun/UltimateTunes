@@ -159,6 +159,17 @@ class SearchViewModelTest {
         }
 
     @Test
+    fun `every word has to match, past the third one too`() = runTest {
+        catalog.synced()
+        phone.availability.value = Availability(online = false)
+
+        viewModel.onQueryChange("lighthouse keeper lighthouse keeper zz")
+
+        val state = viewModel.state.awaitFirst { it.notice != null }
+        assertTrue((state.results as LoadState.Ready).value.tracks.isEmpty())
+    }
+
+    @Test
     fun `offline mode searches the phone only, and says so`() = runTest {
         catalog.synced()
         phone.availability.value = Availability(offlineMode = true)
