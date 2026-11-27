@@ -6,9 +6,11 @@ package com.qtekfun.ultimatetunes.ui.artist
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitLoaded
 import com.qtekfun.ultimatetunes.ui.awaitReady
 import com.qtekfun.ultimatetunes.ui.connectedApi
+import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 class ArtistViewModelTest {
     private lateinit var server: FakeTunesServer
     private val artistId = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01a001"
+    private val catalog = TestCatalog()
 
     @BeforeEach
     fun setUp() {
@@ -33,11 +36,14 @@ class ArtistViewModelTest {
     @AfterEach
     fun tearDown() {
         server.close()
+        catalog.close()
     }
 
     private fun viewModel() = ArtistViewModel(
         SavedStateHandle(mapOf(ArtistViewModel.ARG_ID to artistId)),
-        connectedApi(server)
+        connectedApi(server),
+        catalog.repository,
+        catalog.sync
     )
 
     @Test
@@ -75,5 +81,16 @@ class ArtistViewModelTest {
         server.dispatcher.clearOverrides()
         viewModel.load()
         assertEquals("The Paper Lanterns", viewModel.state.awaitReady().artist.name)
+    }
+
+    @Test
+    fun `the catalog's copy shows with the server out of reach`() = runTest {
+        catalog.synced()
+        server.dispatcher.override("rest/getArtist") { dropConnection() }
+
+        val artist = viewModel().state.awaitReady()
+
+        assertEquals("The Paper Lanterns", artist.artist.name)
+        assertEquals(listOf("Harbour Lights"), artist.albums.map { it.title })
     }
 }

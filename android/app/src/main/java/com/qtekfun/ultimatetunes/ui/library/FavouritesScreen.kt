@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -27,13 +26,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.ui.designsystem.AlbumCard
 import com.qtekfun.ultimatetunes.ui.designsystem.ArtistRow
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.GRID_COLUMNS
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
+import com.qtekfun.ultimatetunes.ui.designsystem.PageRefresh
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.Shelf
 import com.qtekfun.ultimatetunes.ui.designsystem.ShelfAlbumCard
@@ -52,9 +53,18 @@ fun FavouritesRoute(
     viewModel: FavouritesViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // Loaded each time the page shows, so a heart changed on an album appears here.
-    LaunchedEffect(Unit) { viewModel.load() }
-    FavouritesScreen(state, contentPadding, navigator, onRetry = viewModel::load)
+    val refresh by viewModel.refresher.state.collectAsStateWithLifecycle()
+    FavouritesScreen(
+        state = state,
+        contentPadding = contentPadding,
+        navigator = navigator,
+        onRetry = viewModel.refresher::refresh,
+        pull = PageRefresh(
+            refresh,
+            viewModel.refresher::refresh,
+            viewModel.refresher::messageShown
+        )
+    )
 }
 
 /** Library › Favourites: songs, then albums and artists. */
@@ -63,16 +73,30 @@ fun FavouritesScreen(
     state: LoadState<FavouritesContent>,
     contentPadding: PaddingValues,
     navigator: Navigator,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    pull: PageRefresh? = null
 ) {
-    LibraryPageScaffold(stringResource(R.string.library_favourites), contentPadding, navigator) {
+    val availability = LocalAvailability.current
+    LibraryPageScaffold(
+        stringResource(R.string.library_favourites),
+        contentPadding,
+        navigator,
+        pull
+    ) {
         when (state) {
             LoadState.Loading -> item { LoadingState() }
             is LoadState.Failed -> item { ErrorState(state.error, onRetry) }
-            is LoadState.Ready -> favourites(state.value, navigator)
+            is LoadState.Ready -> favourites(state.value.shownWith(availability), navigator)
         }
     }
 }
+
+/** In offline mode, only the favourites the phone can play. */
+private fun FavouritesContent.shownWith(availability: Availability) = FavouritesContent(
+    songs = songs.filter { availability.shows(it.id) },
+    albums = albums.filter { availability.showsAlbum(it.id) },
+    artists = artists.filter { availability.showsArtist(it.id) }
+)
 
 private fun LazyListScope.favourites(content: FavouritesContent, navigator: Navigator) {
     if (content.isEmpty) {

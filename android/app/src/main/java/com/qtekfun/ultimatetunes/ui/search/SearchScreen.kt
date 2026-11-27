@@ -31,12 +31,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.ui.designsystem.ArtistRow
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.ItemRow
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -75,7 +77,8 @@ fun SearchScreen(
     navigator: Navigator,
     modifier: Modifier = Modifier
 ) {
-    LargeTitleScaffold(title = stringResource(R.string.tab_search), modifier = modifier) { inner ->
+    val availability = LocalAvailability.current
+    ScreenScaffold(title = stringResource(R.string.tab_search), modifier = modifier) { inner ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag(SEARCH_LIST_TAG),
             contentPadding = PaddingValues(
@@ -105,11 +108,19 @@ fun SearchScreen(
 
                 is LoadState.Failed -> item { ErrorState(results.error, onSearch) }
 
-                is LoadState.Ready -> results(results.value, navigator)
+                is LoadState.Ready ->
+                    results(results.value.shownWith(availability), navigator)
             }
         }
     }
 }
+
+/** In offline mode, only what the phone can play. */
+private fun SearchContent.shownWith(availability: Availability) = SearchContent(
+    artists = artists.filter { availability.showsArtist(it.id) },
+    albums = albums.filter { availability.showsAlbum(it.id) },
+    tracks = tracks.filter { availability.shows(it.id) }
+)
 
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit, onSearch: () -> Unit) {
@@ -181,7 +192,8 @@ private fun LazyListScope.results(content: SearchContent, navigator: Navigator) 
                 placeholderKey = album.id.value,
                 isExternal = album.isExternal,
                 onClick = { navigator.openAlbum(album.id) },
-                showDivider = i < content.albums.lastIndex
+                showDivider = i < content.albums.lastIndex,
+                available = LocalAvailability.current.canPlayAlbum(album.id)
             )
         }
     }

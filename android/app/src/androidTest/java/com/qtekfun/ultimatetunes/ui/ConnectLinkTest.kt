@@ -135,7 +135,7 @@ class ConnectLinkTest {
 
         confirm()
 
-        waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_listen_now)))
+        waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_home)))
         waitForNo(hasTestTag(CONNECT_LINK_DIALOG_TAG))
         assertEquals(FakeTunesApi.config, configSource.config.value)
     }
@@ -151,7 +151,7 @@ class ConnectLinkTest {
         waitFor(hasText(text(R.string.connect_link_title, HOST)))
         assertNoLinkInTasks()
         confirm()
-        waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_listen_now)))
+        waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_home)))
         assertEquals(FakeTunesApi.config, configSource.config.value)
     }
 

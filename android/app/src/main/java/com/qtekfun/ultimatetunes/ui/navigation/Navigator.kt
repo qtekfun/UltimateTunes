@@ -22,17 +22,14 @@ data class Navigator(
     val openArtist: (ArtistId) -> Unit = {},
     val openPlaylist: (PlaylistId) -> Unit = {},
     val openStation: (SongId) -> Unit = {},
-    /** The Charts list (from Listen Now). */
+    /** The Charts list (from Home). */
     val openCharts: () -> Unit = {},
-    /** A Library page ([LibraryPage]). */
+    /** A page every tab can open ([LibraryPage]). */
     val openPage: (LibraryPage) -> Unit = {}
 )
 
-/** The Library's own pages, plus Import and Settings. */
+/** Favourites and downloads, plus Import and Settings: pages every tab can open. */
 enum class LibraryPage(val route: String) {
-    PLAYLISTS("playlists"),
-    ARTISTS("artists"),
-    ALBUMS("albums"),
     FAVOURITES("favourites"),
     DOWNLOADS("downloads"),
     IMPORT("import"),

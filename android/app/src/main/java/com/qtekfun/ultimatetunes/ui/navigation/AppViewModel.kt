@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes.ui.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.availability.Connectivity
 import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.playback.OfflineControls
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -33,6 +36,7 @@ class AppViewModel @Inject constructor(
     private val prefs: AppPrefsStore,
     private val offline: OfflineControls,
     private val catalog: CatalogSync,
+    connectivity: Connectivity,
     configSource: ServerConfigSource
 ) : ViewModel() {
     init {
@@ -56,6 +60,12 @@ class AppViewModel @Inject constructor(
                 .collectLatest { if (it != null) catalog.syncIfStale() }
         }
         viewModelScope.launch { forgetCatalogOnDisconnect(configSource) }
+        // Back online: what could not be read meanwhile (or never was) is read now.
+        viewModelScope.launch {
+            connectivity.online.drop(1).filter { it }.collect {
+                if (!gate.needsConnectNow) catalog.syncIfStale()
+            }
+        }
     }
 
     /**

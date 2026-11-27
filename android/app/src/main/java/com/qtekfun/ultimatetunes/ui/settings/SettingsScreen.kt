@@ -3,6 +3,9 @@
 
 package com.qtekfun.ultimatetunes.ui.settings
 
+import android.text.format.DateUtils
+import android.text.format.Formatter
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,10 +19,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,8 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -42,12 +51,15 @@ import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.ui.designsystem.ConfirmDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.MenuRow
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
+import com.qtekfun.ultimatetunes.ui.designsystem.messageRes
 import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
+import com.qtekfun.ultimatetunes.ui.navigation.LibraryPage
 import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
@@ -62,6 +74,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /** Test tags of Settings. */
+const val SETTINGS_LIST_TAG = "settings.list"
+const val SETTINGS_CONNECTION_TAG = "settings.connection"
+const val SETTINGS_IMPORT_TAG = "settings.import"
+const val SETTINGS_SYNC_NOW_TAG = "settings.syncNow"
 const val SETTINGS_DISCONNECT_TAG = "settings.disconnect"
 const val SETTINGS_OFFLINE_TAG = "settings.offline"
 
@@ -127,7 +143,11 @@ fun SettingsRoute(
     )
 }
 
-/** Settings: server and account, keys per device, cache and offline, about. */
+/**
+ * Settings, from every tab: the connection, the space the music takes on the phone and the state
+ * of the sync, then the settings in groups: offline, playback and storage, export, import,
+ * account and devices, about.
+ */
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
@@ -142,61 +162,56 @@ fun SettingsScreen(
     val snackbar = rememberScreenSnackbar()
     MessageEffect(state.message, snackbar.state, actions.messageShown)
     NoticeEffect(state.notice, snackbar.state, actions.noticeShown)
-    LargeTitleScaffold(
+    ScreenScaffold(
         title = stringResource(R.string.settings_title),
         onBack = navigator.back,
+        settingsButton = false,
         snackbarHost = snackbar.host
     ) { inner ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().testTag(SETTINGS_LIST_TAG),
             contentPadding = PaddingValues(
                 top = inner.calculateTopPadding(),
                 bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
             )
         ) {
-            server(state.server, actions, onDisconnect = { disconnecting = true })
-            keys(state.keys, actions, onRevoke = { revoking = it.value })
-            item { YoutubeAccountSection(youtube, youtubeActions) }
+            item { ConnectionCard(state) }
+            item { StorageCard(state, actions.syncNow) }
+            item { OfflineSection(state, actions) }
             item { PlaybackSection(state, actions) }
             item {
                 ExportSection(state.exportFolder, actions.exportFolderPicked, actions.exportAgain)
             }
+            item { SectionHeader(stringResource(R.string.settings_import)) }
+            item {
+                MenuRow(
+                    title = stringResource(R.string.import_title),
+                    icon = R.drawable.ic_upload,
+                    onClick = { navigator.openPage(LibraryPage.IMPORT) },
+                    modifier = Modifier.testTag(SETTINGS_IMPORT_TAG)
+                )
+            }
+            server(state.server, actions)
+            keys(state.keys, actions, onRevoke = { revoking = it.value })
+            item { YoutubeAccountSection(youtube, youtubeActions) }
+            item { DisconnectButton(onClick = { disconnecting = true }) }
             item { AboutSection() }
         }
     }
-    val keys = (state.keys as? LoadState.Ready)?.value
-    keys?.firstOrNull { it.id.value == revoking }?.let { key ->
-        ConfirmDialog(
-            title = stringResource(R.string.settings_revoke_title),
-            message = stringResource(R.string.settings_revoke_message, key.name),
-            confirmLabel = stringResource(R.string.settings_revoke),
-            onConfirm = {
-                revoking = null
-                actions.revoke(key.id)
-            },
-            onDismiss = { revoking = null }
-        )
-    }
-    if (disconnecting) {
-        ConfirmDialog(
-            title = stringResource(R.string.settings_disconnect_title),
-            message = stringResource(R.string.settings_disconnect_message),
-            confirmLabel = stringResource(R.string.settings_disconnect),
-            onConfirm = {
-                disconnecting = false
-                actions.disconnect()
-            },
-            onDismiss = { disconnecting = false }
-        )
-    }
+    SettingsDialogs(
+        keys = (state.keys as? LoadState.Ready)?.value.orEmpty(),
+        revoking = revoking,
+        disconnecting = disconnecting,
+        actions = actions,
+        onDone = {
+            revoking = null
+            disconnecting = false
+        }
+    )
 }
 
-private fun LazyListScope.server(
-    server: LoadState<ServerDetails>,
-    actions: SettingsActions,
-    onDisconnect: () -> Unit
-) {
-    item { SectionHeader(stringResource(R.string.settings_server)) }
+private fun LazyListScope.server(server: LoadState<ServerDetails>, actions: SettingsActions) {
+    item { SectionHeader(stringResource(R.string.settings_account_devices)) }
     when (server) {
         LoadState.Loading -> item { LoadingState() }
 
@@ -222,22 +237,6 @@ private fun LazyListScope.server(
                     }
                 )
             }
-        }
-    }
-    item {
-        OutlinedButton(
-            onClick = onDisconnect,
-            shape = Dimens.PillShape,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceM)
-                .heightIn(min = 48.dp)
-                .testTag(SETTINGS_DISCONNECT_TAG)
-        ) {
-            Text(
-                stringResource(R.string.settings_disconnect),
-                color = MaterialTheme.colorScheme.error
-            )
         }
     }
 }

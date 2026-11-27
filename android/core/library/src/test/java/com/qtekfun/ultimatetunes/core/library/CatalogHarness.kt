@@ -202,7 +202,7 @@ class CatalogHarness(pageSize: Int = CatalogSyncer.PAGE_SIZE) : AutoCloseable {
         .build()
     internal val syncer = CatalogSyncer(api, database, config, clock, pageSize = pageSize)
     val repository: LibraryRepository =
-        DatabaseLibraryRepository(database.browse(), syncer.activity)
+        DatabaseLibraryRepository(database.browse(), syncer.activity, config.config)
 
     override fun close() {
         database.close()

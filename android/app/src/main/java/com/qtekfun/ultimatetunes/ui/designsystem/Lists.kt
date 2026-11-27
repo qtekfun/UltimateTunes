@@ -43,9 +43,10 @@ import com.qtekfun.ultimatetunes.ui.theme.Dimens
 const val GRID_COLUMNS = 2
 
 /**
- * A row of a mixed list (search results, favourites): artwork, title, a subtitle and, for an item
- * only on YouTube Music, the cloud ("Not in library yet" when there is no subtitle). TalkBack reads
- * it as one item, the note included.
+ * A row of a mixed list (search results, favourites, the library): artwork, title, a subtitle
+ * and, for an item only on YouTube Music, the cloud ("Not in library yet" when there is no
+ * subtitle). It ends with [trailing] (an overflow button) or else a chevron. Dimmed unless
+ * [available]. TalkBack reads it as one item, the notes included.
  */
 @Composable
 fun ItemRow(
@@ -57,46 +58,59 @@ fun ItemRow(
     subtitle: String? = null,
     isExternal: Boolean = false,
     artworkShape: Shape = Dimens.SmallArtworkShape,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    available: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     val external = stringResource(R.string.not_in_library)
-    val description = listOfNotNull(title, subtitle, external.takeIf { isExternal })
-        .joinToString(", ")
+    val description = availabilityDescription(
+        listOfNotNull(title, subtitle, external.takeIf { isExternal }).joinToString(", "),
+        available
+    )
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = Dimens.MinRowHeight)
-                .clickable(onClick = onClick)
-                .clearAndSetSemantics { contentDescription = description }
-                .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Artwork(
-                url = artworkUrl,
-                placeholderKey = placeholderKey,
-                shape = artworkShape,
-                modifier = Modifier.size(Dimens.RowArtwork)
-            )
-            Column(
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = Dimens.SpaceM)
+                    .heightIn(min = Dimens.MinRowHeight)
+                    .clickable(onClick = onClick)
+                    .clearAndSetSemantics { contentDescription = description }
+                    .availableOrDimmed(available)
+                    .padding(start = Dimens.ScreenMargin)
+                    .padding(vertical = Dimens.SpaceS),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                Artwork(
+                    url = artworkUrl,
+                    placeholderKey = placeholderKey,
+                    shape = artworkShape,
+                    modifier = Modifier.size(Dimens.RowArtwork)
                 )
-                ItemSubtitle(subtitle, if (isExternal) external else null)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = Dimens.SpaceM)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    ItemSubtitle(subtitle, if (isExternal) external else null)
+                }
             }
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (trailing != null) {
+                trailing()
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = Dimens.ScreenMargin)
+                )
+            }
         }
         if (showDivider) RowDivider()
     }
@@ -148,7 +162,8 @@ fun ArtistRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     ItemRow(
         title = artist.name,
@@ -159,17 +174,20 @@ fun ArtistRow(
         onClick = onClick,
         artworkShape = CircleShape,
         showDivider = showDivider,
+        available = LocalAvailability.current.canPlayArtist(artist.id),
+        trailing = trailing,
         modifier = modifier
     )
 }
 
-/** A Library menu row ("Playlists", "Artists"…): an icon in the accent colour and a chevron. */
+/** A row leading to a page ("Favourites", "Charts"…): an icon in the accent colour, a chevron. */
 @Composable
 fun MenuRow(
     title: String,
     @DrawableRes icon: Int,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -187,14 +205,24 @@ fun MenuRow(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp)
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
+            Column(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = Dimens.SpaceL)
-            )
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,

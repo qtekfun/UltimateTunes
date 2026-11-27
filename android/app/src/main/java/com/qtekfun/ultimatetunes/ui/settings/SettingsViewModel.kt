@@ -5,6 +5,8 @@ package com.qtekfun.ultimatetunes.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.qtekfun.ultimatetunes.availability.CachedSongs
+import com.qtekfun.ultimatetunes.availability.Connectivity
 import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
@@ -12,10 +14,12 @@ import com.qtekfun.ultimatetunes.core.api.getOrNull
 import com.qtekfun.ultimatetunes.core.api.model.ApiKey
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.core.api.model.Role
+import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryOffline
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryReport
 import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
+import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
@@ -26,6 +30,7 @@ import com.qtekfun.ultimatetunes.ui.model.toLoadError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -35,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The server this device is connected to, and as whom. */
 data class ServerDetails(
@@ -76,18 +82,31 @@ data class SettingsUiState(
     /** A revoke that failed, shown once. */
     val message: LoadError? = null,
     /** What the last "Sync now" or "Export again" did, shown once. */
-    val notice: SettingsNotice? = null
+    val notice: SettingsNotice? = null,
+    /** The server's address, known with no connection too. */
+    val address: String = "",
+    /** The phone has a network. */
+    val online: Boolean = true,
+    /** Bytes of music on the phone (cache and downloads); null until read. */
+    val usedBytes: Long? = null,
+    val downloadedCount: Int = 0,
+    /** The state of the local catalog's sync: when it last worked, and since then. */
+    val lastSync: Instant? = null,
+    val syncing: Boolean = false,
+    val syncError: LoadError? = null
 )
 
 /** The outcome of Settings' "Sync now" and "Export again" buttons. */
 enum class SettingsNotice { SYNC_STARTED, EXPORT_STARTED, EXPORT_BUSY, EXPORT_NOTHING }
 
 /**
- * Settings (RF-11): the server and account, the user's API keys per device (`/ut/v1/keys`, with
+ * Settings (RF-11): the connection, the space the music takes on the phone and the state of the
+ * sync; the server and account, the user's API keys per device (`/ut/v1/keys`, with
  * revoke), the playback cache size and offline choices ([PlaybackSettingsStore], which the player
  * follows), the export folder (RF-14), and Disconnect.
  */
-@Suppress("TooManyFunctions") // One function per setting.
+// Collaborators are injected one by one; one function per setting.
+@Suppress("LongParameterList", "TooManyFunctions")
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val api: TunesApi,
@@ -95,7 +114,11 @@ class SettingsViewModel @Inject constructor(
     private val gate: ConnectionGate,
     private val store: PlaybackSettingsStore,
     private val offline: OfflineControls,
-    private val exports: Exports
+    private val exports: Exports,
+    repository: LibraryRepository,
+    private val catalog: CatalogRefresh,
+    connectivity: Connectivity,
+    private val phone: CachedSongs
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
@@ -120,6 +143,33 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             exports.folder.collect { folder ->
                 mutableState.update { it.copy(exportFolder = folder) }
+            }
+        }
+        mutableState.update {
+            it.copy(address = configSource.config.value?.root?.toString().orEmpty())
+        }
+        viewModelScope.launch {
+            connectivity.online.collect { online ->
+                mutableState.update { it.copy(online = online) }
+            }
+        }
+        viewModelScope.launch {
+            repository.syncState.collect { sync ->
+                mutableState.update {
+                    it.copy(
+                        lastSync = sync.lastSuccess,
+                        syncing = sync.syncing,
+                        syncError = sync.error?.toLoadError()
+                    )
+                }
+            }
+        }
+        // The space is read again each time the downloads change.
+        viewModelScope.launch {
+            offline.items.collect { items ->
+                val done = items.count { it.state == OfflineState.DONE }
+                val used = withContext(Dispatchers.IO) { phone.usedBytes() }
+                mutableState.update { it.copy(downloadedCount = done, usedBytes = used) }
             }
         }
         load()
@@ -230,8 +280,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** "Sync now": reads the library again and downloads what is new or missing, at once. */
+    /**
+     * "Sync now": reads the library into the catalog again and downloads what is new or missing,
+     * at once.
+     */
     fun syncNow() {
+        catalog.request()
         viewModelScope.launch {
             offline.syncNow()
             mutableState.update { it.copy(notice = SettingsNotice.SYNC_STARTED) }

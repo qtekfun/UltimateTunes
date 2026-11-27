@@ -361,6 +361,14 @@ internal class DemoDispatcher(
                 }
             } ?: notFound()
 
+            // The app's catalog reads the library with an empty search, a page at a time.
+            "search3" -> envelope {
+                val songs = librarySongs()
+                    .drop(param("songOffset")?.toIntOrNull() ?: 0)
+                    .take(param("songCount")?.toIntOrNull() ?: DEFAULT_LIST_SIZE)
+                put("searchResult3", buildJsonObject { field("song", SONGS, songs) })
+            }
+
             "getPlaylists" -> envelope {
                 val list = synchronized(lock) { playlists.map { it.copy(entry = emptyList()) } }
                 put("playlists", buildJsonObject { field("playlist", PLAYLISTS, list) })
@@ -424,6 +432,16 @@ internal class DemoDispatcher(
             "getCoverArt" -> image(id, param("size")?.toIntOrNull())
 
             else -> failure(0, "The demo does not do this")
+        }
+    }
+
+    /** The library with its stars and, for what was played lately, when that was. */
+    private fun librarySongs(): List<Song> {
+        val played = DemoCatalog.recentlyPlayed.map { it.id }
+        return DemoCatalog.songs.map { song ->
+            val ago = played.indexOf(song.albumId)
+            val last = startedAt.minusSeconds(ago * SECONDS_PER_HOUR).takeIf { ago >= 0 }
+            song.starredIfSo().copy(played = last)
         }
     }
 
@@ -661,6 +679,7 @@ internal class DemoDispatcher(
         const val CHART_LENGTH = 20
         const val GLOBAL_COUNTRY = "ZZ"
         const val SEARCH_LIMIT = 20
+        const val SECONDS_PER_HOUR = 3_600L
         const val DEFAULT_LIST_SIZE = 10
         val KEY_ID = ApiKeyId("0199e0de-0000-7000-8000-000000000002")
         val ALBUMS = ListSerializer(Album.serializer())

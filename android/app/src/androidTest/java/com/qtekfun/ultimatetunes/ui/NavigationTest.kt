@@ -26,11 +26,14 @@ import com.qtekfun.ultimatetunes.ui.connect.CONNECT_API_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_METHOD_KEY_TAG
 import com.qtekfun.ultimatetunes.ui.connect.CONNECT_SERVER_URL_TAG
+import com.qtekfun.ultimatetunes.ui.designsystem.SETTINGS_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.TITLE_TAG
+import com.qtekfun.ultimatetunes.ui.homescreen.HOME_FAVOURITES_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
 import com.qtekfun.ultimatetunes.ui.player.FULL_PLAYER_TAG
 import com.qtekfun.ultimatetunes.ui.player.MINI_PLAYER_TAG
 import com.qtekfun.ultimatetunes.ui.radio.STATION_PLAY_TAG
+import com.qtekfun.ultimatetunes.ui.settings.SETTINGS_CONNECTION_TAG
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import javax.inject.Inject
@@ -83,7 +86,7 @@ class NavigationTest {
     }
 
     @Test
-    fun connectingWithAWorkingKeyOpensListenNow() {
+    fun connectingWithAWorkingKeyOpensHome() {
         launch(connected = false)
         waitFor(hasTestTag(CONNECT_SERVER_URL_TAG))
 
@@ -92,8 +95,9 @@ class NavigationTest {
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput(FakeTunesApi.API_KEY)
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).performClick()
 
-        assertTitle(R.string.tab_listen_now)
-        waitFor(hasText(text(R.string.listen_now_recently_played)))
+        assertTitle(R.string.tab_home)
+        waitFor(hasTestTag(HOME_FAVOURITES_TAG))
+        waitFor(hasText(text(R.string.home_stations)))
     }
 
     @Test
@@ -124,28 +128,42 @@ class NavigationTest {
     }
 
     @Test
-    fun theTabsSwitchBetweenTheFourScreens() {
+    fun theTabsSwitchBetweenTheThreeScreens() {
         launch(connected = true)
-        assertTitle(R.string.tab_listen_now)
-
-        compose.onNodeWithTag(Tab.RADIO.testTag).performClick()
-        assertTitle(R.string.tab_radio)
-        waitFor(hasText(text(R.string.radio_from_songs)))
+        assertTitle(R.string.tab_home)
 
         compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
         assertTitle(R.string.tab_library)
+        waitFor(hasText(FakeTunesApi.SUNDAY))
 
         compose.onNodeWithTag(Tab.SEARCH.testTag).performClick()
         assertTitle(R.string.tab_search)
 
-        compose.onNodeWithTag(Tab.LISTEN_NOW.testTag).performClick()
-        assertTitle(R.string.tab_listen_now)
+        compose.onNodeWithTag(Tab.HOME.testTag).performClick()
+        assertTitle(R.string.tab_home)
+    }
+
+    @Test
+    fun settingsOpenFromEveryTabAndBackReturns() {
+        launch(connected = true)
+        listOf(
+            Tab.HOME to R.string.tab_home,
+            Tab.LIBRARY to R.string.tab_library,
+            Tab.SEARCH to R.string.tab_search
+        ).forEach { (tab, title) ->
+            compose.onNodeWithTag(tab.testTag).performClick()
+            assertTitle(title)
+            compose.onNodeWithTag(SETTINGS_BUTTON_TAG).performClick()
+            assertTitle(R.string.settings_title)
+            waitFor(hasTestTag(SETTINGS_CONNECTION_TAG))
+            compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+            assertTitle(title)
+        }
     }
 
     @Test
     fun aStationPlaysIntoTheMiniPlayerWhichOpensTheFullPlayer() {
         launch(connected = true)
-        compose.onNodeWithTag(Tab.RADIO.testTag).performClick()
         val station = text(R.string.station_description, FakeTunesApi.KEEPER_RADIO)
         waitFor(hasContentDescription(station))
 
@@ -174,17 +192,17 @@ class NavigationTest {
     }
 
     @Test
-    fun aStationOpensInsideListenNowAndBackReturns() {
+    fun aStationOpensInsideHomeAndBackReturns() {
         launch(connected = true)
         val station = text(R.string.station_description, FakeTunesApi.KEEPER_RADIO)
-        waitFor(hasText(text(R.string.listen_now_stations)))
+        waitFor(hasText(text(R.string.home_stations)))
 
         compose.onNodeWithContentDescription(station).performClick()
         waitFor(hasTestTag(STATION_PLAY_TAG))
         compose.onNodeWithText(text(R.string.station_up_next)).assertIsDisplayed()
 
         compose.onNodeWithContentDescription(text(R.string.back)).performClick()
-        assertTitle(R.string.tab_listen_now)
+        assertTitle(R.string.tab_home)
     }
 
     @Test
@@ -195,9 +213,9 @@ class NavigationTest {
         compose.onNodeWithContentDescription(station).performClick()
         waitFor(hasTestTag(STATION_PLAY_TAG))
 
-        compose.onNodeWithTag(Tab.LISTEN_NOW.testTag).performClick()
+        compose.onNodeWithTag(Tab.HOME.testTag).performClick()
 
-        assertTitle(R.string.tab_listen_now)
+        assertTitle(R.string.tab_home)
         compose.waitUntil(TIMEOUT_MS) {
             compose.onAllNodes(hasTestTag(STATION_PLAY_TAG)).fetchSemanticsNodes().isEmpty()
         }

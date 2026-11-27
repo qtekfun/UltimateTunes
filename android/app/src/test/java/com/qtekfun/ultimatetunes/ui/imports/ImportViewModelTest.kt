@@ -14,6 +14,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ImportItemState
 import com.qtekfun.ultimatetunes.core.api.model.ImportSource
 import com.qtekfun.ultimatetunes.core.api.model.ImportState
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.closeForTest
@@ -48,6 +49,7 @@ class ImportViewModelTest {
     }
 
     private val created = mutableListOf<ImportViewModel>()
+    private val refresh = FakeCatalogRefresh()
 
     @AfterEach
     fun tearDown() {
@@ -59,7 +61,8 @@ class ImportViewModelTest {
 
     private fun newViewModel(): ImportViewModel = ImportViewModel(
         connectedApi(server),
-        InMemoryServerConfigSource(server.serverConfig())
+        InMemoryServerConfigSource(server.serverConfig()),
+        refresh
     ).also { created += it }
 
     /** A view model whose history and capabilities have loaded (two requests, in this order). */
@@ -130,6 +133,7 @@ class ImportViewModelTest {
         server.dispatcher.importExample = "done"
 
         val done = viewModel.state.awaitFirst { it.current?.state == ImportState.DONE }
+        assertEquals(1, refresh.requests)
         assertEquals(3, done.current!!.total)
         // The history, the first check (queued) and at least one more after a pause.
         assertTrue(server.requestCount >= 3)

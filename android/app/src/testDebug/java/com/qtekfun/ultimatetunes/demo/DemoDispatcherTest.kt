@@ -100,6 +100,16 @@ class DemoDispatcherTest {
     }
 
     @Test
+    fun `the library is listed in pages for the local catalog`() = runTest {
+        val first = api.librarySongs(0, 10).value()
+        val all = api.librarySongs(0, 500).value()
+
+        assertEquals(all.take(10), first)
+        assertEquals(DemoCatalog.songs.size, all.size)
+        assertTrue(all.any { it.played != null })
+    }
+
+    @Test
     fun `search finds library and external songs`() = runTest {
         val result = api.search("neon").value()
         assertTrue(result.albums.any { it.name == "Neon Tide" })

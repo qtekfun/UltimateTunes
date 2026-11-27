@@ -53,28 +53,6 @@ internal fun LibraryOfflineSection(state: SettingsUiState, actions: SettingsActi
         onSelect = actions.setLibraryOfflineLimitMb
     )
     LibraryOfflineStatus(state)
-    if (playback.libraryOffline) SyncNowButton(actions.syncNow)
-}
-
-/** Test tag of the "Sync Now" button (shown while the whole library is kept offline). */
-const val SETTINGS_SYNC_NOW_TAG = "settings.syncNow"
-
-@Composable
-private fun SyncNowButton(onClick: () -> Unit) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_sync_now_help),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = Dimens.ScreenMargin)
-        )
-        TextButton(
-            onClick = onClick,
-            modifier = Modifier
-                .padding(horizontal = Dimens.SpaceS)
-                .testTag(SETTINGS_SYNC_NOW_TAG)
-        ) { Text(stringResource(R.string.settings_sync_now)) }
-    }
 }
 
 @Composable

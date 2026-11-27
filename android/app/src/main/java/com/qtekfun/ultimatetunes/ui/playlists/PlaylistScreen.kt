@@ -37,18 +37,22 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.ui.actions.CollectionMenuItems
 import com.qtekfun.ultimatetunes.ui.actions.OfflineNote
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ConfirmDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
 import com.qtekfun.ultimatetunes.ui.designsystem.ItemRow
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
 import com.qtekfun.ultimatetunes.ui.designsystem.MenuRow
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
+import com.qtekfun.ultimatetunes.ui.designsystem.PageRefresh
 import com.qtekfun.ultimatetunes.ui.designsystem.PlayShuffleButtons
+import com.qtekfun.ultimatetunes.ui.designsystem.RefreshBox
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.TextInputDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
@@ -62,6 +66,9 @@ import com.qtekfun.ultimatetunes.ui.preview.PreviewData
 import com.qtekfun.ultimatetunes.ui.theme.Dimens
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
 
+/** Test tag of the playlist's menu in the header. */
+const val PLAYLIST_MENU_TAG = "playlist.menu"
+
 @Composable
 fun PlaylistRoute(
     contentPadding: PaddingValues,
@@ -69,6 +76,7 @@ fun PlaylistRoute(
     viewModel: PlaylistViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val refresh by viewModel.refresher.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(state.deleted) { if (state.deleted) navigator.back() }
     PlaylistScreen(
@@ -82,6 +90,11 @@ fun PlaylistRoute(
             removeAt = viewModel::removeAt,
             messageShown = viewModel::dismissMessage,
             toggleOffline = viewModel::toggleOffline
+        ),
+        pull = PageRefresh(
+            refresh,
+            viewModel.refresher::refresh,
+            viewModel.refresher::messageShown
         )
     )
 }
@@ -104,13 +117,14 @@ fun PlaylistScreen(
     state: PlaylistUiState,
     contentPadding: PaddingValues,
     navigator: Navigator,
-    actions: PlaylistActions
+    actions: PlaylistActions,
+    pull: PageRefresh = PageRefresh()
 ) {
     val content = (state.content as? LoadState.Ready)?.value
     var dialog by rememberSaveable { mutableStateOf<PlaylistDialog?>(null) }
     val snackbar = rememberScreenSnackbar()
     MessageEffect(state.message, snackbar.state, actions.messageShown)
-    LargeTitleScaffold(
+    ScreenScaffold(
         title = content?.playlist?.name.orEmpty(),
         onBack = navigator.back,
         snackbarHost = snackbar.host,
@@ -126,20 +140,27 @@ fun PlaylistScreen(
             }
         }
     ) { inner ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                top = inner.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
-            )
-        ) {
-            when (val load = state.content) {
-                LoadState.Loading -> item { LoadingState() }
+        RefreshBox(pull, inner, snackbar) {
+            val availability = LocalAvailability.current
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
+                )
+            ) {
+                when (val load = state.content) {
+                    LoadState.Loading -> item { LoadingState() }
 
-                is LoadState.Failed -> item { ErrorState(load.error, actions.retry) }
+                    is LoadState.Failed -> item { ErrorState(load.error, actions.retry) }
 
-                is LoadState.Ready ->
-                    playlistContent(load.value, state.isOffline, navigator, actions)
+                    is LoadState.Ready -> playlistContent(
+                        load.value,
+                        state.isOffline,
+                        availability,
+                        navigator,
+                        actions
+                    )
+                }
             }
         }
     }
@@ -185,6 +206,7 @@ private fun PlaylistDialogs(
 private fun LazyListScope.playlistContent(
     playlist: PlaylistContent,
     isOffline: Boolean,
+    availability: Availability,
     navigator: Navigator,
     actions: PlaylistActions
 ) {
@@ -198,16 +220,19 @@ private fun LazyListScope.playlistContent(
         }
     }
     itemsIndexed(playlist.tracks, key = { i, t -> "$i-${t.id.value}" }) { i, track ->
-        TrackRow(
-            track = track,
-            onClick = { navigator.play(playlist.tracks, i) },
-            showDivider = i < playlist.tracks.lastIndex,
-            trailing = if (playlist.readonly) {
-                null
-            } else {
-                { RemoveButton(track) { actions.removeAt(i) } }
-            }
-        )
+        // Rows left out in offline mode keep the others' positions, which removing goes by.
+        if (availability.shows(track.id)) {
+            TrackRow(
+                track = track,
+                onClick = { navigator.play(playlist.tracks, i) },
+                showDivider = i < playlist.tracks.lastIndex,
+                trailing = if (playlist.readonly) {
+                    null
+                } else {
+                    { RemoveButton(track) { actions.removeAt(i) } }
+                }
+            )
+        }
     }
 }
 
@@ -315,9 +340,12 @@ private fun PlaylistHeader(playlist: PlaylistContent, isOffline: Boolean, naviga
         )
         OfflineNote(isOffline)
         if (playlist.tracks.isNotEmpty()) {
+            val availability = LocalAvailability.current
             PlayShuffleButtons(
-                onPlay = { navigator.play(playlist.tracks, 0) },
-                onShuffle = { navigator.play(playlist.tracks.shuffled(), 0) }
+                onPlay = { navigator.play(availability.playable(playlist.tracks), 0) },
+                onShuffle = {
+                    navigator.play(availability.playable(playlist.tracks).shuffled(), 0)
+                }
             )
         }
     }

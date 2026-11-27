@@ -11,6 +11,8 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.qtekfun.ultimatetunes.availability.OfflineCoverInterceptor
+import com.qtekfun.ultimatetunes.availability.OfflineCovers
 import com.qtekfun.ultimatetunes.core.api.di.TunesHttpClient
 import com.qtekfun.ultimatetunes.ui.navigation.AppRoot
 import com.qtekfun.ultimatetunes.ui.theme.UltimateTunesTheme
@@ -28,13 +30,20 @@ class MainActivity : ComponentActivity() {
     @TunesHttpClient
     lateinit var httpClient: OkHttpClient
 
+    /** The covers of downloaded songs, shown from the phone. */
+    @Inject
+    lateinit var offlineCovers: OfflineCovers
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             setSingletonImageLoaderFactory { context ->
                 ImageLoader.Builder(context)
-                    .components { add(OkHttpNetworkFetcherFactory(callFactory = { httpClient })) }
+                    .components {
+                        add(OfflineCoverInterceptor(offlineCovers))
+                        add(OkHttpNetworkFetcherFactory(callFactory = { httpClient }))
+                    }
                     .crossfade(true)
                     .build()
             }

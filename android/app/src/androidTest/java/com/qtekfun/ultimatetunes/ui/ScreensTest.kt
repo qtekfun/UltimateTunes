@@ -30,22 +30,25 @@ import com.qtekfun.ultimatetunes.ui.designsystem.DIALOG_CONFIRM_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.DIALOG_FIELD_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.PLAY_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.designsystem.TITLE_TAG
+import com.qtekfun.ultimatetunes.ui.homescreen.HOME_CHARTS_TAG
+import com.qtekfun.ultimatetunes.ui.homescreen.HOME_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.imports.IMPORT_PROGRESS_TAG
 import com.qtekfun.ultimatetunes.ui.imports.IMPORT_URL_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.imports.IMPORT_URL_TAG
-import com.qtekfun.ultimatetunes.ui.library.libraryRowTag
-import com.qtekfun.ultimatetunes.ui.listennow.LISTEN_NOW_CHARTS_TAG
-import com.qtekfun.ultimatetunes.ui.listennow.LISTEN_NOW_LIST_TAG
+import com.qtekfun.ultimatetunes.ui.library.LIBRARY_IMPORT_TAG
+import com.qtekfun.ultimatetunes.ui.library.LIBRARY_NEW_TAG
+import com.qtekfun.ultimatetunes.ui.library.LibraryFilter
+import com.qtekfun.ultimatetunes.ui.library.NEW_PLAYLIST_TAG
+import com.qtekfun.ultimatetunes.ui.library.libraryFilterTag
 import com.qtekfun.ultimatetunes.ui.lyrics.LYRICS_ACTIVE_LINE_TAG
-import com.qtekfun.ultimatetunes.ui.navigation.LibraryPage
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
 import com.qtekfun.ultimatetunes.ui.player.FULL_PLAYER_TAG
 import com.qtekfun.ultimatetunes.ui.player.LYRICS_BUTTON_TAG
 import com.qtekfun.ultimatetunes.ui.player.MINI_PLAYER_TAG
-import com.qtekfun.ultimatetunes.ui.playlists.NEW_PLAYLIST_TAG
 import com.qtekfun.ultimatetunes.ui.playlists.PLAYLIST_MENU_TAG
 import com.qtekfun.ultimatetunes.ui.search.SEARCH_FIELD_TAG
 import com.qtekfun.ultimatetunes.ui.settings.SETTINGS_DISCONNECT_TAG
+import com.qtekfun.ultimatetunes.ui.settings.SETTINGS_LIST_TAG
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import javax.inject.Inject
@@ -97,23 +100,46 @@ class ScreensTest {
 
     private fun assertTitle(title: String) = waitFor(hasTestTag(TITLE_TAG) and hasText(title))
 
-    private fun openLibraryPage(page: LibraryPage) {
+    private fun openLibrary() {
         compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
         assertTitle(text(R.string.tab_library))
-        compose.onNodeWithTag(libraryRowTag(page)).performClick()
     }
 
-    @Test
-    fun listenNowShowsRecommendationsAndOpensCharts() {
-        // Listen Now is the start tab; its "Recommended for You" section is at the top.
-        waitFor(hasText(text(R.string.listen_now_recommended)))
+    private val sundayRow = hasContentDescription(FakeTunesApi.SUNDAY + ",", substring = true)
 
-        compose.onNodeWithTag(LISTEN_NOW_LIST_TAG)
-            .performScrollToNode(hasTestTag(LISTEN_NOW_CHARTS_TAG))
-        compose.onNodeWithTag(LISTEN_NOW_CHARTS_TAG).performClick()
+    @Test
+    fun homeShowsRecommendationsAndOpensCharts() {
+        // Home is the start tab.
+        waitFor(hasText(text(R.string.home_stations)))
+
+        compose.onNodeWithTag(HOME_LIST_TAG)
+            .performScrollToNode(hasText(text(R.string.home_recommended)))
+        compose.onNodeWithTag(HOME_LIST_TAG).performScrollToNode(hasTestTag(HOME_CHARTS_TAG))
+        compose.onNodeWithTag(HOME_CHARTS_TAG).performClick()
 
         assertTitle(text(R.string.charts_title))
         waitFor(hasTestTag(CHARTS_LIST_TAG))
+    }
+
+    @Test
+    fun theLibraryFiltersShowItsContentDirectly() {
+        openLibrary()
+        waitFor(sundayRow)
+
+        compose.onNodeWithTag(libraryFilterTag(LibraryFilter.ALBUMS)).performClick()
+        waitFor(
+            hasContentDescription(
+                text(R.string.album_description, "Harbour Lights", "The Paper Lanterns")
+            )
+        )
+        compose.onNodeWithTag(libraryFilterTag(LibraryFilter.ARTISTS)).performClick()
+        waitFor(hasContentDescription("Marisol Vega"))
+        compose.onNodeWithTag(libraryFilterTag(LibraryFilter.SONGS)).performClick()
+        waitFor(
+            hasContentDescription(
+                text(R.string.track_description, "Tidewater", "The Paper Lanterns")
+            )
+        )
     }
 
     @Test
@@ -158,9 +184,10 @@ class ScreensTest {
 
     @Test
     fun aPlaylistIsCreatedRenamedAndDeleted() {
-        openLibraryPage(LibraryPage.PLAYLISTS)
+        openLibrary()
         waitFor(hasText(FakeTunesApi.SUNDAY))
 
+        compose.onNodeWithTag(LIBRARY_NEW_TAG).performClick()
         compose.onNodeWithTag(NEW_PLAYLIST_TAG).performClick()
         compose.onNodeWithTag(DIALOG_FIELD_TAG).performTextInput("Morning Run")
         compose.onNodeWithTag(DIALOG_CONFIRM_TAG).performClick()
@@ -178,16 +205,16 @@ class ScreensTest {
         compose.onNodeWithText(text(R.string.playlist_delete)).performClick()
         compose.onNodeWithTag(DIALOG_CONFIRM_TAG).performClick()
 
-        assertTitle(text(R.string.library_playlists))
+        assertTitle(text(R.string.tab_library))
         waitFor(hasText(FakeTunesApi.SUNDAY))
         waitGone(hasText("Evening Walk"))
     }
 
     @Test
     fun lyricsFollowTheSongInThePlayer() {
-        openLibraryPage(LibraryPage.PLAYLISTS)
-        waitFor(hasText(FakeTunesApi.SUNDAY))
-        compose.onNode(hasContentDescription(FakeTunesApi.SUNDAY, substring = true)).performClick()
+        openLibrary()
+        waitFor(sundayRow)
+        compose.onNode(sundayRow).performClick()
         waitFor(hasTestTag(PLAY_BUTTON_TAG))
         compose.onNodeWithTag(PLAY_BUTTON_TAG).performClick()
 
@@ -202,8 +229,9 @@ class ScreensTest {
 
     @Test
     fun aLinkImportShowsItsReportAndOpensThePlaylist() {
-        compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
-        compose.onNodeWithContentDescription(text(R.string.import_title)).performClick()
+        openLibrary()
+        compose.onNodeWithTag(LIBRARY_NEW_TAG).performClick()
+        compose.onNodeWithTag(LIBRARY_IMPORT_TAG).performClick()
         assertTitle(text(R.string.import_title))
 
         compose.onNodeWithTag(IMPORT_URL_TAG)
@@ -220,12 +248,11 @@ class ScreensTest {
 
     @Test
     fun settingsRevokeAnotherKeyAndDisconnectToACleanConnectScreen() {
-        compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
-        compose.onNodeWithContentDescription(text(R.string.settings_title)).performClick()
-        assertTitle(text(R.string.settings_title))
-        waitFor(hasText(FakeTunesApi.TABLET_KEY))
-        waitFor(hasText(text(R.string.settings_key_this_device)))
+        openSettings()
+        scrollSettingsTo(hasText(FakeTunesApi.TABLET_KEY))
+        scrollSettingsTo(hasText(text(R.string.settings_key_this_device)))
 
+        scrollSettingsTo(hasText(text(R.string.settings_revoke)))
         compose.onNodeWithText(text(R.string.settings_revoke)).performClick()
         compose.onNodeWithTag(DIALOG_CONFIRM_TAG).performClick()
         waitGone(hasText(FakeTunesApi.TABLET_KEY))
@@ -237,15 +264,28 @@ class ScreensTest {
         compose.onNodeWithTag(CONNECT_METHOD_KEY_TAG).performClick()
         compose.onNodeWithTag(CONNECT_API_KEY_TAG).performTextInput(FakeTunesApi.API_KEY)
         compose.onNodeWithTag(CONNECT_BUTTON_TAG).performClick()
-        assertTitle(text(R.string.tab_listen_now))
-        compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
-        compose.onNodeWithContentDescription(text(R.string.settings_title)).performClick()
+        assertTitle(text(R.string.tab_home))
+        openSettings()
         disconnect()
         compose.onNodeWithTag(CONNECT_SERVER_URL_TAG).assert(hasText("music.example.net").not())
     }
 
+    private fun openSettings() {
+        compose.onNodeWithContentDescription(text(R.string.settings_title)).performClick()
+        assertTitle(text(R.string.settings_title))
+    }
+
+    private fun scrollSettingsTo(matcher: SemanticsMatcher) {
+        waitFor(hasTestTag(SETTINGS_LIST_TAG))
+        compose.waitUntil(TIMEOUT_MS) {
+            runCatching {
+                compose.onNodeWithTag(SETTINGS_LIST_TAG).performScrollToNode(matcher)
+            }.isSuccess
+        }
+    }
+
     private fun disconnect() {
-        waitFor(hasTestTag(SETTINGS_DISCONNECT_TAG))
+        scrollSettingsTo(hasTestTag(SETTINGS_DISCONNECT_TAG))
         compose.onNodeWithTag(SETTINGS_DISCONNECT_TAG).performClick()
         compose.onNodeWithTag(DIALOG_CONFIRM_TAG).performClick()
         waitFor(hasTestTag(CONNECT_BUTTON_TAG))

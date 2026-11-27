@@ -163,9 +163,9 @@ internal abstract class SyncDao {
 
     /** Forgets everything and records that what comes next belongs to `ownerId`. */
     @Transaction
-    open suspend fun startOver(ownerId: String) {
+    open suspend fun startOver(ownerId: String, verifiedFor: String) {
         clearAll()
-        putMeta(MetaEntity(ownerId = ownerId, lastSyncAt = null))
+        putMeta(MetaEntity(ownerId = ownerId, lastSyncAt = null, verifiedFor = verifiedFor))
     }
 
     private suspend fun deleteCatalog() {
@@ -214,7 +214,7 @@ internal abstract class SyncDao {
     protected abstract suspend fun insertEntries(rows: List<PlaylistEntryEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    protected abstract suspend fun putMeta(meta: MetaEntity)
+    abstract suspend fun putMeta(meta: MetaEntity)
 }
 
 /** The queue of changes made with no connection (PLAN T35 replays it). */

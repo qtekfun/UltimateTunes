@@ -17,11 +17,8 @@ object Dimens {
     val SpaceXL = 24.dp
     val SpaceXXL = 32.dp
 
-    /** Width of an album tile in a horizontal shelf. */
-    val ShelfTile = 164.dp
-
-    /** Width of a station tile (wider, landscape-ish). */
-    val StationTile = 260.dp
+    /** Width of a tile in a horizontal shelf (albums, songs, stations), the same everywhere. */
+    val ShelfTile = 150.dp
 
     /** Artwork of a track row and of the mini player. */
     val RowArtwork = 48.dp

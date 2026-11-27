@@ -3,11 +3,9 @@
 
 package com.qtekfun.ultimatetunes.ui.designsystem
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,22 +18,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qtekfun.ultimatetunes.R
@@ -57,7 +56,7 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier) {
             .padding(
                 start = Dimens.ScreenMargin,
                 end = Dimens.ScreenMargin,
-                top = Dimens.SpaceXL,
+                top = Dimens.SpaceL,
                 bottom = Dimens.SpaceM
             )
             .semantics { heading() }
@@ -82,9 +81,14 @@ fun <T> Shelf(items: List<T>, modifier: Modifier = Modifier, itemContent: @Compo
  */
 @Composable
 fun AlbumCard(album: AlbumTile, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val description = stringResource(R.string.album_description, album.title, album.artist)
+    val available = LocalAvailability.current.canPlayAlbum(album.id)
+    val description = availabilityDescription(
+        stringResource(R.string.album_description, album.title, album.artist),
+        available
+    )
     Column(
         modifier = modifier
+            .availableOrDimmed(available)
             .clip(Dimens.ArtworkShape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clearAndSetSemantics { contentDescription = description }
@@ -125,11 +129,16 @@ fun ShelfAlbumCard(album: AlbumTile, onClick: (() -> Unit)? = null) {
  */
 @Composable
 fun ShelfTrackCard(track: TrackTile, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val description = stringResource(R.string.track_description, track.title, track.artist)
+    val available = LocalAvailability.current.canPlay(track.id)
+    val description = availabilityDescription(
+        stringResource(R.string.track_description, track.title, track.artist),
+        available
+    )
     val external = stringResource(R.string.not_in_library)
     Column(
         modifier = modifier
             .width(Dimens.ShelfTile)
+            .availableOrDimmed(available)
             .clip(Dimens.ArtworkShape)
             .clickable(onClick = onClick)
             .clearAndSetSemantics {
@@ -172,72 +181,52 @@ fun ShelfTrackCard(track: TrackTile, onClick: () -> Unit, modifier: Modifier = M
     }
 }
 
-/** A radio station: wide artwork with the title over a dark gradient, like a poster. */
+/**
+ * A radio station in a [Shelf]: round artwork of the shelves' size with the name below. A station
+ * needs the server, so it is [available] only with a connection.
+ */
 @Composable
-fun StationCard(station: StationTile, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val label = stringResource(R.string.station_label)
-    val description = stringResource(R.string.station_description, station.title)
-    Box(
+fun StationCard(
+    station: StationTile,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    available: Boolean = true
+) {
+    val description = availabilityDescription(
+        stringResource(R.string.station_description, station.title),
+        available
+    )
+    Column(
         modifier = modifier
-            .clip(Dimens.CardShape)
+            .width(Dimens.ShelfTile)
+            .availableOrDimmed(available)
+            .clip(Dimens.ArtworkShape)
             .clickable(onClick = onClick)
-            .clearAndSetSemantics { contentDescription = description }
+            .clearAndSetSemantics { contentDescription = description },
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Artwork(
             url = station.coverUrl,
             placeholderKey = station.seedId.value,
-            shape = Dimens.CardShape,
-            modifier = Modifier.fillMaxWidth().aspectRatio(STATION_ASPECT)
+            shape = CircleShape,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
         )
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        SCRIM_START to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.72f)
-                    )
-                )
+        Spacer(Modifier.padding(top = Dimens.SpaceS))
+        Text(
+            text = station.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(Dimens.SpaceL)
-        ) {
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f)
-            )
-            Text(
-                text = station.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            station.subtitle?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
     }
 }
 
-/** Width over height of a station card. */
-private const val STATION_ASPECT = 1.6f
-
-/** Where the dark scrim under a station's title starts, from the top. */
-private const val SCRIM_START = 0.4f
-
 /**
- * A song row: artwork, title, artist (and "not in library yet" for external songs), with an
- * optional trailing slot. At least [Dimens.MinRowHeight] tall, growing with the font scale.
+ * A song row: artwork, title, artist (and "not in library yet" for external songs), an optional
+ * trailing slot and the overflow button of the song menu. Dimmed when it cannot play now. At
+ * least [Dimens.MinRowHeight] tall, growing with the font scale.
  */
 @Composable
 fun TrackRow(
@@ -247,39 +236,48 @@ fun TrackRow(
     showDivider: Boolean = true,
     trailing: @Composable (() -> Unit)? = null
 ) {
-    val description = stringResource(R.string.track_description, track.title, track.artist)
+    val available = LocalAvailability.current.canPlay(track.id)
+    val description = availabilityDescription(
+        stringResource(R.string.track_description, track.title, track.artist),
+        available
+    )
     val external = stringResource(R.string.not_in_library)
     val menu = LocalTrackMenu.current
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = Dimens.MinRowHeight)
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
-                    onLongClick = { menu(track) }
-                )
-                .semantics(mergeDescendants = true) {
-                    contentDescription =
-                        if (track.isExternal) "$description, $external" else description
-                }
-                .padding(horizontal = Dimens.ScreenMargin, vertical = Dimens.SpaceS),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Artwork(
-                url = track.coverUrl,
-                placeholderKey = track.id.value,
-                shape = Dimens.SmallArtworkShape,
-                modifier = Modifier.size(Dimens.RowArtwork)
-            )
-            TrackText(
-                track,
-                Modifier
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = Dimens.SpaceM)
-            )
+                    .heightIn(min = Dimens.MinRowHeight)
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClickLabel = stringResource(R.string.menu_actions_for, track.title),
+                        onLongClick = { menu(track) }
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription =
+                            if (track.isExternal) "$description, $external" else description
+                    }
+                    .availableOrDimmed(available)
+                    .padding(start = Dimens.ScreenMargin)
+                    .padding(vertical = Dimens.SpaceS),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Artwork(
+                    url = track.coverUrl,
+                    placeholderKey = track.id.value,
+                    shape = Dimens.SmallArtworkShape,
+                    modifier = Modifier.size(Dimens.RowArtwork)
+                )
+                TrackText(
+                    track,
+                    Modifier
+                        .weight(1f)
+                        .padding(horizontal = Dimens.SpaceM)
+                )
+            }
             trailing?.invoke()
+            OverflowButton(track.title, onClick = { menu(track) })
         }
         if (showDivider) {
             HorizontalDivider(
@@ -376,6 +374,18 @@ fun NavigationRow(
         Icon(
             painter = painterResource(R.drawable.ic_chevron_right),
             contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** The visible way into the menu of [title], at the end of its row. */
+@Composable
+fun OverflowButton(title: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(onClick = onClick, modifier = modifier.padding(end = Dimens.SpaceS)) {
+        Icon(
+            painter = painterResource(R.drawable.ic_more),
+            contentDescription = stringResource(R.string.menu_actions_for, title),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

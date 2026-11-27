@@ -7,8 +7,10 @@ import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
@@ -39,14 +41,20 @@ class AlbumViewModelTest {
     @AfterEach
     fun tearDown() {
         server.close()
+        catalog.close()
     }
 
     private val offline = FakeOfflineControls()
+    private val catalog = TestCatalog()
+    private val refresh = FakeCatalogRefresh()
 
     private fun viewModel(id: String = libraryAlbum) = AlbumViewModel(
         SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)),
         connectedApi(server),
-        offline
+        offline,
+        catalog.repository,
+        catalog.sync,
+        refresh
     )
 
     private suspend fun AlbumViewModel.ready(): AlbumContent =
@@ -110,6 +118,20 @@ class AlbumViewModelTest {
         viewModel.toggleFavourite()
         assertFalse(viewModel.ready().isFavourite)
         assertEquals("/rest/unstar", server.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun `the catalog's copy shows with the server out of reach, and stays`() = runTest {
+        catalog.synced()
+        server.dispatcher.override("rest/getAlbum") { dropConnection() }
+        val viewModel = viewModel()
+
+        assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
+
+        viewModel.load()
+        server.takeRequest()
+        server.takeRequest()
+        assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
     }
 
     @Test

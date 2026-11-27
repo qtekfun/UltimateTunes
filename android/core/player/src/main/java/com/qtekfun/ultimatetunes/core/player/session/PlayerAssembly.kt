@@ -49,6 +49,7 @@ class PlayerAssembly @Inject constructor(
     private val api: TunesApi,
     private val caches: MediaCaches,
     private val sources: MediaDataSources,
+    private val phone: PhonePlayback,
     val settings: PlayerSettingsSource
 ) {
     /** A new player; the caller releases it. */
@@ -80,6 +81,7 @@ class PlayerAssembly @Inject constructor(
         poller = StatusPoller(api::trackStatus),
         janitor = CacheJanitor(MediaCacheView(caches.play)),
         gains = ReplayGainSource(api),
+        phone = phone,
         scope = scope,
         io = Dispatchers.IO
     )

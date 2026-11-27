@@ -18,9 +18,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
 import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -63,7 +63,7 @@ fun ChartsScreen(
     onPlay: (List<TrackTile>, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LargeTitleScaffold(
+    ScreenScaffold(
         title = stringResource(R.string.charts_title),
         onBack = onBack,
         modifier = modifier

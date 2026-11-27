@@ -59,7 +59,7 @@ import com.qtekfun.ultimatetunes.ui.MainActivity
 import com.qtekfun.ultimatetunes.ui.album.ALBUM_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.connect.DemoServer
 import com.qtekfun.ultimatetunes.ui.designsystem.TITLE_TAG
-import com.qtekfun.ultimatetunes.ui.listennow.LISTEN_NOW_LIST_TAG
+import com.qtekfun.ultimatetunes.ui.homescreen.HOME_LIST_TAG
 import com.qtekfun.ultimatetunes.ui.lyrics.LYRICS_ACTIVE_LINE_TAG
 import com.qtekfun.ultimatetunes.ui.lyrics.LYRICS_TAG
 import com.qtekfun.ultimatetunes.ui.navigation.Tab
@@ -213,7 +213,7 @@ class ScreenshotsTest {
         }
     }
 
-    /** Listen Now, Radio, Library, Search, an album, the full player and its lyrics. */
+    /** Home, Library, Search, an album, the full player and its lyrics. */
     private fun tour(locale: Locale, dark: Boolean) {
         context.getSystemService(LocaleManager::class.java).applicationLocales =
             LocaleList(locale)
@@ -224,13 +224,9 @@ class ScreenshotsTest {
         val folder = File(context.filesDir, "screenshots/${locale.toLanguageTag()}")
         scenario = ActivityScenario.launch(MainActivity::class.java)
 
-        waitFor(hasTestTag(LISTEN_NOW_LIST_TAG))
+        waitFor(hasTestTag(HOME_LIST_TAG))
         waitFor(hasText("Neon Tide"))
-        shoot(folder, "listen_now", dark)
-
-        compose.onNodeWithTag(Tab.RADIO.testTag).performClick()
-        waitFor(hasText("Late-Night Jazz"))
-        shoot(folder, "radio", dark)
+        shoot(folder, "home", dark)
 
         compose.onNodeWithTag(Tab.LIBRARY.testTag).performClick()
         waitFor(hasTestTag(TITLE_TAG) and hasText(text(R.string.tab_library)))
@@ -361,7 +357,7 @@ class ScreenshotsTest {
     private companion object {
         const val TIMEOUT_MS = 20_000L
         const val SETTLE_MS = 2_000L
-        const val DARK_FIRST = 7
+        const val DARK_FIRST = 6
         const val CACHE_MB = 64
         const val PNG_QUALITY = 100
     }

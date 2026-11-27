@@ -31,6 +31,8 @@ import kotlinx.coroutines.withContext
  * there): prefetch of the next songs, first-play status polling of `yt:` songs (switching the
  * queue to the library id once archived), cache upkeep and ReplayGain. It also skips a song that
  * fails to load, a few times in a row at most, so one broken download does not stop the queue.
+ * When the server cannot be reached it goes straight on to the next song the phone holds,
+ * however far down the queue.
  */
 // Collaborators are injected one by one (tests); one callback per player event, one step each.
 @Suppress("LongParameterList", "TooManyFunctions")
@@ -41,6 +43,7 @@ class PlaybackEngine(
     private val poller: StatusPoller,
     private val janitor: CacheJanitor,
     private val gains: ReplayGainSource,
+    private val phone: PhonePlayback,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher
 ) : Player.Listener {
@@ -53,6 +56,10 @@ class PlaybackEngine(
     private val upcomingPolls = mutableMapOf<SongId, Job>()
     private var gainJob: Job? = null
     private var failuresInARow = 0
+    private var skipping: Job? = null
+
+    /** The songs that failed since something last played: never gone back to in the same run. */
+    private val failedInARow = mutableSetOf<SongId>()
 
     /** The songs that failed to load in this session, newest last. */
     val failed: List<SongId> get() = failedSongs.toList()
@@ -70,24 +77,86 @@ class PlaybackEngine(
         upcomingPolls.values.forEach(Job::cancel)
         upcomingPolls.clear()
         gainJob?.cancel()
+        skipping?.cancel()
         // Entries left incomplete now are swept on the first queue move of the next session.
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = onQueueMoved()
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        if (isPlaying) failuresInARow = 0
+        if (isPlaying) {
+            failuresInARow = 0
+            failedInARow.clear()
+        }
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) = onQueueMoved()
 
     override fun onPlayerError(error: PlaybackException) {
-        current?.let { remember(it) }
+        current?.let {
+            remember(it)
+            failedInARow += it
+        }
         failuresInARow++
+        if (phone.onlyPhone() || error.errorCode in UNREACHABLE) {
+            skipToPhoneSong()
+        } else {
+            skipOne()
+        }
+    }
+
+    private fun skipOne() {
         if (failuresInARow <= MAX_SKIPS_IN_A_ROW && player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
             player.prepare()
         }
+    }
+
+    /**
+     * Plays the first song from the current one on that the phone holds: the current one itself
+     * under the library id it was kept as, or a later one. With a connection and none, the next
+     * song is tried as after any other error.
+     */
+    private fun skipToPhoneSong() {
+        skipping?.cancel()
+        skipping = scope.launch {
+            val songs = phone.songs()
+            if (!playFromPhone(songs) && !phone.onlyPhone()) skipOne()
+        }
+    }
+
+    private fun playFromPhone(songs: PhoneLookup): Boolean {
+        val from = player.currentMediaItemIndex
+        val found = playOrderFrom(from).firstNotNullOfOrNull { index ->
+            val id = MediaItems.songOf(player.getMediaItemAt(index))
+            // The song that just failed is only tried again under another id.
+            songs.phoneId(id)
+                ?.takeUnless { it in failedInARow || (index == from && it == id) }
+                ?.let { index to it }
+        }
+        found?.let { (index, local) -> playAt(index, local) }
+        return found != null
+    }
+
+    private fun playAt(index: Int, local: SongId) {
+        val item = player.getMediaItemAt(index)
+        if (local != MediaItems.songOf(item)) {
+            player.replaceMediaItem(index, MediaItems.withId(item, local, api))
+        }
+        player.seekTo(index, 0)
+        player.prepare()
+    }
+
+    /** The queue positions from [from] on, in play order, each once. */
+    private fun playOrderFrom(from: Int): Sequence<Int> {
+        val timeline = player.currentTimeline
+        if (timeline.isEmpty) return emptySequence()
+        val repeat =
+            player.repeatMode.takeIf { it != Player.REPEAT_MODE_ONE } ?: Player.REPEAT_MODE_OFF
+        val seen = mutableSetOf<Int>()
+        return generateSequence(from) {
+            timeline.getNextWindowIndex(it, repeat, player.shuffleModeEnabled)
+        }.takeWhile { it != C.INDEX_UNSET && seen.add(it) }
     }
 
     private fun remember(id: SongId) {
@@ -212,5 +281,11 @@ class PlaybackEngine(
         /** Songs skipped after load errors before the player stops and shows the error. */
         const val MAX_SKIPS_IN_A_ROW = 3
         const val MAX_FAILED_REMEMBERED = 50
+
+        /** Errors that say the server could not be reached, not that the song is broken. */
+        val UNREACHABLE = setOf(
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+        )
     }
 }

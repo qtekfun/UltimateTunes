@@ -55,7 +55,6 @@ import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.model.ApiKeyId
 import com.qtekfun.ultimatetunes.ui.designsystem.ConfirmDialog
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
@@ -71,18 +70,12 @@ import java.time.format.FormatStyle
 
 private const val MB_PER_GB = 1024
 
+/** What plays with no connection: offline mode, Wi-Fi only and the whole library offline. */
 @Composable
-internal fun PlaybackSection(state: SettingsUiState, actions: SettingsActions) {
+internal fun OfflineSection(state: SettingsUiState, actions: SettingsActions) {
     val playback = state.playback
     Column {
-        SectionHeader(stringResource(R.string.settings_playback))
-        SizeChoices(
-            title = stringResource(R.string.settings_cache_size),
-            help = stringResource(R.string.settings_cache_help),
-            sizesMb = PlaybackSettings.CACHE_SIZES_MB,
-            selectedMb = playback.cacheSizeMb,
-            onSelect = actions.setCacheSizeMb
-        )
+        SectionHeader(stringResource(R.string.settings_offline_section))
         SwitchRow(
             title = stringResource(R.string.settings_offline_only),
             subtitle = stringResource(R.string.settings_offline_only_help),
@@ -97,6 +90,21 @@ internal fun PlaybackSection(state: SettingsUiState, actions: SettingsActions) {
             onChange = actions.setDownloadOnWifiOnly
         )
         LibraryOfflineSection(state, actions)
+    }
+}
+
+@Composable
+internal fun PlaybackSection(state: SettingsUiState, actions: SettingsActions) {
+    val playback = state.playback
+    Column {
+        SectionHeader(stringResource(R.string.settings_playback))
+        SizeChoices(
+            title = stringResource(R.string.settings_cache_size),
+            help = stringResource(R.string.settings_cache_help),
+            sizesMb = PlaybackSettings.CACHE_SIZES_MB,
+            selectedMb = playback.cacheSizeMb,
+            onSelect = actions.setCacheSizeMb
+        )
         Text(
             text = stringResource(R.string.settings_quality_info),
             style = MaterialTheme.typography.bodySmall,

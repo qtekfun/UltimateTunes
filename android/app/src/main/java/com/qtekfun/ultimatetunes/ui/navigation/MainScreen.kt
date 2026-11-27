@@ -33,6 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,14 +80,14 @@ import com.qtekfun.ultimatetunes.ui.album.AlbumRoute
 import com.qtekfun.ultimatetunes.ui.artist.ArtistRoute
 import com.qtekfun.ultimatetunes.ui.charts.ChartsRoute
 import com.qtekfun.ultimatetunes.ui.designsystem.LocalAppSnackbar
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalOpenSettings
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageEffect
+import com.qtekfun.ultimatetunes.ui.homescreen.HomeRoute
 import com.qtekfun.ultimatetunes.ui.imports.ImportRoute
-import com.qtekfun.ultimatetunes.ui.library.AlbumsRoute
-import com.qtekfun.ultimatetunes.ui.library.ArtistsRoute
 import com.qtekfun.ultimatetunes.ui.library.DownloadsRoute
 import com.qtekfun.ultimatetunes.ui.library.FavouritesRoute
 import com.qtekfun.ultimatetunes.ui.library.LibraryRoute
-import com.qtekfun.ultimatetunes.ui.listennow.ListenNowRoute
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsHooks
 import com.qtekfun.ultimatetunes.ui.lyrics.LyricsViewModel
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
@@ -96,8 +97,6 @@ import com.qtekfun.ultimatetunes.ui.player.PlayerActions
 import com.qtekfun.ultimatetunes.ui.player.PlayerUiState
 import com.qtekfun.ultimatetunes.ui.player.PlayerViewModel
 import com.qtekfun.ultimatetunes.ui.playlists.PlaylistRoute
-import com.qtekfun.ultimatetunes.ui.playlists.PlaylistsRoute
-import com.qtekfun.ultimatetunes.ui.radio.RadioRoute
 import com.qtekfun.ultimatetunes.ui.radio.StationRoute
 import com.qtekfun.ultimatetunes.ui.search.SearchRoute
 import com.qtekfun.ultimatetunes.ui.settings.SettingsRoute
@@ -116,7 +115,7 @@ private val FULL_PLAYER_SNACKBAR_TOP = 48.dp
 const val APP_SNACKBAR_TAG = "app.snackbar"
 
 /**
- * The app once connected: the four tabs with their bar, the mini player above it, and the full
+ * The app once connected: the three tabs with their bar, the mini player above it, and the full
  * player over everything, sliding up from the bottom like a sheet (SPEC §5).
  */
 @Composable
@@ -136,9 +135,14 @@ fun MainScreen(
     var menuTrack by remember { mutableStateOf<TrackTile?>(null) }
     MessageEffect(player.message, snackbar, playerViewModel::dismissMessage)
     NotificationPermission(askNotifications, onNotificationsAnswered)
+    val availability by playerViewModel.availability.collectAsStateWithLifecycle()
+    NotOnPhoneEffect(player.notOnPhone, snackbar, playerViewModel::dismissNotOnPhone)
 
     ProvideLibraryActions(actionsViewModel, onOpenMenu = { menuTrack = it }) {
-        CompositionLocalProvider(LocalAppSnackbar provides snackbar) {
+        CompositionLocalProvider(
+            LocalAppSnackbar provides snackbar,
+            LocalAvailability provides availability
+        ) {
             MainLayout(
                 navController = navController,
                 player = player,
@@ -267,13 +271,6 @@ private fun MiniPlayerBar(
     }
 }
 
-/** The lyrics of the full player, from the activity-wide [LyricsViewModel]. */
-@Composable
-private fun lyricsHooks(viewModel: LyricsViewModel): LyricsHooks {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    return LyricsHooks(state = state, onShow = viewModel::show, onRetry = viewModel::retry)
-}
-
 @Composable
 private fun TabBar(navController: NavHostController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -320,7 +317,7 @@ private fun TabsNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Tab.LISTEN_NOW.route,
+        startDestination = Tab.HOME.route,
         enterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
         exitTransition = { fadeOut(tween(SCREEN_FADE_MS)) },
         popEnterTransition = { fadeIn(tween(SCREEN_FADE_MS)) },
@@ -329,34 +326,29 @@ private fun TabsNavHost(
         Tab.entries.forEach { tab ->
             navigation(route = tab.route, startDestination = tab.home) {
                 composable(tab.home) {
-                    TabHome(tab, contentPadding, rememberNavigator(tab, navController, onPlay))
+                    val navigator = rememberNavigator(tab, navController, onPlay)
+                    WithSettings(navigator) { TabHome(tab, contentPadding, navigator) }
                 }
                 details(tab, navController, contentPadding, onPlay)
-                if (tab == Tab.LIBRARY) libraryPages(tab, navController, contentPadding, onPlay)
+                pages(tab, navController, contentPadding, onPlay)
             }
         }
     }
+}
+
+/** Gives a screen's header its Settings button, opening in the screen's own tab. */
+@Composable
+private fun WithSettings(navigator: Navigator, content: @Composable () -> Unit) {
+    val open: () -> Unit = remember(navigator) { { navigator.openPage(LibraryPage.SETTINGS) } }
+    CompositionLocalProvider(LocalOpenSettings provides open, content = content)
 }
 
 /** The first screen of [tab]. */
 @Composable
 private fun TabHome(tab: Tab, contentPadding: PaddingValues, navigator: Navigator) {
     when (tab) {
-        Tab.LISTEN_NOW -> ListenNowRoute(
-            contentPadding = contentPadding,
-            onPlay = navigator.play,
-            onOpenStation = navigator.openStation,
-            onOpenAlbum = navigator.openAlbum,
-            onOpenCharts = navigator.openCharts
-        )
-
-        Tab.RADIO -> RadioRoute(
-            contentPadding = contentPadding,
-            onOpenStation = navigator.openStation
-        )
-
+        Tab.HOME -> HomeRoute(contentPadding, navigator)
         Tab.LIBRARY -> LibraryRoute(contentPadding, navigator)
-
         Tab.SEARCH -> SearchRoute(contentPadding, navigator)
     }
 }
@@ -376,7 +368,7 @@ private fun rememberNavigator(
         openPlaylist = { navController.navigate(tab.playlist(it)) },
         openStation = { navController.navigate(tab.station(it)) },
         openCharts = { navController.navigate(tab.charts) },
-        openPage = { navController.navigate(Tab.LIBRARY.page(it)) }
+        openPage = { navController.navigate(tab.page(it)) { launchSingleTop = true } }
     )
 }
 
@@ -388,32 +380,39 @@ private fun NavGraphBuilder.details(
     onPlay: (List<TrackTile>, Int) -> Unit
 ) {
     composable(tab.stationPattern) {
-        StationRoute(
-            contentPadding = contentPadding,
-            onBack = { navController.popBackStack() },
-            onPlay = onPlay
-        )
+        WithSettings(rememberNavigator(tab, navController, onPlay)) {
+            StationRoute(
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+                onPlay = onPlay
+            )
+        }
     }
     composable(tab.chartsPattern) {
-        ChartsRoute(
-            contentPadding = contentPadding,
-            onBack = { navController.popBackStack() },
-            onPlay = onPlay
-        )
+        WithSettings(rememberNavigator(tab, navController, onPlay)) {
+            ChartsRoute(
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+                onPlay = onPlay
+            )
+        }
     }
     composable(tab.albumPattern) {
-        AlbumRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+        val navigator = rememberNavigator(tab, navController, onPlay)
+        WithSettings(navigator) { AlbumRoute(contentPadding, navigator) }
     }
     composable(tab.artistPattern) {
-        ArtistRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+        val navigator = rememberNavigator(tab, navController, onPlay)
+        WithSettings(navigator) { ArtistRoute(contentPadding, navigator) }
     }
     composable(tab.playlistPattern) {
-        PlaylistRoute(contentPadding, rememberNavigator(tab, navController, onPlay))
+        val navigator = rememberNavigator(tab, navController, onPlay)
+        WithSettings(navigator) { PlaylistRoute(contentPadding, navigator) }
     }
 }
 
-/** The Library's pages, Import and Settings. */
-private fun NavGraphBuilder.libraryPages(
+/** Favourites, Downloads, Import and Settings, inside [tab]. */
+private fun NavGraphBuilder.pages(
     tab: Tab,
     navController: NavHostController,
     contentPadding: PaddingValues,
@@ -422,14 +421,13 @@ private fun NavGraphBuilder.libraryPages(
     LibraryPage.entries.forEach { page ->
         composable(tab.page(page)) {
             val navigator = rememberNavigator(tab, navController, onPlay)
-            when (page) {
-                LibraryPage.PLAYLISTS -> PlaylistsRoute(contentPadding, navigator)
-                LibraryPage.ARTISTS -> ArtistsRoute(contentPadding, navigator)
-                LibraryPage.ALBUMS -> AlbumsRoute(contentPadding, navigator)
-                LibraryPage.FAVOURITES -> FavouritesRoute(contentPadding, navigator)
-                LibraryPage.DOWNLOADS -> DownloadsRoute(contentPadding, navigator)
-                LibraryPage.IMPORT -> ImportRoute(contentPadding, navigator)
-                LibraryPage.SETTINGS -> SettingsRoute(contentPadding, navigator)
+            WithSettings(navigator) {
+                when (page) {
+                    LibraryPage.FAVOURITES -> FavouritesRoute(contentPadding, navigator)
+                    LibraryPage.DOWNLOADS -> DownloadsRoute(contentPadding, navigator)
+                    LibraryPage.IMPORT -> ImportRoute(contentPadding, navigator)
+                    LibraryPage.SETTINGS -> SettingsRoute(contentPadding, navigator)
+                }
             }
         }
     }

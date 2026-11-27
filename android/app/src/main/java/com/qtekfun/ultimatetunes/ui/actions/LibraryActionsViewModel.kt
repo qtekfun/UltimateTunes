@@ -8,16 +8,18 @@ import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
+import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.playback.toPlayable
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.PlaylistTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import com.qtekfun.ultimatetunes.ui.model.loadStateOf
+import com.qtekfun.ultimatetunes.ui.model.contentState
 import com.qtekfun.ultimatetunes.ui.model.toLoadError
 import com.qtekfun.ultimatetunes.ui.model.toTile
 import com.qtekfun.ultimatetunes.ui.playlists.PlaylistChanges
@@ -94,10 +96,18 @@ class LibraryActionsViewModel @Inject constructor(
     private val api: TunesApi,
     private val offline: OfflineControls,
     private val exports: Exports,
-    private val changes: PlaylistChanges
+    private val changes: PlaylistChanges,
+    private val repository: LibraryRepository,
+    private val catalog: CatalogRefresh
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LibraryActionsState())
     val state: StateFlow<LibraryActionsState> = mutableState.asStateFlow()
+
+    /** The favourites the catalog has. */
+    private var stored = emptySet<SongId>()
+
+    /** Stars and unstars made here that the catalog does not show yet. */
+    private val changed = mutableMapOf<SongId, Boolean>()
 
     /** Songs waiting for the export folder. */
     private var pendingExport: List<TrackTile> = emptyList()
@@ -131,23 +141,17 @@ class LibraryActionsViewModel @Inject constructor(
         viewModelScope.launch {
             exports.status.collect { status -> mutableState.update { it.copy(export = status) } }
         }
-        refreshFavourites()
+        viewModelScope.launch {
+            repository.favouriteSongs().collect { songs ->
+                stored = songs.mapTo(HashSet()) { it.id }
+                changed.entries.removeAll { (id, favourite) -> (id in stored) == favourite }
+                publishFavourites()
+            }
+        }
     }
 
     /** Says that a song went into the queue. */
     fun queued(next: Boolean) = event(ActionEvent.Queued(next))
-
-    /** Reads the favourites again (a menu is about to show them). */
-    fun refreshFavourites() {
-        viewModelScope.launch {
-            val starred = api.starred()
-            if (starred is TunesResult.Success) {
-                mutableState.update { state ->
-                    state.copy(favourites = starred.value.song.mapTo(HashSet()) { it.id })
-                }
-            }
-        }
-    }
 
     /** Stars or unstars [track], showing the change at once and undoing it if it fails. */
     fun toggleFavourite(track: TrackTile) {
@@ -160,6 +164,7 @@ class LibraryActionsViewModel @Inject constructor(
                 setFavourite(track.id, !favourite)
                 fail(result)
             } else {
+                catalog.request()
                 event(ActionEvent.FavouriteChanged(added = favourite))
             }
         }
@@ -170,8 +175,9 @@ class LibraryActionsViewModel @Inject constructor(
         if (tracks.isEmpty()) return
         mutableState.update { it.copy(picker = PlaylistPicker(tracks)) }
         viewModelScope.launch {
-            val playlists = loadStateOf(api.playlists()) { list ->
-                list.filter { it.readonly != true }.map { it.toTile(api) }
+            val all = repository.playlists().first()
+            val playlists = repository.syncState.first().contentState {
+                all.filter { it.readonly != true }.map { it.toTile(api) }
             }
             mutableState.update { state ->
                 state.copy(picker = state.picker?.copy(playlists = playlists))
@@ -198,6 +204,7 @@ class LibraryActionsViewModel @Inject constructor(
                 )
             ) {
                 is TunesResult.Success -> {
+                    catalog.request()
                     event(ActionEvent.AddedToPlaylist(playlist.name, tracks.size))
                     changes.changed(playlist.id)
                     val kept = offline.selection.first()
@@ -208,6 +215,7 @@ class LibraryActionsViewModel @Inject constructor(
                 is TunesResult.Failure -> {
                     // A long list goes in parts: some may have arrived.
                     changes.changed(playlist.id)
+                    catalog.request()
                     fail(result)
                 }
             }
@@ -226,7 +234,11 @@ class LibraryActionsViewModel @Inject constructor(
     private fun create(name: String, tracks: List<TrackTile>) {
         viewModelScope.launch {
             when (val result = api.createPlaylist(name, tracks.map { it.id })) {
-                is TunesResult.Success -> event(ActionEvent.AddedToPlaylist(name, tracks.size))
+                is TunesResult.Success -> {
+                    catalog.request()
+                    event(ActionEvent.AddedToPlaylist(name, tracks.size))
+                }
+
                 is TunesResult.Failure -> fail(result)
             }
         }
@@ -302,11 +314,14 @@ class LibraryActionsViewModel @Inject constructor(
     }
 
     private fun setFavourite(id: SongId, favourite: Boolean) {
-        mutableState.update { state ->
-            state.copy(
-                favourites = if (favourite) state.favourites + id else state.favourites - id
-            )
-        }
+        changed[id] = favourite
+        publishFavourites()
+    }
+
+    private fun publishFavourites() {
+        val added = changed.filterValues { it }.keys
+        val removed = changed.filterValues { !it }.keys
+        mutableState.update { it.copy(favourites = stored + added - removed) }
     }
 
     private fun fail(failure: TunesResult.Failure) =

@@ -3,6 +3,10 @@
 
 package com.qtekfun.ultimatetunes.ui
 
+import com.qtekfun.ultimatetunes.availability.Availability
+import com.qtekfun.ultimatetunes.availability.CachedSongs
+import com.qtekfun.ultimatetunes.availability.Connectivity
+import com.qtekfun.ultimatetunes.availability.PhoneAvailability
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.CatalogSyncResult
@@ -15,6 +19,7 @@ import com.qtekfun.ultimatetunes.core.player.offline.LibraryScan
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineCollection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
+import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.playback.PlaybackState
 import com.qtekfun.ultimatetunes.playback.PlayerController
@@ -110,7 +115,7 @@ class FakePlayerController(initial: PlaybackState = PlaybackState(connected = tr
     override fun clear() = mutableState.update { it.copy(queue = emptyList(), index = 0) }
 }
 
-/** Offline downloads kept in memory; nothing downloads. */
+/** A catalog sync that only records what it was asked. */
 class FakeCatalogSync : CatalogSync {
     val calls = mutableListOf<String>()
 
@@ -129,6 +134,7 @@ class FakeCatalogSync : CatalogSync {
     }
 }
 
+/** Offline downloads kept in memory; nothing downloads. */
 class FakeOfflineControls : OfflineControls {
     val mutableSelection = MutableStateFlow(OfflineSelection())
     val mutableItems = MutableStateFlow<List<OfflineItem>>(emptyList())
@@ -229,4 +235,34 @@ class FakeAppPrefs : AppPrefsStore {
     override suspend fun setNotificationsAsked(value: Boolean) {
         asked.value = value
     }
+}
+
+/** Counts the catch-ups of the catalog asked for after changes. */
+class FakeCatalogRefresh : CatalogRefresh {
+    var requests = 0
+
+    override fun request() {
+        requests++
+    }
+}
+
+class FakeConnectivity(online: Boolean = true) : Connectivity {
+    override val online = MutableStateFlow(online)
+}
+
+/** What can play now, as a test sets it. */
+class FakePhoneAvailability(now: Availability = Availability()) : PhoneAvailability {
+    override val availability = MutableStateFlow(now)
+    var refreshes = 0
+
+    override fun refresh() {
+        refreshes++
+    }
+}
+
+/** The play cache of a phone: [songs] are cached whole. */
+class FakeCachedSongs(var songs: Set<SongId> = emptySet(), var bytes: Long = 0) : CachedSongs {
+    override fun complete(): Set<SongId> = songs
+
+    override fun usedBytes(): Long = bytes
 }

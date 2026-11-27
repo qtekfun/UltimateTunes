@@ -101,6 +101,20 @@ class CacheJanitorTest {
     }
 
     @Test
+    fun `only library songs cached whole play with no connection`() {
+        val cache = FakeCache(
+            mutableMapOf(
+                "lib-whole" to (10L to 10L),
+                "lib-part" to (10L to 4L),
+                "lib-unsized" to (null to 4L),
+                "yt:AAAAAAAAAAA" to (10L to 10L)
+            )
+        )
+
+        assertEquals(setOf(SongId("lib-whole")), cache.completeLibrarySongs())
+    }
+
+    @Test
     fun `sweep drops archived and incomplete yt entries and keeps the rest`() {
         val cache = FakeCache(
             mutableMapOf(

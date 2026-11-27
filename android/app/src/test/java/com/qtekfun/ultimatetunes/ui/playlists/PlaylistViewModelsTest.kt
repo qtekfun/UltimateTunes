@@ -8,8 +8,10 @@ import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
+import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
+import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
@@ -36,6 +38,8 @@ class PlaylistViewModelsTest {
     }
 
     private lateinit var server: FakeTunesServer
+    private val catalog = TestCatalog()
+    private val refresh = FakeCatalogRefresh()
     private val playlistId = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001"
 
     @BeforeEach
@@ -46,85 +50,7 @@ class PlaylistViewModelsTest {
     @AfterEach
     fun tearDown() {
         server.close()
-    }
-
-    @Nested
-    inner class List {
-        private fun loaded(): PlaylistsViewModel =
-            PlaylistsViewModel(connectedApi(server)).also { it.load() }
-
-        @Test
-        fun `the user's playlists are listed`() = runTest {
-            val viewModel = loaded()
-
-            val state = viewModel.state.awaitFirst { it.playlists is LoadState.Ready }
-            val playlist = (state.playlists as LoadState.Ready).value.single()
-            assertEquals(PlaylistId(playlistId), playlist.id)
-            assertEquals("Sunday Morning", playlist.name)
-            assertEquals(3, playlist.songCount)
-            assertEquals(663, playlist.durationSec)
-        }
-
-        @Test
-        fun `a new playlist is created, added and opened once`() = runTest {
-            val viewModel = loaded()
-            viewModel.state.awaitFirst { it.playlists is LoadState.Ready }
-            server.takeRequest()
-
-            viewModel.create("  Morning Run ")
-            viewModel.create("ignored while creating")
-
-            val created = viewModel.state.awaitFirst { it.created != null }
-            assertEquals(PlaylistId(playlistId), created.created)
-            assertFalse(created.creating)
-            assertEquals(2, (created.playlists as LoadState.Ready).value.size)
-            val request = server.takeRequest()
-            assertEquals("/rest/createPlaylist", request.url.encodedPath)
-            assertEquals("Morning Run", request.form().queryParameter("name"))
-            assertEquals(2, server.requestCount)
-
-            viewModel.onCreatedOpened()
-            assertNull(viewModel.state.value.created)
-        }
-
-        @Test
-        fun `a blank name creates nothing`() = runTest {
-            val viewModel = PlaylistsViewModel(connectedApi(server))
-            viewModel.create("   ")
-            assertFalse(viewModel.state.value.creating)
-            assertEquals(0, server.requestCount)
-        }
-
-        @Test
-        fun `a failed create is explained once`() = runTest {
-            server.dispatcher.override("rest/createPlaylist") { subsonicFailure(50) }
-            val viewModel = PlaylistsViewModel(connectedApi(server))
-
-            viewModel.create("Nope")
-
-            val failed = viewModel.state.awaitFirst { it.message != null }
-            assertEquals(LoadError.SERVER, failed.message)
-            assertNull(failed.created)
-            viewModel.dismissMessage()
-            assertNull(viewModel.state.value.message)
-        }
-
-        @Test
-        fun `showing the list again reloads it in place, and errors can be retried`() = runTest {
-            server.dispatcher.override("rest/getPlaylists") { dropConnection() }
-            val viewModel = loaded()
-            val failed = viewModel.state.awaitFirst { it.playlists is LoadState.Failed }
-            assertEquals(LoadState.Failed(LoadError.NETWORK), failed.playlists)
-
-            server.dispatcher.override("rest/getPlaylists") { subsonicOk("playlists", "{}") }
-            viewModel.load()
-            val empty = viewModel.state.awaitFirst { it.playlists is LoadState.Ready }
-            assertEquals(LoadState.Ready(emptyList<Any>()), empty.playlists)
-
-            server.dispatcher.clearOverrides()
-            viewModel.load()
-            viewModel.state.awaitFirst { (it.playlists as? LoadState.Ready)?.value?.size == 1 }
-        }
+        catalog.close()
     }
 
     @Nested
@@ -136,7 +62,10 @@ class PlaylistViewModelsTest {
             SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to playlistId)),
             connectedApi(server),
             offline,
-            changes
+            changes,
+            catalog.repository,
+            catalog.sync,
+            refresh
         )
 
         private suspend fun PlaylistViewModel.ready(): PlaylistContent =
@@ -164,6 +93,27 @@ class PlaylistViewModelsTest {
         }
 
         @Test
+        fun `the catalog's copy shows with the server out of reach`() = runTest {
+            catalog.synced()
+            server.dispatcher.override("rest/getPlaylist") { dropConnection() }
+
+            val viewModel = viewModel()
+            server.takeRequest()
+
+            assertEquals("Sunday Morning", viewModel.ready().playlist.name)
+            assertEquals(3, viewModel.ready().tracks.size)
+
+            // Its positions were never read from the server: removing asks for them first.
+            viewModel.removeAt(0)
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            assertEquals(
+                LoadError.NETWORK,
+                viewModel.state.awaitFirst { it.message != null }.message
+            )
+            assertEquals(3, viewModel.ready().tracks.size)
+        }
+
+        @Test
         fun `rename changes the name at once and on the server`() = runTest {
             val viewModel = loaded()
 
@@ -174,6 +124,10 @@ class PlaylistViewModelsTest {
             assertEquals("/rest/updatePlaylist", request.url.encodedPath)
             assertEquals(playlistId, request.form().queryParameter("playlistId"))
             assertEquals("Sunday Evening", request.form().queryParameter("name"))
+            // Read again after the change, so the answer to it has arrived.
+            viewModel.refresh()
+            server.takeRequest()
+            assertEquals(1, refresh.requests)
         }
 
         @Test

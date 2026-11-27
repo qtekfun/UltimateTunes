@@ -205,6 +205,8 @@ dependencies {
 
     // The contract-backed fake server (FakeTunesServer) for view-model and UI-logic tests.
     testImplementation(testFixtures(project(":core:api")))
+    // A real SQLite for the in-memory catalog the view-model tests sync (as :core:library does).
+    testImplementation(libs.sqlite.bundled.jvm)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.mockk)

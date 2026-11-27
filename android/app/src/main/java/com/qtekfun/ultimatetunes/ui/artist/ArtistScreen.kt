@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,12 +27,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.ui.designsystem.Artwork
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
-import com.qtekfun.ultimatetunes.ui.designsystem.LargeTitleScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.LoadingState
+import com.qtekfun.ultimatetunes.ui.designsystem.LocalAvailability
 import com.qtekfun.ultimatetunes.ui.designsystem.MessageState
+import com.qtekfun.ultimatetunes.ui.designsystem.PageRefresh
+import com.qtekfun.ultimatetunes.ui.designsystem.RefreshBox
+import com.qtekfun.ultimatetunes.ui.designsystem.ScreenScaffold
 import com.qtekfun.ultimatetunes.ui.designsystem.SectionHeader
+import com.qtekfun.ultimatetunes.ui.designsystem.TrackRow
 import com.qtekfun.ultimatetunes.ui.designsystem.albumGrid
 import com.qtekfun.ultimatetunes.ui.designsystem.coverSize
+import com.qtekfun.ultimatetunes.ui.designsystem.rememberScreenSnackbar
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.navigation.Navigator
 import com.qtekfun.ultimatetunes.ui.preview.PreviewData
@@ -45,7 +51,18 @@ fun ArtistRoute(
     viewModel: ArtistViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    ArtistScreen(state, contentPadding, navigator, onRetry = viewModel::load)
+    val refresh by viewModel.refresher.state.collectAsStateWithLifecycle()
+    ArtistScreen(
+        state = state,
+        contentPadding = contentPadding,
+        navigator = navigator,
+        onRetry = viewModel::load,
+        pull = PageRefresh(
+            refresh,
+            viewModel.refresher::refresh,
+            viewModel.refresher::messageShown
+        )
+    )
 }
 
 /** An artist: round picture and a grid of their albums. */
@@ -55,36 +72,57 @@ fun ArtistScreen(
     contentPadding: PaddingValues,
     navigator: Navigator,
     onRetry: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    pull: PageRefresh = PageRefresh()
 ) {
     val title = (state as? LoadState.Ready)?.value?.artist?.name.orEmpty()
-    LargeTitleScaffold(title = title, onBack = navigator.back, modifier = modifier) { inner ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                top = inner.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
-            )
-        ) {
-            when (state) {
-                LoadState.Loading -> item { LoadingState() }
+    val snackbar = rememberScreenSnackbar()
+    ScreenScaffold(
+        title = title,
+        onBack = navigator.back,
+        modifier = modifier,
+        snackbarHost = snackbar.host
+    ) { inner ->
+        RefreshBox(pull, inner, snackbar) {
+            val availability = LocalAvailability.current
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    bottom = contentPadding.calculateBottomPadding() + Dimens.SpaceXL
+                )
+            ) {
+                when (state) {
+                    LoadState.Loading -> item { LoadingState() }
 
-                is LoadState.Failed -> item { ErrorState(state.error, onRetry) }
+                    is LoadState.Failed -> item { ErrorState(state.error, onRetry) }
 
-                is LoadState.Ready -> {
-                    val artist = state.value
-                    item { ArtistHeader(artist) }
-                    if (artist.albums.isEmpty()) {
-                        item {
-                            MessageState(
-                                message = stringResource(R.string.artist_no_albums),
-                                icon = R.drawable.ic_album
-                            )
-                        }
-                    } else {
-                        item { SectionHeader(stringResource(R.string.artist_albums)) }
-                        albumGrid(artist.albums, keyPrefix = "albums") {
-                            navigator.openAlbum(it.id)
+                    is LoadState.Ready -> {
+                        val artist = state.value
+                        item { ArtistHeader(artist) }
+                        val albums = artist.albums.filter { availability.showsAlbum(it.id) }
+                        if (albums.isNotEmpty()) {
+                            item { SectionHeader(stringResource(R.string.artist_albums)) }
+                            albumGrid(albums, keyPrefix = "albums") {
+                                navigator.openAlbum(it.id)
+                            }
+                        } else if (artist.songs.isNotEmpty()) {
+                            item { SectionHeader(stringResource(R.string.library_songs)) }
+                            itemsIndexed(artist.songs) { i, track ->
+                                if (availability.shows(track.id)) {
+                                    TrackRow(
+                                        track = track,
+                                        onClick = { navigator.play(artist.songs, i) },
+                                        showDivider = i < artist.songs.lastIndex
+                                    )
+                                }
+                            }
+                        } else {
+                            item {
+                                MessageState(
+                                    message = stringResource(R.string.artist_no_albums),
+                                    icon = R.drawable.ic_album
+                                )
+                            }
                         }
                     }
                 }
