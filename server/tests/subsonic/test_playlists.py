@@ -132,6 +132,23 @@ def test_playlist_size_limit(lib: Harness, monkeypatch: pytest.MonkeyPatch) -> N
     assert lib.error("createPlaylist", name="Big", songId=[brasas] * 3) == 0
 
 
+def test_reorder_does_not_count_the_songs_already_held(
+    lib: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ultimatetunes.library import songs  # noqa: PLC0415
+
+    monkeypatch.setattr(songs, "keep_download_cap", lambda: 1)
+    playlist = create(lib, name="Pending", songId="yt:Qx7Lm2pZ0aB")["id"]
+    lib.ok("updatePlaylist", playlistId=playlist, songIdToAdd="yt:Rb8Tn3ZcYv0")
+    reordered = ["yt:Rb8Tn3ZcYv0", "yt:Qx7Lm2pZ0aB"]
+    queued = jobs(lib)
+    create(lib, playlistId=playlist, songId=reordered)
+    assert entries(lib, playlist) == reordered
+    assert jobs(lib) == queued
+    # Songs it does not hold still count, in a new playlist all of them.
+    lib.error("createPlaylist", name="Copy", songId=reordered)
+
+
 def test_delete(lib: Harness) -> None:
     playlist = create(lib, name="Gone", songId=lib.ids()["Brasas"])["id"]
     lib.ok("deletePlaylist", "EmptyResponse", id=playlist)
