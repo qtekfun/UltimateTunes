@@ -68,6 +68,14 @@ class AlbumViewModelTest {
     private suspend fun AlbumViewModel.ready(): AlbumContent =
         (state.awaitFirst { it.content is LoadState.Ready }.content as LoadState.Ready).value
 
+    // A load asked for while the first one runs is ignored: ask until a second one goes out.
+    private suspend fun loadAgain(viewModel: AlbumViewModel) {
+        while (server.requestCount < 2) {
+            viewModel.load()
+            withContext(Dispatchers.Default) { delay(RETRY_MS) }
+        }
+    }
+
     @Test
     fun `the album comes with its songs in order, artist and details`() = runTest {
         val album = viewModel().ready()
@@ -125,8 +133,7 @@ class AlbumViewModelTest {
         assertEquals(mapOf(AlbumId(libraryAlbum) to !before), queued.albumFavourites)
 
         // The server still says otherwise: the star not sent yet wins.
-        viewModel.load()
-        server.takeRequest()
+        loadAgain(viewModel)
         assertEquals(!before, viewModel.ready().isFavourite)
         // Nothing but reads went to the server.
         assertEquals(2, server.requestCount)
@@ -140,11 +147,7 @@ class AlbumViewModelTest {
 
         assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
 
-        // A load asked for while the first one runs is ignored: ask until a second one goes out.
-        while (server.requestCount < 2) {
-            viewModel.load()
-            withContext(Dispatchers.Default) { delay(RETRY_MS) }
-        }
+        loadAgain(viewModel)
         assertEquals(listOf("Lighthouse Keeper"), viewModel.ready().tracks.map { it.title })
     }
 
