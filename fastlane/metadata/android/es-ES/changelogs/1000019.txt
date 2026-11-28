@@ -1,0 +1,1 @@
+Crea y edita listas y favoritos sin conexión; se envían cuando vuelve la red. Búsquedas recientes.

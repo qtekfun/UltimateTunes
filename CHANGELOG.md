@@ -9,6 +9,18 @@ All notable changes to UltimateTunes (server and app share one version). Written
 
 ## [Unreleased]
 
+## [1.0.0-rc.19] - 2026-11-28
+
+Release candidate of 1.0: playlists and favourites work without a connection on Android.
+
+### Added
+- Android: create, rename, add to, remove from and delete playlists, and mark favourites, with no connection. The changes show at once and are sent when the server is reachable again; plays are counted too.
+- Android: recent searches on the Search screen.
+
+### Fixed
+- Android: playlists with more than a thousand songs and additions of many new songs are sent in parts.
+- Android: a new queue gives songs that failed before another chance.
+
 ## [1.0.0-rc.18] - 2026-11-27
 
 Release candidate of 1.0: searching works without a connection on Android.
