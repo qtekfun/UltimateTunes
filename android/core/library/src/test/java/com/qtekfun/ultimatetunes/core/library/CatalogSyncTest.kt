@@ -210,7 +210,7 @@ class CatalogSyncTest {
     fun `another user clears the catalog even when the sync then fails`() = runBlocking {
         serve()
         syncer.sync()
-        harness.database.pendingChanges().add(pending())
+        harness.database.queue().add(pending())
         remote.user = "user-2"
         remote.failing += "search3"
 
@@ -218,7 +218,7 @@ class CatalogSyncTest {
 
         assertEquals(emptyList<String>(), titles())
         assertEquals(emptyList<String>(), repository.playlists().first().map { it.name })
-        assertEquals(emptyList<PendingChangeEntity>(), harness.database.pendingChanges().all())
+        assertEquals(emptyList<PendingChangeEntity>(), harness.database.queue().all())
         assertNull(state().lastSuccess)
     }
 
@@ -226,7 +226,7 @@ class CatalogSyncTest {
     fun `a new address of the same library keeps the catalog`() = runBlocking {
         serve()
         syncer.sync()
-        harness.database.pendingChanges().add(pending())
+        harness.database.queue().add(pending())
         FakeTunesServer().start().use { other ->
             ServerLibrary(other).failing += "search3"
             harness.config.set(other.serverConfig())
@@ -235,20 +235,20 @@ class CatalogSyncTest {
         }
 
         assertEquals(listOf("One", "Three", "Two"), titles())
-        assertEquals(1, harness.database.pendingChanges().all().size)
+        assertEquals(1, harness.database.queue().all().size)
     }
 
     @Test
     fun `clearing forgets everything`() = runBlocking {
         serve()
         syncer.sync()
-        harness.database.pendingChanges().add(pending())
+        harness.database.queue().add(pending())
 
         syncer.clear()
 
         assertEquals(emptyList<String>(), titles())
         assertEquals(emptyList<String>(), repository.favouriteSongs().first().map { it.title })
-        assertEquals(emptyList<PendingChangeEntity>(), harness.database.pendingChanges().all())
+        assertEquals(emptyList<PendingChangeEntity>(), harness.database.queue().all())
         assertEquals(CatalogSyncState(), state())
     }
 
@@ -331,7 +331,7 @@ class CatalogSyncTest {
     fun `pending changes stay across syncs, in order`() = runBlocking {
         serve()
         syncer.sync()
-        val changes = harness.database.pendingChanges()
+        val changes = harness.database.queue()
         val one = changes.add(pending())
         changes.add(pending().copy(kind = "unstar"))
 

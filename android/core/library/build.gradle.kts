@@ -5,6 +5,7 @@
 
 plugins {
     id("ut.android.library")
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
@@ -22,6 +23,7 @@ dependencies {
     // The catalog is filled through `TunesApi`.
     api(project(":core:api"))
     implementation(libs.room.runtime)
+    implementation(libs.kotlinx.serialization.json)
     ksp(libs.room.compiler)
 
     testImplementation(testFixtures(project(":core:api")))

@@ -15,7 +15,11 @@ import java.time.Clock
 import kotlinx.coroutines.Dispatchers
 
 /** The catalog: what the screens read and what keeps it up to date. One per process. */
-class LocalCatalog private constructor(val repository: LibraryRepository, val sync: CatalogSync) {
+class LocalCatalog private constructor(
+    val repository: LibraryRepository,
+    val sync: CatalogSync,
+    val changes: OfflineChanges
+) {
     companion object {
         private const val FILE = "catalog.db"
 
@@ -65,7 +69,8 @@ class LocalCatalog private constructor(val repository: LibraryRepository, val sy
                     syncer.activity,
                     configSource.config
                 ),
-                syncer
+                syncer,
+                DefaultOfflineChanges(syncer, clock)
             )
         }
     }
