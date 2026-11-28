@@ -5,8 +5,10 @@
 from fastapi import APIRouter
 
 from ultimatetunes.errors import FeatureNotImplemented
+from ultimatetunes.podcasts import progress_routes
 
 router = APIRouter(prefix="/ut/v1/podcasts")
+router.include_router(progress_routes.router)  # T44
 
 
 def _stub() -> None:
@@ -21,10 +23,7 @@ for _method, _path in (
     ("PUT", "/shows/{show_id}/follow"),
     ("DELETE", "/shows/{show_id}/follow"),
     ("GET", "/new"),
-    ("GET", "/continue"),
     ("GET", "/episodes/{episode_id}"),
     ("POST", "/episodes/{episode_id}/request"),
-    ("GET", "/progress"),
-    ("PUT", "/progress"),
 ):
     router.add_api_route(_path, _stub, methods=[_method])
