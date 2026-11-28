@@ -1,0 +1,37 @@
+{
+    "episodes": [
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+            "showId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+            "showTitle": "Tide Tables",
+            "title": "Slack water",
+            "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+            "publishedAt": "2026-11-26T05:00:00.000Z",
+            "durationMs": 4381000,
+            "addedAt": "2026-11-26T09:00:00.000Z",
+            "state": "ready",
+            "sizeBytes": 57400000,
+            "progress": {
+                "episodeId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+                "positionMs": 1865000,
+                "played": false,
+                "keep": false,
+                "changedAt": "2026-11-28T07:40:12.000Z"
+            }
+        },
+        {
+            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+            "showId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+            "showTitle": "Tide Tables",
+            "title": "The night pilot",
+            "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+            "publishedAt": null,
+            "durationMs": null,
+            "addedAt": "2026-11-19T09:00:00.000Z",
+            "state": "remote",
+            "sizeBytes": null,
+            "progress": null
+        }
+    ],
+    "nextOffset": null
+}

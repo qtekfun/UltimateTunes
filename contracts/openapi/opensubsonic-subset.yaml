@@ -76,6 +76,7 @@ tags:
 - name: annotation
 - name: radio
 - name: queue
+- name: podcasts
 paths:
   /rest/ping:
     get:
@@ -1560,6 +1561,7 @@ paths:
       summary: Cover image
       description: |-
         Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
+        Podcast covers are `pd-` (show), `pe-` (episode), `ytpodcast:` and `ytepisode:`, fetched and cached like virtual ids.
         Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) return the catalog thumbnail, fetched only from the approved YouTube image hosts and cached on disk; error 70 when there is none or it fails the host/type/size rules (contracts/ids.md).
         v1 may ignore `size` and return the stored image unscaled (no image library is approved yet). `HEAD` is accepted (no body).
       parameters:
@@ -1630,6 +1632,7 @@ paths:
       summary: Cover image (form POST)
       description: |-
         Cover image. Library covers (`al-`, `ar-`, `pl-`) come from `/music`.
+        Podcast covers are `pd-` (show), `pe-` (episode), `ytpodcast:` and `ytepisode:`, fetched and cached like virtual ids.
         Virtual ids (`yt:`, `ytalbum:`, `ytartist:`) return the catalog thumbnail, fetched only from the approved YouTube image hosts and cached on disk; error 70 when there is none or it fails the host/type/size rules (contracts/ids.md).
         v1 may ignore `size` and return the stored image unscaled (no image library is approved yet).
       parameters: []
@@ -1720,6 +1723,8 @@ paths:
       summary: Stream a song
       description: |-
         Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
+
+        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. The play queues the episode at priority 20 (below song streams, prefetch and keep, above imports) and raises one already queued; the running job is not preempted, so playback may wait for it. `download` takes the same path and priority as `stream`. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
 
         **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
 
@@ -1886,6 +1891,8 @@ paths:
       summary: Stream a song (form POST)
       description: |-
         Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
+
+        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. The play queues the episode at priority 20 (below song streams, prefetch and keep, above imports) and raises one already queued; the running job is not preempted, so playback may wait for it. `download` takes the same path and priority as `stream`. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
 
         **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
 
@@ -4020,6 +4027,888 @@ paths:
               id:
                 style: form
                 explode: true
+  /rest/getPodcasts:
+    get:
+      tags:
+      - podcasts
+      summary: Followed podcast shows
+      description: The shows the caller follows, by title. With a show `id`, only that one (error 70 when the server
+        has no such show). Episodes, newest first, at most 100 per channel.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: id
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Show UUID.
+      - name: includeEpisodes
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: Default true.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPodcastsResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getPodcasts
+    post:
+      tags:
+      - podcasts
+      summary: Followed podcast shows (form POST)
+      description: The shows the caller follows, by title. With a show `id`, only that one (error 70 when the server
+        has no such show). Episodes, newest first, at most 100 per channel.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPodcastsResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getPodcastsPost
+      requestBody:
+        required: false
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                id:
+                  type: string
+                  description: Show UUID.
+                includeEpisodes:
+                  type: boolean
+                  description: Default true.
+  /rest/getNewestPodcasts:
+    get:
+      tags:
+      - podcasts
+      summary: Newest episodes of the followed shows
+      description: Newest first.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: count
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        description: Default 20.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetNewestPodcastsResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getNewestPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getNewestPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getNewestPodcasts
+    post:
+      tags:
+      - podcasts
+      summary: Newest episodes of the followed shows (form POST)
+      description: Newest first.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetNewestPodcastsResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getNewestPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getNewestPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getNewestPodcastsPost
+      requestBody:
+        required: false
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  description: Default 20.
+  /rest/getPodcastEpisode:
+    get:
+      tags:
+      - podcasts
+      summary: '[OS] One episode'
+      description: '`status`: `new` (not on the server; `stream` fetches it), `downloading`, `completed`, `error`.'
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Episode UUID or `ytepisode:` id.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPodcastEpisodeResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getPodcastEpisode
+    post:
+      tags:
+      - podcasts
+      summary: '[OS] One episode (form POST)'
+      description: '`status`: `new` (not on the server; `stream` fetches it), `downloading`, `completed`, `error`.'
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPodcastEpisodeResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/getPodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: getPodcastEpisodePost
+      requestBody:
+        required: true
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                id:
+                  type: string
+                  description: Episode UUID or `ytepisode:` id.
+              required:
+              - id
+  /rest/createPodcastChannel:
+    get:
+      tags:
+      - podcasts
+      summary: Follow a show by its YouTube Music address
+      description: For the caller. `url` is a YouTube Music or YouTube playlist or podcast address on the import host
+        allowlist; only the show id is taken from it and the address is never fetched. Any other address (RSS included)
+        fails with error 0.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: url
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 2000
+        description: Show address.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/createPodcastChannel_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/createPodcastChannel_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: createPodcastChannel
+    post:
+      tags:
+      - podcasts
+      summary: Follow a show by its YouTube Music address (form POST)
+      description: For the caller. `url` is a YouTube Music or YouTube playlist or podcast address on the import host
+        allowlist; only the show id is taken from it and the address is never fetched. Any other address (RSS included)
+        fails with error 0.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/createPodcastChannel_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/createPodcastChannel_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: createPodcastChannelPost
+      requestBody:
+        required: true
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                url:
+                  type: string
+                  maxLength: 2000
+                  description: Show address.
+              required:
+              - url
+  /rest/deletePodcastChannel:
+    get:
+      tags:
+      - podcasts
+      summary: Unfollow a show
+      description: Removes only the caller's follow.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Show UUID.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastChannel_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastChannel_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: deletePodcastChannel
+    post:
+      tags:
+      - podcasts
+      summary: Unfollow a show (form POST)
+      description: Removes only the caller's follow.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastChannel_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastChannel_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: deletePodcastChannelPost
+      requestBody:
+        required: true
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                id:
+                  type: string
+                  description: Show UUID.
+              required:
+              - id
+  /rest/downloadPodcastEpisode:
+    get:
+      tags:
+      - podcasts
+      summary: Ask the server to download an episode
+      description: Same rules, limits and priority (3, below imports) as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Episode UUID or `ytepisode:` id.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/downloadPodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/downloadPodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: downloadPodcastEpisode
+    post:
+      tags:
+      - podcasts
+      summary: Ask the server to download an episode (form POST)
+      description: Same rules, limits and priority (3, below imports) as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/downloadPodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/downloadPodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: downloadPodcastEpisodePost
+      requestBody:
+        required: true
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                id:
+                  type: string
+                  description: Episode UUID or `ytepisode:` id.
+              required:
+              - id
+  /rest/deletePodcastEpisode:
+    get:
+      tags:
+      - podcasts
+      summary: Release an episode file
+      description: The file is shared by all users. For everyone it clears the caller's `keep` mark; only for an admin
+        it also frees the file now (the episode goes back to `new`).
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Episode UUID.
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: deletePodcastEpisode
+    post:
+      tags:
+      - podcasts
+      summary: Release an episode file (form POST)
+      description: The file is shared by all users. For everyone it clears the caller's `keep` mark; only for an admin
+        it also frees the file now (the episode goes back to `new`).
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastEpisode_ok'
+                failed:
+                  $ref: '#/components/examples/failed_notFound'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/deletePodcastEpisode_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_notFound_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: deletePodcastEpisodePost
+      requestBody:
+        required: true
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
+                id:
+                  type: string
+                  description: Episode UUID.
+              required:
+              - id
+  /rest/refreshPodcasts:
+    get:
+      tags:
+      - podcasts
+      summary: Check followed shows for new episodes
+      description: Schedules a refresh of the caller's followed shows not checked in the last hour, within the catalog
+        request budget. Answers at once.
+      parameters:
+      - $ref: '#/components/parameters/v'
+      - $ref: '#/components/parameters/c'
+      - $ref: '#/components/parameters/f'
+      - $ref: '#/components/parameters/t'
+      - $ref: '#/components/parameters/s'
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/refreshPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/refreshPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: refreshPodcasts
+    post:
+      tags:
+      - podcasts
+      summary: Check followed shows for new episodes (form POST)
+      description: Schedules a refresh of the caller's followed shows not checked in the last hour, within the catalog
+        request budget. Answers at once.
+      parameters: []
+      responses:
+        '200':
+          description: '`ok` or `failed` envelope (errors use HTTP 200, see contracts/errors.md).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/refreshPodcasts_ok'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword'
+            application/xml:
+              schema:
+                type: string
+                description: Same document as JSON, mapped to XML (see the API description).
+              examples:
+                ok:
+                  $ref: '#/components/examples/refreshPodcasts_ok_xml'
+                failed:
+                  $ref: '#/components/examples/failed_wrongPassword_xml'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+      operationId: refreshPodcastsPost
+      requestBody:
+        required: false
+        description: 'formPost extension: the same parameters (including credentials) as an `application/x-www-form-urlencoded`
+          body. Preferred: keeps the API key out of URLs and logs.'
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                apiKey:
+                  type: string
+                u:
+                  type: string
+                p:
+                  type: string
+                t:
+                  type: string
+                s:
+                  type: string
+                v:
+                  type: string
+                c:
+                  type: string
+                f:
+                  type: string
+                  enum:
+                  - json
+                  - xml
 components:
   securitySchemes:
     apiKey:
@@ -5833,6 +6722,211 @@ components:
       value: |
         <?xml version="1.0" encoding="UTF-8"?>
         <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
+    getPodcasts_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+          podcasts:
+            channel:
+            - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+              url: https://music.youtube.com/playlist?list=PLfakeTideTables0123456789abcdef
+              title: Tide Tables
+              description: An invented show about harbours.
+              coverArt: pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+              status: completed
+              episode:
+              - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                streamId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                channelId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                isDir: false
+                title: Slack water
+                album: Tide Tables
+                artist: Harbour Radio Club
+                description: How a harbour keeps time.
+                status: completed
+                type: podcast
+                isVideo: false
+                coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                created: '2026-11-26T09:00:00.000Z'
+                publishDate: '2026-11-26T05:00:00.000Z'
+                duration: 4381
+                size: 57400000
+                contentType: audio/webm
+                suffix: webm
+                bitRate: 104
+              - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                streamId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                channelId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                isDir: false
+                title: The night pilot
+                album: Tide Tables
+                artist: Harbour Radio Club
+                description: A night on the pilot boat.
+                status: new
+                type: podcast
+                isVideo: false
+                coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                created: '2026-11-19T09:00:00.000Z'
+    getPodcasts_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
+          <podcasts>
+            <channel id="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" url="https://music.youtube.com/playlist?list=PLfakeTideTables0123456789abcdef" title="Tide Tables" description="An invented show about harbours." coverArt="pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" status="completed">
+              <episode id="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" streamId="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" channelId="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" isDir="false" title="Slack water" album="Tide Tables" artist="Harbour Radio Club" description="How a harbour keeps time." status="completed" type="podcast" isVideo="false" coverArt="pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" created="2026-11-26T09:00:00.000Z" publishDate="2026-11-26T05:00:00.000Z" duration="4381" size="57400000" contentType="audio/webm" suffix="webm" bitRate="104"/>
+              <episode id="0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" streamId="0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" channelId="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" isDir="false" title="The night pilot" album="Tide Tables" artist="Harbour Radio Club" description="A night on the pilot boat." status="new" type="podcast" isVideo="false" coverArt="pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" created="2026-11-19T09:00:00.000Z"/>
+            </channel>
+          </podcasts>
+        </subsonic-response>
+    getNewestPodcasts_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+          newestPodcasts:
+            episode:
+            - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+              streamId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+              channelId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+              isDir: false
+              title: Slack water
+              album: Tide Tables
+              artist: Harbour Radio Club
+              description: How a harbour keeps time.
+              status: completed
+              type: podcast
+              isVideo: false
+              coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+              created: '2026-11-26T09:00:00.000Z'
+              publishDate: '2026-11-26T05:00:00.000Z'
+              duration: 4381
+              size: 57400000
+              contentType: audio/webm
+              suffix: webm
+              bitRate: 104
+            - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+              streamId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+              channelId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+              isDir: false
+              title: The night pilot
+              album: Tide Tables
+              artist: Harbour Radio Club
+              description: A night on the pilot boat.
+              status: new
+              type: podcast
+              isVideo: false
+              coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+              created: '2026-11-19T09:00:00.000Z'
+    getNewestPodcasts_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
+          <newestPodcasts>
+            <episode id="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" streamId="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" channelId="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" isDir="false" title="Slack water" album="Tide Tables" artist="Harbour Radio Club" description="How a harbour keeps time." status="completed" type="podcast" isVideo="false" coverArt="pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" created="2026-11-26T09:00:00.000Z" publishDate="2026-11-26T05:00:00.000Z" duration="4381" size="57400000" contentType="audio/webm" suffix="webm" bitRate="104"/>
+            <episode id="0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" streamId="0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" channelId="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" isDir="false" title="The night pilot" album="Tide Tables" artist="Harbour Radio Club" description="A night on the pilot boat." status="new" type="podcast" isVideo="false" coverArt="pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002" created="2026-11-19T09:00:00.000Z"/>
+          </newestPodcasts>
+        </subsonic-response>
+    getPodcastEpisode_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+          podcastEpisode:
+            id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+            streamId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+            channelId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+            isDir: false
+            title: Slack water
+            album: Tide Tables
+            artist: Harbour Radio Club
+            description: How a harbour keeps time.
+            status: completed
+            type: podcast
+            isVideo: false
+            coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+            created: '2026-11-26T09:00:00.000Z'
+            publishDate: '2026-11-26T05:00:00.000Z'
+            duration: 4381
+            size: 57400000
+            contentType: audio/webm
+            suffix: webm
+            bitRate: 104
+    getPodcastEpisode_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true">
+          <podcastEpisode id="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" streamId="0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" channelId="0199d6a2-4c1e-7b3a-9f10-2a6c8e015001" isDir="false" title="Slack water" album="Tide Tables" artist="Harbour Radio Club" description="How a harbour keeps time." status="completed" type="podcast" isVideo="false" coverArt="pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001" created="2026-11-26T09:00:00.000Z" publishDate="2026-11-26T05:00:00.000Z" duration="4381" size="57400000" contentType="audio/webm" suffix="webm" bitRate="104"/>
+        </subsonic-response>
+    createPodcastChannel_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+    createPodcastChannel_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
+    deletePodcastChannel_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+    deletePodcastChannel_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
+    downloadPodcastEpisode_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+    downloadPodcastEpisode_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
+    deletePodcastEpisode_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+    deletePodcastEpisode_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
+    refreshPodcasts_ok:
+      value:
+        subsonic-response:
+          status: ok
+          version: 1.16.1
+          type: UltimateTunes
+          serverVersion: 0.1.0
+          openSubsonic: true
+    refreshPodcasts_ok_xml:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="UltimateTunes" serverVersion="0.1.0" openSubsonic="true"/>
   schemas:
     Error:
       type: object
@@ -6771,4 +7865,169 @@ components:
                   const: ok
                 playQueue:
                   $ref: '#/components/schemas/PlayQueue'
+          - $ref: '#/components/schemas/SubsonicFailure'
+    PodcastEpisode:
+      type: object
+      required:
+      - id
+      - streamId
+      - channelId
+      - isDir
+      - title
+      - status
+      - type
+      - isVideo
+      properties:
+        id:
+          type: string
+        streamId:
+          type: string
+          description: For `stream`/`download`; equals `id`.
+        channelId:
+          type: string
+        isDir:
+          type: boolean
+          const: false
+        title:
+          type: string
+        album:
+          type: string
+        artist:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+          - new
+          - downloading
+          - completed
+          - error
+        type:
+          type: string
+          const: podcast
+        isVideo:
+          type: boolean
+          const: false
+        coverArt:
+          type: string
+        created:
+          type: string
+          format: date-time
+        publishDate:
+          type: string
+          format: date-time
+        duration:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 0
+        contentType:
+          type: string
+        suffix:
+          type: string
+        bitRate:
+          type: integer
+          minimum: 0
+    PodcastChannel:
+      type: object
+      required:
+      - id
+      - url
+      - status
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        coverArt:
+          type: string
+        status:
+          type: string
+          enum:
+          - new
+          - downloading
+          - completed
+          - error
+        errorMessage:
+          type: string
+        episode:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisode'
+    Podcasts:
+      type: object
+      properties:
+        channel:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastChannel'
+    NewestPodcasts:
+      type: object
+      properties:
+        episode:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisode'
+    GetPodcastsResponse:
+      type: object
+      required:
+      - subsonic-response
+      properties:
+        subsonic-response:
+          oneOf:
+          - allOf:
+            - $ref: '#/components/schemas/SubsonicBase'
+            - type: object
+              required:
+              - status
+              - podcasts
+              properties:
+                status:
+                  const: ok
+                podcasts:
+                  $ref: '#/components/schemas/Podcasts'
+          - $ref: '#/components/schemas/SubsonicFailure'
+    GetNewestPodcastsResponse:
+      type: object
+      required:
+      - subsonic-response
+      properties:
+        subsonic-response:
+          oneOf:
+          - allOf:
+            - $ref: '#/components/schemas/SubsonicBase'
+            - type: object
+              required:
+              - status
+              - newestPodcasts
+              properties:
+                status:
+                  const: ok
+                newestPodcasts:
+                  $ref: '#/components/schemas/NewestPodcasts'
+          - $ref: '#/components/schemas/SubsonicFailure'
+    GetPodcastEpisodeResponse:
+      type: object
+      required:
+      - subsonic-response
+      properties:
+        subsonic-response:
+          oneOf:
+          - allOf:
+            - $ref: '#/components/schemas/SubsonicBase'
+            - type: object
+              required:
+              - status
+              - podcastEpisode
+              properties:
+                status:
+                  const: ok
+                podcastEpisode:
+                  $ref: '#/components/schemas/PodcastEpisode'
           - $ref: '#/components/schemas/SubsonicFailure'

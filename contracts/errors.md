@@ -72,6 +72,7 @@ Notes:
 - `AuthenticationFailed`, `InvalidApiKey` and `AccountDisabled` count as failures for the rate limiter's lockout, except an existing key that is revoked or belongs to a disabled user: it is refused (429 while its IP is locked) but not counted, so a stale device never locks out its IP. Messages never reveal whether a username exists.
 - `/ut/v1` problems use `type` = `https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#<code>` and `title` = the English short text. `detail` is human-readable and may change. Clients switch on `code` only.
 - `RateLimited` and `TooManyListeners` responses always carry `Retry-After` (seconds) on every API.
+- Podcasts add no `TunesError`: unknown shows and episodes are `NotFound`, a catalog failure is `UpstreamUnavailable`, an address that is not a YouTube Music show is `UnsupportedUrl`, the per-user download limits answer as they do for songs, and an episode over the limits is a failed job with `episode_over_limit`.
 - Job failures are **not** HTTP errors on `/ut/v1/tracks/{id}/status`: that endpoint returns 200 with `state: failed` and an `error` object whose `code` is one of the worker error codes below.
 
 ## Worker error codes (`fail` → job `error.code`)
@@ -87,6 +88,7 @@ Reported by the worker in `POST /internal/v1/jobs/{jobId}/fail` and shown in `/u
 | `rate_limited_upstream` | yes | YouTube throttled or blocked (HTTP 429/403) |
 | `tagging_failed` | yes | mutagen or ffmpeg (ReplayGain) failed |
 | `storage_error` | yes | Disk full or I/O error on `/staging` or `/music` |
+| `episode_over_limit` | no | A podcast episode longer or larger than the limits of its job (`maxDurationS`, `maxBytes`) |
 | `invalid_video_id` | no | The job's video id fails `^[A-Za-z0-9_-]{11}$` (checked again right before the downloader runs). A bug or tampering, never retried |
 | `cancelled` | no | Cancelled by an admin (the job ends in `cancelled`, not `failed`) |
 | `lease_expired` | yes | Set by the api, never sent by a worker: the lease ran out (worker killed or hung) |

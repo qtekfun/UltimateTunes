@@ -21,7 +21,7 @@ Podcasts as in Spotify: find a show, follow it, get its new episodes, resume whe
 ## Server
 - **API.** The OpenSubsonic podcast endpoints (`getPodcasts`, `getNewestPodcasts`, `getPodcastEpisode`, `createPodcastChannel`, `deletePodcastChannel`, `downloadPodcastEpisode`, `deletePodcastEpisode`, `refreshPodcasts`) so third-party clients work, and `/ut/v1/podcasts/…` for what they lack: search, progress, per-show settings, chapters.
 - **Refresh.** Followed shows are checked on a schedule (every few hours, spread out, with backoff), within the same request budget as the music catalog.
-- **Downloads.** The existing job queue, below music in priority; limits on length and size per episode.
+- **Downloads.** The existing job queue; limits on length and size per episode. Priority: song stream (100) > prefetch (50) > keep (30) > episode the user pressed play on (20) > playlist import (10) > episode asked for but not played (3) > automatic episode (1). Playing a queued episode raises its priority. The single worker does not preempt the running job. `download` counts as playing, so the app's automatic downloads use `/request`.
 - **Expiry.** An episode is freed when every follower has played it and some days have passed, or when it is older than a maximum age, unless someone keeps it. A total size limit for podcasts, separate from the music one; the oldest go first. A freed episode goes back to `remote` and can be downloaded again. The numbers are settings of the admin panel.
 - **Progress.** The client sends position and played marks with the time they happened; the newest wins.
 

@@ -1,0 +1,22 @@
+{
+    "query": "tide",
+    "shows": [
+        {
+            "id": "ytpodcast:PLfakeTideTables0123456789abcdef",
+            "title": "Tide Tables",
+            "author": null,
+            "coverArt": "ytpodcast:PLfakeTideTables0123456789abcdef",
+            "following": false
+        }
+    ],
+    "episodes": [
+        {
+            "id": "ytepisode:Pd4Kx9Lm2Qa",
+            "showId": "ytpodcast:PLfakeTideTables0123456789abcdef",
+            "showTitle": "Tide Tables",
+            "title": "Slack water",
+            "coverArt": "ytepisode:Pd4Kx9Lm2Qa",
+            "publishedDate": null
+        }
+    ]
+}

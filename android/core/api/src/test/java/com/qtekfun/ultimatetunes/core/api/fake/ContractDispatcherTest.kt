@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 
 /** The fake server itself: the contracts' auth rules, and every endpoint the app uses answers. */
@@ -58,7 +59,10 @@ class ContractDispatcherTest {
             "getArtists", "getArtist", "getAlbum", "getSong", "getAlbumList2", "getRandomSongs",
             "search3", "getLyricsBySongId", "getPlaylists", "getPlaylist", "createPlaylist",
             "updatePlaylist", "deletePlaylist", "star", "unstar", "getStarred2", "scrobble",
-            "getSimilarSongs2", "getPlayQueue", "savePlayQueue"
+            "getSimilarSongs2", "getPlayQueue", "savePlayQueue", "getPodcasts",
+            "getNewestPodcasts", "getPodcastEpisode", "createPodcastChannel",
+            "deletePodcastChannel", "downloadPodcastEpisode", "deletePodcastEpisode",
+            "refreshPodcasts"
         ]
     )
     fun `every OpenSubsonic endpoint answers ok with its example`(endpoint: String) {
@@ -69,6 +73,43 @@ class ContractDispatcherTest {
             Json.parseToJsonElement(ContractFixtures.openSubsonic("${endpoint}_ok")),
             Json.parseToJsonElement(body)
         )
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "search?q=tide, searchPodcasts.200",
+        "shows, listPodcastShows.200",
+        "shows/ytpodcast:PLx, getPodcastShow.200",
+        "shows/x/episodes, listPodcastShowEpisodes.200",
+        "new, listNewPodcastEpisodes.200",
+        "continue, listPodcastsInProgress.200",
+        "episodes/x, getPodcastEpisodeDetail.200",
+        "progress, listPodcastProgress.200"
+    )
+    fun `the podcast reads answer their examples`(path: String, example: String) {
+        val (code, body) = get("/ut/v1/podcasts/$path", header = key)
+        assertEquals(200, code, body)
+        assertEquals(
+            Json.parseToJsonElement(ContractFixtures.utV1(example)),
+            Json.parseToJsonElement(body)
+        )
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "PUT, shows/x/follow, 200",
+        "DELETE, shows/x/follow, 204",
+        "POST, episodes/x/request, 202",
+        "PUT, progress, 200",
+        "POST, shows, 404"
+    )
+    fun `the podcast writes answer their status`(method: String, path: String, status: Int) {
+        val body = if (method == "DELETE") null else "{}".toRequestBody()
+        val request = Request.Builder().url(server.baseUrl.resolve("/ut/v1/podcasts/$path")!!)
+            .header("X-Api-Key", key)
+            .method(method, body)
+            .build()
+        assertEquals(status, client.newCall(request).execute().use { it.code })
     }
 
     @Test

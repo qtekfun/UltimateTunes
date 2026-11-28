@@ -229,6 +229,43 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
 
                 "GET imports/*" -> ok(ut("getImport.200.$importExample"))
 
+                else -> podcasts(path)
+            }
+        }
+
+        /** `/ut/v1/podcasts/…`, matched on the real path (its ids are not at index 1). */
+        private fun podcasts(path: List<String>): MockResponse? {
+            if (path.firstOrNull() != "podcasts") return null
+            val pattern = path.drop(1).mapIndexed { i, segment -> if (i == 1) "*" else segment }
+            return when ("$method ${pattern.joinToString("/")}") {
+                "GET search" -> required("q") ?: ok(ut("searchPodcasts.200"))
+
+                "GET shows" -> ok(ut("listPodcastShows.200"))
+
+                "GET shows/*" -> ok(ut("getPodcastShow.200"))
+
+                "GET shows/*/episodes" -> ok(ut("listPodcastShowEpisodes.200"))
+
+                "PUT shows/*/follow" -> ok(ut("followPodcastShow.200"))
+
+                "DELETE shows/*/follow" -> MockResponse(code = 204)
+
+                "GET new" -> ok(ut("listNewPodcastEpisodes.200"))
+
+                "GET continue" -> ok(ut("listPodcastsInProgress.200"))
+
+                "GET episodes/*" -> ok(ut("getPodcastEpisodeDetail.200"))
+
+                "POST episodes/*/request" -> MockResponse(
+                    code = 202,
+                    headers = JSON_HEADERS,
+                    body = ut("requestPodcastEpisode.202")
+                )
+
+                "GET progress" -> ok(ut("listPodcastProgress.200"))
+
+                "PUT progress" -> ok(ut("putPodcastProgress.200"))
+
                 else -> null
             }
         }
@@ -472,6 +509,10 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
             "getPlaylist",
             "deletePlaylist",
             "getSimilarSongs2",
+            "getPodcastEpisode",
+            "deletePodcastChannel",
+            "downloadPodcastEpisode",
+            "deletePodcastEpisode",
             "getCoverArt",
             "stream",
             "download"
@@ -503,7 +544,15 @@ class ContractDispatcher(private val apiKey: String = FakeTunesServer.API_KEY) :
             "scrobble",
             "getSimilarSongs2",
             "getPlayQueue",
-            "savePlayQueue"
+            "savePlayQueue",
+            "getPodcasts",
+            "getNewestPodcasts",
+            "getPodcastEpisode",
+            "createPodcastChannel",
+            "deletePodcastChannel",
+            "downloadPodcastEpisode",
+            "deletePodcastEpisode",
+            "refreshPodcasts"
         )
 
         /** Not a real Opus file: just recognisable bytes for the player tests to compare. */

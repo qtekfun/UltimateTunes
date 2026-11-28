@@ -7,8 +7,8 @@ token configured, every call is refused with the same generic problem as a wrong
 about the configuration): the worker API is never open. It is served only on the internal
 listener (`UT_INTERNAL_PORT`, `listeners.py`), reachable over the internal Docker network; the
 client port answers 404 for it. Routes live with their owners: `jobs/internal_api.py` (T08:
-jobs and worker status) and `library/internal_api.py` (registration of archived files and
-ReplayGain updates).
+jobs and worker status), `library/internal_api.py` (registration of archived files and
+ReplayGain updates) and `podcasts/internal_api.py` (podcast episodes).
 """
 
 import hmac
@@ -19,6 +19,7 @@ from ultimatetunes.core.services import services
 from ultimatetunes.errors import InvalidWorkerToken
 from ultimatetunes.jobs import internal_api as job_api
 from ultimatetunes.library import internal_api as library_api
+from ultimatetunes.podcasts import internal_api as podcast_api
 
 
 def require_worker_token(request: Request) -> None:
@@ -36,4 +37,5 @@ def build_internal_router() -> APIRouter:
     api = APIRouter(dependencies=[Depends(require_worker_token)])
     api.include_router(job_api.router)
     api.include_router(library_api.router)
+    api.include_router(podcast_api.router)
     return api

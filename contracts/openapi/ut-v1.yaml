@@ -39,6 +39,7 @@ tags:
 - name: tracks
 - name: discovery
 - name: imports
+- name: podcasts
 paths:
   /ut/v1/server:
     get:
@@ -1350,6 +1351,705 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/Internal'
+  /ut/v1/podcasts/search:
+    get:
+      operationId: searchPodcasts
+      tags:
+      - podcasts
+      summary: Search shows and episodes on YouTube Music
+      description: Creates nothing. Results carry library ids when the server already knows the item.
+      parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+        example: tide
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastSearchResult'
+              example:
+                query: tide
+                shows:
+                - id: ytpodcast:PLfakeTideTables0123456789abcdef
+                  title: Tide Tables
+                  author: null
+                  coverArt: ytpodcast:PLfakeTideTables0123456789abcdef
+                  following: false
+                episodes:
+                - id: ytepisode:Pd4Kx9Lm2Qa
+                  showId: ytpodcast:PLfakeTideTables0123456789abcdef
+                  showTitle: Tide Tables
+                  title: Slack water
+                  coverArt: ytepisode:Pd4Kx9Lm2Qa
+                  publishedDate: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/podcasts/shows:
+    get:
+      operationId: listPodcastShows
+      tags:
+      - podcasts
+      summary: Shows the caller follows
+      description: By title.
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastShowList'
+              example:
+                shows:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  source: youtube
+                  title: Tide Tables
+                  author: Harbour Radio Club
+                  description: An invented show about harbours.
+                  coverArt: pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  follow:
+                    speed: 1.2
+                    autoDownload: false
+                    followedAt: '2026-11-01T09:00:00.000Z'
+                  refreshedAt: '2026-11-28T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/podcasts/shows/{showId}:
+    get:
+      operationId: getPodcastShow
+      tags:
+      - podcasts
+      summary: A show
+      description: A `ytpodcast:` id the server has no row for is answered from the catalog (cached) and creates nothing.
+      parameters:
+      - name: showId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastShow'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                source: youtube
+                title: Tide Tables
+                author: Harbour Radio Club
+                description: An invented show about harbours.
+                coverArt: pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                follow:
+                  speed: 1.2
+                  autoDownload: false
+                  followedAt: '2026-11-01T09:00:00.000Z'
+                refreshedAt: '2026-11-28T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/podcasts/shows/{showId}/episodes:
+    get:
+      operationId: listPodcastShowEpisodes
+      tags:
+      - podcasts
+      summary: A show's episodes, newest first
+      description: Paged from the server's database, in the upstream order. For a followed show the back catalogue
+        is fetched on demand when a page asks past what is known, at most 500 episodes per show (default). A show
+        without a row has only its newest page from the catalog.
+      parameters:
+      - name: showId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 30
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodePage'
+              example:
+                episodes:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  showTitle: Tide Tables
+                  title: Slack water
+                  coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  publishedAt: '2026-11-26T05:00:00.000Z'
+                  durationMs: 4381000
+                  addedAt: '2026-11-26T09:00:00.000Z'
+                  state: ready
+                  sizeBytes: 57400000
+                  progress:
+                    episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                    positionMs: 1865000
+                    played: false
+                    keep: false
+                    changedAt: '2026-11-28T07:40:12.000Z'
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                  showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  showTitle: Tide Tables
+                  title: The night pilot
+                  coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                  publishedAt: null
+                  durationMs: null
+                  addedAt: '2026-11-19T09:00:00.000Z'
+                  state: remote
+                  sizeBytes: null
+                  progress: null
+                nextOffset: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/podcasts/shows/{showId}/follow:
+    put:
+      operationId: followPodcastShow
+      tags:
+      - podcasts
+      summary: Follow a show, or change its settings
+      description: 'Idempotent. A first follow creates the show if needed, fetches its newest page and starts the
+        scheduled refresh. Omitted fields keep their value (defaults: speed 1, autoDownload false). Following downloads
+        nothing: with `autoDownload`, only episodes published after it was turned on are downloaded. Automatic downloads
+        have the lowest priority, 1; one over the daily limit of the follower charged for it is skipped until the
+        next refresh.'
+      parameters:
+      - name: showId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PodcastFollowRequest'
+            example:
+              speed: 1.2
+              autoDownload: false
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastShow'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                source: youtube
+                title: Tide Tables
+                author: Harbour Radio Club
+                description: An invented show about harbours.
+                coverArt: pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                follow:
+                  speed: 1.2
+                  autoDownload: false
+                  followedAt: '2026-11-01T09:00:00.000Z'
+                refreshedAt: '2026-11-28T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+    delete:
+      operationId: unfollowPodcastShow
+      tags:
+      - podcasts
+      summary: Unfollow a show
+      description: Only the caller's follow. Progress is kept.
+      parameters:
+      - name: showId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+      responses:
+        '204':
+          description: Not following (also when it was not).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/podcasts/new:
+    get:
+      operationId: listNewPodcastEpisodes
+      tags:
+      - podcasts
+      summary: Newest episodes of the followed shows
+      description: Newest first by `publishedAt`, else `addedAt`.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodeList'
+              example:
+                episodes:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  showTitle: Tide Tables
+                  title: Slack water
+                  coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  publishedAt: '2026-11-26T05:00:00.000Z'
+                  durationMs: 4381000
+                  addedAt: '2026-11-26T09:00:00.000Z'
+                  state: ready
+                  sizeBytes: 57400000
+                  progress:
+                    episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                    positionMs: 1865000
+                    played: false
+                    keep: false
+                    changedAt: '2026-11-28T07:40:12.000Z'
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                  showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  showTitle: Tide Tables
+                  title: The night pilot
+                  coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                  publishedAt: null
+                  durationMs: null
+                  addedAt: '2026-11-19T09:00:00.000Z'
+                  state: remote
+                  sizeBytes: null
+                  progress: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/podcasts/continue:
+    get:
+      operationId: listPodcastsInProgress
+      tags:
+      - podcasts
+      summary: Episodes started and not finished
+      description: Most recently listened first. Downloads nothing, also for freed episodes.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodeList'
+              example:
+                episodes:
+                - id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                  showTitle: Tide Tables
+                  title: Slack water
+                  coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  publishedAt: '2026-11-26T05:00:00.000Z'
+                  durationMs: 4381000
+                  addedAt: '2026-11-26T09:00:00.000Z'
+                  state: ready
+                  sizeBytes: 57400000
+                  progress:
+                    episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                    positionMs: 1865000
+                    played: false
+                    keep: false
+                    changedAt: '2026-11-28T07:40:12.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /ut/v1/podcasts/episodes/{episodeId}:
+    get:
+      operationId: getPodcastEpisodeDetail
+      tags:
+      - podcasts
+      summary: An episode with description, chapters and download state
+      description: 'Chapters come from the description: each line that starts with a time (`m:ss` or `h:mm:ss`), in
+        ascending order. Creates nothing and starts no download.'
+      parameters:
+      - name: episodeId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodeDetail'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                showTitle: Tide Tables
+                title: Slack water
+                coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                publishedAt: '2026-11-26T05:00:00.000Z'
+                durationMs: 4381000
+                addedAt: '2026-11-26T09:00:00.000Z'
+                state: ready
+                sizeBytes: 57400000
+                progress:
+                  episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  positionMs: 1865000
+                  played: false
+                  keep: false
+                  changedAt: '2026-11-28T07:40:12.000Z'
+                description: |-
+                  How a harbour keeps time.
+
+                  0:00 Welcome
+                  4:30 Reading a tide table
+                  31:05 Listener letters
+                chapters:
+                - startMs: 0
+                  title: Welcome
+                - startMs: 270000
+                  title: Reading a tide table
+                - startMs: 1865000
+                  title: Listener letters
+                download: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/podcasts/episodes/{episodeId}/request:
+    post:
+      operationId: requestPodcastEpisode
+      tags:
+      - podcasts
+      summary: Ask the server to download an episode
+      description: 'Idempotent. A `failed` episode is queued again. Counts against the same per-user limits as song
+        downloads, the daily byte limit included (429). Queued at priority 3: below every song job (imports are
+        10) and below an episode being played (20). Clients that download on their own (automatic downloads in the
+        app) use this, never `/rest/download`, which counts as playing.'
+      parameters:
+      - name: episodeId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+        example: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+      responses:
+        '200':
+          description: Already `ready`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodeDetail'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                showTitle: Tide Tables
+                title: Slack water
+                coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                publishedAt: '2026-11-26T05:00:00.000Z'
+                durationMs: 4381000
+                addedAt: '2026-11-26T09:00:00.000Z'
+                state: ready
+                sizeBytes: 57400000
+                progress:
+                  episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  positionMs: 1865000
+                  played: false
+                  keep: false
+                  changedAt: '2026-11-28T07:40:12.000Z'
+                description: |-
+                  How a harbour keeps time.
+
+                  0:00 Welcome
+                  4:30 Reading a tide table
+                  31:05 Listener letters
+                chapters:
+                - startMs: 0
+                  title: Welcome
+                - startMs: 270000
+                  title: Reading a tide table
+                - startMs: 1865000
+                  title: Listener letters
+                download: null
+        '202':
+          description: Queued or downloading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastEpisodeDetail'
+              example:
+                id: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                showId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e015001
+                showTitle: Tide Tables
+                title: The night pilot
+                coverArt: pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002
+                publishedAt: null
+                durationMs: null
+                addedAt: '2026-11-19T09:00:00.000Z'
+                state: downloading
+                sizeBytes: null
+                progress: null
+                description: null
+                chapters: []
+                download:
+                  progress: 0.42
+                  bytesDownloaded: 11500000
+                  sizeBytes: 27300000
+                  streamable: true
+                  error: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /ut/v1/podcasts/progress:
+    get:
+      operationId: listPodcastProgress
+      tags:
+      - podcasts
+      summary: The caller's progress, for syncing
+      description: Entries the server stored at or after `since` (all without it), oldest first. Repeats are harmless.
+      parameters:
+      - name: since
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 200
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastProgressPage'
+              example:
+                items:
+                - episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  positionMs: 1865000
+                  played: false
+                  keep: false
+                  changedAt: '2026-11-28T07:40:12.000Z'
+                nextCursor: null
+                syncedAt: '2026-11-28T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    put:
+      operationId: putPodcastProgress
+      tags:
+      - podcasts
+      summary: Report positions and played marks
+      description: 'Per episode the newest `changedAt` wins: an older update changes nothing and the answer shows
+        what is stored. A `changedAt` after the server clock is stored as the server time. Never starts a download,
+        `keep` included.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PodcastProgressBatch'
+            example:
+              items:
+              - episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                positionMs: 1865000
+                played: false
+                changedAt: '2026-11-28T07:40:12.000Z'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PodcastProgressResult'
+              example:
+                items:
+                - episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                  positionMs: 1865000
+                  played: false
+                  keep: false
+                  changedAt: '2026-11-28T07:40:12.000Z'
+                unknown: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -1745,6 +2445,9 @@ components:
               type: boolean
               description: Playlist import from an uploaded file (generic CSV, Exportify CSV, Spotify data-export
                 JSON) is available (RF-08, SPEC §11 T03d).
+            podcasts:
+              type: boolean
+              description: 'Podcasts (`/ut/v1/podcasts`, the OpenSubsonic podcast endpoints). Absent: false (older server).'
             streamingWhileDownloading:
               type: boolean
     Me:
@@ -2300,3 +3003,404 @@ components:
             $ref: '#/components/schemas/RadioStation'
           maxItems: 10
           description: Radios seeded from the user's starred songs.
+    PodcastFollow:
+      type: object
+      required:
+      - speed
+      - autoDownload
+      - followedAt
+      properties:
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 3
+        autoDownload:
+          type: boolean
+        followedAt:
+          type: string
+          format: date-time
+    PodcastFollowRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 3
+        autoDownload:
+          type: boolean
+    PodcastShow:
+      type: object
+      required:
+      - id
+      - source
+      - title
+      - author
+      - description
+      - coverArt
+      - follow
+      - refreshedAt
+      properties:
+        id:
+          type: string
+          description: Show UUID, or `ytpodcast:<playlistId>` while the server has no row for it.
+        source:
+          type: string
+          enum:
+          - youtube
+        title:
+          type: string
+        author:
+          type:
+          - string
+          - 'null'
+        description:
+          type:
+          - string
+          - 'null'
+        coverArt:
+          type: string
+        follow:
+          oneOf:
+          - $ref: '#/components/schemas/PodcastFollow'
+          - type: 'null'
+          description: The caller's settings, null when not following.
+        refreshedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    PodcastShowList:
+      type: object
+      required:
+      - shows
+      properties:
+        shows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastShow'
+    PodcastEpisodeProgress:
+      type: object
+      required:
+      - episodeId
+      - positionMs
+      - played
+      - keep
+      - changedAt
+      properties:
+        episodeId:
+          type: string
+        positionMs:
+          type: integer
+          minimum: 0
+        played:
+          type: boolean
+        keep:
+          type: boolean
+        changedAt:
+          type: string
+          format: date-time
+    PodcastEpisodeState:
+      type: string
+      enum:
+      - remote
+      - downloading
+      - ready
+      - failed
+      description: The file on the server. `downloading` includes queued.
+    PodcastEpisode:
+      type: object
+      required:
+      - id
+      - showId
+      - showTitle
+      - title
+      - coverArt
+      - publishedAt
+      - durationMs
+      - addedAt
+      - state
+      - sizeBytes
+      - progress
+      properties:
+        id:
+          type: string
+          description: Episode UUID, or `ytepisode:<videoId>` while the server has no row for it.
+        showId:
+          type: string
+        showTitle:
+          type: string
+        title:
+          type: string
+        coverArt:
+          type: string
+        publishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Null until known exactly.
+        durationMs:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: Null until known. May be precise only to the minute before the download.
+        addedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: When the server first saw the episode (what a client compares to notice new ones). Null without
+            a row.
+        state:
+          $ref: '#/components/schemas/PodcastEpisodeState'
+        sizeBytes:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        progress:
+          oneOf:
+          - $ref: '#/components/schemas/PodcastEpisodeProgress'
+          - type: 'null'
+          description: The caller's progress, null when never reported.
+    PodcastEpisodeList:
+      type: object
+      required:
+      - episodes
+      properties:
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisode'
+    PodcastEpisodePage:
+      type: object
+      required:
+      - episodes
+      - nextOffset
+      properties:
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisode'
+        nextOffset:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: Null on the last page.
+    PodcastChapter:
+      type: object
+      required:
+      - startMs
+      - title
+      properties:
+        startMs:
+          type: integer
+          minimum: 0
+        title:
+          type: string
+    PodcastDownload:
+      type: object
+      required:
+      - progress
+      - bytesDownloaded
+      - sizeBytes
+      - streamable
+      - error
+      properties:
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        bytesDownloaded:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        sizeBytes:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        streamable:
+          type: boolean
+          description: '`/rest/stream` would start playing now.'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/PodcastDownloadError'
+          - type: 'null'
+    PodcastDownloadError:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          description: A worker error code (contracts/errors.md), e.g. `episode_over_limit`.
+        message:
+          type: string
+    PodcastEpisodeDetail:
+      allOf:
+      - $ref: '#/components/schemas/PodcastEpisode'
+      - type: object
+        required:
+        - description
+        - chapters
+        - download
+        properties:
+          description:
+            type:
+            - string
+            - 'null'
+            description: Plain text with line breaks.
+          chapters:
+            type: array
+            items:
+              $ref: '#/components/schemas/PodcastChapter'
+          download:
+            oneOf:
+            - $ref: '#/components/schemas/PodcastDownload'
+            - type: 'null'
+            description: Set while `downloading` or `failed`.
+    PodcastShowHit:
+      type: object
+      required:
+      - id
+      - title
+      - author
+      - coverArt
+      - following
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        author:
+          type:
+          - string
+          - 'null'
+          description: YouTube Music search often gives none.
+        coverArt:
+          type: string
+        following:
+          type: boolean
+    PodcastEpisodeHit:
+      type: object
+      required:
+      - id
+      - showId
+      - showTitle
+      - title
+      - coverArt
+      - publishedDate
+      properties:
+        id:
+          type: string
+        showId:
+          type: string
+        showTitle:
+          type: string
+        title:
+          type: string
+        coverArt:
+          type: string
+        publishedDate:
+          type:
+          - string
+          - 'null'
+          format: date
+          description: Day only, when the search gives one.
+    PodcastSearchResult:
+      type: object
+      required:
+      - query
+      - shows
+      - episodes
+      properties:
+        query:
+          type: string
+        shows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastShowHit'
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisodeHit'
+    PodcastProgressUpdate:
+      type: object
+      additionalProperties: false
+      required:
+      - episodeId
+      - positionMs
+      - played
+      - changedAt
+      properties:
+        episodeId:
+          type: string
+          minLength: 1
+          maxLength: 80
+        positionMs:
+          type: integer
+          minimum: 0
+          maximum: 86400000
+        played:
+          type: boolean
+        keep:
+          type: boolean
+          description: 'Omitted: unchanged.'
+        changedAt:
+          type: string
+          format: date-time
+          description: When it happened on the client.
+    PodcastProgressBatch:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PodcastProgressUpdate'
+    PodcastProgressResult:
+      type: object
+      required:
+      - items
+      - unknown
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisodeProgress'
+          description: What the server now holds for each known episode of the batch.
+        unknown:
+          type: array
+          items:
+            type: string
+          description: Episode ids the server does not know. The client drops those updates.
+    PodcastProgressPage:
+      type: object
+      required:
+      - items
+      - nextCursor
+      - syncedAt
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodcastEpisodeProgress'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          description: Send as `cursor` for the next page; null on the last one.
+        syncedAt:
+          type: string
+          format: date-time
+          description: Send as `since` on the next sync (from the first page).
