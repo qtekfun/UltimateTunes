@@ -1,0 +1,14 @@
+{
+    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+    "source": "youtube",
+    "title": "Tide Tables",
+    "author": "Harbour Radio Club",
+    "description": "An invented show about harbours.",
+    "coverArt": "pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+    "follow": {
+        "speed": 1.2,
+        "autoDownload": false,
+        "followedAt": "2026-11-01T09:00:00.000Z"
+    },
+    "refreshedAt": "2026-11-28T06:00:00.000Z"
+}

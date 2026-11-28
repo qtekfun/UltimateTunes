@@ -1,0 +1,22 @@
+{
+    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+    "showId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+    "showTitle": "Tide Tables",
+    "title": "The night pilot",
+    "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+    "publishedAt": null,
+    "durationMs": null,
+    "addedAt": "2026-11-19T09:00:00.000Z",
+    "state": "downloading",
+    "sizeBytes": null,
+    "progress": null,
+    "description": null,
+    "chapters": [],
+    "download": {
+        "progress": 0.42,
+        "bytesDownloaded": 11500000,
+        "sizeBytes": 27300000,
+        "streamable": true,
+        "error": null
+    }
+}

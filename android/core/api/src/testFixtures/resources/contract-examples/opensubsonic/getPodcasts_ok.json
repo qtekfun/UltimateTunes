@@ -1,0 +1,59 @@
+{
+    "subsonic-response": {
+        "status": "ok",
+        "version": "1.16.1",
+        "type": "UltimateTunes",
+        "serverVersion": "0.1.0",
+        "openSubsonic": true,
+        "podcasts": {
+            "channel": [
+                {
+                    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+                    "url": "https://music.youtube.com/playlist?list=PLfakeTideTables0123456789abcdef",
+                    "title": "Tide Tables",
+                    "description": "An invented show about harbours.",
+                    "coverArt": "pd-0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+                    "status": "completed",
+                    "episode": [
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+                            "streamId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+                            "channelId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+                            "isDir": false,
+                            "title": "Slack water",
+                            "album": "Tide Tables",
+                            "artist": "Harbour Radio Club",
+                            "description": "How a harbour keeps time.",
+                            "status": "completed",
+                            "type": "podcast",
+                            "isVideo": false,
+                            "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+                            "created": "2026-11-26T09:00:00.000Z",
+                            "publishDate": "2026-11-26T05:00:00.000Z",
+                            "duration": 4381,
+                            "size": 57400000,
+                            "contentType": "audio/webm",
+                            "suffix": "webm",
+                            "bitRate": 104
+                        },
+                        {
+                            "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+                            "streamId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+                            "channelId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+                            "isDir": false,
+                            "title": "The night pilot",
+                            "album": "Tide Tables",
+                            "artist": "Harbour Radio Club",
+                            "description": "A night on the pilot boat.",
+                            "status": "new",
+                            "type": "podcast",
+                            "isVideo": false,
+                            "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016002",
+                            "created": "2026-11-19T09:00:00.000Z"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

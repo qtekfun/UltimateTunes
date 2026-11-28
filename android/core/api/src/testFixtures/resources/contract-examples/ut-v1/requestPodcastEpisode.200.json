@@ -1,0 +1,35 @@
+{
+    "id": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+    "showId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e015001",
+    "showTitle": "Tide Tables",
+    "title": "Slack water",
+    "coverArt": "pe-0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+    "publishedAt": "2026-11-26T05:00:00.000Z",
+    "durationMs": 4381000,
+    "addedAt": "2026-11-26T09:00:00.000Z",
+    "state": "ready",
+    "sizeBytes": 57400000,
+    "progress": {
+        "episodeId": "0199d6a2-4c1e-7b3a-9f10-2a6c8e016001",
+        "positionMs": 1865000,
+        "played": false,
+        "keep": false,
+        "changedAt": "2026-11-28T07:40:12.000Z"
+    },
+    "description": "How a harbour keeps time.\n\n0:00 Welcome\n4:30 Reading a tide table\n31:05 Listener letters",
+    "chapters": [
+        {
+            "startMs": 0,
+            "title": "Welcome"
+        },
+        {
+            "startMs": 270000,
+            "title": "Reading a tide table"
+        },
+        {
+            "startMs": 1865000,
+            "title": "Listener letters"
+        }
+    ],
+    "download": null
+}
