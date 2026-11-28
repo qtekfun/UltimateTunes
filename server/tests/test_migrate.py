@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The migrator applies portable SQL files in order, once, each in its own transaction."""
 
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -107,3 +108,55 @@ def test_contract_migrations_follow_the_statement_rules() -> None:
             assert "--" not in code, f"{where}: trailing comment"
             assert "/*" not in code, f"{where}: block comment"
             assert ";" not in code.rstrip(";"), f"{where}: semicolon inside a line"
+
+
+def test_jobs_rebuild_keeps_the_rows_and_admits_episodes(
+    conn: SqliteConnection, migrations_dir: Path
+) -> None:
+    """0703 copies `jobs` into a table that also takes episodes: nothing is lost on the way, and
+    a job still has exactly one target."""
+    for migration in migrate.discover(CONTRACT_MIGRATIONS):
+        if migration.version < 703:
+            write(migrations_dir, migration.name, migration.sql)
+    migrate.migrate(conn, migrations_dir)
+    now = "2026-11-28T10:00:00.000Z"
+    conn.execute(
+        "INSERT INTO tracks (id, status, title, title_norm, artist_name, created_at, updated_at)"
+        " VALUES ('t1', 'pending', 'a', 'a', 'b', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO jobs (id, kind, track_id, yt_video_id, state, attempt_seq, placed_path,"
+        " created_at, updated_at) VALUES ('j1', 'download', 't1', 'Qx7Lm2pZ0aB', 'queued', 3,"
+        " 'x/y.opus', ?, ?)",
+        (now, now),
+    )
+    migrate.migrate(conn, CONTRACT_MIGRATIONS)
+    kept = conn.execute(
+        "SELECT track_id, attempt_seq, placed_path, episode_id FROM jobs WHERE id = 'j1'"
+    ).fetchone()
+    assert kept is not None
+    assert (kept["track_id"], kept["attempt_seq"], kept["placed_path"], kept["episode_id"]) == (
+        "t1",
+        3,
+        "x/y.opus",
+        None,
+    )
+    conn.execute(
+        "INSERT INTO podcast_shows (id, source, title, created_at, updated_at)"
+        " VALUES ('s1', 'youtube', 'a', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO podcast_episodes (id, show_id, title, list_seq, state, discovered_at,"
+        " updated_at) VALUES ('e1', 's1', 'a', 1, 'remote', ?, ?)",
+        (now, now),
+    )
+    insert = (
+        "INSERT INTO jobs (id, kind, track_id, episode_id, yt_video_id, state, created_at,"
+        " updated_at) VALUES (?, ?, ?, ?, 'Rb8Tn3ZcYv0', 'queued', ?, ?)"
+    )
+    conn.execute(insert, ("j2", "episode", None, "e1", now, now))
+    for bad in (("j3", "episode", "t1", None), ("j4", "download", None, None)):
+        with pytest.raises((sqlite3.IntegrityError, DatabaseError)):
+            conn.execute(insert, (*bad, now, now))

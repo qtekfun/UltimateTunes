@@ -56,6 +56,8 @@ Plain SQL files applied in order by `ultimatetunes migrate` (our own small migra
 
 Migrations from different ranges are applied in plain numeric order. A stream migration may only depend on `0001`–`0099` and on its own earlier migrations, never on another stream's range. If you need that, ask the coordinator.
 
+`0702_podcasts` (coordinator, T41) adds `podcast_shows`, `podcast_episodes`, `podcast_follows` and `podcast_progress`. `0703_jobs_episodes` rebuilds `jobs` so it also holds episode downloads. A rebuild copies a fixed list of columns, so **any later change to `jobs` must be numbered above `0703`** (a migration in a stream range would run before the rebuild on a new database).
+
 ## Tables in `0001_init.sql`
 
 | Table | Purpose | Main users |
