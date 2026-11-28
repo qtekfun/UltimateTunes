@@ -9,6 +9,7 @@ from ultimatetunes.subsonic.routes import (
     lyrics,
     media,
     playlists,
+    podcasts,
     queue,
     radio,
     search,
@@ -25,4 +26,5 @@ ROUTERS: tuple[SubsonicRouter, ...] = (
     annotation.router,
     queue.router,
     radio.router,
+    podcasts.router,
 )
