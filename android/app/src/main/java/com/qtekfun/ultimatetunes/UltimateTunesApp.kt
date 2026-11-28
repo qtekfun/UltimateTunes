@@ -5,6 +5,7 @@ package com.qtekfun.ultimatetunes
 
 import android.app.Application
 import com.qtekfun.ultimatetunes.availability.OfflineCoverSync
+import com.qtekfun.ultimatetunes.library.PendingChangesSync
 import com.qtekfun.ultimatetunes.playback.ListeningSync
 import com.qtekfun.ultimatetunes.playback.PlaybackStartup
 import dagger.hilt.android.HiltAndroidApp
@@ -24,10 +25,15 @@ class UltimateTunesApp : Application() {
     @Inject
     lateinit var offlineCovers: OfflineCoverSync
 
+    /** Sends the changes made on the phone. */
+    @Inject
+    lateinit var pendingChanges: PendingChangesSync
+
     override fun onCreate() {
         super.onCreate()
         playbackStartup.onAppCreate()
         listeningSync.start()
         offlineCovers.start()
+        pendingChanges.start()
     }
 }

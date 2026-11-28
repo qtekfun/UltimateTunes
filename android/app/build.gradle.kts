@@ -74,12 +74,14 @@ val coveredClasses = listOf("*ViewModel")
 
 /**
  * The client-side 100 % areas of CLAUDE.md, as packages: the cache policy and the queue prefetch
- * planner (PLAN T17). Each must reach 100 % of lines and branches (`koverVerifyCritical`, part of
- * `check`). A package with no classes yet passes, so the gate is in place before the code.
+ * planner (PLAN T17), and the rules of the queue of offline changes (PLAN T35). Each must reach
+ * 100 % of lines and branches (`koverVerifyCritical`, part of `check`). A package with no classes
+ * yet passes, so the gate is in place before the code.
  */
 val criticalPackages = listOf(
     "com.qtekfun.ultimatetunes.core.player.cache",
-    "com.qtekfun.ultimatetunes.core.player.prefetch"
+    "com.qtekfun.ultimatetunes.core.player.prefetch",
+    "com.qtekfun.ultimatetunes.core.library.pending"
 )
 
 /**
@@ -163,6 +165,7 @@ dependencies {
     kover(project(":core:player"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.lifecycle.runtime.compose)

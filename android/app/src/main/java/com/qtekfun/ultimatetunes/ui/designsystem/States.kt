@@ -40,6 +40,7 @@ fun LoadError.messageRes(): Int = when (this) {
     LoadError.UNAUTHORIZED -> R.string.error_unauthorized
     LoadError.NOT_CONFIGURED -> R.string.error_not_configured
     LoadError.SERVER -> R.string.error_server
+    LoadError.STORAGE -> R.string.error_storage
 }
 
 /** A centred spinner, announced as "Loading". */

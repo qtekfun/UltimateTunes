@@ -7,8 +7,10 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.model.Album
 import com.qtekfun.ultimatetunes.core.api.model.Artist
 import com.qtekfun.ultimatetunes.core.api.model.ArtistItem
+import com.qtekfun.ultimatetunes.core.api.model.CoverArtId
 import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.Song
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /*
  * The browsing models of the API (search items and OpenSubsonic songs, albums, artists,
@@ -59,4 +61,20 @@ fun Playlist.toTile(api: TunesApi): PlaylistTile = PlaylistTile(
     songCount = songCount,
     durationSec = duration,
     coverUrl = coverArt?.let { api.coverUrl(it) }
+)
+
+/** The song of this tile, enough to show it in the catalog until a sync reads it whole. */
+fun TrackTile.toSong(): Song = Song(
+    id = id,
+    title = title,
+    artist = artist.ifEmpty { null },
+    displayArtist = artist.ifEmpty { null },
+    album = album,
+    duration = durationSec,
+    albumId = albumId,
+    artistId = artistId,
+    track = trackNumber,
+    discNumber = discNumber,
+    displayAlbumArtist = albumArtist,
+    coverArt = coverUrl?.toHttpUrlOrNull()?.queryParameter("id")?.let(::CoverArtId)
 )

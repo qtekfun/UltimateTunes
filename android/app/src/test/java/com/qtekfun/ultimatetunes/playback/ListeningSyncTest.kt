@@ -12,6 +12,7 @@ import com.qtekfun.ultimatetunes.core.api.model.ApiKeySecret
 import com.qtekfun.ultimatetunes.core.api.model.PlayQueue
 import com.qtekfun.ultimatetunes.core.api.model.Song
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.ui.FakePlayerController
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.tile
@@ -19,7 +20,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.update
@@ -44,6 +47,10 @@ class ListeningSyncTest {
     private val source = InMemoryServerConfigSource(config)
     private val gate = ConnectionGate(source)
     private val player = FakePlayerController()
+    private val changes = mockk<OfflineChanges> {
+        coEvery { scrobble(any(), any()) } returns true
+    }
+    private val now = Instant.parse("2026-11-28T09:00:00Z")
     private val saved = PlayQueue(
         current = SongId("song-2"),
         position = 73_500,
@@ -66,7 +73,16 @@ class ListeningSyncTest {
         val scope = CoroutineScope(
             backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)
         )
-        return ListeningSync(player, api, gate, scope).also { it.start() }
+        return ListeningSync(
+            player,
+            api,
+            gate,
+            changes,
+            Clock.fixed(now, ZoneOffset.UTC),
+            scope
+        ).also {
+            it.start()
+        }
     }
 
     @Test
@@ -157,10 +173,22 @@ class ListeningSyncTest {
         coVerify(exactly = 1) { api.scrobble(SongId("song-1"), false, null) }
 
         player.mutableState.update { it.copy(positionMs = 99_000) }
-        coVerify(exactly = 0) { api.scrobble(any(), true, any()) }
+        coVerify(exactly = 0) { changes.scrobble(any(), any()) }
         player.mutableState.update { it.copy(positionMs = 100_000) }
         player.mutableState.update { it.copy(positionMs = 150_000) }
-        coVerify(exactly = 1) { api.scrobble(SongId("song-1"), true, null) }
+        coVerify(exactly = 1) { changes.scrobble(SongId("song-1"), now) }
+        coVerify(exactly = 0) { api.scrobble(any(), true, any()) }
+    }
+
+    @Test
+    fun `a play that cannot be queued goes straight to the server`() = runTest {
+        coEvery { api.playQueue() } returns TunesResult.Success(null)
+        coEvery { changes.scrobble(any(), any()) } returns false
+        started()
+        player.play(listOf(tile(1, durationSec = 200)), 0, 0, true)
+        player.mutableState.update { it.copy(durationMs = 200_000, positionMs = 100_000) }
+
+        coVerify(exactly = 1) { api.scrobble(SongId("song-1"), true, now) }
     }
 
     @Test

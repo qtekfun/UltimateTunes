@@ -325,4 +325,8 @@
     <string name="search_notice_unreachable">No se puede contactar con tu servidor. Resultados de este móvil.</string>
     <string name="search_notice_offline_mode">Modo sin conexión: solo lo que está en este móvil.</string>
     <string name="search_retry">Reintentar</string>
+    <string name="error_storage">No se pudo guardar el cambio en este teléfono.</string>
+    <string name="event_playlist_gone">“%1$s” se borró en tu servidor; se han descartado tus cambios.</string>
+    <string name="event_playlist_refused">Tu servidor rechazó un cambio en “%1$s”; se ha descartado.</string>
+    <string name="event_change_refused">Tu servidor rechazó un cambio; se ha descartado.</string>
 </resources>

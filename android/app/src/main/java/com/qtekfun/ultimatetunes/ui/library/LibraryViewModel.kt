@@ -9,13 +9,12 @@ import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.availability.PhoneAvailability
 import com.qtekfun.ultimatetunes.core.api.TunesApi
-import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
-import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.ArtistTile
@@ -111,7 +110,7 @@ class LibraryViewModel @Inject constructor(
     private val api: TunesApi,
     private val repository: LibraryRepository,
     private val sync: CatalogSync,
-    private val refresh: CatalogRefresh,
+    private val changes: OfflineChanges,
     private val phone: PhoneAvailability,
     downloads: OfflineLibrary,
     private val offline: OfflineControls
@@ -203,15 +202,11 @@ class LibraryViewModel @Inject constructor(
         if (trimmed.isEmpty() || newPlaylist.value.creating) return
         newPlaylist.update { it.copy(creating = true) }
         viewModelScope.launch {
-            when (val result = api.createPlaylist(trimmed)) {
-                is TunesResult.Success -> {
-                    refresh.request()
-                    newPlaylist.value = NewPlaylist(created = result.value.id)
-                }
-
-                is TunesResult.Failure ->
-                    newPlaylist.value = NewPlaylist(message = result.toLoadError())
-            }
+            val id = changes.createPlaylist(trimmed)
+            newPlaylist.value = NewPlaylist(
+                created = id,
+                message = LoadError.STORAGE.takeIf { id == null }
+            )
         }
     }
 

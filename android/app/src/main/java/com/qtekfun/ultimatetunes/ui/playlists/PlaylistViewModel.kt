@@ -12,8 +12,9 @@ import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
+import com.qtekfun.ultimatetunes.core.library.isLocal
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
-import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
@@ -24,11 +25,16 @@ import com.qtekfun.ultimatetunes.ui.model.toLoadError
 import com.qtekfun.ultimatetunes.ui.model.toTile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -55,12 +61,11 @@ data class PlaylistUiState(
 )
 
 /**
- * A playlist and its changes: rename and remove a song (`updatePlaylist`), delete
- * (`deletePlaylist`). It shows from the local catalog, with no connection too, until the server
- * (`getPlaylist`) answers; a read that fails keeps what shows.
- * Changes show at once; if the server refuses one, the playlist is read again
- * (another device may have changed it meanwhile, so an old copy could be wrong). It can be kept
- * offline (RF-12): its songs download and follow its changes.
+ * A playlist and its changes: rename, remove a song and delete. Each shows at once and goes to the
+ * offline queue, so it works with no connection. It shows from the local catalog until the server
+ * (`getPlaylist`) answers, and again while it has changes waiting, which the server does not have
+ * yet; a read that fails keeps what shows. It can be kept offline (RF-12): its songs download and
+ * follow its changes.
  */
 // Collaborators are injected one by one; one function per change of a playlist.
 @Suppress("LongParameterList", "TooManyFunctions")
@@ -69,65 +74,93 @@ class PlaylistViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val api: TunesApi,
     private val offline: OfflineControls,
-    changes: PlaylistChanges,
-    repository: LibraryRepository,
-    sync: CatalogSync,
-    private val catalog: CatalogRefresh
+    private val changes: OfflineChanges,
+    private val repository: LibraryRepository,
+    sync: CatalogSync
 ) : ViewModel() {
-    private val id = PlaylistId(checkNotNull(savedStateHandle.get<String>(ARG_ID)))
+    /** The id the screen was opened with: temporary for a playlist made on the phone. */
+    private var id = PlaylistId(checkNotNull(savedStateHandle.get<String>(ARG_ID)))
 
     private val mutableState = MutableStateFlow(PlaylistUiState())
     val state: StateFlow<PlaylistUiState> = mutableState.asStateFlow()
 
     private var loading: Job? = null
 
-    /** One change at a time, so removals by index reach the server in the order made. */
-    private val writes = Mutex()
+    /** The playlist shown, as changes are made on it. */
+    private var shown: Playlist? = null
 
-    /** Grows when a change fails: the ones queued behind it were made on a state that is gone. */
-    private var generation = 0
-
-    /** Changes shown but not answered yet: the server's list does not have them all. */
-    private var pending = 0
-
-    /** An answer was set aside because of [pending] changes: read again after the last one. */
-    private var outdated = false
-
-    /** The list shown was not read from the server since: its positions cannot be trusted. */
-    private var unverified = false
+    /** Changes of this playlist wait to be sent: the catalog knows it better than the server. */
+    private var waiting = false
 
     /** The server's copy shows: the catalog, which may be older, no longer replaces it. */
     private var answered = false
 
+    /** Counts the changes made here: an answer asked before the last one is out of date. */
+    private var made = 0
+
+    /** Changes shown and not stored yet: the catalog does not have them all. */
+    private var storing = 0
+
+    /** One change at a time, stored in the order made. */
+    private val writes = Mutex()
+
     val refresher = Refresher(viewModelScope) {
         sync.sync()
-        writes.withLock { reload() }
+        reload()
     }
 
     init {
-        viewModelScope.launch {
-            repository.playlist(id).collect { playlist ->
-                if (!answered && pending == 0 && playlist != null) {
-                    unverified = true
-                    mutableState.update {
-                        it.copy(content = LoadState.Ready(playlist.toContent(api)))
-                    }
-                }
-            }
-        }
-        viewModelScope.launch { changes.changed.filter { it == id }.collect { refresh() } }
-        viewModelScope.launch {
-            offline.selection.collect { selection ->
-                val kept = selection.keepsCollection(CollectionKind.PLAYLIST, id.value)
-                mutableState.update { it.copy(isOffline = kept) }
-            }
-        }
+        viewModelScope.launch { follow() }
+        viewModelScope.launch { followKept() }
         load()
+    }
+
+    /** The catalog's copy, under the server's id once a playlist made here has one. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun follow() {
+        changes.replaced.map { it[id] ?: id }
+            .distinctUntilChanged()
+            .flatMapLatest { now ->
+                // Only says that something changed: each one may be older than the others.
+                combine(
+                    repository.playlist(now),
+                    changes.status.map { now in it.playlists }.distinctUntilChanged()
+                ) { _, _ -> now }
+            }
+            .collect(::catchUp)
+    }
+
+    /** Reads what the catalog holds now for [now] and shows it, if it is the one to show. */
+    private suspend fun catchUp(now: PlaylistId) {
+        val renamed = now != id
+        id = now
+        val asked = made
+        val pending = now in changes.status.first().playlists
+        val stored = repository.playlist(now).first()
+        val sent = waiting && !pending
+        waiting = pending
+        if (waiting) answered = false
+        val outdated = asked != made || storing > 0
+        if (!answered && !outdated) stored?.let(::show)
+        if (renamed || sent) refresh()
+    }
+
+    /** Whether the playlist is kept offline. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun followKept() {
+        changes.replaced.map { it[id] ?: id }
+            .distinctUntilChanged()
+            .flatMapLatest { now ->
+                offline.selection.map { it.keepsCollection(CollectionKind.PLAYLIST, now.value) }
+            }
+            .collect { kept -> mutableState.update { it.copy(isOffline = kept) } }
     }
 
     /** Keeps the playlist on the phone, or stops keeping it. */
     fun toggleOffline() {
         val playlist = (mutableState.value.content as? LoadState.Ready)?.value ?: return
+        // The server does not have it yet: there is nothing to keep in step with.
+        if (id.isLocal) return
         val kept = mutableState.value.isOffline
         viewModelScope.launch {
             if (kept) {
@@ -143,25 +176,18 @@ class PlaylistViewModel @Inject constructor(
         mutableState.update {
             it.copy(content = it.content as? LoadState.Ready ?: LoadState.Loading)
         }
+        // A playlist the server does not know yet shows from the catalog.
+        if (id.isLocal) return
         loading = viewModelScope.launch {
-            when (val result = api.playlist(id)) {
-                is TunesResult.Success -> show(result.value)
-
-                is TunesResult.Failure -> mutableState.update {
-                    if (it.content is LoadState.Ready) {
-                        it
-                    } else {
-                        it.copy(content = LoadState.Failed(result.toLoadError()))
-                    }
+            val error = read()
+            mutableState.update {
+                if (error == null || it.content is LoadState.Ready) {
+                    it
+                } else {
+                    it.copy(content = LoadState.Failed(error))
                 }
             }
         }
-    }
-
-    private fun show(playlist: Playlist) {
-        answered = true
-        unverified = false
-        mutableState.update { it.copy(content = LoadState.Ready(playlist.toContent(api))) }
     }
 
     /** Reads the playlist again without hiding what is shown; the screen came back. */
@@ -170,60 +196,70 @@ class PlaylistViewModel @Inject constructor(
             load()
             return
         }
-        viewModelScope.launch { writes.withLock { reload() } }
+        viewModelScope.launch { reload() }
+    }
+
+    private suspend fun reload(): LoadError? {
+        loading?.join()
+        return if (id.isLocal) null else read()
+    }
+
+    /** Asks the server, showing its answer unless changes wait; why it failed, or null. */
+    private suspend fun read(): LoadError? {
+        val asked = made
+        return when (val result = api.playlist(id)) {
+            is TunesResult.Success -> {
+                val queued = id in changes.status.first().playlists
+                // A change made meanwhile is newer than this answer.
+                val outdated = asked != made || storing > 0
+                if (!outdated && !waiting && !queued) {
+                    answered = true
+                    show(result.value)
+                }
+                null
+            }
+
+            is TunesResult.Failure -> result.toLoadError()
+        }
+    }
+
+    private fun show(playlist: Playlist) {
+        shown = playlist
+        mutableState.update { it.copy(content = LoadState.Ready(playlist.toContent(api))) }
     }
 
     fun rename(name: String) {
         val trimmed = name.trim()
         val before = editable() ?: return
-        if (trimmed.isEmpty() || trimmed == before.playlist.name) return
-        change(before.copy(playlist = before.playlist.copy(name = trimmed))) {
-            api.updatePlaylist(id, name = trimmed)
-        }
+        if (trimmed.isEmpty() || trimmed == before.name) return
+        change(before.copy(name = trimmed)) { changes.renamePlaylist(before, trimmed) }
     }
 
     /** Removes the song at [index] of the playlist. */
     fun removeAt(index: Int) {
         val before = editable() ?: return
-        // Unverified positions: read the list instead of removing the wrong song.
-        if (unverified) readBeforeEditing()
-        if (unverified || index !in before.tracks.indices) return
-        val removed = before.tracks[index]
+        if (index !in before.entry.indices) return
+        val removed = before.entry[index]
         val after = before.copy(
-            tracks = before.tracks.filterIndexed { i, _ -> i != index },
-            playlist = before.playlist.copy(
-                songCount = (before.playlist.songCount - 1).coerceAtLeast(0),
-                durationSec = (before.playlist.durationSec - (removed.durationSec ?: 0))
-                    .coerceAtLeast(0)
-            )
+            entry = before.entry.filterIndexed { i, _ -> i != index },
+            songCount = (before.songCount - 1).coerceAtLeast(0),
+            duration = (before.duration - (removed.duration ?: 0)).coerceAtLeast(0)
         )
-        change(after) { api.updatePlaylist(id, songIndexesToRemove = listOf(index)) }
-    }
-
-    /** Reads the list a change by position needs, and says so if it cannot. */
-    private fun readBeforeEditing() {
-        viewModelScope.launch {
-            val error = writes.withLock { reload() }
-            if (error != null) mutableState.update { it.copy(message = error) }
-        }
+        change(after) { changes.removeFromPlaylist(before, index) }
     }
 
     fun delete() {
-        editable() ?: return
+        val playlist = editable() ?: return
         viewModelScope.launch {
-            when (val result = api.deletePlaylist(id)) {
-                is TunesResult.Success -> {
-                    // Gone on the server: stop keeping it, which frees its downloads.
-                    if (mutableState.value.isOffline) {
-                        offline.dropCollection(CollectionKind.PLAYLIST, id.value)
-                    }
-                    catalog.request()
-                    mutableState.update { it.copy(deleted = true) }
+            val stored = writes.withLock { changes.deletePlaylist(playlist) }
+            if (stored) {
+                // Stop keeping it, which frees its downloads.
+                if (mutableState.value.isOffline) {
+                    offline.dropCollection(CollectionKind.PLAYLIST, id.value)
                 }
-
-                is TunesResult.Failure -> mutableState.update {
-                    it.copy(message = result.toLoadError())
-                }
+                mutableState.update { it.copy(deleted = true) }
+            } else {
+                mutableState.update { it.copy(message = LoadError.STORAGE) }
             }
         }
     }
@@ -232,42 +268,23 @@ class PlaylistViewModel @Inject constructor(
         mutableState.update { it.copy(message = null) }
     }
 
-    private fun editable(): PlaylistContent? =
-        ((mutableState.value.content as? LoadState.Ready)?.value)?.takeUnless { it.readonly }
+    private fun editable(): Playlist? = shown?.takeUnless { it.readonly == true }
 
-    /** Shows [after] at once, then [call]s the server; on a failure, puts the old state back. */
-    private fun change(after: PlaylistContent, call: suspend () -> TunesResult<Unit>) {
-        val before = mutableState.value.content
-        val made = generation
-        pending++
-        mutableState.update { it.copy(content = LoadState.Ready(after)) }
+    /** Shows [after] at once and stores the change; puts [before] back if that fails. */
+    private fun change(after: Playlist, store: suspend () -> Boolean) {
+        val before = shown ?: return
+        answered = false
+        show(after)
+        made++
+        storing++
         viewModelScope.launch {
-            writes.withLock {
-                val result = if (made == generation) call() else null
-                pending--
-                if (result is TunesResult.Failure) {
-                    generation++
-                    unverified = true
-                    outdated = true
-                    mutableState.update {
-                        it.copy(content = before, message = result.toLoadError())
-                    }
-                } else if (result != null) {
-                    catalog.request()
-                    if (mutableState.value.isOffline) offline.syncSoon()
-                }
-                if (outdated && pending == 0) reload()
+            val stored = writes.withLock { store() }
+            storing--
+            if (!stored) {
+                show(before)
+                mutableState.update { it.copy(message = LoadError.STORAGE) }
             }
         }
-    }
-
-    /** Reads the playlist again, keeping what is shown; why that failed, or null. */
-    private suspend fun reload(): LoadError? {
-        loading?.join()
-        val result = api.playlist(id)
-        outdated = pending > 0
-        if (result is TunesResult.Success && !outdated) show(result.value)
-        return (result as? TunesResult.Failure)?.toLoadError()
     }
 
     companion object {

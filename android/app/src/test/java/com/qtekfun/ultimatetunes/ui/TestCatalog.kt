@@ -10,6 +10,7 @@ import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.CatalogSyncResult
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.library.LocalCatalog
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 
@@ -24,6 +25,7 @@ class TestCatalog : AutoCloseable {
         LocalCatalog.inMemory(apiWith(config), config, testClock, BundledSQLiteDriver())
     val repository: LibraryRepository = catalog.repository
     val sync: CatalogSync = catalog.sync
+    val changes: OfflineChanges = catalog.changes
 
     /** This catalog after reading the server (the contract examples unless overridden). */
     fun synced(): TestCatalog = apply {

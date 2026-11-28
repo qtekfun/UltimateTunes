@@ -95,7 +95,10 @@ enum class LoadError {
     NOT_CONFIGURED,
 
     /** The server answered with an error or something unexpected. */
-    SERVER
+    SERVER,
+
+    /** The phone could not store a change. */
+    STORAGE
 }
 
 /** The state of a screen that loads one thing. */

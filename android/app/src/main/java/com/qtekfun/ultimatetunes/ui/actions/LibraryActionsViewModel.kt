@@ -6,13 +6,14 @@ package com.qtekfun.ultimatetunes.ui.actions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.core.api.TunesApi
-import com.qtekfun.ultimatetunes.core.api.TunesResult
+import com.qtekfun.ultimatetunes.core.api.model.Playlist
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.ChangeNotice
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
-import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.playback.toPlayable
 import com.qtekfun.ultimatetunes.ui.model.LoadError
@@ -20,9 +21,8 @@ import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.PlaylistTile
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
 import com.qtekfun.ultimatetunes.ui.model.contentState
-import com.qtekfun.ultimatetunes.ui.model.toLoadError
+import com.qtekfun.ultimatetunes.ui.model.toSong
 import com.qtekfun.ultimatetunes.ui.model.toTile
-import com.qtekfun.ultimatetunes.ui.playlists.PlaylistChanges
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,8 +44,8 @@ sealed interface ActionEvent {
 
     data object Downloading : ActionEvent
 
-    /** The server downloads at most [max] new songs per change: pick fewer. */
-    data class TooManyNew(val max: Int) : ActionEvent
+    /** A change made earlier could not be sent and was dropped. */
+    data class ChangeDropped(val notice: ChangeNotice) : ActionEvent
 
     /** A song went into the queue: right after the current one ([next]) or at the end. */
     data class Queued(val next: Boolean) : ActionEvent
@@ -80,14 +80,11 @@ data class LibraryActionsState(
     val event: ActionEvent? = null
 )
 
-/** The server's cap of songs not in the library yet per request. */
-private const val MAX_NEW_SONGS = 50
-
 /**
  * The actions on songs offered everywhere (long-press menus, the full player's menu, album and
- * playlist menus; SPEC §5): favourite (`star`/`unstar`), add to a playlist (`updatePlaylist`, or a
- * new one with `createPlaylist`), keep offline (RF-12) and export to the phone (RF-14). Lives as
- * long as the activity.
+ * playlist menus; SPEC §5): favourite, add to a playlist (or a new one), keep offline (RF-12) and
+ * export to the phone (RF-14). Favourites and playlists go through the offline queue, so they work
+ * with no connection; what the server later refuses is said here. Lives as long as the activity.
  */
 
 @Suppress("TooManyFunctions") // One function per menu action.
@@ -96,9 +93,8 @@ class LibraryActionsViewModel @Inject constructor(
     private val api: TunesApi,
     private val offline: OfflineControls,
     private val exports: Exports,
-    private val changes: PlaylistChanges,
-    private val repository: LibraryRepository,
-    private val catalog: CatalogRefresh
+    private val changes: OfflineChanges,
+    private val repository: LibraryRepository
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LibraryActionsState())
     val state: StateFlow<LibraryActionsState> = mutableState.asStateFlow()
@@ -108,6 +104,9 @@ class LibraryActionsViewModel @Inject constructor(
 
     /** Stars and unstars made here that the catalog does not show yet. */
     private val changed = mutableMapOf<SongId, Boolean>()
+
+    /** The oldest change the user has not been told was dropped. */
+    private var notice: ChangeNotice? = null
 
     /** Songs waiting for the export folder. */
     private var pendingExport: List<TrackTile> = emptyList()
@@ -148,24 +147,29 @@ class LibraryActionsViewModel @Inject constructor(
                 publishFavourites()
             }
         }
+        viewModelScope.launch {
+            changes.notices.collect { notices ->
+                val first = notices.firstOrNull()
+                val new = first != notice
+                notice = first
+                if (new && first != null) event(ActionEvent.ChangeDropped(first))
+            }
+        }
     }
 
     /** Says that a song went into the queue. */
     fun queued(next: Boolean) = event(ActionEvent.Queued(next))
 
-    /** Stars or unstars [track], showing the change at once and undoing it if it fails. */
+    /** Stars or unstars [track], showing the change at once. */
     fun toggleFavourite(track: TrackTile) {
         val favourite = track.id !in mutableState.value.favourites
         setFavourite(track.id, favourite)
         viewModelScope.launch {
-            val ids = listOf(track.id)
-            val result = if (favourite) api.star(songIds = ids) else api.unstar(songIds = ids)
-            if (result is TunesResult.Failure) {
-                setFavourite(track.id, !favourite)
-                fail(result)
-            } else {
-                catalog.request()
+            if (changes.setSongFavourite(track.toSong(), favourite)) {
                 event(ActionEvent.FavouriteChanged(added = favourite))
+            } else {
+                setFavourite(track.id, !favourite)
+                event(ActionEvent.Failed(LoadError.STORAGE))
             }
         }
     }
@@ -193,32 +197,10 @@ class LibraryActionsViewModel @Inject constructor(
     fun addToPlaylist(playlist: PlaylistTile) {
         val tracks = mutableState.value.picker?.tracks ?: return
         dismissPicker()
-        if (tooManyNew(tracks)) return
         viewModelScope.launch {
-            when (
-                val result = api.updatePlaylist(
-                    playlist.id,
-                    songIdsToAdd = tracks.map {
-                        it.id
-                    }
-                )
-            ) {
-                is TunesResult.Success -> {
-                    catalog.request()
-                    event(ActionEvent.AddedToPlaylist(playlist.name, tracks.size))
-                    changes.changed(playlist.id)
-                    val kept = offline.selection.first()
-                        .keepsCollection(CollectionKind.PLAYLIST, playlist.id.value)
-                    if (kept) offline.syncSoon()
-                }
-
-                is TunesResult.Failure -> {
-                    // A long list goes in parts: some may have arrived.
-                    changes.changed(playlist.id)
-                    catalog.request()
-                    fail(result)
-                }
-            }
+            val held = repository.playlist(playlist.id).first()
+                ?: Playlist(playlist.id, playlist.name)
+            added(changes.addToPlaylist(held, tracks.map { it.toSong() }), playlist.name, tracks)
         }
     }
 
@@ -228,27 +210,19 @@ class LibraryActionsViewModel @Inject constructor(
         val tracks = mutableState.value.picker?.tracks ?: return
         if (trimmed.isEmpty()) return
         dismissPicker()
-        if (!tooManyNew(tracks)) create(trimmed, tracks)
-    }
-
-    private fun create(name: String, tracks: List<TrackTile>) {
         viewModelScope.launch {
-            when (val result = api.createPlaylist(name, tracks.map { it.id })) {
-                is TunesResult.Success -> {
-                    catalog.request()
-                    event(ActionEvent.AddedToPlaylist(name, tracks.size))
-                }
-
-                is TunesResult.Failure -> fail(result)
-            }
+            val created = changes.createPlaylist(trimmed, tracks.map { it.toSong() })
+            added(created != null, trimmed, tracks)
         }
     }
 
-    private fun tooManyNew(tracks: List<TrackTile>): Boolean {
-        val tooMany = tracks.count { it.isExternal } > MAX_NEW_SONGS
-        if (tooMany) event(ActionEvent.TooManyNew(MAX_NEW_SONGS))
-        return tooMany
-    }
+    private fun added(stored: Boolean, playlist: String, tracks: List<TrackTile>) = event(
+        if (stored) {
+            ActionEvent.AddedToPlaylist(playlist, tracks.size)
+        } else {
+            ActionEvent.Failed(LoadError.STORAGE)
+        }
+    )
 
     /** Keeps [track] on the phone (RF-12), or stops keeping it. */
     fun toggleDownload(track: TrackTile) {
@@ -298,7 +272,11 @@ class LibraryActionsViewModel @Inject constructor(
     fun dismissExport() = exports.dismiss()
 
     fun dismissEvent() {
+        val shown = mutableState.value.event
         mutableState.update { it.copy(event = null) }
+        if (shown is ActionEvent.ChangeDropped) {
+            viewModelScope.launch { changes.dismiss(shown.notice.id) }
+        }
     }
 
     private suspend fun startExport(folder: String, tracks: List<TrackTile>) {
@@ -323,9 +301,6 @@ class LibraryActionsViewModel @Inject constructor(
         val removed = changed.filterValues { !it }.keys
         mutableState.update { it.copy(favourites = stored + added - removed) }
     }
-
-    private fun fail(failure: TunesResult.Failure) =
-        event(ActionEvent.Failed(failure.toLoadError()))
 
     private fun event(event: ActionEvent) {
         mutableState.update { it.copy(event = event) }

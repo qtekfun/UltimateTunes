@@ -9,6 +9,7 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.library.LocalCatalog
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -36,6 +37,9 @@ object LibraryModule {
 
     @Provides
     fun catalogSync(catalog: LocalCatalog): CatalogSync = catalog.sync
+
+    @Provides
+    fun offlineChanges(catalog: LocalCatalog): OfflineChanges = catalog.changes
 }
 
 /** How screens ask the catalog to catch up. */
@@ -44,4 +48,7 @@ object LibraryModule {
 interface CatalogRefreshModule {
     @Binds
     fun catalogRefresh(refresh: CoalescedCatalogRefresh): CatalogRefresh
+
+    @Binds
+    fun sendLater(work: WorkSendLater): SendLater
 }
