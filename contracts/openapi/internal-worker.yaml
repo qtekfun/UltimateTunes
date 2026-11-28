@@ -68,6 +68,11 @@ info:
        `contracts/ids.md`) and the job `ready`.
     A duplicate file never reaches `/music`; the api cleans the staging directory as usual.
 
+    ## Podcast episodes
+    A worker that claims with `kinds: [download, episode]` also gets `EpisodeJob`s. Leases, progress, streaming
+    while downloading, fail and retries work as for songs. After the download: `registerEpisode`, move,
+    `complete` (`CompleteEpisode`). No tagging state, tags, ReplayGain or remux.
+
     ## Idempotency
     Every call can be retried safely after a timeout: `heartbeat`, `progress` (last write wins, monotonic),
     `registerTrack` (keyed by `jobId` + `libraryPath`), `complete` and `fail` (repeating the same call with the
@@ -362,6 +367,59 @@ paths:
           $ref: '#/components/responses/Internal'
         '501':
           $ref: '#/components/responses/NotImplemented'
+  /internal/v1/library/episodes:
+    post:
+      operationId: registerEpisode
+      tags:
+      - library
+      summary: Reserve the library path of a downloaded episode
+      description: Called after the download is complete in staging, before anything is written to `/music`. The api
+        chooses the path, `.podcasts/<showId>/<episodeId>.<webm|m4a>` (hidden, so the music scan, size limit and eviction
+        never see it), records size, type, duration and publication time, and reserves the path on the job. The worker
+        then moves the file there without changing a byte and calls `complete` with `CompleteEpisode`. Idempotent.
+        A file already there with the same SHA-256 is adopted; another one is `conflict`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterEpisode'
+            example:
+              jobId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019002
+              leaseId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01aa02
+              episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+              stagingPath: 0199d6a2-4c1e-7b3a-9f10-2a6c8e019002/1/Pd4Kx9Lm2Qa.webm
+              file:
+                contentType: audio/webm
+                formatId: '251'
+                sizeBytes: 57400000
+                durationMs: 4381000
+                sha256: 3f1c9a7e5b2d4c6e8a0f1b3d5e7c9a1b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f
+              publishedAt: '2026-11-26T05:00:00.000Z'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredEpisode'
+              example:
+                episodeId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e016001
+                libraryPath: .podcasts/0199d6a2-4c1e-7b3a-9f10-2a6c8e015001/0199d6a2-4c1e-7b3a-9f10-2a6c8e016001.webm
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/LeaseConflict'
+        '422':
+          $ref: '#/components/responses/PathRejected'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
   /internal/v1/library/tracks/{trackId}/replaygain:
     put:
       operationId: updateReplayGain
@@ -418,6 +476,7 @@ paths:
       summary: Finish the job
       description: |-
         Requires a prior successful `registerTrack` for this job (else `invalid_state_transition`).
+        Episode jobs require `registerEpisode` and send `CompleteEpisode`; the episode becomes `ready`.
         - Not merged: the api checks that the file exists at the reserved `libraryPath` with the registered size (else `conflict`), sets the track `ready` (`path`, `archived_at`) and the job `ready`.
         - Merged (`libraryPath: null`): the api applies the merge in one transaction (contracts/ids.md): the `yt:` alias points at the existing track, the pending track's stars, playlist entries and history move there, the pending track becomes `merged` with `merged_into`, and the job becomes `ready`. Nothing is deleted, so no job row or lease is ever cascaded away.
         Then the api releases the lease and deletes the staging directories once no listener is streaming from them. Idempotent: repeating it with the same lease returns 200 and the stored body; a `fail` with that lease afterwards is `invalid_state_transition`.
@@ -433,7 +492,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Complete'
+              anyOf:
+              - $ref: '#/components/schemas/Complete'
+              - $ref: '#/components/schemas/CompleteEpisode'
             example:
               leaseId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01aa01
               trackId: 0199d6a2-4c1e-7b3a-9f10-2a6c8e01c005
@@ -751,8 +812,11 @@ components:
             type: string
             enum:
             - download
+            - episode
           default:
           - download
+          description: The kinds this worker can run. `episode` (podcast episodes) only when asked for, so an older
+            worker never gets one.
         leaseSeconds:
           type: integer
           minimum: 15
@@ -868,7 +932,7 @@ components:
           $ref: '#/components/schemas/JobHints'
         youtubeCookies:
           type: string
-          description: 'Optional. The server-wide YouTube account cookies (Netscape/Mozilla cookies.txt text), present only for a download job and only when an administrator has configured a YouTube session (`PUT /ut/v1/youtube-cookies` in ut-v1, stored encrypted; decrypted by the api for the claim). The worker writes it to a private 0600 temporary file, passes `yt-dlp --cookies <file>`, and deletes the file after the run. An account credential: never log it, never write it to a persistent or shared path.'
+          description: 'Optional. The server-wide YouTube account cookies (Netscape/Mozilla cookies.txt text), present only for a download or episode job and only when an administrator has configured a YouTube session (`PUT /ut/v1/youtube-cookies` in ut-v1, stored encrypted; decrypted by the api for the claim). The worker writes it to a private 0600 temporary file, passes `yt-dlp --cookies <file>`, and deletes the file after the run. An account credential: never log it, never write it to a persistent or shared path.'
     YoutubeCookies:
       type: object
       required:
@@ -885,7 +949,9 @@ components:
       - lease
       properties:
         job:
-          $ref: '#/components/schemas/Job'
+          oneOf:
+          - $ref: '#/components/schemas/Job'
+          - $ref: '#/components/schemas/EpisodeJob'
         lease:
           $ref: '#/components/schemas/Lease'
     Heartbeat:
@@ -1361,6 +1427,7 @@ components:
           - tagging_failed
           - storage_error
           - invalid_video_id
+          - episode_over_limit
           - cancelled
           - internal_error
         retryable:
@@ -1413,3 +1480,126 @@ components:
             - run_canary
           description: Requested from the admin panel (`worker_commands`). Each command is delivered once, to the
             worker it names or, if none, to the first worker that reports after the request.
+    EpisodeJob:
+      type: object
+      description: 'A podcast episode: no tags, no ReplayGain, no remux. The downloaded bytes are the archived file.'
+      required:
+      - id
+      - kind
+      - episodeId
+      - videoId
+      - attempt
+      - maxAttempts
+      - priority
+      - stagingDir
+      - maxDurationS
+      - maxBytes
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - episode
+        episodeId:
+          type: string
+        videoId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{11}$
+        attempt:
+          type: integer
+          minimum: 1
+        maxAttempts:
+          type: integer
+          minimum: 1
+        priority:
+          type: integer
+        stagingDir:
+          $ref: '#/components/schemas/RelativePath'
+        maxDurationS:
+          type: integer
+          minimum: 1
+          description: Longer episodes fail with `episode_over_limit`. Replaces the song limit.
+        maxBytes:
+          type: integer
+          minimum: 1
+          description: Larger downloads fail with `episode_over_limit`. Replaces the song limit.
+        youtubeCookies:
+          type: string
+          description: Same rules as in `Job`.
+    RegisterEpisode:
+      type: object
+      required:
+      - jobId
+      - leaseId
+      - episodeId
+      - stagingPath
+      - file
+      - publishedAt
+      properties:
+        jobId:
+          type: string
+        leaseId:
+          type: string
+        episodeId:
+          type: string
+        stagingPath:
+          $ref: '#/components/schemas/RelativePath'
+        file:
+          type: object
+          required:
+          - contentType
+          - formatId
+          - sizeBytes
+          - durationMs
+          - sha256
+          properties:
+            contentType:
+              type: string
+              enum:
+              - audio/webm
+              - audio/mp4
+            formatId:
+              type: string
+              minLength: 1
+              maxLength: 32
+            sizeBytes:
+              type: integer
+              minimum: 1
+            durationMs:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+            sha256:
+              type: string
+              pattern: ^[0-9a-f]{64}$
+        publishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: yt-dlp's `timestamp`, when it has one.
+    RegisteredEpisode:
+      type: object
+      required:
+      - episodeId
+      - libraryPath
+      properties:
+        episodeId:
+          type: string
+        libraryPath:
+          $ref: '#/components/schemas/RelativePath'
+    CompleteEpisode:
+      type: object
+      required:
+      - leaseId
+      - episodeId
+      - libraryPath
+      properties:
+        leaseId:
+          type: string
+        episodeId:
+          type: string
+        libraryPath:
+          $ref: '#/components/schemas/RelativePath'

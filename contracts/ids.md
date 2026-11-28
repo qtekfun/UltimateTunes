@@ -9,7 +9,7 @@ Every id that crosses an API boundary (OpenSubsonic, `/ut/v1`, internal worker A
 
 ## Library ids: UUIDv7
 
-Every row we create (users, API keys, artists, albums, tracks, playlists, jobs, imports, audit entries, play history) gets a **UUIDv7** (RFC 9562), written as lowercase hyphenated text (36 characters):
+Every row we create (users, API keys, artists, albums, tracks, playlists, jobs, imports, audit entries, play history, podcast shows and episodes) gets a **UUIDv7** (RFC 9562), written as lowercase hyphenated text (36 characters):
 
 ```
 0199d6a2-4c1e-7b3a-9f10-2a6c8e01b001
@@ -33,6 +33,9 @@ Why v7 and not v4:
 | `yt:` | song (video) | YouTube video id | `^[A-Za-z0-9_-]{11}$` | `yt:Qx7Lm2pZ0aB` |
 | `ytalbum:` | album | YouTube Music album browse id (currently `MPREb_…`) | `^[A-Za-z0-9_-]{1,64}$` | `ytalbum:MPREb_k3Vd9QmT2xL` |
 | `ytartist:` | artist | YouTube Music artist channel id (currently `UC` + 22 chars) | `^[A-Za-z0-9_-]{1,64}$` | `ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe` |
+
+| `ytpodcast:` | podcast show | YouTube Music podcast browse id **without** its `MPSP` prefix (a playlist id) | `^[A-Za-z0-9_-]{1,64}$` | `ytpodcast:PLfakeTideTables0123456789abcdef` |
+| `ytepisode:` | podcast episode | YouTube video id | `^[A-Za-z0-9_-]{11}$` | `ytepisode:Pd4Kx9Lm2Qa` |
 
 - The prefix is case-sensitive and lowercase. Anything else (an unknown prefix, an empty payload, a payload that fails the regex, URL-encoded tricks, whitespace) is rejected **before** any lookup or subprocess call: OpenSubsonic error `70` (not found), `/ut/v1` problem `invalid_id` (HTTP 400). The video id regex is also enforced again right before yt-dlp is called (SECURITY.md).
 - The album and artist regexes are deliberately generic. T03b records the forms seen in practice, and they may only be tightened in a `contracts/<topic>` PR.
@@ -66,6 +69,15 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 - After `GET /ut/v1/tracks/{id}/status` returns `state: ready` with a `trackId`, the app **should** replace the `yt:` id with `trackId` in its own database (favourites, offline downloads, queue). Keeping the old id still works.
 - **Cache keys.** The bytes streamed while downloading (`yt:` id, the raw download, untagged) are **not** the archived file (tagged, with ReplayGain, a different size). The Media3 cache key is the id that was requested. The client never mixes byte ranges of a `yt:` entry with the library id. When it switches to the library id, it starts a new cache entry, and the old one simply ages out of the LRU.
 
+## Podcast ids
+
+Episodes are not songs. An episode never becomes a track, has no `yt:` alias and is not accepted where a song is (`getSong`, `star`, `scrobble`, playlists, radio, lyrics; error 70). A stored play queue keeps whatever ids it was given, and episode ids are skipped when it is read.
+
+- **Rows.** A show or episode gets its UUIDv7 row when the show is followed (the show and its newest page), when its back catalogue is fetched, or when an episode is requested or streamed (that episode and its show). Searching and viewing create nothing.
+- **Resolution.** `ytpodcast:` and `ytepisode:` ids that have a row resolve to it (by `yt_playlist_id`, `yt_video_id`), and responses then carry the UUID. Rows are never deleted when a file expires, so both forms keep working. One video has one episode row.
+- `stream` and `download` accept an episode UUID or a `ytepisode:` id. `/ut/v1/podcasts` accepts either form for shows and episodes; progress is only stored for episodes that have a row.
+- **Cache keys.** The archived file of an episode is the downloaded bytes, so a client's cache stays valid across the end of the download (unlike songs).
+
 ## Cover art ids
 
 `coverArt` values are opaque too. They are accepted by `getCoverArt` and are never file paths. In v1 `getCoverArt` may ignore `size` and return the stored image as is (no image library is approved yet).
@@ -78,6 +90,10 @@ Saving a play queue (`savePlayQueue`) and viewing search results **never** mater
 | `yt:<videoId>` | Thumbnail of the video (pending or external songs), see below |
 | `ytalbum:<browseId>` | External album thumbnail |
 | `ytartist:<channelId>` | External artist thumbnail |
+| `pd-<showUuid>`, `ytpodcast:<playlistId>` | Podcast show cover |
+| `pe-<episodeUuid>`, `ytepisode:<videoId>` | Podcast episode cover |
+
+Podcast covers are the YouTube thumbnails, fetched and cached under the same rules as those of virtual ids (below).
 
 **YouTube image hosts** (approved by the author on 2026-10-12, SPEC §11): `i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.ggpht.com` and `yt3.googleusercontent.com`, over HTTPS only.
 - `getCoverArt` with a virtual id (`yt:`, `ytalbum:`, `ytartist:`) fetches the thumbnail URL the catalog returned (never a URL built from client input), only over HTTPS and only if its host is on that exact list. **Redirects are not followed** (any 3xx answers error `70`); a non-`image/*` content type or a body over 5 MiB (enforced while streaming, not only from `Content-Length`) also answers error `70`.
