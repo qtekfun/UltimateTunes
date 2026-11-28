@@ -81,6 +81,9 @@ class AlbumViewModel @Inject constructor(
     /** The server's answer shows: the catalog, which may be older, no longer replaces it. */
     private var answered = false
 
+    /** Stars tapped on this screen: a read running across a tap does not know of it. */
+    private var taps = 0
+
     val refresher = Refresher(viewModelScope) {
         sync.sync()
         read()
@@ -114,33 +117,41 @@ class AlbumViewModel @Inject constructor(
     }
 
     /** Asks the server for the album; why that failed, or null. */
-    private suspend fun read(): LoadError? = when (val result = api.album(id)) {
-        is TunesResult.Success -> {
-            answered = true
-            // A star not sent yet is newer than what the server says.
-            val pending = changes.status.first().albumFavourites[id]
-            mutableState.update {
-                val content = result.value.toContent()
-                it.copy(
-                    content = LoadState.Ready(
-                        content.copy(isFavourite = pending ?: content.isFavourite)
-                    )
-                )
+    private suspend fun read(): LoadError? {
+        val tapsBefore = taps
+        return when (val result = api.album(id)) {
+            is TunesResult.Success -> {
+                show(result.value, tapsBefore)
+                null
             }
-            null
-        }
 
-        is TunesResult.Failure -> {
-            val error = result.toLoadError()
-            mutableState.update {
-                if (it.content is LoadState.Ready) {
-                    it
-                } else {
-                    it.copy(content = LoadState.Failed(error))
-                }
-            }
-            error
+            is TunesResult.Failure -> keep(result.toLoadError())
         }
+    }
+
+    private suspend fun show(album: Album, tapsBefore: Int) {
+        answered = true
+        // A star not sent yet is newer than what the server says.
+        val pending = changes.status.first().albumFavourites[id]
+        mutableState.update {
+            val content = album.toContent()
+            // And one tapped since the read began, maybe not stored yet, is newer than both.
+            val shown = (it.content as? LoadState.Ready)?.value?.isFavourite
+            val tapped = shown.takeIf { taps != tapsBefore }
+            it.copy(
+                content = LoadState.Ready(
+                    content.copy(isFavourite = tapped ?: pending ?: content.isFavourite)
+                )
+            )
+        }
+    }
+
+    /** A read that failed keeps what shows. */
+    private fun keep(error: LoadError): LoadError {
+        mutableState.update {
+            if (it.content is LoadState.Ready) it else it.copy(content = LoadState.Failed(error))
+        }
+        return error
     }
 
     private fun Album.toContent(): AlbumContent {
@@ -178,6 +189,7 @@ class AlbumViewModel @Inject constructor(
         val current = (mutableState.value.content as? LoadState.Ready)?.value ?: return
         if (!current.canFavourite) return
         val favourite = !current.isFavourite
+        taps++
         setFavourite(favourite)
         viewModelScope.launch {
             if (!changes.setAlbumFavourite(id, favourite)) {
