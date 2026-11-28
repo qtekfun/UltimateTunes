@@ -5,21 +5,22 @@ package com.qtekfun.ultimatetunes.ui.album
 
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
+import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
-import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
-import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.subsonicOk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.AfterEach
@@ -43,15 +44,17 @@ class AlbumViewModelTest {
         server = FakeTunesServer().start()
     }
 
+    private val created = mutableListOf<AlbumViewModel>()
+
     @AfterEach
     fun tearDown() {
+        created.forEach { it.closeForTest() }
         server.close()
         catalog.close()
     }
 
     private val offline = FakeOfflineControls()
     private val catalog = TestCatalog()
-    private val refresh = FakeCatalogRefresh()
 
     private fun viewModel(id: String = libraryAlbum) = AlbumViewModel(
         SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)),
@@ -59,8 +62,8 @@ class AlbumViewModelTest {
         offline,
         catalog.repository,
         catalog.sync,
-        refresh
-    )
+        catalog.changes
+    ).also { created += it }
 
     private suspend fun AlbumViewModel.ready(): AlbumContent =
         (state.awaitFirst { it.content is LoadState.Ready }.content as LoadState.Ready).value
@@ -109,20 +112,24 @@ class AlbumViewModelTest {
     }
 
     @Test
-    fun `the heart stars and unstars the album`() = runTest {
+    fun `the heart stars and unstars the album with no connection`() = runTest {
+        catalog.synced()
         val viewModel = viewModel()
         viewModel.ready()
         server.takeRequest()
+        val before = viewModel.ready().isFavourite
 
         viewModel.toggleFavourite()
-        assertTrue(viewModel.ready().isFavourite)
-        val star = server.takeRequest()
-        assertEquals("/rest/star", star.url.encodedPath)
-        assertEquals(libraryAlbum, star.url.queryParameter("albumId"))
+        assertEquals(!before, viewModel.ready().isFavourite)
+        val queued = catalog.changes.status.first { it.albumFavourites.isNotEmpty() }
+        assertEquals(mapOf(AlbumId(libraryAlbum) to !before), queued.albumFavourites)
 
-        viewModel.toggleFavourite()
-        assertFalse(viewModel.ready().isFavourite)
-        assertEquals("/rest/unstar", server.takeRequest().url.encodedPath)
+        // The server still says otherwise: the star not sent yet wins.
+        viewModel.load()
+        server.takeRequest()
+        assertEquals(!before, viewModel.ready().isFavourite)
+        // Nothing but reads went to the server.
+        assertEquals(2, server.requestCount)
     }
 
     @Test
@@ -142,15 +149,15 @@ class AlbumViewModelTest {
     }
 
     @Test
-    fun `a refused star is undone and explained once`() = runTest {
-        server.dispatcher.override("rest/star") { subsonicFailure(0) }
+    fun `a star that cannot be stored is undone and explained once`() = runTest {
         val viewModel = viewModel()
         viewModel.ready()
 
+        // The catalog was never synced, so it is nobody's.
         viewModel.toggleFavourite()
 
         val failed = viewModel.state.awaitFirst { it.message != null }
-        assertEquals(LoadError.SERVER, failed.message)
+        assertEquals(LoadError.STORAGE, failed.message)
         assertFalse((failed.content as LoadState.Ready).value.isFavourite)
         viewModel.dismissMessage()
         assertNull(viewModel.state.value.message)

@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.qtekfun.ultimatetunes.R
+import com.qtekfun.ultimatetunes.core.library.ChangeNotice
 import com.qtekfun.ultimatetunes.core.player.export.ExportReport
 import com.qtekfun.ultimatetunes.core.player.export.SkipReason
 import com.qtekfun.ultimatetunes.ui.designsystem.ErrorState
@@ -212,6 +213,26 @@ fun ExportFolderPicker(needsFolder: Boolean, onPicked: (String?) -> Unit) {
     }
 }
 
+/** Why a change made earlier was dropped. */
+@Composable
+private fun droppedMessage(notice: ChangeNotice): String {
+    val playlist = notice.playlist
+    return when {
+        playlist != null && notice.skippedSongs > 0 -> pluralStringResource(
+            R.plurals.event_songs_skipped,
+            notice.skippedSongs,
+            notice.skippedSongs,
+            playlist
+        )
+
+        playlist == null -> stringResource(R.string.event_change_refused)
+
+        notice.deletedOnServer -> stringResource(R.string.event_playlist_gone, playlist)
+
+        else -> stringResource(R.string.event_playlist_refused, playlist)
+    }
+}
+
 /** Shows the result of the last action once, in [host]. */
 @Composable
 fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () -> Unit) {
@@ -227,8 +248,7 @@ fun ActionEventEffect(event: ActionEvent?, host: SnackbarHostState, onShown: () 
 
         ActionEvent.Downloading -> stringResource(R.string.event_downloading)
 
-        is ActionEvent.TooManyNew ->
-            pluralStringResource(R.plurals.event_too_many_new, event.max, event.max)
+        is ActionEvent.ChangeDropped -> droppedMessage(event.notice)
 
         is ActionEvent.Queued -> stringResource(
             if (event.next) R.string.event_play_next else R.string.event_play_last

@@ -4,7 +4,6 @@
 package com.qtekfun.ultimatetunes.ui.actions
 
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
-import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.SongId
 import com.qtekfun.ultimatetunes.core.player.export.ExportReport
 import com.qtekfun.ultimatetunes.core.player.export.ExportStatus
@@ -14,7 +13,6 @@ import com.qtekfun.ultimatetunes.core.player.offline.OfflineItem
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineSelection
 import com.qtekfun.ultimatetunes.core.player.offline.OfflineState
 import com.qtekfun.ultimatetunes.playback.toPlayable
-import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeExports
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
@@ -25,9 +23,9 @@ import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
-import com.qtekfun.ultimatetunes.ui.playlists.PlaylistChanges
 import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.tile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -43,7 +41,6 @@ class LibraryActionsViewModelTest {
     private lateinit var server: FakeTunesServer
     private val offline = FakeOfflineControls()
     private val catalog = TestCatalog()
-    private val refresh = FakeCatalogRefresh()
     private val starredSong = SongId("0199d6a2-4c1e-7b3a-9f10-2a6c8e01c001")
     private val created = mutableListOf<LibraryActionsViewModel>()
 
@@ -65,37 +62,34 @@ class LibraryActionsViewModelTest {
         connectedApi(server),
         offline,
         exports,
-        PlaylistChanges(),
-        catalog.repository,
-        refresh
+        catalog.changes,
+        catalog.repository
     ).also { vm ->
         created += vm
         vm.state.awaitFirst { it.favourites.isNotEmpty() }
     }
 
     @Test
-    fun `favourites load at start and toggle with star and unstar`() = runTest {
+    fun `favourites load at start and toggle at once with no connection`() = runTest {
         val viewModel = viewModel()
         assertEquals(setOf(starredSong), viewModel.state.value.favourites)
 
         viewModel.toggleFavourite(tile(3))
         assertTrue(SongId("song-3") in viewModel.state.value.favourites)
-        val star = server.takeRequest()
-        assertEquals("/rest/star", star.url.encodedPath)
-        assertEquals("song-3", star.url.queryParameter("id"))
         assertEquals(
             ActionEvent.FavouriteChanged(added = true),
             viewModel.state.awaitFirst { it.event != null }.event
         )
+        assertEquals(1, catalog.changes.status.first().count)
         viewModel.dismissEvent()
 
         viewModel.toggleFavourite(tile(3))
-        assertFalse(SongId("song-3") in viewModel.state.value.favourites)
-        assertEquals("/rest/unstar", server.takeRequest().url.encodedPath)
         assertEquals(
             ActionEvent.FavouriteChanged(added = false),
             viewModel.state.awaitFirst { it.event != null }.event
         )
+        assertFalse(SongId("song-3") in viewModel.state.value.favourites)
+        assertEquals(0, server.requestCount)
     }
 
     @Test
@@ -110,27 +104,47 @@ class LibraryActionsViewModelTest {
     }
 
     @Test
-    fun `a refused favourite is undone and explained`() = runTest {
-        server.dispatcher.override("rest/star") { subsonicFailure(50) }
-        val viewModel = viewModel()
-
-        viewModel.toggleFavourite(tile(3))
-
-        val failed = viewModel.state.awaitFirst { it.event != null }
-        assertEquals(ActionEvent.Failed(LoadError.SERVER), failed.event)
-        assertFalse(SongId("song-3") in failed.favourites)
-        viewModel.dismissEvent()
-        assertNull(viewModel.state.value.event)
-    }
-
-    @Test
-    fun `favourites made here stay until the catalog has them`() = runTest {
+    fun `a change the server refuses later is told until seen`() = runTest {
+        catalog.server.dispatcher.override("rest/star") { subsonicFailure(50) }
         val viewModel = viewModel()
         viewModel.toggleFavourite(tile(3))
         viewModel.state.awaitFirst { it.event != null }
-        assertEquals(1, refresh.requests)
+        viewModel.dismissEvent()
 
-        // A sync that does not have it yet does not undo it.
+        catalog.changes.send()
+
+        val event = viewModel.state.awaitFirst { it.event is ActionEvent.ChangeDropped }.event
+        assertNull((event as ActionEvent.ChangeDropped).notice.playlist)
+        viewModel.dismissEvent()
+        assertNull(viewModel.state.value.event)
+        catalog.changes.notices.first { it.isEmpty() }
+    }
+
+    @Test
+    fun `a notice replaced by another message comes back and does not block the next`() = runTest {
+        catalog.server.dispatcher.override("rest/star") { subsonicFailure(70) }
+        val viewModel = viewModel()
+        viewModel.toggleFavourite(tile(3))
+        viewModel.state.awaitFirst { it.event != null }
+        viewModel.dismissEvent()
+        catalog.changes.send()
+        val first = viewModel.state.awaitFirst { it.event is ActionEvent.ChangeDropped }.event
+
+        viewModel.queued(next = true)
+        viewModel.dismissEvent()
+
+        assertEquals(first, viewModel.state.value.event)
+        viewModel.dismissEvent()
+        catalog.changes.notices.first { it.isEmpty() }
+    }
+
+    @Test
+    fun `favourites not sent yet survive a sync`() = runTest {
+        catalog.server.dispatcher.override("rest/star") { dropConnection() }
+        val viewModel = viewModel()
+        viewModel.toggleFavourite(tile(3))
+        viewModel.state.awaitFirst { it.event != null }
+
         catalog.synced()
 
         assertEquals(setOf(starredSong, SongId("song-3")), viewModel.state.value.favourites)
@@ -156,17 +170,17 @@ class LibraryActionsViewModelTest {
             ActionEvent.AddedToPlaylist("Sunday Morning", 2),
             viewModel.state.awaitFirst { it.event != null }.event
         )
-        val update = server.takeRequest()
-        val updateForm = update.form()
-        assertEquals("/rest/updatePlaylist", update.url.encodedPath)
-        assertEquals(playlist.id.value, updateForm.queryParameter("playlistId"))
-        assertEquals(listOf("song-1", "song-2"), updateForm.queryParameterValues("songIdToAdd"))
+        val stored = catalog.repository.playlist(playlist.id).first()!!
+        assertEquals(
+            listOf("Song 1", "Song 2"),
+            stored.entry.takeLast(2).map { it.title }
+        )
     }
 
     @Test
-    fun `add to a new playlist creates it with the songs`() = runTest {
+    fun `add to a new playlist creates it with the songs, however many are new`() = runTest {
         val viewModel = viewModel()
-        viewModel.pickPlaylist(listOf(tile(4)))
+        viewModel.pickPlaylist((1..60).map { tile(it, external = true) })
         viewModel.state.awaitFirst { it.picker?.playlists is LoadState.Ready }
 
         viewModel.createPlaylist("  ")
@@ -174,19 +188,15 @@ class LibraryActionsViewModelTest {
         viewModel.createPlaylist(" Road Songs ")
 
         assertEquals(
-            ActionEvent.AddedToPlaylist("Road Songs", 1),
+            ActionEvent.AddedToPlaylist("Road Songs", 60),
             viewModel.state.awaitFirst { it.event != null }.event
         )
-        val create = server.takeRequest()
-        val createForm = create.form()
-        assertEquals("/rest/createPlaylist", create.url.encodedPath)
-        assertEquals("Road Songs", createForm.queryParameter("name"))
-        assertEquals(listOf("song-4"), createForm.queryParameterValues("songId"))
+        val created = catalog.repository.playlists().first().single { it.name == "Road Songs" }
+        assertEquals(60, created.songCount)
     }
 
     @Test
-    fun `a playlist change that fails is explained, and the picker can be closed`() = runTest {
-        server.dispatcher.override("rest/updatePlaylist") { dropConnection() }
+    fun `a change that cannot be stored is explained, and the picker can be closed`() = runTest {
         val viewModel = viewModel()
         viewModel.pickPlaylist(emptyList())
         assertNull(viewModel.state.value.picker)
@@ -197,9 +207,10 @@ class LibraryActionsViewModelTest {
                 it.picker?.playlists is LoadState.Ready
             }.picker!!.playlists as LoadState.Ready
             ).value.single()
+        catalog.config.set(catalog.server.serverConfig(apiKey = "utk_other"))
         viewModel.addToPlaylist(playlist)
         assertEquals(
-            ActionEvent.Failed(LoadError.NETWORK),
+            ActionEvent.Failed(LoadError.STORAGE),
             viewModel.state.awaitFirst { it.event != null }.event
         )
 
@@ -208,19 +219,6 @@ class LibraryActionsViewModelTest {
         assertNull(viewModel.state.value.picker)
         viewModel.addToPlaylist(playlist)
         viewModel.createPlaylist("Ignored")
-    }
-
-    @Test
-    fun `too many songs outside the library are refused before sending`() = runTest {
-        val viewModel = viewModel()
-        viewModel.pickPlaylist((1..51).map { tile(it).copy(isExternal = true) })
-        viewModel.state.awaitFirst { it.picker?.playlists is LoadState.Ready }
-        val sent = server.requestCount
-
-        viewModel.createPlaylist("Too much")
-
-        assertEquals(ActionEvent.TooManyNew(50), viewModel.state.value.event)
-        assertEquals(sent, server.requestCount)
     }
 
     @Test

@@ -321,7 +321,15 @@
     <string name="search_notice_unreachable">Cannot reach your server. Showing results from this phone.</string>
     <string name="search_notice_offline_mode">Offline mode: only what is on this phone.</string>
     <string name="search_retry">Retry</string>
+    <string name="error_storage">Couldn\'t save the change on this phone.</string>
+    <string name="event_playlist_gone">“%1$s” was deleted on your server; your changes to it were dropped.</string>
+    <string name="event_playlist_refused">Your server refused a change to “%1$s”; it was dropped.</string>
+    <string name="event_change_refused">Your server refused a change; it was dropped.</string>
     <string name="search_recent">Recent searches</string>
     <string name="search_recent_clear">Clear all</string>
     <string name="search_recent_remove">Remove %1$s from recent searches</string>
+    <plurals name="event_songs_skipped">
+        <item quantity="one">%1$d song couldn\'t be added to “%2$s”.</item>
+        <item quantity="other">%1$d songs couldn\'t be added to “%2$s”.</item>
+    </plurals>
 </resources>

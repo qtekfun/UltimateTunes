@@ -252,6 +252,14 @@ class FakeTunesApi(private val configSource: InMemoryServerConfigSource) : Tunes
         }
     }
 
+    override suspend fun replacePlaylist(id: PlaylistId, songIds: List<SongId>): TunesResult<Unit> =
+        updatePlaylist(
+            id,
+            songIdsToAdd = songIds,
+            songIndexesToRemove = playlists.firstOrNull { it.id == id }?.entry?.indices?.toList()
+                .orEmpty()
+        )
+
     override suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit> =
         configured { playlists.removeAll { it.id == id } }
 

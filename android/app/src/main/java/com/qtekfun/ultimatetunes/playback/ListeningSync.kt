@@ -6,8 +6,10 @@ package com.qtekfun.ultimatetunes.playback
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.model.toTile
+import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +38,8 @@ object ScrobbleRule {
 /**
  * What the server keeps of the listening (RF-09), from the player's state while the app process
  * lives (the playback service keeps it alive while playing):
- * - **history**: "now playing" when a song starts, a play once [ScrobbleRule] says so (`scrobble`);
+ * - **history**: "now playing" when a song starts, a play once [ScrobbleRule] says so (`scrobble`, which waits in the
+ *   offline queue until it can be sent);
  * - **play queue across devices**: the queue of another device (`getPlayQueue`) is loaded, paused,
  *   when this one starts with an empty queue; changes to the queue, the current song and pauses
  *   are saved (`savePlayQueue`) a moment after they settle. An empty queue is never saved, so a
@@ -47,11 +50,25 @@ class ListeningSync internal constructor(
     private val player: PlayerController,
     private val api: TunesApi,
     private val gate: ConnectionGate,
+    private val changes: OfflineChanges,
+    private val clock: Clock,
     private val scope: CoroutineScope
 ) {
     @Inject
-    constructor(player: PlayerController, api: TunesApi, gate: ConnectionGate) :
-        this(player, api, gate, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+    constructor(
+        player: PlayerController,
+        api: TunesApi,
+        gate: ConnectionGate,
+        changes: OfflineChanges,
+        clock: Clock
+    ) : this(
+        player,
+        api,
+        gate,
+        changes,
+        clock,
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    )
 
     /** True once this connection's saved queue was looked at; saving starts only then. */
     @Volatile
@@ -122,9 +139,15 @@ class ListeningSync internal constructor(
                 ScrobbleRule.isPlayed(state.positionMs, state.durationMs)
             ) {
                 submitted = true
-                api.scrobble(current.id, submission = true)
+                played(current.id)
             }
         }
+    }
+
+    /** Queued, so a play with no connection is not lost; straight to the server if it cannot. */
+    private suspend fun played(id: SongId) {
+        val now = clock.instant()
+        if (!changes.scrobble(id, now)) api.scrobble(id, submission = true, playedAt = now)
     }
 
     private data class QueueSnapshot(

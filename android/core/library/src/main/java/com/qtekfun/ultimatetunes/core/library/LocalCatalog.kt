@@ -15,23 +15,31 @@ import java.time.Clock
 import kotlinx.coroutines.Dispatchers
 
 /** The catalog: what the screens read and what keeps it up to date. One per process. */
-class LocalCatalog private constructor(val repository: LibraryRepository, val sync: CatalogSync) {
+class LocalCatalog private constructor(
+    val repository: LibraryRepository,
+    val sync: CatalogSync,
+    val changes: OfflineChanges
+) {
     companion object {
         private const val FILE = "catalog.db"
 
-        /** The catalog stored on this phone, never backed up. */
+        /**
+         * The catalog stored on this phone, never backed up. While [holdChanges] says so, queued
+         * changes are not sent.
+         */
         fun open(
             context: Context,
             api: TunesApi,
             configSource: ServerConfigSource,
-            clock: Clock
+            clock: Clock,
+            holdChanges: suspend () -> Boolean
         ): LocalCatalog {
             val file = File(context.noBackupFilesDir, FILE)
             val database = Room.databaseBuilder<CatalogDatabase>(context, file.absolutePath)
                 .setDriver(AndroidSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
-            return of(database, api, configSource, clock)
+            return of(database, api, configSource, clock, holdChanges)
         }
 
         /** A catalog that is gone with the process, for tests. */
@@ -56,16 +64,24 @@ class LocalCatalog private constructor(val repository: LibraryRepository, val sy
             database: CatalogDatabase,
             api: TunesApi,
             configSource: ServerConfigSource,
-            clock: Clock
+            clock: Clock,
+            holdChanges: suspend () -> Boolean = { false }
         ): LocalCatalog {
-            val syncer = CatalogSyncer(api, database, configSource, clock)
+            val syncer = CatalogSyncer(
+                api,
+                database,
+                configSource,
+                clock,
+                holdChanges = holdChanges
+            )
             return LocalCatalog(
                 DatabaseLibraryRepository(
                     database.browse(),
                     syncer.activity,
                     configSource.config
                 ),
-                syncer
+                syncer,
+                DefaultOfflineChanges(syncer, clock)
             )
         }
     }

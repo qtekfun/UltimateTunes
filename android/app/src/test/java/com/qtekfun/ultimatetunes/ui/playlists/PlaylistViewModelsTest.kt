@@ -5,21 +5,20 @@ package com.qtekfun.ultimatetunes.ui.playlists
 
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
-import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
+import com.qtekfun.ultimatetunes.core.library.isLocal
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
-import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
+import com.qtekfun.ultimatetunes.ui.closeForTest
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
-import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.subsonicOk
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -33,13 +32,8 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(MainDispatcherExtension::class)
 class PlaylistViewModelsTest {
-    private companion object {
-        const val DELAY_MS = 500L
-    }
-
     private lateinit var server: FakeTunesServer
     private val catalog = TestCatalog()
-    private val refresh = FakeCatalogRefresh()
     private val playlistId = "0199d6a2-4c1e-7b3a-9f10-2a6c8e01e001"
 
     @BeforeEach
@@ -47,8 +41,11 @@ class PlaylistViewModelsTest {
         server = FakeTunesServer().start()
     }
 
+    private val created = mutableListOf<PlaylistViewModel>()
+
     @AfterEach
     fun tearDown() {
+        created.forEach { it.closeForTest() }
         server.close()
         catalog.close()
     }
@@ -56,22 +53,22 @@ class PlaylistViewModelsTest {
     @Nested
     inner class Detail {
         private val offline = FakeOfflineControls()
-        private val changes = PlaylistChanges()
 
         private fun viewModel() = PlaylistViewModel(
             SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to playlistId)),
             connectedApi(server),
             offline,
-            changes,
+            catalog.changes,
             catalog.repository,
-            catalog.sync,
-            refresh
-        )
+            catalog.sync
+        ).also { created += it }
 
         private suspend fun PlaylistViewModel.ready(): PlaylistContent =
             (state.awaitFirst { it.content is LoadState.Ready }.content as LoadState.Ready).value
 
-        private suspend fun loaded(): PlaylistViewModel = viewModel().also {
+        private suspend fun loaded(): PlaylistViewModel = catalog.synced().let {
+            viewModel()
+        }.also {
             it.ready()
             server.takeRequest()
         }
@@ -93,41 +90,36 @@ class PlaylistViewModelsTest {
         }
 
         @Test
-        fun `the catalog's copy shows with the server out of reach`() = runTest {
-            catalog.synced()
+        fun `with the server out of reach the playlist shows and can be changed`() = runTest {
             server.dispatcher.override("rest/getPlaylist") { dropConnection() }
+            catalog.synced()
 
             val viewModel = viewModel()
             server.takeRequest()
-
             assertEquals("Sunday Morning", viewModel.ready().playlist.name)
             assertEquals(3, viewModel.ready().tracks.size)
 
-            // Its positions were never read from the server: removing asks for them first.
             viewModel.removeAt(0)
-            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
-            assertEquals(
-                LoadError.NETWORK,
-                viewModel.state.awaitFirst { it.message != null }.message
-            )
-            assertEquals(3, viewModel.ready().tracks.size)
+
+            assertEquals(2, viewModel.ready().tracks.size)
+            catalog.changes.status.first { it.count == 1 }
+            val stored = catalog.repository.playlist(PlaylistId(playlistId)).first()!!
+            assertEquals(listOf("Brasas", "Copper Fields"), stored.entry.map { it.title })
         }
 
         @Test
-        fun `rename changes the name at once and on the server`() = runTest {
+        fun `rename changes the name at once and queues it`() = runTest {
             val viewModel = loaded()
 
             viewModel.rename("  Sunday Evening ")
 
             assertEquals("Sunday Evening", viewModel.ready().playlist.name)
-            val request = server.takeRequest()
-            assertEquals("/rest/updatePlaylist", request.url.encodedPath)
-            assertEquals(playlistId, request.form().queryParameter("playlistId"))
-            assertEquals("Sunday Evening", request.form().queryParameter("name"))
-            // Read again after the change, so the answer to it has arrived.
-            viewModel.refresh()
-            server.takeRequest()
-            assertEquals(1, refresh.requests)
+            catalog.changes.status.first { it.count == 1 }
+            assertEquals(
+                "Sunday Evening",
+                catalog.repository.playlist(PlaylistId(playlistId)).first()?.name
+            )
+            assertEquals(1, server.requestCount)
         }
 
         @Test
@@ -141,61 +133,40 @@ class PlaylistViewModelsTest {
         }
 
         @Test
-        fun `removing a song sends its position and updates the counts`() = runTest {
+        fun `removing songs updates the counts and queues each one`() = runTest {
             val viewModel = loaded()
 
             viewModel.removeAt(1)
             viewModel.removeAt(7)
-
-            val after = viewModel.ready()
-            assertEquals(
-                listOf("Lighthouse Keeper", "Copper Fields"),
-                after.tracks.map {
-                    it.title
-                }
-            )
-            assertEquals(2, after.playlist.songCount)
-            assertEquals(663 - 201, after.playlist.durationSec)
-            assertEquals("1", server.takeRequest().form().queryParameter("songIndexToRemove"))
-            assertEquals(2, server.requestCount)
-        }
-
-        @Test
-        fun `a refused change is explained and the playlist read again`() = runTest {
-            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(50) }
-            val viewModel = loaded()
-
-            viewModel.rename("Mine now")
-
-            val failed = viewModel.state.awaitFirst {
-                it.message != null &&
-                    (it.content as? LoadState.Ready)?.value?.playlist?.name == "Sunday Morning"
-            }
-            assertEquals(LoadError.SERVER, failed.message)
-            assertEquals("/rest/updatePlaylist", server.takeRequest().url.encodedPath)
-            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
-            viewModel.dismissMessage()
-            assertNull(viewModel.state.value.message)
-        }
-
-        @Test
-        fun `after a refusal the server's current playlist shows, not the old copy`() = runTest {
-            val viewModel = loaded()
-            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(70) }
-            server.dispatcher.override("rest/getPlaylist") {
-                subsonicOk(
-                    "playlist",
-                    """{"id":"$playlistId","name":"Renamed Elsewhere","songCount":0,
-                        "duration":0,"entry":[]}"""
-                )
-            }
-
             viewModel.removeAt(0)
 
-            val state = viewModel.state.awaitFirst {
-                (it.content as? LoadState.Ready)?.value?.playlist?.name == "Renamed Elsewhere"
+            catalog.changes.status.first { it.count == 2 }
+            // The row and its songs may arrive one after the other.
+            val after = viewModel.state.awaitFirst {
+                val playlist = (it.content as? LoadState.Ready)?.value
+                playlist?.tracks?.size == 1 && playlist.playlist.songCount == 1
+            }.content as LoadState.Ready
+            assertEquals(listOf("Copper Fields"), after.value.tracks.map { it.title })
+            val stored = catalog.repository.playlist(PlaylistId(playlistId)).first()!!
+            assertEquals(listOf("Copper Fields"), stored.entry.map { it.title })
+        }
+
+        @Test
+        fun `once the changes are sent the server is read again`() = runTest {
+            val viewModel = loaded()
+            viewModel.rename("Sent")
+            catalog.changes.status.first { it.count == 1 }
+            // While it waits, the server's older copy does not replace it.
+            viewModel.refresh()
+            server.takeRequest()
+            assertEquals("Sent", viewModel.ready().playlist.name)
+
+            catalog.changes.send()
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.playlist?.name == "Sunday Morning"
             }
-            assertEquals(emptyList<Any>(), (state.content as LoadState.Ready).value.tracks)
         }
 
         @Test
@@ -225,136 +196,51 @@ class PlaylistViewModelsTest {
 
             viewModel.state.awaitFirst { it.deleted && !it.isOffline }
             assertTrue(offline.mutableSelection.value.collections.isEmpty())
+            assertNull(catalog.repository.playlist(PlaylistId(playlistId)).first())
+            assertEquals(1, catalog.changes.status.first().count)
         }
 
         @Test
-        fun `a change to a kept playlist syncs at once`() = runTest {
+        fun `a change that cannot be stored is undone and explained`() = runTest {
             val viewModel = loaded()
-            viewModel.toggleOffline()
-            viewModel.state.awaitFirst { it.isOffline }
-
-            viewModel.rename("Synced")
-            server.takeRequest()
-            viewModel.refresh()
-            server.takeRequest()
-
-            assertEquals(1, offline.syncs)
-        }
-
-        @Test
-        fun `a change that cannot be sent is undone even with no connection`() = runTest {
-            val viewModel = loaded()
-            server.dispatcher.override("rest/updatePlaylist") { dropConnection() }
-            server.dispatcher.override("rest/getPlaylist") { dropConnection() }
+            catalog.config.set(catalog.server.serverConfig(apiKey = "utk_other"))
 
             viewModel.rename("Lost")
 
             val state = viewModel.state.awaitFirst { it.message != null }
-            assertEquals(
-                "Sunday Morning",
-                (state.content as LoadState.Ready).value.playlist.name
-            )
-        }
-
-        @Test
-        fun `an answer asked before a change does not undo it`() = runTest {
-            val viewModel = loaded()
-            server.dispatcher.override("rest/getPlaylist") {
-                subsonicOk(
-                    "playlist",
-                    """{"id":"$playlistId","name":"Stale","songCount":0,"duration":0,
-                        "entry":[]}"""
-                ).newBuilder().headersDelay(DELAY_MS, TimeUnit.MILLISECONDS).build()
-            }
-
-            viewModel.refresh()
-            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
-            viewModel.rename("Newer")
-            assertEquals("/rest/updatePlaylist", server.takeRequest().url.encodedPath)
-
-            assertEquals("Newer", viewModel.ready().playlist.name)
-        }
-
-        @Test
-        fun `a refresh queued between two changes does not undo the second`() = runTest {
-            val viewModel = loaded()
-            var reads = 0
-            server.dispatcher.override("rest/updatePlaylist") {
-                subsonicOk("ignored", "{}").newBuilder()
-                    .headersDelay(DELAY_MS, TimeUnit.MILLISECONDS)
-                    .build()
-            }
-            server.dispatcher.override("rest/getPlaylist") {
-                val name = if (reads++ == 0) "One" else "Two"
-                subsonicOk(
-                    "playlist",
-                    """{"id":"$playlistId","name":"$name","songCount":0,"duration":0,
-                        "entry":[]}"""
-                )
-            }
-
-            viewModel.rename("One")
-            viewModel.refresh()
-            viewModel.rename("Two")
-
-            val paths = List(4) { server.takeRequest().url.encodedPath.substringAfterLast('/') }
-            assertEquals(
-                listOf("updatePlaylist", "getPlaylist", "updatePlaylist", "getPlaylist"),
-                paths
-            )
-            viewModel.state.awaitFirst {
-                (it.content as? LoadState.Ready)?.value?.tracks?.isEmpty() == true
-            }
-            assertEquals("Two", viewModel.ready().playlist.name)
-        }
-
-        @Test
-        fun `after a failure that could not be checked, removing reads the list first`() = runTest {
-            val viewModel = loaded()
-            server.dispatcher.override("rest/updatePlaylist") { subsonicFailure(0) }
-            server.dispatcher.override("rest/getPlaylist") { subsonicFailure(0) }
-            viewModel.removeAt(0)
-            viewModel.state.awaitFirst { it.message != null }
-            server.takeRequest()
-            server.takeRequest()
-
-            viewModel.removeAt(0)
-
-            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
-        }
-
-        @Test
-        fun `songs added elsewhere show in the open playlist`() = runTest {
-            val viewModel = loaded()
-
-            changes.changed(PlaylistId(playlistId))
-
-            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
-            viewModel.ready()
-        }
-
-        @Test
-        fun `delete removes the playlist and the screen leaves`() = runTest {
-            val viewModel = loaded()
-
+            assertEquals(LoadError.STORAGE, state.message)
+            assertEquals("Sunday Morning", viewModel.ready().playlist.name)
+            viewModel.dismissMessage()
             viewModel.delete()
-
-            assertTrue(viewModel.state.awaitFirst { it.deleted }.deleted)
-            val request = server.takeRequest()
-            assertEquals("/rest/deletePlaylist", request.url.encodedPath)
-            assertEquals(playlistId, request.url.queryParameter("id"))
-        }
-
-        @Test
-        fun `a failed delete stays and explains`() = runTest {
-            server.dispatcher.override("rest/deletePlaylist") { dropConnection() }
-            val viewModel = loaded()
-
-            viewModel.delete()
-
             val failed = viewModel.state.awaitFirst { it.message != null }
-            assertEquals(LoadError.NETWORK, failed.message)
             assertFalse(failed.deleted)
+        }
+
+        @Test
+        fun `a playlist made on the phone follows the id the server gives it`() = runTest {
+            catalog.synced()
+            val local = catalog.changes.createPlaylist("Road")!!
+            val viewModel = PlaylistViewModel(
+                SavedStateHandle(mapOf(PlaylistViewModel.ARG_ID to local.value)),
+                connectedApi(server),
+                offline,
+                catalog.changes,
+                catalog.repository,
+                catalog.sync
+            ).also { created += it }
+            assertEquals("Road", viewModel.ready().playlist.name)
+            viewModel.toggleOffline()
+            viewModel.refresh()
+            assertEquals(0, server.requestCount)
+            viewModel.state.awaitFirst { it.isOffline }
+            assertEquals(local.value, offline.mutableSelection.value.collections.single().id)
+
+            catalog.changes.send()
+
+            assertEquals("/rest/getPlaylist", server.takeRequest().url.encodedPath)
+            viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.playlist?.id?.isLocal == false
+            }
         }
 
         @Test
@@ -367,7 +253,10 @@ class PlaylistViewModelsTest {
                 )
             }
             val viewModel = loaded()
-            assertTrue(viewModel.ready().readonly)
+            // The catalog's copy may show first, until the server's answer does.
+            viewModel.state.awaitFirst {
+                (it.content as? LoadState.Ready)?.value?.readonly == true
+            }
 
             viewModel.rename("Mine")
             viewModel.removeAt(0)

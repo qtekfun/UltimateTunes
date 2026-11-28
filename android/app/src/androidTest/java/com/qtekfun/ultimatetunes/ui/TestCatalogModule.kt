@@ -8,6 +8,7 @@ import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.library.LocalCatalog
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.library.LibraryModule
 import dagger.Module
 import dagger.Provides
@@ -33,4 +34,7 @@ object TestCatalogModule {
 
     @Provides
     fun catalogSync(catalog: LocalCatalog): CatalogSync = catalog.sync
+
+    @Provides
+    fun offlineChanges(catalog: LocalCatalog): OfflineChanges = catalog.changes
 }

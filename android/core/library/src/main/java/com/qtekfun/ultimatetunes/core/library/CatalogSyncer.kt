@@ -3,12 +3,14 @@
 
 package com.qtekfun.ultimatetunes.core.library
 
+import androidx.room3.withWriteTransaction
 import com.qtekfun.ultimatetunes.core.api.ServerConfig
 import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import com.qtekfun.ultimatetunes.core.library.db.CatalogDatabase
 import com.qtekfun.ultimatetunes.core.library.db.MetaEntity
+import com.qtekfun.ultimatetunes.core.library.pending.nextGroup
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -38,9 +40,14 @@ internal class CatalogSyncer(
     private val configSource: ServerConfigSource,
     private val clock: Clock,
     private val minInterval: Duration = MIN_INTERVAL,
-    pageSize: Int = PAGE_SIZE
+    pageSize: Int = PAGE_SIZE,
+    /** True while nothing may be sent (offline mode): the queue waits. */
+    private val holdChanges: suspend () -> Boolean = { false }
 ) : CatalogSync {
+    private val db = database
     private val dao = database.sync()
+    val queue = database.queue()
+    private val local = LocalApply(queue)
     private val reader = CatalogReader(api, dao, pageSize)
     private val running = Mutex()
 
@@ -57,6 +64,47 @@ internal class CatalogSyncer(
     override suspend fun syncIfStale(): CatalogSyncResult = inBackground(onlyIfStale = true)
 
     override suspend fun sync(): CatalogSyncResult = inBackground(onlyIfStale = false)
+
+    /** One transaction, never in the middle of a sync's writes or a [clear]. */
+    suspend fun write(block: suspend () -> Unit) {
+        writing.withLock { db.withWriteTransaction { block() } }
+    }
+
+    /** [write] if the catalog is the current connection's; false when it is not. */
+    suspend fun writeIfOwned(block: suspend () -> Unit): Boolean = writing.withLock {
+        val config = configSource.config.value
+        val mine = config != null && dao.meta()?.verifiedFor == fingerprintOf(config)
+        if (mine) db.withWriteTransaction { block() }
+        mine
+    }
+
+    /** Sends the queued changes of the current connection; one at a time with the syncs. */
+    suspend fun send(): SendResult = withContext(Dispatchers.Default) {
+        running.withLock {
+            val config = configSource.config.value
+            val result = try {
+                config?.let { Attempt(it, generation).send() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (
+                // The connection changed, or the storage failed: the queue stays.
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception
+            ) {
+                null
+            }
+            result ?: SendResult(waiting = stillWaiting())
+        }
+    }
+
+    /** True if changes wait; also when the queue cannot be read, to try again. */
+    @Suppress("TooGenericExceptionCaught", "SwallowedException") // Any storage failure.
+    private suspend fun stillWaiting(): Boolean = try {
+        nextGroup(queue.all(), emptySet()).isNotEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        true
+    }
 
     override suspend fun clear() {
         writing.withLock {
@@ -98,7 +146,8 @@ internal class CatalogSyncer(
     }
 
     /** One sync of the server of [config], valid while no clear and no other server came. */
-    private inner class Attempt(private val config: ServerConfig, private val startedIn: Int) {
+    private inner class Attempt(private val config: ServerConfig, private val startedIn: Int) :
+        SendSession {
         @Volatile
         private var moved = false
 
@@ -150,7 +199,9 @@ internal class CatalogSyncer(
                 write { dao.putMeta(verified) }
                 meta = verified
             }
-            if (onlyIfStale && isFresh(meta?.lastSyncAt)) return CatalogSyncResult.Fresh
+            // What waits goes first, so that what is read next already has it.
+            val sent = send()?.changed == true
+            if (onlyIfStale && !sent && isFresh(meta?.lastSyncAt)) return CatalogSyncResult.Fresh
 
             state.update { it.copy(syncing = true) }
             val snapshot = reader.read()
@@ -160,15 +211,29 @@ internal class CatalogSyncer(
                     lastSyncAt = clock.millis(),
                     verifiedFor = connection
                 )
-                dao.replace(snapshot, done)
+                db.withWriteTransaction {
+                    dao.replace(snapshot, done)
+                    // What was not sent still shows.
+                    queue.all().forEach { local.apply(it) }
+                }
             }
             return CatalogSyncResult.Synced
         }
 
-        private suspend fun write(block: suspend () -> Unit) {
+        /** Null when the catalog is not this connection's. */
+        suspend fun send(): SendResult? {
+            if (holdChanges() || dao.meta()?.verifiedFor != fingerprintOf(config)) return null
+            return PendingSender(api, queue, this).run()
+        }
+
+        override fun check() {
+            if (!current()) throw SyncStopped(CatalogSyncResult.Discarded)
+        }
+
+        override suspend fun write(block: suspend () -> Unit) {
             writing.withLock {
-                if (!current()) throw SyncStopped(CatalogSyncResult.Discarded)
-                block()
+                check()
+                db.withWriteTransaction { block() }
             }
         }
 

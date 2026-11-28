@@ -8,6 +8,7 @@ import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
 import androidx.room3.Query
 import androidx.room3.Transaction
+import androidx.room3.Update
 import kotlinx.coroutines.flow.Flow
 
 /** A song with the ids needed to tell what of an album or an artist is on the phone. */
@@ -177,7 +178,10 @@ internal abstract class SyncDao {
     @Query("SELECT * FROM playlist_entries ORDER BY playlistId, position")
     abstract suspend fun storedEntries(): List<PlaylistEntryEntity>
 
-    /** Replaces the catalog of `meta`'s owner. Pending changes are left alone. */
+    /**
+     * Replaces the catalog of `meta`'s owner. Pending changes are left alone (the caller applies
+     * them again in the same transaction).
+     */
     @Transaction
     open suspend fun replace(snapshot: CatalogSnapshot, meta: MetaEntity) {
         deleteCatalog()
@@ -253,15 +257,94 @@ internal abstract class SyncDao {
     abstract suspend fun putMeta(meta: MetaEntity)
 }
 
-/** The queue of changes made with no connection (PLAN T35 replays it). */
+/** A song's length, to total a playlist. */
+internal data class DurationRow(val id: String, val duration: Int?)
+
+/**
+ * The queue of changes waiting to be sent, and what making them show in the catalog writes. Run
+ * several statements in one write transaction.
+ */
 @Dao
-internal interface PendingChangeDao {
+@Suppress("TooManyFunctions") // One statement each.
+internal interface QueueDao {
     @Insert
     suspend fun add(change: PendingChangeEntity): Long
 
     @Query("SELECT * FROM pending_changes ORDER BY seq")
     suspend fun all(): List<PendingChangeEntity>
 
+    @Query("SELECT * FROM pending_changes ORDER BY seq")
+    fun watch(): Flow<List<PendingChangeEntity>>
+
     @Query("DELETE FROM pending_changes WHERE seq = :seq")
     suspend fun remove(seq: Long)
+
+    @Query("UPDATE pending_changes SET payload = :payload WHERE seq = :seq")
+    suspend fun setPayload(seq: Long, payload: String)
+
+    @Query("UPDATE pending_changes SET targetId = :to WHERE targetId = :from")
+    suspend fun retarget(from: String, to: String)
+
+    @Query("SELECT * FROM pending_changes WHERE kind = 'ALIAS' AND targetId = :id LIMIT 1")
+    suspend fun alias(id: String): PendingChangeEntity?
+
+    @Query(
+        "SELECT COUNT(*) FROM pending_changes WHERE targetId = :id " +
+            "AND kind NOT IN ('NOTICE', 'ALIAS')"
+    )
+    suspend fun waitingFor(id: String): Int
+
+    @Query("SELECT * FROM playlists WHERE id = :id")
+    suspend fun playlist(id: String): PlaylistEntity?
+
+    @Query("SELECT IFNULL(MAX(position), -1) + 1 FROM playlists")
+    suspend fun nextPlaylistPosition(): Int
+
+    @Insert
+    suspend fun insertPlaylist(playlist: PlaylistEntity)
+
+    @Update
+    suspend fun updatePlaylist(playlist: PlaylistEntity)
+
+    @Query("DELETE FROM playlists WHERE id = :id")
+    suspend fun deletePlaylist(id: String)
+
+    @Query("SELECT songId FROM playlist_entries WHERE playlistId = :id ORDER BY position")
+    suspend fun entryIds(id: String): List<String>
+
+    @Query("DELETE FROM playlist_entries WHERE playlistId = :id")
+    suspend fun deleteEntries(id: String)
+
+    @Insert
+    suspend fun insertEntries(rows: List<PlaylistEntryEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSongs(rows: List<SongEntity>)
+
+    @Query("SELECT id, duration FROM songs WHERE id IN (:ids)")
+    suspend fun durations(ids: List<String>): List<DurationRow>
+
+    @Query("SELECT favouritePosition FROM songs WHERE id = :id")
+    suspend fun songFavouritePosition(id: String): Int?
+
+    @Query("SELECT IFNULL(MIN(favouritePosition), 0) FROM songs")
+    suspend fun firstSongFavourite(): Int
+
+    @Query("UPDATE songs SET favouritePosition = :position, starredAt = :at WHERE id = :id")
+    suspend fun setSongFavourite(id: String, position: Int?, at: Long?)
+
+    @Query("SELECT favouritePosition FROM albums WHERE id = :id")
+    suspend fun albumFavouritePosition(id: String): Int?
+
+    @Query("SELECT IFNULL(MIN(favouritePosition), 0) FROM albums")
+    suspend fun firstAlbumFavourite(): Int
+
+    @Query("UPDATE albums SET favouritePosition = :position, starredAt = :at WHERE id = :id")
+    suspend fun setAlbumFavourite(id: String, position: Int?, at: Long?)
+
+    @Query(
+        "UPDATE songs SET playCount = playCount + 1, " +
+            "playedAt = MAX(IFNULL(playedAt, 0), :at) WHERE id = :id"
+    )
+    suspend fun played(id: String, at: Long)
 }

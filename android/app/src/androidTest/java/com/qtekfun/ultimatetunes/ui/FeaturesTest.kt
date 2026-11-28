@@ -28,6 +28,7 @@ import com.qtekfun.ultimatetunes.R
 import com.qtekfun.ultimatetunes.core.api.InMemoryServerConfigSource
 import com.qtekfun.ultimatetunes.core.api.TunesApi
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.library.PendingChangesSync
 import com.qtekfun.ultimatetunes.ui.actions.COLLECTION_OFFLINE_TAG
 import com.qtekfun.ultimatetunes.ui.actions.PLAYLIST_PICKER_TAG
 import com.qtekfun.ultimatetunes.ui.actions.TRACK_MENU_TAG
@@ -64,6 +65,10 @@ class FeaturesTest {
     @get:Rule(order = 1)
     val compose = createEmptyComposeRule()
 
+    /** The test application does not start it: changes would never reach the fake. */
+    @Inject
+    lateinit var pendingChanges: PendingChangesSync
+
     @Inject
     lateinit var configSource: InMemoryServerConfigSource
 
@@ -79,6 +84,7 @@ class FeaturesTest {
     @Before
     fun inject() {
         hilt.inject()
+        pendingChanges.start()
         configSource.set(FakeTunesApi.config)
     }
 

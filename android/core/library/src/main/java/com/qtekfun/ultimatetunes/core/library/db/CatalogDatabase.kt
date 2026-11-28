@@ -26,5 +26,5 @@ internal abstract class CatalogDatabase : RoomDatabase() {
 
     abstract fun sync(): SyncDao
 
-    abstract fun pendingChanges(): PendingChangeDao
+    abstract fun queue(): QueueDao
 }

@@ -325,7 +325,16 @@
     <string name="search_notice_unreachable">No se puede contactar con tu servidor. Resultados de este móvil.</string>
     <string name="search_notice_offline_mode">Modo sin conexión: solo lo que está en este móvil.</string>
     <string name="search_retry">Reintentar</string>
+    <string name="error_storage">No se pudo guardar el cambio en este teléfono.</string>
+    <string name="event_playlist_gone">“%1$s” se borró en tu servidor; se han descartado tus cambios.</string>
+    <string name="event_playlist_refused">Tu servidor rechazó un cambio en “%1$s”; se ha descartado.</string>
+    <string name="event_change_refused">Tu servidor rechazó un cambio; se ha descartado.</string>
     <string name="search_recent">Búsquedas recientes</string>
     <string name="search_recent_clear">Borrar todo</string>
     <string name="search_recent_remove">Quitar %1$s de las búsquedas recientes</string>
+    <plurals name="event_songs_skipped">
+        <item quantity="one">No se pudo añadir %1$d canción a “%2$s”.</item>
+        <item quantity="many">No se pudieron añadir %1$d canciones a “%2$s”.</item>
+        <item quantity="other">No se pudieron añadir %1$d canciones a “%2$s”.</item>
+    </plurals>
 </resources>

@@ -13,8 +13,8 @@ import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
-import com.qtekfun.ultimatetunes.library.CatalogRefresh
 import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.model.AlbumTile
 import com.qtekfun.ultimatetunes.ui.model.LoadError
@@ -29,6 +29,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -68,7 +69,7 @@ class AlbumViewModel @Inject constructor(
     private val offline: OfflineControls,
     repository: LibraryRepository,
     sync: CatalogSync,
-    private val refresh: CatalogRefresh
+    private val changes: OfflineChanges
 ) : ViewModel() {
     private val id = AlbumId(checkNotNull(savedStateHandle.get<String>(ARG_ID)))
 
@@ -116,8 +117,15 @@ class AlbumViewModel @Inject constructor(
     private suspend fun read(): LoadError? = when (val result = api.album(id)) {
         is TunesResult.Success -> {
             answered = true
+            // A star not sent yet is newer than what the server says.
+            val pending = changes.status.first().albumFavourites[id]
             mutableState.update {
-                it.copy(content = LoadState.Ready(result.value.toContent()))
+                val content = result.value.toContent()
+                it.copy(
+                    content = LoadState.Ready(
+                        content.copy(isFavourite = pending ?: content.isFavourite)
+                    )
+                )
             }
             null
         }
@@ -165,23 +173,16 @@ class AlbumViewModel @Inject constructor(
         }
     }
 
-    /** Stars or unstars the album, showing the change at once and undoing it if it fails. */
+    /** Stars or unstars the album, showing the change at once; it is sent when it can be. */
     fun toggleFavourite() {
         val current = (mutableState.value.content as? LoadState.Ready)?.value ?: return
         if (!current.canFavourite) return
         val favourite = !current.isFavourite
         setFavourite(favourite)
         viewModelScope.launch {
-            val result = if (favourite) {
-                api.star(albumIds = listOf(id))
-            } else {
-                api.unstar(albumIds = listOf(id))
-            }
-            if (result is TunesResult.Failure) {
+            if (!changes.setAlbumFavourite(id, favourite)) {
                 setFavourite(!favourite)
-                mutableState.value = mutableState.value.copy(message = result.toLoadError())
-            } else {
-                refresh.request()
+                mutableState.value = mutableState.value.copy(message = LoadError.STORAGE)
             }
         }
     }

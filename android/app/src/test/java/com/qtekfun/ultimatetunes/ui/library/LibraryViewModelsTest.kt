@@ -6,11 +6,11 @@ package com.qtekfun.ultimatetunes.ui.library
 import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
-import com.qtekfun.ultimatetunes.core.api.fake.form
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
 import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.api.model.SongId
+import com.qtekfun.ultimatetunes.core.library.isLocal
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.ui.FakeCatalogRefresh
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
@@ -25,9 +25,9 @@ import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
-import com.qtekfun.ultimatetunes.ui.subsonicFailure
 import com.qtekfun.ultimatetunes.ui.tile
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
@@ -69,7 +69,7 @@ class LibraryViewModelsTest {
         connectedApi(server),
         catalog.repository,
         catalog.sync,
-        refresh,
+        catalog.changes,
         phone,
         NoOfflineDownloads,
         offline
@@ -189,19 +189,18 @@ class LibraryViewModelsTest {
         }
 
         @Test
-        fun `a new playlist is created, opened once and synced`() = runBlocking {
+        fun `a new playlist is created offline and opened once`() = runBlocking {
+            catalog.synced()
             val viewModel = library()
 
             viewModel.create("  ")
             viewModel.create("  Morning Run ")
 
             val state = viewModel.state.awaitFirst { it.newPlaylist.created != null }
-            assertEquals(PlaylistId(PLAYLIST), state.newPlaylist.created)
-            val request = server.takeRequest()
-            assertEquals("/rest/createPlaylist", request.url.encodedPath)
-            assertEquals("Morning Run", request.form().queryParameter("name"))
-            assertEquals(1, server.requestCount)
-            assertEquals(1, refresh.requests)
+            val created = state.newPlaylist.created!!
+            assertTrue(created.isLocal)
+            assertEquals("Morning Run", catalog.repository.playlist(created).first()?.name)
+            assertEquals(0, server.requestCount)
 
             viewModel.onCreatedOpened()
             viewModel.state.awaitFirst { it.newPlaylist.created == null }
@@ -209,14 +208,13 @@ class LibraryViewModelsTest {
         }
 
         @Test
-        fun `a failed create is explained once`() = runBlocking {
-            server.dispatcher.override("rest/createPlaylist") { subsonicFailure(50) }
+        fun `a create that cannot be stored is explained once`() = runBlocking {
             val viewModel = library()
 
             viewModel.create("Nope")
 
             val failed = viewModel.state.awaitFirst { it.newPlaylist.message != null }
-            assertEquals(LoadError.SERVER, failed.newPlaylist.message)
+            assertEquals(LoadError.STORAGE, failed.newPlaylist.message)
             assertNull(failed.newPlaylist.created)
             viewModel.dismissMessage()
             viewModel.state.awaitFirst { it.newPlaylist.message == null }

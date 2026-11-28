@@ -8,6 +8,7 @@ import androidx.room3.Entity
 import androidx.room3.ForeignKey
 import androidx.room3.Index
 import androidx.room3.PrimaryKey
+import com.qtekfun.ultimatetunes.core.library.pending.Queued
 
 /*
  * The tables of the catalog. Ids are the server's opaque strings, instants are epoch milliseconds,
@@ -153,14 +154,14 @@ internal data class MetaEntity(
 }
 
 /**
- * A change made with no connection, waiting to be sent, in the order made (`seq`). Only the
- * storage: what `kind` and `payload` hold and how they are replayed is PLAN T35's.
+ * A change waiting to be sent, in the order made (`seq`): `kind` is a `ChangeKind` and `payload` a
+ * `PendingPayload`. Notices and the ids of playlists made on the phone are rows too.
  */
 @Entity(tableName = "pending_changes")
 internal data class PendingChangeEntity(
-    @PrimaryKey(autoGenerate = true) val seq: Long = 0,
-    val kind: String,
-    val targetId: String?,
+    @PrimaryKey(autoGenerate = true) override val seq: Long = 0,
+    override val kind: String,
+    override val targetId: String?,
     val payload: String,
     val createdAt: Long
-)
+) : Queued
