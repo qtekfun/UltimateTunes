@@ -329,4 +329,7 @@
     <string name="event_playlist_gone">“%1$s” se borró en tu servidor; se han descartado tus cambios.</string>
     <string name="event_playlist_refused">Tu servidor rechazó un cambio en “%1$s”; se ha descartado.</string>
     <string name="event_change_refused">Tu servidor rechazó un cambio; se ha descartado.</string>
+    <string name="search_recent">Búsquedas recientes</string>
+    <string name="search_recent_clear">Borrar todo</string>
+    <string name="search_recent_remove">Quitar %1$s de las búsquedas recientes</string>
 </resources>

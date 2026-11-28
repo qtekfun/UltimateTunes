@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -63,12 +64,20 @@ fun SearchRoute(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val recentQueries by viewModel.recentSearches.collectAsStateWithLifecycle()
     SearchScreen(
         state = state,
         contentPadding = contentPadding,
         onQueryChange = viewModel::onQueryChange,
-        onSearch = viewModel::search,
-        navigator = navigator
+        onSearch = viewModel::submit,
+        navigator = navigator,
+        recents = RecentSearches(
+            queries = recentQueries,
+            onRun = viewModel::runRecent,
+            onRemove = viewModel::removeRecent,
+            onClear = viewModel::clearRecents,
+            onResultOpened = viewModel::remember
+        )
     )
 }
 
@@ -80,9 +89,13 @@ fun SearchScreen(
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     navigator: Navigator,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    recents: RecentSearches = RecentSearches()
 ) {
     val availability = LocalAvailability.current
+    val opening = remember(navigator, recents.onResultOpened) {
+        navigator.remembering(recents.onResultOpened)
+    }
     ScreenScaffold(title = stringResource(R.string.tab_search), modifier = modifier) { inner ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag(SEARCH_LIST_TAG),
@@ -102,6 +115,10 @@ fun SearchScreen(
                 }
             }
             state.notice?.let { item { SearchNoticeCard(it, onSearch) } }
+            if (state.query.isBlank() && recents.queries.isNotEmpty()) {
+                recentSearches(recents)
+                return@LazyColumn
+            }
             when (val results = state.results) {
                 null -> item {
                     MessageState(
@@ -115,11 +132,27 @@ fun SearchScreen(
                 is LoadState.Failed -> item { ErrorState(results.error, onSearch) }
 
                 is LoadState.Ready ->
-                    results(results.value.shownWith(availability), navigator)
+                    results(results.value.shownWith(availability), opening)
             }
         }
     }
 }
+
+/** This navigator, calling [onOpened] before a result opens or plays. */
+private fun Navigator.remembering(onOpened: () -> Unit) = copy(
+    play = { tracks, index ->
+        onOpened()
+        play(tracks, index)
+    },
+    openAlbum = {
+        onOpened()
+        openAlbum(it)
+    },
+    openArtist = {
+        onOpened()
+        openArtist(it)
+    }
+)
 
 /** In offline mode, only what the phone can play; with no connection, that comes first. */
 private fun SearchContent.shownWith(availability: Availability) = SearchContent(

@@ -325,4 +325,7 @@
     <string name="event_playlist_gone">“%1$s” was deleted on your server; your changes to it were dropped.</string>
     <string name="event_playlist_refused">Your server refused a change to “%1$s”; it was dropped.</string>
     <string name="event_change_refused">Your server refused a change; it was dropped.</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_recent_clear">Clear all</string>
+    <string name="search_recent_remove">Remove %1$s from recent searches</string>
 </resources>

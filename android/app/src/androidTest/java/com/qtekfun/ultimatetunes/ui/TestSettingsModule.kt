@@ -3,7 +3,12 @@
 
 package com.qtekfun.ultimatetunes.ui
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import com.qtekfun.ultimatetunes.ui.di.SettingsModule
+import com.qtekfun.ultimatetunes.ui.search.DataStoreRecentSearches
+import com.qtekfun.ultimatetunes.ui.search.RecentSearchesStore
 import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettings
 import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettingsStore
@@ -29,6 +34,17 @@ object TestSettingsModule {
     @Provides
     @Singleton
     fun appPrefs(): AppPrefsStore = MemoryAppPrefs()
+
+    @Provides
+    @Singleton
+    fun recentSearches(): RecentSearchesStore = DataStoreRecentSearches(MemoryPreferences())
+}
+
+class MemoryPreferences : DataStore<Preferences> {
+    override val data = MutableStateFlow(emptyPreferences())
+
+    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+        transform(data.value).toPreferences().also { data.value = it }
 }
 
 class MemoryPlaybackSettings : PlaybackSettingsStore {
