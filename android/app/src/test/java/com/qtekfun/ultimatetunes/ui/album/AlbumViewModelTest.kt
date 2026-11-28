@@ -7,6 +7,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.qtekfun.ultimatetunes.core.api.fake.FakeTunesServer
 import com.qtekfun.ultimatetunes.core.api.model.AlbumId
 import com.qtekfun.ultimatetunes.core.api.model.ArtistId
+import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
 import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
@@ -18,6 +19,8 @@ import com.qtekfun.ultimatetunes.ui.dropConnection
 import com.qtekfun.ultimatetunes.ui.model.LoadError
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import com.qtekfun.ultimatetunes.ui.subsonicOk
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -56,14 +59,15 @@ class AlbumViewModelTest {
     private val offline = FakeOfflineControls()
     private val catalog = TestCatalog()
 
-    private fun viewModel(id: String = libraryAlbum) = AlbumViewModel(
-        SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)),
-        connectedApi(server),
-        offline,
-        catalog.repository,
-        catalog.sync,
-        catalog.changes
-    ).also { created += it }
+    private fun viewModel(id: String = libraryAlbum, changes: OfflineChanges = catalog.changes) =
+        AlbumViewModel(
+            SavedStateHandle(mapOf(AlbumViewModel.ARG_ID to id)),
+            connectedApi(server),
+            offline,
+            catalog.repository,
+            catalog.sync,
+            changes
+        ).also { created += it }
 
     private suspend fun AlbumViewModel.ready(): AlbumContent =
         (state.awaitFirst { it.content is LoadState.Ready }.content as LoadState.Ready).value
@@ -137,6 +141,38 @@ class AlbumViewModelTest {
         assertEquals(!before, viewModel.ready().isFavourite)
         // Nothing but reads went to the server.
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `an answer that arrives while a star is being stored does not undo it`() = runTest {
+        catalog.synced()
+        val answer = CountDownLatch(1)
+        server.dispatcher.override("rest/getAlbum") {
+            answer.await()
+            subsonicOk(
+                "album",
+                """{"id":"$libraryAlbum","name":"Harbour Lights","song":[
+                    {"id":"yt:Qx7Lm2pZ0aB","title":"From the server","duration":262}]}"""
+            )
+        }
+        val stored = CompletableDeferred<Unit>()
+        val slow = object : OfflineChanges by catalog.changes {
+            override suspend fun setAlbumFavourite(id: AlbumId, favourite: Boolean): Boolean {
+                stored.await()
+                return catalog.changes.setAlbumFavourite(id, favourite)
+            }
+        }
+        val viewModel = viewModel(changes = slow)
+        val before = viewModel.ready().isFavourite
+
+        viewModel.toggleFavourite()
+        answer.countDown()
+        val answered = viewModel.state.awaitFirst { state ->
+            val content = (state.content as? LoadState.Ready)?.value
+            content?.tracks?.map { it.title } == listOf("From the server")
+        }
+        assertEquals(!before, (answered.content as LoadState.Ready).value.isFavourite)
+        stored.complete(Unit)
     }
 
     @Test
