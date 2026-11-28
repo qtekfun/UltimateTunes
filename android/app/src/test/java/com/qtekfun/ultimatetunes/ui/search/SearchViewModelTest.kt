@@ -14,6 +14,7 @@ import com.qtekfun.ultimatetunes.ui.TestCatalog
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connectedApi
 import com.qtekfun.ultimatetunes.ui.dropConnection
+import com.qtekfun.ultimatetunes.ui.fakeRecentSearches
 import com.qtekfun.ultimatetunes.ui.jsonResponse
 import com.qtekfun.ultimatetunes.ui.model.LoadState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -35,11 +36,12 @@ class SearchViewModelTest {
     private lateinit var viewModel: SearchViewModel
     private val catalog = TestCatalog()
     private val phone = FakePhoneAvailability()
+    private val recents = fakeRecentSearches()
 
     @BeforeEach
     fun setUp() {
         server = FakeTunesServer().start()
-        viewModel = SearchViewModel(connectedApi(server), catalog.repository, phone)
+        viewModel = SearchViewModel(connectedApi(server), catalog.repository, phone, recents)
     }
 
     @AfterEach
@@ -180,6 +182,45 @@ class SearchViewModelTest {
         assertEquals(SearchNotice.OFFLINE_MODE, state.notice)
         assertTrue((state.results as LoadState.Ready).value.isEmpty)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `typing alone remembers nothing, submitting or opening a result does`() = runTest {
+        viewModel.onQueryChange("lanterns")
+        results()
+        assertEquals(emptyList<String>(), viewModel.recentSearches.value)
+
+        viewModel.remember()
+        assertEquals(listOf("lanterns"), viewModel.recentSearches.value)
+
+        viewModel.onQueryChange("  harbour  ")
+        viewModel.submit()
+        assertEquals(listOf("harbour", "lanterns"), viewModel.recentSearches.value)
+    }
+
+    @Test
+    fun `a recent search runs again and moves first`() = runTest {
+        recents.add("lanterns")
+        recents.add("harbour")
+
+        viewModel.runRecent("lanterns")
+
+        results()
+        assertEquals("lanterns", viewModel.state.value.query)
+        assertEquals("lanterns", server.takeRequest().url.queryParameter("q"))
+        assertEquals(listOf("lanterns", "harbour"), viewModel.recentSearches.value)
+    }
+
+    @Test
+    fun `recent searches are removed one by one or all at once`() = runTest {
+        recents.add("lanterns")
+        recents.add("harbour")
+
+        viewModel.removeRecent("harbour")
+        assertEquals(listOf("lanterns"), viewModel.recentSearches.value)
+
+        viewModel.clearRecents()
+        assertEquals(emptyList<String>(), viewModel.recentSearches.value)
     }
 
     @Test

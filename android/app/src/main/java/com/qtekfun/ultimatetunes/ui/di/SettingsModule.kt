@@ -4,12 +4,16 @@
 package com.qtekfun.ultimatetunes.ui.di
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.qtekfun.ultimatetunes.playback.DownloadsOfflineLibrary
 import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.actions.SafExports
 import com.qtekfun.ultimatetunes.ui.library.OfflineLibrary
+import com.qtekfun.ultimatetunes.ui.search.DataStoreRecentSearches
+import com.qtekfun.ultimatetunes.ui.search.RecentSearchesStore
 import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import com.qtekfun.ultimatetunes.ui.settings.DataStoreAppPrefs
 import com.qtekfun.ultimatetunes.ui.settings.DataStorePlaybackSettings
@@ -40,6 +44,16 @@ object SettingsModule {
     fun appPrefs(@ApplicationContext context: Context): AppPrefsStore = DataStoreAppPrefs(
         PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("app_prefs") }
     )
+
+    @Provides
+    @Singleton
+    fun recentSearches(@ApplicationContext context: Context): RecentSearchesStore =
+        DataStoreRecentSearches(
+            PreferenceDataStoreFactory.create(
+                // Losing the history beats failing on a damaged file.
+                corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+            ) { context.preferencesDataStoreFile("recent_searches") }
+        )
 }
 
 /** The Library's Downloads list and the export to the phone, from the player (PLAN T17/T18). */

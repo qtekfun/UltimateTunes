@@ -20,11 +20,13 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -56,15 +58,21 @@ data class SearchUiState(
  * merging the library and YouTube Music (`GET /ut/v1/search`). With no connection, in offline mode
  * or when the server does not answer, the phone's results stay and [SearchUiState.notice] says why.
  * Typing searches after a short pause; the keyboard's search key at once.
+ * A search is remembered when it is submitted or one of its results opened.
  */
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val api: TunesApi,
     private val library: LibraryRepository,
-    private val phone: PhoneAvailability
+    private val phone: PhoneAvailability,
+    private val recents: RecentSearchesStore
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = mutableState.asStateFlow()
+
+    /** Newest first; shown while the field is empty. */
+    val recentSearches: StateFlow<List<String>> =
+        recents.searches.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var searchJob: Job? = null
 
@@ -91,7 +99,32 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    /** Searches the current query now (keyboard search key, retry). */
+    /** The keyboard's search key: searches at once and remembers the query. */
+    fun submit() {
+        remember()
+        search()
+    }
+
+    /** One of the results was opened or played. */
+    fun remember() {
+        val query = mutableState.value.query
+        viewModelScope.launch { recents.add(query) }
+    }
+
+    fun runRecent(query: String) {
+        mutableState.update { it.copy(query = query) }
+        submit()
+    }
+
+    fun removeRecent(query: String) {
+        viewModelScope.launch { recents.remove(query) }
+    }
+
+    fun clearRecents() {
+        viewModelScope.launch { recents.clear() }
+    }
+
+    /** Searches the current query now (retry, a change of connection). */
     fun search() {
         val query = mutableState.value.query.trim()
         if (query.isEmpty()) return

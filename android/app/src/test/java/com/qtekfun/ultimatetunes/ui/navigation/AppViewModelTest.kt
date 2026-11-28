@@ -15,6 +15,7 @@ import com.qtekfun.ultimatetunes.ui.FakeOfflineControls
 import com.qtekfun.ultimatetunes.ui.MainDispatcherExtension
 import com.qtekfun.ultimatetunes.ui.awaitFirst
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
+import com.qtekfun.ultimatetunes.ui.fakeRecentSearches
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -32,13 +33,37 @@ class AppViewModelTest {
     private val catalog = FakeCatalogSync()
     private val connectivity = FakeConnectivity()
 
+    private val recents = fakeRecentSearches()
+
+    @Test
+    fun `recent searches are kept for the same server and forgotten on another`() = runTest {
+        source.set(config)
+        val viewModel = AppViewModel(
+            ConnectionGate(source),
+            FakeAppPrefs(),
+            ServerConnected(FakeOfflineControls(), recents),
+            catalog,
+            connectivity,
+            source
+        )
+        recents.add("lanterns")
+
+        viewModel.reconnect()
+        source.set(config)
+        assertEquals(listOf("lanterns"), recents.searches.first())
+
+        viewModel.reconnect()
+        source.set(ServerConfig("https://music.lan".toHttpUrl(), config.apiKey))
+        assertEquals(emptyList<String>(), recents.searches.first())
+    }
+
     @Test
     fun `a fresh process without a server starts on Connect`() {
         assertTrue(
             AppViewModel(
                 ConnectionGate(source),
                 FakeAppPrefs(),
-                FakeOfflineControls(),
+                ServerConnected(FakeOfflineControls(), recents),
                 catalog,
                 connectivity,
                 source
@@ -53,7 +78,7 @@ class AppViewModelTest {
             AppViewModel(
                 ConnectionGate(source),
                 FakeAppPrefs(),
-                FakeOfflineControls(),
+                ServerConnected(FakeOfflineControls(), recents),
                 catalog,
                 connectivity,
                 source
@@ -71,14 +96,28 @@ class AppViewModelTest {
     fun `a connected start finishes a sync the process death left half done`() = runTest {
         source.set(config)
         val offline = FakeOfflineControls()
-        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, catalog, connectivity, source)
+        AppViewModel(
+            ConnectionGate(source),
+            FakeAppPrefs(),
+            ServerConnected(offline, recents),
+            catalog,
+            connectivity,
+            source
+        )
         assertEquals(listOf("https://music.example.net/"), offline.servers)
     }
 
     @Test
     fun `a server restored after the start still resumes the sync`() = runTest {
         val offline = FakeOfflineControls()
-        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, catalog, connectivity, source)
+        AppViewModel(
+            ConnectionGate(source),
+            FakeAppPrefs(),
+            ServerConnected(offline, recents),
+            catalog,
+            connectivity,
+            source
+        )
 
         source.set(config)
 
@@ -88,7 +127,14 @@ class AppViewModelTest {
     @Test
     fun `without a server nothing is resumed`() = runTest {
         val offline = FakeOfflineControls()
-        AppViewModel(ConnectionGate(source), FakeAppPrefs(), offline, catalog, connectivity, source)
+        AppViewModel(
+            ConnectionGate(source),
+            FakeAppPrefs(),
+            ServerConnected(offline, recents),
+            catalog,
+            connectivity,
+            source
+        )
         assertTrue(offline.servers.isEmpty())
     }
 
@@ -98,7 +144,7 @@ class AppViewModelTest {
         AppViewModel(
             ConnectionGate(source),
             FakeAppPrefs(),
-            FakeOfflineControls(),
+            ServerConnected(FakeOfflineControls(), recents),
             catalog,
             connectivity,
             source
@@ -114,7 +160,7 @@ class AppViewModelTest {
         val viewModel = AppViewModel(
             ConnectionGate(source),
             FakeAppPrefs(),
-            FakeOfflineControls(),
+            ServerConnected(FakeOfflineControls(), recents),
             catalog,
             connectivity,
             source
@@ -130,7 +176,14 @@ class AppViewModelTest {
     @Test
     fun `a first connection that fails clears nothing`() = runTest {
         val gate = ConnectionGate(source)
-        AppViewModel(gate, FakeAppPrefs(), FakeOfflineControls(), catalog, connectivity, source)
+        AppViewModel(
+            gate,
+            FakeAppPrefs(),
+            ServerConnected(FakeOfflineControls(), recents),
+            catalog,
+            connectivity,
+            source
+        )
 
         gate.tryConfig(config) { TunesResult.NotConfigured }
 
@@ -143,7 +196,7 @@ class AppViewModelTest {
         AppViewModel(
             ConnectionGate(source),
             FakeAppPrefs(),
-            FakeOfflineControls(),
+            ServerConnected(FakeOfflineControls(), recents),
             catalog,
             connectivity,
             source
@@ -161,7 +214,7 @@ class AppViewModelTest {
             AppViewModel(
                 ConnectionGate(source),
                 prefs,
-                FakeOfflineControls(),
+                ServerConnected(FakeOfflineControls(), recents),
                 catalog,
                 connectivity,
                 source

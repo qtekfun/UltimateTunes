@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.qtekfun.ultimatetunes.availability.Connectivity
 import com.qtekfun.ultimatetunes.core.api.ServerConfigSource
 import com.qtekfun.ultimatetunes.core.library.CatalogSync
-import com.qtekfun.ultimatetunes.playback.OfflineControls
 import com.qtekfun.ultimatetunes.ui.connect.ConnectionGate
 import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,7 +33,7 @@ import kotlinx.coroutines.launch
 class AppViewModel @Inject constructor(
     private val gate: ConnectionGate,
     private val prefs: AppPrefsStore,
-    private val offline: OfflineControls,
+    private val serverConnected: ServerConnected,
     private val catalog: CatalogSync,
     connectivity: Connectivity,
     configSource: ServerConfigSource
@@ -48,7 +47,7 @@ class AppViewModel @Inject constructor(
             }
                 .distinctUntilChanged()
                 .filterNotNull()
-                .collect { offline.serverConnected(it) }
+                .collect { serverConnected(it) }
         }
         // The local catalog follows the server at app start and on connect (a new address or key
         // too). A change of connection cancels the sync under way, which stores nothing.
