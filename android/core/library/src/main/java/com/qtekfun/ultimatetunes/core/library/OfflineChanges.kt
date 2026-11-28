@@ -29,7 +29,9 @@ data class ChangeNotice(
     /** The playlist it was about; null for a favourite or a play. */
     val playlist: String?,
     /** The playlist is no longer on the server; false when the server refused the change. */
-    val deletedOnServer: Boolean
+    val deletedOnServer: Boolean,
+    /** Songs the server would not add, the rest of the change being made; 0 for a dropped one. */
+    val skippedSongs: Int = 0
 )
 
 /** What one round of sending did. */

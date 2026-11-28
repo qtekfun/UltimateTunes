@@ -40,6 +40,18 @@ class PlaylistEditTest {
     }
 
     @Test
+    fun `refused songs are left out of additions and nothing else`() {
+        val refused = setOf("b")
+
+        assertEquals(
+            PlaylistEdit.Add(list("c"), mapOf("c" to 1)),
+            PlaylistEdit.Add(list("bc"), mapOf("b" to 1, "c" to 1)).leavingOut(refused)
+        )
+        val reorder = PlaylistEdit.Reorder(list("ab"))
+        assertEquals(reorder, reorder.leavingOut(refused))
+    }
+
+    @Test
     fun `removing takes the song wherever it is now`() {
         val remove = PlaylistEdit.remove(list("abc"), list("abc"), 1)
 

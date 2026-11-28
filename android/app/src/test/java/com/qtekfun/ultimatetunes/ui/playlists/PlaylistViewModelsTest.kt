@@ -232,7 +232,8 @@ class PlaylistViewModelsTest {
             viewModel.toggleOffline()
             viewModel.refresh()
             assertEquals(0, server.requestCount)
-            assertTrue(offline.mutableSelection.value.collections.isEmpty())
+            viewModel.state.awaitFirst { it.isOffline }
+            assertEquals(local.value, offline.mutableSelection.value.collections.single().id)
 
             catalog.changes.send()
 

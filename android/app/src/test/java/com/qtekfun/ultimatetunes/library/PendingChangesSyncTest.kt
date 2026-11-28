@@ -24,6 +24,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -34,8 +35,10 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingChangesSyncTest {
     private val queued = MutableStateFlow(PendingStatus())
+    private val renamed = MutableStateFlow(emptyMap<PlaylistId, PlaylistId>())
     private val changes = mockk<OfflineChanges> {
         every { status } returns queued
+        every { replaced } returns renamed
         coEvery { send() } returns SendResult(changed = true)
     }
     private val phone = FakePhoneAvailability(Availability(online = false))
@@ -90,5 +93,16 @@ class PendingChangesSyncTest {
         queued.value = PendingStatus(playlists = setOf(PlaylistId("p1")))
         queued.value = PendingStatus()
         assertEquals(before + 1, offline.syncs)
+    }
+
+    @Test
+    fun `a playlist kept before the server had it is kept under its new id`() = runTest {
+        offline.keepCollection(CollectionKind.PLAYLIST, "local:1", "Road")
+        started()
+
+        renamed.value = mapOf(PlaylistId("local:1") to PlaylistId("p9"))
+
+        val kept = offline.selection.first().collections.single()
+        assertEquals("p9" to "Road", kept.id to kept.name)
     }
 }

@@ -10,6 +10,7 @@ import com.qtekfun.ultimatetunes.core.library.CatalogSync
 import com.qtekfun.ultimatetunes.core.library.LibraryRepository
 import com.qtekfun.ultimatetunes.core.library.LocalCatalog
 import com.qtekfun.ultimatetunes.core.library.OfflineChanges
+import com.qtekfun.ultimatetunes.ui.settings.PlaybackSettingsStore
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -18,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.time.Clock
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 /** The local catalog of `:core:library`: one database and one syncer per process. */
 @Module
@@ -29,8 +31,11 @@ object LibraryModule {
         @ApplicationContext context: Context,
         api: TunesApi,
         configSource: ServerConfigSource,
-        clock: Clock
-    ): LocalCatalog = LocalCatalog.open(context, api, configSource, clock)
+        clock: Clock,
+        settings: PlaybackSettingsStore
+    ): LocalCatalog = LocalCatalog.open(context, api, configSource, clock) {
+        settings.settings.first().offlineOnly
+    }
 
     @Provides
     fun libraryRepository(catalog: LocalCatalog): LibraryRepository = catalog.repository

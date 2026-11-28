@@ -40,7 +40,9 @@ internal class CatalogSyncer(
     private val configSource: ServerConfigSource,
     private val clock: Clock,
     private val minInterval: Duration = MIN_INTERVAL,
-    pageSize: Int = PAGE_SIZE
+    pageSize: Int = PAGE_SIZE,
+    /** True while nothing may be sent (offline mode): the queue waits. */
+    private val holdChanges: suspend () -> Boolean = { false }
 ) : CatalogSync {
     private val db = database
     private val dao = database.sync()
@@ -220,7 +222,7 @@ internal class CatalogSyncer(
 
         /** Null when the catalog is not this connection's. */
         suspend fun send(): SendResult? {
-            if (dao.meta()?.verifiedFor != fingerprintOf(config)) return null
+            if (holdChanges() || dao.meta()?.verifiedFor != fingerprintOf(config)) return null
             return PendingSender(api, queue, this).run()
         }
 

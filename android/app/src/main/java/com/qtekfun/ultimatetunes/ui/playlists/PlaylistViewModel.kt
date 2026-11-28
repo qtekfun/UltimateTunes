@@ -159,8 +159,6 @@ class PlaylistViewModel @Inject constructor(
     /** Keeps the playlist on the phone, or stops keeping it. */
     fun toggleOffline() {
         val playlist = (mutableState.value.content as? LoadState.Ready)?.value ?: return
-        // The server does not have it yet: there is nothing to keep in step with.
-        if (id.isLocal) return
         val kept = mutableState.value.isOffline
         viewModelScope.launch {
             if (kept) {

@@ -43,7 +43,7 @@ private fun inPlace(
     limits: WriteLimits
 ): PlaylistWrite {
     val extra = surplus(current, desired)
-    val missing = surplus(desired, current).map { desired[it] }
+    val missing = additions(current, desired)
     return when {
         extra.isNotEmpty() -> PlaylistWrite.Change(extra.take(limits.ids), emptyList())
 
@@ -53,6 +53,10 @@ private fun inPlace(
         else -> moveToEnd(current, desired, limits)
     }
 }
+
+/** The songs [desired] has more copies of than [current]. */
+internal fun additions(current: List<String>, desired: List<String>): List<String> =
+    surplus(desired, current).map { desired[it] }
 
 /** The positions of [of] holding more copies of a song than [against] has. */
 private fun surplus(of: List<String>, against: List<String>): List<Int> {
@@ -92,7 +96,7 @@ private fun moveToEnd(
 }
 
 /** The longest start of [ids] that fits in one request. */
-private fun chunk(ids: List<String>, max: Int, maxNew: Int): List<String> {
+internal fun chunk(ids: List<String>, max: Int, maxNew: Int): List<String> {
     var external = 0
     return ids.asSequence()
         .take(max)

@@ -51,6 +51,12 @@ private class WritableServer(private val harness: CatalogHarness) {
     var fault: (String) -> Fault? = { null }
     private var made = 0
 
+    /** Songs the server does not know: a write naming one is refused whole. */
+    val unknown = mutableSetOf<String>()
+
+    /** Runs while a request is being answered. */
+    var during: (String) -> Unit = {}
+
     init {
         write("createPlaylist") { form ->
             val id = form.queryParameter("playlistId") ?: "new-${++made}"
@@ -103,6 +109,11 @@ private class WritableServer(private val harness: CatalogHarness) {
 
     fun find(id: String) = remote.playlists.firstOrNull { it.id.value == id }
 
+    fun created(id: String, at: Instant) {
+        val old = find(id)!!
+        remote.playlists = remote.playlists - old + old.copy(created = at)
+    }
+
     fun ids(id: String) = find(id)!!.entry.map { it.id.value }
 
     fun set(id: String, name: String, vararg songs: String) {
@@ -120,6 +131,10 @@ private class WritableServer(private val harness: CatalogHarness) {
         harness.server.dispatcher.override("rest/$name") { request: RecordedRequest ->
             val query = if (request.method == "POST") request.form() else request.url
             if (name != "getSong") writes += name
+            during(name)
+            val named = query.queryParameterValues("songId") +
+                query.queryParameterValues("songIdToAdd")
+            if (named.any { it in unknown }) return@override failed(70)
             when (fault(name)) {
                 Fault.OFFLINE -> dropped()
 
@@ -545,5 +560,126 @@ class OfflineChangesTest {
         DefaultOfflineChanges(restarted, harness.clock).send()
 
         assertEquals(listOf("s1", "s2", "s3", "s4"), server.ids("p1"))
+    }
+
+    private suspend fun lostCreate(name: String): PlaylistId {
+        val local = changes.createPlaylist(name)!!
+        server.fault = { if (it == "createPlaylist") Fault.OFFLINE else null }
+        changes.send()
+        online()
+        return local
+    }
+
+    @Test
+    fun `a retried create does not adopt someone else's playlist of the same name`() =
+        runBlocking<Unit> {
+            lostCreate("New")
+            server.set("theirs", "New", "s5")
+
+            changes.send()
+
+            assertEquals(listOf("s5"), server.ids("theirs"))
+            assertEquals("New", server.find("new-1")?.name)
+        }
+
+    @Test
+    fun `deleting after a lost create spares another playlist of the same name`() =
+        runBlocking<Unit> {
+            val local = lostCreate("New")
+            server.set("theirs", "New", "s5")
+            // Empty too, but made long before the change.
+            server.set("old", "New")
+            server.created("old", NOW.minusSeconds(86_400))
+            changes.deletePlaylist(Playlist(local, "New"))
+
+            changes.send()
+
+            assertEquals(
+                listOf("old", "p1", "theirs"),
+                harness.remote.playlists.map { it.id.value }.sorted()
+            )
+        }
+
+    @Test
+    fun `songs the server refuses are left out and the rest applied`() = runBlocking<Unit> {
+        server.unknown += "gone"
+        changes.renamePlaylist(p1(), "Evening")
+        add("s4", "gone", "s5")
+        changes.removeFromPlaylist(p1(), 0)
+
+        changes.send()
+
+        assertEquals(listOf("s2", "s3", "s4", "s5"), server.ids("p1"))
+        assertEquals("Evening", server.find("p1")!!.name)
+        assertEquals(0, waiting())
+        val notice = changes.notices.first().single()
+        assertEquals("Evening" to 1, notice.playlist to notice.skippedSongs)
+    }
+
+    @Test
+    fun `a refusal that is not about new songs still drops the change`() = runBlocking<Unit> {
+        server.fault = { if (it == "createPlaylist") Fault.REFUSED else null }
+        changes.removeFromPlaylist(p1(), 0)
+
+        changes.send()
+
+        assertEquals(0, waiting())
+        assertEquals(0, changes.notices.first().single().skippedSongs)
+    }
+
+    @Test
+    fun `an account the server refuses keeps the whole queue`() = runBlocking<Unit> {
+        add("s4")
+        changes.setSongFavourite(server.known("s1"), true)
+        server.fault = { Fault.REFUSED }
+        harness.remote.failing += "me"
+
+        val result = changes.send()
+
+        assertEquals(SendResult(waiting = true), result)
+        assertEquals(2, waiting())
+        assertTrue(changes.notices.first().isEmpty())
+    }
+
+    @Test
+    fun `a refusal does not drop what was queued while the request was in flight`() =
+        runBlocking<Unit> {
+            server.fault = { if (it == "deletePlaylist") Fault.REFUSED else null }
+            changes.deletePlaylist(p1())
+            var once = true
+            server.during = {
+                if (it == "deletePlaylist" && once) {
+                    once = false
+                    runBlocking {
+                        changes.renamePlaylist(Playlist(PlaylistId("p1"), "Mix"), "Kept")
+                    }
+                }
+            }
+
+            changes.send()
+
+            assertEquals("Kept", server.find("p1")!!.name)
+        }
+
+    @Test
+    fun `changes are held while asked to`() = runBlocking<Unit> {
+        var hold = true
+        val syncer = CatalogSyncer(
+            harness.api,
+            harness.database,
+            harness.config,
+            harness.clock,
+            holdChanges = { hold }
+        )
+        val held = DefaultOfflineChanges(syncer, harness.clock)
+        held.setSongFavourite(server.known("s1"), true)
+
+        assertEquals(CatalogSyncResult.Synced, syncer.sync())
+        assertEquals(SendResult(waiting = true), held.send())
+        assertTrue(server.writes.isEmpty())
+
+        hold = false
+        syncer.sync()
+        assertEquals(setOf("s1"), server.starred)
     }
 }

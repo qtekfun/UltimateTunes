@@ -7,6 +7,7 @@ import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesError
 import com.qtekfun.ultimatetunes.core.api.TunesResult
 import java.io.IOException
+import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -82,6 +83,31 @@ class QueueRulesTest {
         assertTrue(error(ErrorKind.NOT_FOUND).isNotFound())
         assertFalse(error(ErrorKind.FORBIDDEN).isNotFound())
         assertFalse(TunesResult.NotConfigured.isNotFound())
+    }
+
+    @Test
+    fun `only a forbidden answer asks whether the account still works`() {
+        assertTrue(needsAccountCheck(error(ErrorKind.FORBIDDEN)))
+        assertFalse(needsAccountCheck(error(ErrorKind.NOT_FOUND)))
+        assertFalse(needsAccountCheck(TunesResult.NotConfigured))
+    }
+
+    @Test
+    fun `some refusals may be the fault of a song being added`() {
+        assertTrue(mayBeAboutSongs(error(ErrorKind.PAYLOAD_TOO_LARGE)))
+        assertFalse(mayBeAboutSongs(error(ErrorKind.FORBIDDEN)))
+        assertFalse(mayBeAboutSongs(TunesResult.NotConfigured))
+    }
+
+    @Test
+    fun `only an empty and recent playlist of the user may be what a create left`() {
+        val asked = Instant.parse("2026-11-28T10:00:00Z")
+
+        assertTrue(mayBeFromCreate(null, 0, null, asked))
+        assertTrue(mayBeFromCreate(false, 0, asked.minusSeconds(60), asked))
+        assertFalse(mayBeFromCreate(true, 0, asked, asked))
+        assertFalse(mayBeFromCreate(false, 1, asked, asked))
+        assertFalse(mayBeFromCreate(false, 0, asked.minusSeconds(3_600), asked))
     }
 
     @Test

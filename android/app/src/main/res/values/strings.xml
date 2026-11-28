@@ -328,4 +328,8 @@
     <string name="search_recent">Recent searches</string>
     <string name="search_recent_clear">Clear all</string>
     <string name="search_recent_remove">Remove %1$s from recent searches</string>
+    <plurals name="event_songs_skipped">
+        <item quantity="one">%1$d song couldn\'t be added to “%2$s”.</item>
+        <item quantity="other">%1$d songs couldn\'t be added to “%2$s”.</item>
+    </plurals>
 </resources>

@@ -4,6 +4,7 @@
 package com.qtekfun.ultimatetunes.library
 
 import com.qtekfun.ultimatetunes.availability.PhoneAvailability
+import com.qtekfun.ultimatetunes.core.api.model.PlaylistId
 import com.qtekfun.ultimatetunes.core.library.OfflineChanges
 import com.qtekfun.ultimatetunes.core.library.SendResult
 import com.qtekfun.ultimatetunes.core.player.offline.CollectionKind
@@ -63,6 +64,7 @@ class PendingChangesSync internal constructor(
     fun start() {
         scope.launch { sendWhenPossible() }
         scope.launch { followKeptPlaylists() }
+        scope.launch { moveKeptPlaylists() }
     }
 
     /** One round now (the background worker's too). */
@@ -80,6 +82,20 @@ class PendingChangesSync internal constructor(
                 later.schedule()
                 if (can) send()
             }
+    }
+
+    /** A playlist kept before the server had it is kept under the id the server gave it. */
+    private suspend fun moveKeptPlaylists() {
+        combine(changes.replaced, offline.selection) { replaced, selection ->
+            selection.collections
+                .filter { it.kind == CollectionKind.PLAYLIST }
+                .mapNotNull { kept -> replaced[PlaylistId(kept.id)]?.let { kept to it } }
+        }.collect { moves ->
+            moves.forEach { (kept, id) ->
+                offline.keepCollection(CollectionKind.PLAYLIST, id.value, kept.name)
+                offline.dropCollection(CollectionKind.PLAYLIST, kept.id)
+            }
+        }
     }
 
     private suspend fun followKeptPlaylists() {

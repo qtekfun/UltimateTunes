@@ -121,6 +121,24 @@ class LibraryActionsViewModelTest {
     }
 
     @Test
+    fun `a notice replaced by another message comes back and does not block the next`() = runTest {
+        catalog.server.dispatcher.override("rest/star") { subsonicFailure(70) }
+        val viewModel = viewModel()
+        viewModel.toggleFavourite(tile(3))
+        viewModel.state.awaitFirst { it.event != null }
+        viewModel.dismissEvent()
+        catalog.changes.send()
+        val first = viewModel.state.awaitFirst { it.event is ActionEvent.ChangeDropped }.event
+
+        viewModel.queued(next = true)
+        viewModel.dismissEvent()
+
+        assertEquals(first, viewModel.state.value.event)
+        viewModel.dismissEvent()
+        catalog.changes.notices.first { it.isEmpty() }
+    }
+
+    @Test
     fun `favourites not sent yet survive a sync`() = runTest {
         catalog.server.dispatcher.override("rest/star") { dropConnection() }
         val viewModel = viewModel()

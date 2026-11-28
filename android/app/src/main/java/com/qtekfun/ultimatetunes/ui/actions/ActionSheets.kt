@@ -218,8 +218,17 @@ fun ExportFolderPicker(needsFolder: Boolean, onPicked: (String?) -> Unit) {
 private fun droppedMessage(notice: ChangeNotice): String {
     val playlist = notice.playlist
     return when {
+        playlist != null && notice.skippedSongs > 0 -> pluralStringResource(
+            R.plurals.event_songs_skipped,
+            notice.skippedSongs,
+            notice.skippedSongs,
+            playlist
+        )
+
         playlist == null -> stringResource(R.string.event_change_refused)
+
         notice.deletedOnServer -> stringResource(R.string.event_playlist_gone, playlist)
+
         else -> stringResource(R.string.event_playlist_refused, playlist)
     }
 }

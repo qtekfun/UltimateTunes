@@ -57,7 +57,7 @@ internal class DefaultOfflineChanges(private val syncer: CatalogSyncer, private 
     override val notices: Flow<List<ChangeNotice>> = rows.map { rows ->
         rows.filter { it.kind == ChangeKind.NOTICE.name }.map {
             val data = it.data()
-            ChangeNotice(it.seq, data.name, deletedOnServer = data.flag)
+            ChangeNotice(it.seq, data.name, data.flag, skippedSongs = data.ids.size)
         }
     }.distinctUntilChanged()
 

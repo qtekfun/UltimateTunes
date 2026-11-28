@@ -5,6 +5,8 @@ package com.qtekfun.ultimatetunes.core.library.pending
 
 import com.qtekfun.ultimatetunes.core.api.ErrorKind
 import com.qtekfun.ultimatetunes.core.api.TunesResult
+import java.time.Duration
+import java.time.Instant
 
 /** What a queued row is. Rows of a [family] on the same target are sent together. */
 internal enum class ChangeKind(val family: Family) {
@@ -116,3 +118,36 @@ internal fun effectOf(failure: TunesResult.Failure): FailureEffect = when (failu
 
 internal fun TunesResult.Failure.isNotFound(): Boolean =
     this is TunesResult.ApiError && error.kind == ErrorKind.NOT_FOUND
+
+/** A refusal of the account or of this change: only the account's own answer tells which. */
+internal fun needsAccountCheck(failure: TunesResult.Failure): Boolean =
+    failure is TunesResult.ApiError && failure.error.kind == ErrorKind.FORBIDDEN
+
+private val SONG_REFUSALS = setOf(
+    ErrorKind.NOT_FOUND,
+    ErrorKind.INVALID_ID,
+    ErrorKind.INVALID_PARAMETER,
+    ErrorKind.PAYLOAD_TOO_LARGE
+)
+
+/** A refusal that one of the songs being added may be the cause of. */
+internal fun mayBeAboutSongs(failure: TunesResult.Failure): Boolean =
+    failure is TunesResult.ApiError && failure.error.kind in SONG_REFUSALS
+
+/** How far apart the clocks of the phone and the server are taken to be, at most. */
+private const val SKEW_MINUTES = 10L
+private val CLOCK_SKEW: Duration = Duration.ofMinutes(SKEW_MINUTES)
+
+/**
+ * Whether a playlist of the right name may be the one a create asked for at [asked] left behind:
+ * it is the user's, still empty (nothing was added to it yet) and not older than the request.
+ * Anything else is someone's own playlist, never to be adopted or deleted.
+ */
+internal fun mayBeFromCreate(
+    readonly: Boolean?,
+    songCount: Int,
+    created: Instant?,
+    asked: Instant
+): Boolean = readonly != true &&
+    songCount == 0 &&
+    (created == null || !created.isBefore(asked - CLOCK_SKEW))

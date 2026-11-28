@@ -332,4 +332,9 @@
     <string name="search_recent">Búsquedas recientes</string>
     <string name="search_recent_clear">Borrar todo</string>
     <string name="search_recent_remove">Quitar %1$s de las búsquedas recientes</string>
+    <plurals name="event_songs_skipped">
+        <item quantity="one">No se pudo añadir %1$d canción a “%2$s”.</item>
+        <item quantity="many">No se pudieron añadir %1$d canciones a “%2$s”.</item>
+        <item quantity="other">No se pudieron añadir %1$d canciones a “%2$s”.</item>
+    </plurals>
 </resources>

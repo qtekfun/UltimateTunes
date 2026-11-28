@@ -17,8 +17,13 @@ import com.qtekfun.ultimatetunes.core.library.pending.PlaylistEdit
 import com.qtekfun.ultimatetunes.core.library.pending.PlaylistPlan
 import com.qtekfun.ultimatetunes.core.library.pending.PlaylistWrite
 import com.qtekfun.ultimatetunes.core.library.pending.WriteLimits
+import com.qtekfun.ultimatetunes.core.library.pending.additions
+import com.qtekfun.ultimatetunes.core.library.pending.chunk
 import com.qtekfun.ultimatetunes.core.library.pending.effectOf
 import com.qtekfun.ultimatetunes.core.library.pending.isNotFound
+import com.qtekfun.ultimatetunes.core.library.pending.mayBeAboutSongs
+import com.qtekfun.ultimatetunes.core.library.pending.mayBeFromCreate
+import com.qtekfun.ultimatetunes.core.library.pending.needsAccountCheck
 import com.qtekfun.ultimatetunes.core.library.pending.nextGroup
 import com.qtekfun.ultimatetunes.core.library.pending.nextWrite
 import com.qtekfun.ultimatetunes.core.library.pending.planOf
@@ -73,7 +78,9 @@ internal class PendingSender(
         drop(group, deletedOnServer = true)
         true
     } catch (e: SendFailed) {
-        when (effectOf(e.failure)) {
+        // A disabled account is refused everything: nothing of the queue may go for that.
+        val refused = needsAccountCheck(e.failure) && api.me() is TunesResult.Failure
+        when (if (refused) FailureEffect.STOP else effectOf(e.failure)) {
             FailureEffect.STOP -> false
 
             FailureEffect.LATER -> {
@@ -142,7 +149,7 @@ internal class PendingSender(
             PlaylistPlan.FORGET -> Unit
 
             PlaylistPlan.DELETE_IF_CREATED ->
-                create?.let { created(it.data()) }?.let { delete(it.value) }
+                create?.let { created(it) }?.let { delete(it.value) }
 
             PlaylistPlan.DELETE -> delete(target)
 
@@ -159,17 +166,21 @@ internal class PendingSender(
     }
 
     /** The playlist a tried create left on the server, or null. */
-    private suspend fun created(data: PendingPayload): PlaylistId? {
+    private suspend fun created(row: PendingChangeEntity): PlaylistId? {
+        val data = row.data()
         if (!data.tried) return null
+        val asked = Instant.ofEpochMilli(row.createdAt)
         return api.playlists().orFail().firstOrNull {
-            it.name == data.name && it.readonly != true && it.id.value !in data.existing
+            it.name == data.name &&
+                it.id.value !in data.existing &&
+                mayBeFromCreate(it.readonly, it.songCount, it.created, asked)
         }?.id
     }
 
     /** Makes the playlist, unless an earlier try did and its answer was lost. */
     private suspend fun create(row: PendingChangeEntity): PlaylistId {
         val data = row.data()
-        created(data)?.let { return it }
+        created(row)?.let { return it }
         if (!data.tried) {
             val same = api.playlists().orFail().filter { it.name == data.name }
             val marked = data.copy(tried = true, existing = same.map { it.id.value })
@@ -216,30 +227,80 @@ internal class PendingSender(
             api.updatePlaylist(playlist.id, name = name).orFail()
         }
         val edits = rows.mapNotNull { it.edit() }
-        if (edits.isNotEmpty()) writeSongs(playlist, edits)
+        if (edits.isEmpty()) return
+        val refused = writeSongs(playlist, edits)
+        if (refused.isNotEmpty()) {
+            val title = name ?: rows.firstNotNullOfOrNull { it.data().name }
+            session.write {
+                dao.add(notice(id, rows.first(), PendingPayload(title, ids = refused.toList())))
+            }
+        }
     }
 
-    /** Applies [edits] over what [first] holds and writes the result, reading between writes. */
-    private suspend fun writeSongs(first: Playlist, edits: List<PlaylistEdit>) {
+    private fun notice(target: String, row: PendingChangeEntity, data: PendingPayload) =
+        PendingChangeEntity(
+            kind = ChangeKind.NOTICE.name,
+            targetId = target,
+            payload = data.encode(),
+            createdAt = row.createdAt
+        )
+
+    /**
+     * Applies [edits] over what [first] holds and writes the result, reading between writes.
+     * Returns the songs the server would not take, which are left out.
+     */
+    private suspend fun writeSongs(first: Playlist, edits: List<PlaylistEdit>): Set<String> {
         var playlist = first
         var pending = edits
         val aliases = HashMap<String, String>()
+        val refused = LinkedHashSet<String>()
         // Each round reads, applies and writes once; more than this means it never settles.
         repeat(MAX_WRITES) {
             val current = playlist.entry.map { it.id.value }
             pending = withLibraryIds(pending, current, aliases)
             val desired = pending.fold(current) { songs, edit -> edit.applyTo(songs) }
-            val write = nextWrite(current, desired, limits)
-            if (write != null) send(playlist.id, write)
-            // A whole list needs no reading back.
-            if (write !is PlaylistWrite.Change) return
+            val write = nextWrite(current, desired, limits) ?: return refused
+            val result = send(playlist.id, write)
+            if (result is TunesResult.Failure) {
+                val added = additions(current, desired)
+                if (added.isEmpty() || !mayBeAboutSongs(result)) throw SendFailed(result)
+                // The playlist itself may be what is gone.
+                read(playlist.id.value)
+                refused += addApart(playlist.id, added)
+                pending = pending.map { it.leavingOut(refused) }
+            } else if (write is PlaylistWrite.Replace) {
+                // A whole list needs no reading back.
+                return refused
+            }
             playlist = read(playlist.id.value)
         }
         throw SendFailed(TunesResult.ProtocolError("Playlist did not settle", 0))
     }
 
-    private suspend fun send(id: PlaylistId, write: PlaylistWrite) {
-        val result = when (write) {
+    /** Adds [songs] in ever smaller parts and returns those the server refuses on their own. */
+    private suspend fun addApart(id: PlaylistId, songs: List<String>): List<String> {
+        val fitting = chunk(songs, limits.ids, limits.newSongs).size
+        if (fitting < songs.size) {
+            return addApart(id, songs.take(fitting)) + addApart(id, songs.drop(fitting))
+        }
+        session.check()
+        val result = api.updatePlaylist(id, songIdsToAdd = songs.map(::SongId))
+        return when {
+            result !is TunesResult.Failure -> emptyList()
+
+            !mayBeAboutSongs(result) -> throw SendFailed(result)
+
+            songs.size == 1 -> songs
+
+            else -> {
+                val half = songs.size / 2
+                addApart(id, songs.take(half)) + addApart(id, songs.drop(half))
+            }
+        }
+    }
+
+    private suspend fun send(id: PlaylistId, write: PlaylistWrite): TunesResult<Unit> =
+        when (write) {
             is PlaylistWrite.Replace -> api.replacePlaylist(id, write.ids.map(::SongId))
 
             is PlaylistWrite.Change -> api.updatePlaylist(
@@ -247,9 +308,7 @@ internal class PendingSender(
                 songIdsToAdd = write.add.map(::SongId),
                 songIndexesToRemove = write.removeIndexes
             )
-        }
-        result.orFail()
-    }
+        }.also { session.check() }
 
     private suspend fun read(id: String): Playlist {
         session.check()
@@ -286,39 +345,26 @@ internal class PendingSender(
         changed = changed || group.any { it.kind != ChangeKind.SCROBBLE.name }
     }
 
-    /** Gives up on [group] and says so; the next sync puts the catalog back. */
+    /**
+     * Gives up on [group] and says so; the next sync puts the catalog back. What was queued while
+     * the request was in flight stays, unless it was for a playlist that never got made.
+     */
     private suspend fun drop(group: List<PendingChangeEntity>, deletedOnServer: Boolean) {
         val first = group.first()
         val playlist = ChangeKind.of(first.kind)?.family == ChangeKind.Family.PLAYLIST
         val target = first.targetId.orEmpty()
         session.write {
-            // A playlist's rows may have moved to the server id since the group was read.
-            val rows = if (playlist) {
-                val now = dao.alias(target)?.data()?.removed ?: target
-                dao.all().filter {
-                    it.targetId == now &&
-                        ChangeKind.of(it.kind)?.family == ChangeKind.Family.PLAYLIST
-                }
-            } else {
-                group
+            // A playlist made on the phone may go by its server id by now.
+            val now = dao.alias(target)?.data()?.removed ?: target
+            val all = dao.all()
+            val unmade = all.any { row ->
+                row.kind == ChangeKind.CREATE.name && group.any { it.seq == row.seq }
             }
-            val name = if (playlist) {
-                rows.ifEmpty { group }.firstNotNullOfOrNull { it.data().name }
-            } else {
-                null
-            }
-            rows.forEach { dao.remove(it.seq) }
-            if (deletedOnServer) {
-                local.deletePlaylist(target)
-            }
-            dao.add(
-                PendingChangeEntity(
-                    kind = ChangeKind.NOTICE.name,
-                    targetId = target,
-                    payload = PendingPayload(name = name, flag = deletedOnServer).encode(),
-                    createdAt = first.createdAt
-                )
-            )
+            val gone = if (unmade) all.filter { it.targetId == target } else group
+            gone.forEach { dao.remove(it.seq) }
+            if (deletedOnServer || unmade) local.deletePlaylist(now)
+            val name = if (playlist) group.firstNotNullOfOrNull { it.data().name } else null
+            dao.add(notice(target, first, PendingPayload(name = name, flag = deletedOnServer)))
         }
         changed = true
     }

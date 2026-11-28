@@ -276,6 +276,9 @@ class LibraryActionsViewModel @Inject constructor(
         mutableState.update { it.copy(event = null) }
         if (shown is ActionEvent.ChangeDropped) {
             viewModelScope.launch { changes.dismiss(shown.notice.id) }
+        } else {
+            // Another message may have taken a notice's place before it was seen: show it again.
+            notice?.let { event(ActionEvent.ChangeDropped(it)) }
         }
     }
 

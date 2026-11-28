@@ -16,6 +16,9 @@ internal sealed interface PlaylistEdit {
 
     /** Append [ids] until the playlist holds each one [atLeast] times. */
     data class Add(val ids: List<String>, val atLeast: Map<String, Int>) : PlaylistEdit {
+        /** The same addition leaving out the songs of [refused]. */
+        fun without(refused: Set<String>) = Add(ids - refused, atLeast - refused)
+
         override fun applyTo(songs: List<String>): List<String> {
             val result = songs.toMutableList()
             val held = HashMap<String, Int>()
@@ -90,6 +93,9 @@ internal sealed interface PlaylistEdit {
 
         override fun renamed(alias: (String) -> String) = Reorder(order.map(alias))
     }
+
+    /** This edit without adding any of [refused]. */
+    fun leavingOut(refused: Set<String>): PlaylistEdit = if (this is Add) without(refused) else this
 
     companion object {
         /** Adding [ids] to a playlist that holds [current]. */
