@@ -459,6 +459,89 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `a new queue gives every song a fresh chance, before anything plays`() = runTest {
+        queue.items = mutableListOf(item(library(0)), item(library(1)))
+        coEvery { api.song(any()) } returns TunesResult.Success(Song(LIB, "T"))
+        every { player.seekTo(any<Int>(), any()) } answers { queue.index = firstArg() }
+        noConnection = true
+        onPhone[library(0)] = library(0)
+        onPhone[library(1)] = library(1)
+        val engine = engine(this)
+        engine.start()
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(1, queue.index)
+
+        // Another queue, holding the song that just failed.
+        queue.items = mutableListOf(item(library(2)), item(library(0)))
+        queue.index = 0
+        engine.newQueue()
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+
+        assertEquals(1, queue.index)
+        engine.release()
+    }
+
+    @Test
+    fun `a new queue can skip again after the last one ran out of skips`() = runTest {
+        coEvery { api.song(any()) } returns TunesResult.Success(Song(LIB, "T"))
+        every { player.hasNextMediaItem() } returns true
+        val engine = engine(this)
+        engine.start()
+        val error = mockk<PlaybackException>()
+        repeat(4) { engine.onPlayerError(error) }
+        verify(exactly = 3) { player.seekToNextMediaItem() }
+
+        engine.newQueue()
+        engine.onPlayerError(error)
+
+        verify(exactly = 4) { player.seekToNextMediaItem() }
+        engine.release()
+    }
+
+    @Test
+    fun `swapping the playing song for its copy on the phone is not a new queue`() = runTest {
+        queue.items = mutableListOf(item(library(0)), item(YT), item(library(0)))
+        coEvery { api.song(any()) } returns TunesResult.Success(Song(LIB, "T"))
+        every { player.seekTo(any<Int>(), any()) } answers { queue.index = firstArg() }
+        noConnection = true
+        onPhone[library(0)] = library(0)
+        onPhone[YT] = YT
+        val engine = engine(this)
+        engine.offlineOnly = true
+        engine.start()
+        every { player.replaceMediaItem(any(), any()) } answers {
+            queue.items[firstArg()] = secondArg()
+            engine.onMediaItemTransition(
+                secondArg(),
+                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            )
+        }
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        engine.onMediaItemTransition(queue.items[1], Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+
+        // The yt song fails too and is replaced where it is by the library file kept of it.
+        onPhone[YT] = LIB_NEW
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(LIB_NEW.value, queue.items[1].mediaId)
+
+        // The first song still counts as failed: nothing left to try.
+        engine.onPlayerError(mockk<PlaybackException>())
+        advanceUntilIdle()
+        assertEquals(1, queue.index)
+        engine.release()
+    }
+
+    /** What the player reports when a queue is set. */
+    private fun PlaybackEngine.newQueue() = onMediaItemTransition(
+        queue.items[queue.index],
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+    )
+
+    @Test
     fun `an empty queue does nothing`() = runTest {
         queue.items.clear()
         val engine = engine(this)

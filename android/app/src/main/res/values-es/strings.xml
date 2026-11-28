@@ -325,4 +325,7 @@
     <string name="search_notice_unreachable">No se puede contactar con tu servidor. Resultados de este móvil.</string>
     <string name="search_notice_offline_mode">Modo sin conexión: solo lo que está en este móvil.</string>
     <string name="search_retry">Reintentar</string>
+    <string name="search_recent">Búsquedas recientes</string>
+    <string name="search_recent_clear">Borrar todo</string>
+    <string name="search_recent_remove">Quitar %1$s de las búsquedas recientes</string>
 </resources>

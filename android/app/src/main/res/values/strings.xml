@@ -321,4 +321,7 @@
     <string name="search_notice_unreachable">Cannot reach your server. Showing results from this phone.</string>
     <string name="search_notice_offline_mode">Offline mode: only what is on this phone.</string>
     <string name="search_retry">Retry</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_recent_clear">Clear all</string>
+    <string name="search_recent_remove">Remove %1$s from recent searches</string>
 </resources>

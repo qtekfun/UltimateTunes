@@ -58,8 +58,14 @@ class PlaybackEngine(
     private var failuresInARow = 0
     private var skipping: Job? = null
 
-    /** The songs that failed since something last played: never gone back to in the same run. */
+    /**
+     * The songs of this queue that failed since something last played: never gone back to in the
+     * same run.
+     */
     private val failedInARow = mutableSetOf<SongId>()
+
+    /** What the engine is putting in place of the current song: not a new queue. */
+    private var ownReplacement: MediaItem? = null
 
     /** The songs that failed to load in this session, newest last. */
     val failed: List<SongId> get() = failedSongs.toList()
@@ -84,14 +90,23 @@ class PlaybackEngine(
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         // Another song is current now: a skip still looking would jump past what was chosen.
         skipping?.cancel()
+        // The current song changes with the playlist when a queue is set (or the song is removed).
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+            mediaItem != ownReplacement
+        ) {
+            forgetFailures()
+        }
+        ownReplacement = null
         onQueueMoved()
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        if (isPlaying) {
-            failuresInARow = 0
-            failedInARow.clear()
-        }
+        if (isPlaying) forgetFailures()
+    }
+
+    private fun forgetFailures() {
+        failuresInARow = 0
+        failedInARow.clear()
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) = onQueueMoved()
@@ -145,7 +160,9 @@ class PlaybackEngine(
     private fun playAt(index: Int, local: SongId) {
         val item = player.getMediaItemAt(index)
         if (local != MediaItems.songOf(item)) {
-            player.replaceMediaItem(index, MediaItems.withId(item, local, api))
+            val copy = MediaItems.withId(item, local, api)
+            if (index == player.currentMediaItemIndex) ownReplacement = copy
+            player.replaceMediaItem(index, copy)
         }
         player.seekTo(index, 0)
         player.prepare()
@@ -242,7 +259,9 @@ class PlaybackEngine(
         if (MediaItems.songOf(item) != external) return
         val position = player.currentPosition
         switchToLibrary(external, libraryId)
-        player.replaceMediaItem(index, MediaItems.withId(item, libraryId, api))
+        val copy = MediaItems.withId(item, libraryId, api)
+        ownReplacement = copy
+        player.replaceMediaItem(index, copy)
         player.seekTo(index, position)
     }
 

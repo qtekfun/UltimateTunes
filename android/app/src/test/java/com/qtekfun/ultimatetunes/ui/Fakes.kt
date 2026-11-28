@@ -3,6 +3,9 @@
 
 package com.qtekfun.ultimatetunes.ui
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import com.qtekfun.ultimatetunes.availability.Availability
 import com.qtekfun.ultimatetunes.availability.CachedSongs
 import com.qtekfun.ultimatetunes.availability.Connectivity
@@ -25,6 +28,7 @@ import com.qtekfun.ultimatetunes.playback.PlaybackState
 import com.qtekfun.ultimatetunes.playback.PlayerController
 import com.qtekfun.ultimatetunes.ui.actions.Exports
 import com.qtekfun.ultimatetunes.ui.model.TrackTile
+import com.qtekfun.ultimatetunes.ui.search.DataStoreRecentSearches
 import com.qtekfun.ultimatetunes.ui.settings.AppPrefsStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -220,6 +224,16 @@ class FakeExports(folder: String? = null) : Exports {
         mutableStatus.value = ExportStatus.Idle
     }
 }
+
+/** A Preferences DataStore without a file. */
+class MemoryDataStore : DataStore<Preferences> {
+    override val data = MutableStateFlow(emptyPreferences())
+
+    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+        transform(data.value).toPreferences().also { data.value = it }
+}
+
+fun fakeRecentSearches() = DataStoreRecentSearches(MemoryDataStore())
 
 /** Prefs in memory. */
 class FakeAppPrefs : AppPrefsStore {
