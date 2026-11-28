@@ -331,6 +331,15 @@ internal class OkHttpTunesApi(
         return result
     }
 
+    override suspend fun replacePlaylist(id: PlaylistId, songIds: List<SongId>): TunesResult<Unit> {
+        require(songIds.size <= MAX_IDS_PER_REQUEST) { "Too many songs for one request" }
+        return restUnit(
+            "createPlaylist",
+            params("playlistId" to id.value) + songIds.map { "songId" to it.value },
+            form = true
+        )
+    }
+
     override suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit> =
         restUnit("deletePlaylist", params("id" to id.value))
 
@@ -399,6 +408,8 @@ internal class OkHttpTunesApi(
 
     // ---- plumbing: OpenSubsonic ----
 
+    private val onceClient by lazy { client.newBuilder().retryOnConnectionFailure(false).build() }
+
     private fun restUrl(endpoint: String, query: List<Param>): HttpUrl? =
         configSource.config.value?.let { buildUrl(it.root, listOf(REST, endpoint), query) }
 
@@ -427,7 +438,9 @@ internal class OkHttpTunesApi(
             query.forEach { (name, value) -> body.add(name, value) }
             request.post(body.build())
         }
-        return exchange(request.build()) { answer ->
+        // A write that is not safe to repeat is never repeated behind the caller's back: it reads
+        // the server again and decides.
+        return exchange(request.build(), once = endpoint in NOT_REPEATABLE) { answer ->
             val envelope = envelopeOf(answer.body)
             if (envelope == null) {
                 withoutDocument(answer, "rest/$endpoint", "subsonic-response")
@@ -449,10 +462,11 @@ internal class OkHttpTunesApi(
     /** Sends [request]; a network failure becomes [TunesResult.NetworkError], an answer goes to [handle]. */
     private suspend fun <T> exchange(
         request: Request,
+        once: Boolean = false,
         handle: (HttpAnswer) -> TunesResult<T>
     ): TunesResult<T> {
         val answer = try {
-            client.newCall(request).await()
+            (if (once) onceClient else client).newCall(request).await()
         } catch (e: IOException) {
             return TunesResult.NetworkError(e)
         }
@@ -631,6 +645,9 @@ internal class OkHttpTunesApi(
 
     private companion object {
         const val REST = "rest"
+
+        /** `createPlaylist`, `updatePlaylist` and `scrobble` do their thing again each time. */
+        val NOT_REPEATABLE = setOf("createPlaylist", "updatePlaylist", "scrobble")
 
         /** Most ids the server takes in one request. */
         const val MAX_IDS_PER_REQUEST = 1000

@@ -229,6 +229,13 @@ interface TunesApi {
         songIndexesToRemove: List<Int> = emptyList()
     ): TunesResult<Unit>
 
+    /**
+     * Makes [songIds] (at most 1000, all in one request) the songs of the playlist [id], in this
+     * order: `createPlaylist` with `playlistId`. Songs it already holds do not count against the
+     * server's cap of new downloads.
+     */
+    suspend fun replacePlaylist(id: PlaylistId, songIds: List<SongId>): TunesResult<Unit>
+
     /** `deletePlaylist`. */
     suspend fun deletePlaylist(id: PlaylistId): TunesResult<Unit>
 
