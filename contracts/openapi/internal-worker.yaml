@@ -70,8 +70,15 @@ info:
 
     ## Podcast episodes
     A worker that claims with `kinds: [download, episode]` also gets `EpisodeJob`s. Leases, progress, streaming
-    while downloading, fail and retries work as for songs. After the download: `registerEpisode`, move,
-    `complete` (`CompleteEpisode`). No tagging state, tags, ReplayGain or remux.
+    while downloading, fail and retries work as for songs. No tagging state, tags, ReplayGain or remux. After
+    the download:
+    1. `registerEpisode`.
+    2. The worker **copies** (never moves) the staging file to a temporary hidden name next to `libraryPath`
+       under `/music`, then renames it to `libraryPath` atomically, never overwriting another file.
+    3. `complete` (`CompleteEpisode`).
+    The staging file stays where it is: only the api deletes it, after the last listener has closed. Until then
+    the api serves listeners from the job's `final_path` in staging, so no open stream is cut by the archive.
+    The single worker never preempts: a job of higher priority waits for the running one to end.
 
     ## Idempotency
     Every call can be retried safely after a timeout: `heartbeat`, `progress` (last write wins, monotonic),
@@ -373,11 +380,19 @@ paths:
       tags:
       - library
       summary: Reserve the library path of a downloaded episode
-      description: Called after the download is complete in staging, before anything is written to `/music`. The api
-        chooses the path, `.podcasts/<showId>/<episodeId>.<webm|m4a>` (hidden, so the music scan, size limit and eviction
-        never see it), records size, type, duration and publication time, and reserves the path on the job. The worker
-        then moves the file there without changing a byte and calls `complete` with `CompleteEpisode`. Idempotent.
-        A file already there with the same SHA-256 is adopted; another one is `conflict`.
+      description: |-
+        Called after the download is complete in staging (`finished`), before anything is written to `/music`.
+        `stagingPath` is the job's `finalPath`: the api uses the `final_path` stored on the job, and another path is
+        `path_rejected`. The api chooses `libraryPath`, `.podcasts/<showId>/<episodeId>.<webm|m4a>` (hidden, so the
+        music scan, size limit and eviction never see it), records size, type, duration and publication time, and
+        reserves the path on the job. The worker then copies the file to a temporary name in `/music` and renames it
+        atomically to `libraryPath`, without changing a byte, and calls `complete` with `CompleteEpisode`. The staging
+        file stays until the api deletes it, after its last listener has closed.
+
+        Idempotent. A file already at `libraryPath` with the same SHA-256 is adopted. A retry of the same job may
+        replace the file this job placed itself (its recorded `placed_path`, unchanged since, as in `placed_sha256`)
+        and records the new hash; any other file there is `conflict`. When a freed (expired) episode is downloaded
+        again, the api resets the job's `library_path`, `placed_path` and `placed_sha256` as it queues it.
       requestBody:
         required: true
         content:
@@ -1514,6 +1529,9 @@ components:
           minimum: 1
         priority:
           type: integer
+          description: '20: the user pressed play (`stream`, `download`). 3: asked for (`/request`, `downloadPodcastEpisode`).
+            1: automatic. Song jobs: stream 100, prefetch 50, keep 30, import 10. Playing a queued episode raises it to 20.
+            The running job is never preempted.'
         stagingDir:
           $ref: '#/components/schemas/RelativePath'
         maxDurationS:

@@ -52,11 +52,14 @@ CREATE INDEX ix_podcast_episodes_show ON podcast_episodes (show_id, list_seq);
 CREATE INDEX ix_podcast_episodes_state ON podcast_episodes (state, downloaded_at);
 CREATE INDEX ix_podcast_episodes_new ON podcast_episodes (discovered_at);
 
+-- auto_download_since: when auto_download was last turned on, NULL while it is off. Only
+-- episodes published after it are downloaded automatically.
 CREATE TABLE podcast_follows (
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     show_id TEXT NOT NULL REFERENCES podcast_shows (id) ON DELETE CASCADE,
     speed DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (speed >= 0.5 AND speed <= 3.0),
     auto_download INTEGER NOT NULL DEFAULT 0 CHECK (auto_download IN (0, 1)),
+    auto_download_since TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, show_id)

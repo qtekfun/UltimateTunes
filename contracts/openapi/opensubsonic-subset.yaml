@@ -1724,7 +1724,7 @@ paths:
       description: |-
         Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
 
-        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
+        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. The play queues the episode at priority 20 (below song streams, prefetch and keep, above imports) and raises one already queued; the running job is not preempted, so playback may wait for it. `download` takes the same path and priority as `stream`. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
 
         **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
 
@@ -1892,7 +1892,7 @@ paths:
       description: |-
         Never transcodes: the original file, in its own format. `HEAD` is accepted (same headers, no body).
 
-        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
+        **Podcast episodes** (an episode UUID or `ytepisode:` id; also on `download`). Served like a `yt:` song while not downloaded: the first `GET` requests the download (never `HEAD`), then streams as it grows. Episodes are not tagged or remuxed, so the finished file has the same bytes and ranges stay valid. The play queues the episode at priority 20 (below song streams, prefetch and keep, above imports) and raises one already queued; the running job is not preempted, so playback may wait for it. `download` takes the same path and priority as `stream`. A range far ahead waits until the download reaches it. An episode over the limits fails like any other download. `star`, `scrobble`, playlists, `getSong` and `savePlayQueue` do not take episodes (error 70, or ignored when read from a stored queue).
 
         **Library songs** (and a `yt:` id once archived, served from the library file): `200` with `Content-Length` and `Accept-Ranges: bytes`; a `Range` request gets `206` with `Content-Range`, a range past the size `416`.
 
@@ -4594,7 +4594,7 @@ paths:
       tags:
       - podcasts
       summary: Ask the server to download an episode
-      description: Same rules and limits as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
+      description: Same rules, limits and priority (3, below imports) as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
       parameters:
       - $ref: '#/components/parameters/v'
       - $ref: '#/components/parameters/c'
@@ -4637,7 +4637,7 @@ paths:
       tags:
       - podcasts
       summary: Ask the server to download an episode (form POST)
-      description: Same rules and limits as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
+      description: Same rules, limits and priority (3, below imports) as `POST /ut/v1/podcasts/episodes/{episodeId}/request`.
       parameters: []
       responses:
         '200':

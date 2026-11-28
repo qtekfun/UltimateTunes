@@ -33,7 +33,6 @@ Why v7 and not v4:
 | `yt:` | song (video) | YouTube video id | `^[A-Za-z0-9_-]{11}$` | `yt:Qx7Lm2pZ0aB` |
 | `ytalbum:` | album | YouTube Music album browse id (currently `MPREb_…`) | `^[A-Za-z0-9_-]{1,64}$` | `ytalbum:MPREb_k3Vd9QmT2xL` |
 | `ytartist:` | artist | YouTube Music artist channel id (currently `UC` + 22 chars) | `^[A-Za-z0-9_-]{1,64}$` | `ytartist:UCq8XbV1r0LwZ5mN3tYp7kQe` |
-
 | `ytpodcast:` | podcast show | YouTube Music podcast browse id **without** its `MPSP` prefix (a playlist id) | `^[A-Za-z0-9_-]{1,64}$` | `ytpodcast:PLfakeTideTables0123456789abcdef` |
 | `ytepisode:` | podcast episode | YouTube video id | `^[A-Za-z0-9_-]{11}$` | `ytepisode:Pd4Kx9Lm2Qa` |
 

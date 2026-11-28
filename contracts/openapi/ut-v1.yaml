@@ -1588,7 +1588,9 @@ paths:
       summary: Follow a show, or change its settings
       description: 'Idempotent. A first follow creates the show if needed, fetches its newest page and starts the
         scheduled refresh. Omitted fields keep their value (defaults: speed 1, autoDownload false). Following downloads
-        nothing: with `autoDownload`, only episodes published after it was turned on are downloaded.'
+        nothing: with `autoDownload`, only episodes published after it was turned on are downloaded. Automatic downloads
+        have the lowest priority, 1; one over the daily limit of the follower charged for it is skipped until the
+        next refresh.'
       parameters:
       - name: showId
         in: path
@@ -1855,8 +1857,10 @@ paths:
       tags:
       - podcasts
       summary: Ask the server to download an episode
-      description: Idempotent. A `failed` episode is queued again. Counts against the same per-user limits as song
-        downloads, the daily byte limit included (429).
+      description: 'Idempotent. A `failed` episode is queued again. Counts against the same per-user limits as song
+        downloads, the daily byte limit included (429). Queued at priority 3: below every song job (imports are
+        10) and below an episode being played (20). Clients that download on their own (automatic downloads in the
+        app) use this, never `/rest/download`, which counts as playing.'
       parameters:
       - name: episodeId
         in: path

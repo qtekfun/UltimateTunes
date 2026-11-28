@@ -73,8 +73,7 @@ Notes:
 - `/ut/v1` problems use `type` = `https://github.com/qtekfun/UltimateTunes/blob/master/contracts/errors.md#<code>` and `title` = the English short text. `detail` is human-readable and may change. Clients switch on `code` only.
 - `RateLimited` and `TooManyListeners` responses always carry `Retry-After` (seconds) on every API.
 - Podcasts add no `TunesError`: unknown shows and episodes are `NotFound`, a catalog failure is `UpstreamUnavailable`, an address that is not a YouTube Music show is `UnsupportedUrl`, the per-user download limits answer as they do for songs, and an episode over the limits is a failed job with `episode_over_limit`.
-
-Job failures are **not** HTTP errors on `/ut/v1/tracks/{id}/status`: that endpoint returns 200 with `state: failed` and an `error` object whose `code` is one of the worker error codes below.
+- Job failures are **not** HTTP errors on `/ut/v1/tracks/{id}/status`: that endpoint returns 200 with `state: failed` and an `error` object whose `code` is one of the worker error codes below.
 
 ## Worker error codes (`fail` → job `error.code`)
 
